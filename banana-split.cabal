@@ -4,7 +4,7 @@ cabal-version: 1.12
 --
 -- see: https://github.com/sol/hpack
 
-name:           rompepiernas
+name:           banana-split
 version:        0.1.0.0
 license:        BSD3
 license-file:   LICENSE
@@ -12,11 +12,11 @@ build-type:     Simple
 
 library
   exposed-modules:
-      RompePiernas
-      RompePiernas.Persistence
-      RompePiernas.Solver
+      BananaSplit
+      BananaSplit.Persistence
+      BananaSplit.Solver
   other-modules:
-      Paths_rompepiernas
+      Paths_banana_split
   hs-source-dirs:
       src
   default-extensions:
@@ -59,7 +59,7 @@ library
     , warp
   default-language: GHC2021
 
-executable rompepiernas
+executable banana-split
   main-is: Main.hs
   other-modules:
       Site.Api
@@ -71,7 +71,7 @@ executable rompepiernas
       Site.Layout
       Site.Server
       Types
-      Paths_rompepiernas
+      Paths_banana_split
   hs-source-dirs:
       app
   default-extensions:
@@ -80,6 +80,7 @@ executable rompepiernas
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
+    , banana-split
     , base
     , bytestring
     , conferer
@@ -96,7 +97,6 @@ executable rompepiernas
     , postgresql-migration
     , pretty-simple
     , random
-    , rompepiernas
     , safe-money
     , selda
     , selda-postgresql
@@ -119,7 +119,7 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_rompepiernas
+      Paths_banana_split
   hs-source-dirs:
       test
   default-extensions:
@@ -129,6 +129,7 @@ test-suite spec
   build-depends:
       QuickCheck
     , aeson
+    , banana-split
     , base
     , bytestring
     , conferer
@@ -146,7 +147,6 @@ test-suite spec
     , postgresql-migration
     , pretty-simple
     , random
-    , rompepiernas
     , safe-money
     , selda
     , selda-postgresql

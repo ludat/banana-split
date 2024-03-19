@@ -3,7 +3,7 @@
 module Site.Layout
   ( navBarItemsForGrupo
   ) where
-import RompePiernas
+import BananaSplit
 import Lucid
 import Site.Api
 import Servant

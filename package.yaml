@@ -1,4 +1,4 @@
-name: rompepiernas
+name: banana-split
 version: 0.1.0.0
 
 dependencies:
@@ -58,11 +58,11 @@ library:
   source-dirs: src
 
 executables:
-  rompepiernas:
+  banana-split:
     source-dirs: app
     main: Main.hs
     dependencies:
-      - rompepiernas
+      - banana-split
     ghc-options:
       - -threaded
       - -rtsopts
@@ -74,7 +74,7 @@ tests:
     main: Spec.hs
     dependencies:
       - base
-      - rompepiernas
+      - banana-split
       - hspec
       - QuickCheck
     ghc-options:

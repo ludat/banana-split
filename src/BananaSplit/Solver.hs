@@ -1,4 +1,4 @@
-module RompePiernas.Solver (main2) where
+module BananaSplit.Solver (main2) where
 
 import Prelude hiding ((<>))
 

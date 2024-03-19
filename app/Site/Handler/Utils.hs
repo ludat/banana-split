@@ -54,7 +54,7 @@ htmlLayout navBarItems content =
     head_ $ do
       meta_ [charset_ "UTF-8"]
       meta_ [name_ "viewport", content_ "width=device-width, initial-scale=1.0"]
-      title_ "Rompepiernas"
+      title_ "Banana Split"
       link_ [rel_ "shortcut icon", type_ "image/png", href_ "/static/favicon.png"]
 
       script_ [src_ "https://unpkg.com/htmx.org@1.9.10"] $ toHtml @Text ""

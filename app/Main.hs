@@ -22,7 +22,7 @@ import System.Posix (Handler (..), installHandler, sigTERM)
 import Types
 import Database.Selda.PostgreSQL (pgOpen')
 import Database.Selda.Backend (runSeldaT)
-import RompePiernas.Persistence (createTables)
+import BananaSplit.Persistence (createTables)
 import qualified Site.Server
 
 main :: IO ()

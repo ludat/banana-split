@@ -7,7 +7,7 @@
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
-module RompePiernas
+module BananaSplit
   ( Grupo(..)
   , Participante(..)
   , ParticipanteId

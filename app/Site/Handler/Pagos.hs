@@ -31,8 +31,8 @@ import Lucid.Htmx
 import Types
 import Site.HTML
 import Data.String.Interpolate
-import RompePiernas.Persistence (fetchGrupo, fetchParticipantes, savePago, deletePago, updatePago)
-import RompePiernas
+import BananaSplit.Persistence (fetchGrupo, fetchParticipantes, savePago, deletePago, updatePago)
+import BananaSplit
 import Web.FormUrlEncoded (FromForm (..), Form, parseUnique, lookupAll)
 import Data.Maybe (listToMaybe, fromJust, fromMaybe)
 import Data.ULID (ULID)

@@ -3,10 +3,10 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedRecordDot #-}
-module RompePiernas.Persistence where
+module BananaSplit.Persistence where
 
 import Database.Selda
-import RompePiernas qualified as M
+import BananaSplit qualified as M
 import Data.ULID (ULID)
 import Database.Selda.SqlType
 import Data.Data (Proxy)
@@ -14,7 +14,7 @@ import Data.ULID qualified as ULID
 import Data.Text (pack, unpack)
 import Text.Read (readMaybe)
 import Data.Either (fromRight)
-import Money qualified 
+import Money qualified
 import Data.Function ((&))
 import qualified Data.Ratio as Ratio
 import Data.Ratio ((%))

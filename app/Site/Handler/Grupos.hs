@@ -31,8 +31,8 @@ import Lucid.Htmx
 
 import Types
 import Site.HTML
-import RompePiernas.Persistence (createGrupo, fetchGrupo, addParticipante)
-import RompePiernas
+import BananaSplit.Persistence (createGrupo, fetchGrupo, addParticipante)
+import BananaSplit
 import Web.FormUrlEncoded (FromForm (..), Form)
 import Data.ULID (ULID)
 import Database.Selda.Backend

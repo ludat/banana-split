@@ -50,9 +50,10 @@
         banana-split = pkgs.haskell.lib.buildStackProject {
           name = "banana-split";
           src = ./.;
+          nativeBuildInputs = [pkgs.git];
+          doCheck = false;
           buildInputs = [
             pkgs.zlib
-            pkgs.git
             pkgs.blas
             pkgs.lapack
             pkgs.glpk
@@ -62,6 +63,22 @@
       in {
         packages = {
           inherit banana-split;
+          docker = pkgs.dockerTools.buildImage {
+            name = "banana-split";
+            tag = "latest";
+            created = "now";
+            copyToRoot = pkgs.buildEnv {
+              name = "image-root";
+              paths = with pkgs; [
+                banana-split
+                iana-etc
+                cacert
+              ];
+            };
+            config = {
+              Cmd = "/bin/banana-split";
+            };
+          };
           default = banana-split;
         };
         devShells.default = pkgs.mkShell {

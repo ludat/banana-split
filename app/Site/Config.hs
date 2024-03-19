@@ -4,4 +4,4 @@ import Conferer qualified
 
 createConfig :: IO Conferer.Config
 createConfig =
-  Conferer.mkConfig "rompepiernas"
+  Conferer.mkConfig "bananasplit"
