@@ -1,5 +1,5 @@
 
-module Site.HTML (HTML, RawHtml(RawHtml)) where
+module Site.HTML (HTML, RawHtml(..)) where
 
 import Data.List.NonEmpty qualified as NE
 import Data.Typeable (Typeable)

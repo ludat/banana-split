@@ -1,8 +1,8 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE StrictData #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 module RompePiernas.Persistence where
 
 import Database.Selda
@@ -99,11 +99,12 @@ fetchGrupo ulid = do
   grupos :: [GrupoRecord] <- query $ do
     select grupoTable `suchThat` (\grupo -> grupo ! #grupoId .== literal ulid)
   case grupos of
-    [GrupoRecord {grupoId}] -> do
+    [GrupoRecord {grupoId, grupoNombre}] -> do
       participantes <- fetchParticipantes ulid
       pagos <- fetchPagos ulid
       pure $ Just $ M.Grupo
         { M.grupoId = grupoId
+        , M.grupoNombre = grupoNombre
         , M.pagos = pagos
         , M.participantes = participantes
         }
@@ -255,20 +256,21 @@ fetchParticipantes ulid = do
   pure $ fmap record2Participante participantesR
   where
     record2Participante :: ParticipanteRecord -> M.Participante
-    record2Participante ParticipanteRecord{..} =
+    record2Participante participante =
       M.Participante
-      { M.participanteId = participanteId
-      , M.participanteNombre = participanteNombre
+      { M.participanteId = participante.participanteId
+      , M.participanteNombre = participante.participanteNombre
       }
 
-createGrupo :: MonadSelda m => m (M.Grupo)
-createGrupo = do
+createGrupo :: MonadSelda m => Text -> m (M.Grupo)
+createGrupo nombre = do
   ulid <- liftIO $ ULID.getULID
   insert_ grupoTable
-    [ GrupoRecord { grupoId = ulid, grupoNombre = "un nombre (hardcodeado)" }
+    [ GrupoRecord { grupoId = ulid, grupoNombre = nombre }
     ]
   pure $ M.Grupo
     { M.grupoId = ulid
+    , M.grupoNombre = nombre
     , M.pagos = []
     , M.participantes = []
     }

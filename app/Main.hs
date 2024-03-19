@@ -23,9 +23,9 @@ import System.Posix (Handler (..), installHandler, sigTERM)
 
 import Types
 import Database.Selda.PostgreSQL (pgOpen')
-import Debug.Trace
 import Database.Selda.Backend (runSeldaT)
 import RompePiernas.Persistence (createTables)
+import qualified Site.Server
 
 main :: IO ()
 main = runBackend
@@ -48,9 +48,9 @@ runBackend = do
             & Warp.setPort 8000
         )
 
-  conn <- pgOpen' Nothing $ traceShowId connString
+  conn <- pgOpen' Nothing connString
   let appState = App conn
 
   runSeldaT createTables conn
   putStrLn $ "Listening on port " ++ show (Warp.getPort settings) ++ " ..."
-  Warp.runSettings settings $ logStdoutDev $ Site.Api.app appState
+  Warp.runSettings settings $ logStdoutDev $ Site.Server.app appState

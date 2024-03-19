@@ -4,23 +4,21 @@ allow-newer: true
 
 packages:
 - .
-- digestive-functors/digestive-functors
+# - digestive-functors/digestive-functors
 
 extra-deps:
   - hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
   - glpk-hs-0.8@sha256:acebd2f8b452f197d4bec74678e8a3ce41eb02cb3cd77a051fb92829df9ffd6b,2616
   - gasp-1.3.0.0@sha256:f1acd6fb521dbeded3d7737449f7139fb67c02da1645b51bc3ab31740f0869cf,725
-  - git: https://github.com/pkamenarsky/replica.git
-    commit: 'ba25d5095a328b6fdacbb2a7ff61c89823e54d77'
+  # - git: https://github.com/pkamenarsky/replica.git
+  #   commit: 'ba25d5095a328b6fdacbb2a7ff61c89823e54d77'
   - lucid2-htmx-0.1.0.8@sha256:cde494a8e4d199dfcc59331f41c72e1a60c3d2106e1bee56e61d97b09425f850,1541
-  # - lucid-htmx-0.1.0.7@sha256:05d0bec34cd3c3d99d69a02c5c5f87385a9e53de8fa2e57a0c7c477dd3e5a6af,1491
   - servant-htmx-0.1.0.2@sha256:cdafd3165d28694ec4bf81fff3b87b4721415293d75a394a97c26d0d4d57e38c,1817
 
   - selda-0.5.2.0@sha256:9685a946db19b75d2d3ca141a6f139457672abecd0bb963ab4d4ae01454fec86,2719
   - selda-postgresql-0.1.8.2@sha256:54270759b5824f1ff5382d7c56c7e6b3800fd05180490f298a50af63271ef16e,1326
   - selda-json-0.1.1.1@sha256:3abe81b0d30f89621c53ad7f711fdbc1010ecdb2c47652533966c82a7724ebc1,796
-  # - digestive-functors-0.8.4.2@sha256:badff1797b6dcd860a48ed4558985b2f6bec501e1016fa5afd9d7d6b0d8e4c08,3364
-  - ditto-0.4.1@sha256:92c1b1ad0d4c1dd420447a02cc75b2b335e1069818bc327279a86a217268a580,1131
+  - digestive-functors-0.8.4.2@sha256:badff1797b6dcd860a48ed4558985b2f6bec501e1016fa5afd9d7d6b0d8e4c08,3364
 
 
   # - git: https://github.com/pkamenarsky/concur-replica.git
