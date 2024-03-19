@@ -41,6 +41,7 @@ import Text.Digestive qualified as Digestive
 import Data.Text qualified as Text
 import Site.Api
 import Site.Layout (navBarItemsForGrupo)
+import Control.Monad (forM_)
 
 handleIndex :: AppHandler RawHtml
 handleIndex = do

@@ -5,26 +5,34 @@
 
 packages:
 - completed:
+    commit: efcb8354daa1205de2b862898353da2e4beb76b2
+    git: https://github.com/ludat/glpk-hs.git
+    name: glpk-hs
+    pantry-tree:
+      sha256: 3d0ca253b3b7b62b8df747200c6bc720978000e2de7665e3f991f74565d7edaa
+      size: 1755
+    version: '0.8'
+  original:
+    commit: efcb8354daa1205de2b862898353da2e4beb76b2
+    git: https://github.com/ludat/glpk-hs.git
+- completed:
+    commit: 786e8fd72cc51020220f45aa3627b0cf8931cf9d
+    git: https://github.com/aergus/gasp.git
+    name: gasp
+    pantry-tree:
+      sha256: 7b2ecd84ce13d79174e631255acdd9d02b59374c6f5127bce39ff91f3cc07851
+      size: 1644
+    version: 1.4.0.0
+  original:
+    commit: 786e8fd72cc51020220f45aa3627b0cf8931cf9d
+    git: https://github.com/aergus/gasp.git
+- completed:
     hackage: hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
     pantry-tree:
       sha256: 8e781b7b10d93e1def514c48da663b1b046ed5c23857938bad1229e9f4a589c1
       size: 660
   original:
     hackage: hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
-- completed:
-    hackage: glpk-hs-0.8@sha256:acebd2f8b452f197d4bec74678e8a3ce41eb02cb3cd77a051fb92829df9ffd6b,2616
-    pantry-tree:
-      sha256: b32cd98e6256593aa5041d68716768924310bfa88182e75cba12c1e93728b79b
-      size: 1413
-  original:
-    hackage: glpk-hs-0.8@sha256:acebd2f8b452f197d4bec74678e8a3ce41eb02cb3cd77a051fb92829df9ffd6b,2616
-- completed:
-    hackage: gasp-1.3.0.0@sha256:f1acd6fb521dbeded3d7737449f7139fb67c02da1645b51bc3ab31740f0869cf,725
-    pantry-tree:
-      sha256: a16b5b6ef8775f5cd61b4903a9a84a371c3843c1d7feafbdfae3dfd05c6dd2d9
-      size: 279
-  original:
-    hackage: gasp-1.3.0.0@sha256:f1acd6fb521dbeded3d7737449f7139fb67c02da1645b51bc3ab31740f0869cf,725
 - completed:
     hackage: lucid2-htmx-0.1.0.8@sha256:cde494a8e4d199dfcc59331f41c72e1a60c3d2106e1bee56e61d97b09425f850,1541
     pantry-tree:
@@ -40,26 +48,44 @@ packages:
   original:
     hackage: servant-htmx-0.1.0.2@sha256:cdafd3165d28694ec4bf81fff3b87b4721415293d75a394a97c26d0d4d57e38c,1817
 - completed:
-    hackage: selda-0.5.2.0@sha256:9685a946db19b75d2d3ca141a6f139457672abecd0bb963ab4d4ae01454fec86,2719
+    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
+    git: https://github.com/jchia/selda.git
+    name: selda
     pantry-tree:
-      sha256: 787a6a35462d5ded8fc544f33c8f608748144d53208f010c50b14924c5304387
-      size: 2314
+      sha256: 1eca357bad6254a678ba993b390a87c8901f126511b7fade5106f585c87be9ea
+      size: 2365
+    subdir: selda
+    version: 0.5.2.1
   original:
-    hackage: selda-0.5.2.0@sha256:9685a946db19b75d2d3ca141a6f139457672abecd0bb963ab4d4ae01454fec86,2719
+    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
+    git: https://github.com/jchia/selda.git
+    subdir: selda
 - completed:
-    hackage: selda-postgresql-0.1.8.2@sha256:54270759b5824f1ff5382d7c56c7e6b3800fd05180490f298a50af63271ef16e,1326
+    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
+    git: https://github.com/jchia/selda.git
+    name: selda-postgresql
     pantry-tree:
-      sha256: 50d568908421d9de7917bb176d76b9fa1c4f68a59418cde70923c05c85a8dab1
-      size: 269
+      sha256: db2889fdd283b92d615d5be660e1386ea0441a7ed79da5210c277bb7cb52abc1
+      size: 320
+    subdir: selda-postgresql
+    version: 0.1.8.2
   original:
-    hackage: selda-postgresql-0.1.8.2@sha256:54270759b5824f1ff5382d7c56c7e6b3800fd05180490f298a50af63271ef16e,1326
+    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
+    git: https://github.com/jchia/selda.git
+    subdir: selda-postgresql
 - completed:
-    hackage: selda-json-0.1.1.1@sha256:3abe81b0d30f89621c53ad7f711fdbc1010ecdb2c47652533966c82a7724ebc1,796
+    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
+    git: https://github.com/jchia/selda.git
+    name: selda-json
     pantry-tree:
-      sha256: c50740b941fce1d46224d5a28c460b0df389b007b0fd1a0f4fe69983f0a4bc6f
+      sha256: cca637099136de66891b96a9839565e37ec05f8af21e7873142ccfee530bc189
       size: 127
+    subdir: selda-json
+    version: 0.1.1.1
   original:
-    hackage: selda-json-0.1.1.1@sha256:3abe81b0d30f89621c53ad7f711fdbc1010ecdb2c47652533966c82a7724ebc1,796
+    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
+    git: https://github.com/jchia/selda.git
+    subdir: selda-json
 - completed:
     hackage: digestive-functors-0.8.4.2@sha256:badff1797b6dcd860a48ed4558985b2f6bec501e1016fa5afd9d7d6b0d8e4c08,3364
     pantry-tree:
@@ -69,8 +95,8 @@ packages:
     hackage: digestive-functors-0.8.4.2@sha256:badff1797b6dcd860a48ed4558985b2f6bec501e1016fa5afd9d7d6b0d8e4c08,3364
 snapshots:
 - completed:
-    sha256: abcc4a65c15c7c2313f1a87f01bfd4d910516e1930b99653eef1d2d006515916
-    size: 640074
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/21/24.yaml
+    sha256: 6f0bea3ba5b07360f25bc886e8cff8d847767557a492a6f7f6dcb06e3cc79ee9
+    size: 712905
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/13.yaml
   original:
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/21/24.yaml
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/13.yaml

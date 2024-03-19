@@ -50,6 +50,7 @@ import Text.Read (readMaybe)
 import Site.Api
 import Site.Layout (navBarItemsForGrupo)
 import Lucid.Base (makeAttributes)
+import Control.Monad (forM_)
 
 _pagosUpdatedEvent :: Text
 _pagosUpdatedEvent = "pagos-updated"

@@ -10,8 +10,6 @@ import Control.Monad.IO.Class (liftIO)
 
 import Data.Function ((&))
 
-import Database.PostgreSQL.Simple qualified as PG
-
 import Network.Wai.Handler.Warp (Settings)
 import Network.Wai.Handler.Warp qualified as Warp
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)

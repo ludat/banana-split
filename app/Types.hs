@@ -11,13 +11,7 @@ module Types where
 
 import Control.Monad.Reader
 
-import Data.ByteString (ByteString)
-import Data.Text (Text)
-
-import Database.PostgreSQL.Simple qualified as PG
-
 import Servant
-import GHC.Conc (TVar)
 import Database.Selda.Backend
 import Database.Selda.PostgreSQL
 

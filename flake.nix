@@ -6,10 +6,10 @@
   outputs = { self, nixpkgs, flake-utils }:
     flake-utils.lib.eachDefaultSystem (system:
       let
-        pkgs = nixpkgs.legacyPackages.${system};
+        pkgs = import nixpkgs { inherit system; };
 
         hPkgs =
-          pkgs.haskell.packages.ghc948; # need to match Stackage LTS version
+          pkgs.haskell.packages.ghc964; # need to match Stackage LTS version
                                         # from stack.yaml resolver
 
         myDevTools = [
@@ -21,9 +21,8 @@
           hPkgs.haskell-language-server # LSP server for editor
           hPkgs.implicit-hie # auto generate LSP hie.yaml file from cabal
           hPkgs.retrie # Haskell refactoring tool
-          # hPkgs.cabal-install
           stack-wrapped
-          pkgs.zlib # External C library needed by some Haskell packages
+          pkgs.zlib
           pkgs.blas
           pkgs.lapack
           pkgs.glpk
@@ -48,7 +47,23 @@
               "
           '';
         };
+        banana-split = pkgs.haskell.lib.buildStackProject {
+          name = "banana-split";
+          src = ./.;
+          buildInputs = [
+            pkgs.zlib
+            pkgs.git
+            pkgs.blas
+            pkgs.lapack
+            pkgs.glpk
+            pkgs.postgresql
+          ];
+        };
       in {
+        packages = {
+          inherit banana-split;
+          default = banana-split;
+        };
         devShells.default = pkgs.mkShell {
           buildInputs = myDevTools;
 
