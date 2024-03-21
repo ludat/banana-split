@@ -29,3 +29,16 @@ jobs:
         docker push ghcr.io/ludat/banana-split:latest
         docker tag banana-split ghcr.io/ludat/banana-split:${{ github.sha }}
         docker push ghcr.io/ludat/banana-split:${{ github.sha }}
+
+    - name: Trigger infra-cluster deploy
+      # https://gitlab.com/10Pines/infra/infra-cluster
+      # Infra cluster project id = 32472203
+      run: |
+        curl -v \
+         -X POST \
+         -F ref=main \
+         -F token="${{ secrets.GITLAB_INFRA_TOKEN }}" \
+         -F "variables[APP]=banana-split" \
+         -F "variables[ENV]=prod" \
+         -F "variables[HELM_VALUES]=revision: ${{ github.sha }}" \
+          https://gitlab.com/api/v4/projects/32472203/trigger/pipeline
