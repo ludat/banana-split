@@ -1,5 +1,6 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Site.Server where
@@ -10,6 +11,7 @@ import Control.Monad.Reader
 
 import Network.Wai
 
+import Data.FileEmbed
 import Servant
 import Servant.Server.Generic
 
@@ -37,8 +39,8 @@ serverT =
     , _routePagoDelete = handlePagoDelete
 
     , _routeStatic =
-      -- serveDirectoryWebApp "./public"
-      serveDirectoryFileServer "./public"
+      serveDirectoryEmbedded $(embedDir "public")
+
     }
 
 nt :: App -> AppHandler a -> Handler a

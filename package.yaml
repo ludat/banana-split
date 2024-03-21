@@ -35,6 +35,8 @@ dependencies:
   - unordered-containers
   - wai
   - wai-extra
+  - wai-app-static
+  - file-embed
   - warp
 
 language: GHC2021
