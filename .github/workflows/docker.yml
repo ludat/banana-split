@@ -34,7 +34,7 @@ jobs:
       # https://gitlab.com/10Pines/infra/infra-cluster
       # Infra cluster project id = 32472203
       run: |
-        curl -v \
+        curl \
          -X POST \
          -F ref=main \
          -F token="${{ secrets.GITLAB_INFRA_TOKEN }}" \
