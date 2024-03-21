@@ -10,4 +10,20 @@ jobs:
     - uses: cachix/install-nix-action@v25
       with:
         github_access_token: ${{ secrets.GITHUB_TOKEN }}
+
     - run: nix build .#docker --option sandbox relaxed -L
+
+    - name: Login to GitHub Container Registry
+      uses: docker/login-action@v2
+      with:
+        registry: ghcr.io
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push image to ghcr
+      run: |
+        docker load < result
+        docker tag banana-split ghcr.io/ludat/banana-split:latest
+        docker push ghcr.io/ludat/banana-split:latest
+        docker tag banana-split ghcr.io/ludat/banana-split:${{ github.sha }}
+        docker push ghcr.io/ludat/banana-split:${{ github.sha }}
