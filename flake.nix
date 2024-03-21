@@ -36,6 +36,7 @@
         # --no-install-ghc  # Don't try to install GHC if no matching GHC found on PATH
         stack-wrapped = pkgs.symlinkJoin {
           name = "stack"; # will be available as the usual `stack` in terminal
+          version = pkgs.stack.version;
           paths = [ pkgs.stack ];
           buildInputs = [ pkgs.makeWrapper ];
           postBuild = ''
@@ -47,17 +48,22 @@
               "
           '';
         };
+
         banana-split = pkgs.haskell.lib.buildStackProject {
           name = "banana-split";
           src = ./.;
-          nativeBuildInputs = [pkgs.git];
+          nativeBuildInputs = with pkgs; [git];
           doCheck = false;
-          buildInputs = [
-            pkgs.zlib
-            pkgs.blas
-            pkgs.lapack
-            pkgs.glpk
-            pkgs.postgresql
+          stack = stack-wrapped;
+          preBuild = ''
+            ghc --version
+          '';
+          buildInputs = with pkgs; [
+            zlib
+            blas
+            lapack
+            glpk
+            postgresql
           ];
         };
       in {
