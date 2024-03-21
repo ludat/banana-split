@@ -12,6 +12,14 @@
           pkgs.haskell.packages.ghc964; # need to match Stackage LTS version
                                         # from stack.yaml resolver
 
+        bananasplitDeps = with pkgs; [
+          zlib
+          blas
+          lapack
+          glpk
+          postgresql
+        ];
+
         myDevTools = [
           hPkgs.ghc # GHC compiler in the desired version (will be available on PATH)
           hPkgs.ghcid # Continuous terminal Haskell compile checker
@@ -22,12 +30,7 @@
           hPkgs.implicit-hie # auto generate LSP hie.yaml file from cabal
           hPkgs.retrie # Haskell refactoring tool
           stack-wrapped
-          pkgs.zlib
-          pkgs.blas
-          pkgs.lapack
-          pkgs.glpk
-          pkgs.postgresql
-        ];
+        ] ++ bananasplitDeps;
 
         # Wrap Stack to work with our Nix integration. We don't want to modify
         # stack.yaml so non-Nix users don't notice anything.
@@ -55,16 +58,7 @@
           nativeBuildInputs = with pkgs; [git];
           doCheck = false;
           stack = stack-wrapped;
-          preBuild = ''
-            ghc --version
-          '';
-          buildInputs = with pkgs; [
-            zlib
-            blas
-            lapack
-            glpk
-            postgresql
-          ];
+          buildInputs = bananasplitDeps;
         };
       in {
         packages = {
