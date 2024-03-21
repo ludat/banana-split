@@ -82,7 +82,7 @@
               ];
             };
             config = {
-              Cmd = "/bin/banana-split";
+              Cmd = ["/bin/banana-split"];
             };
           };
           default = banana-split;
