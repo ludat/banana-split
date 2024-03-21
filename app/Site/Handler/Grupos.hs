@@ -42,13 +42,14 @@ import Data.Text qualified as Text
 import Site.Api
 import Site.Layout (navBarItemsForGrupo)
 import Control.Monad (forM_)
+import Lucid.Base (makeAttributes)
 
 handleIndex :: AppHandler RawHtml
 handleIndex = do
   view <- Digestive.getForm "grupo" createGrupoForm
 
   renderHtml $ htmlLayout mempty $ do
-    createGrupoView view
+    main_ [class_ "container"] $ createGrupoView view
 
 handleCreateGrupo :: Form -> AppHandler RawHtml
 handleCreateGrupo form = do
@@ -80,23 +81,23 @@ createGrupoView view = do
   form_
     [ hxPost_ $ ("/" <>) $ toUrlPiece $ fieldLink _routeGrupoPost
     ] $ do
-    div_ [class_ "field"] $ do
-      label_ [class_ "label"] "Nombre"
-      input_
-        [ value_ $ Digestive.fieldInputText "name" view
-        , name_ $ Digestive.absoluteRef "name" view
-        , id_ $ Digestive.absoluteRef "name" view
-        , class_ "input"
-        , type_ "text"
-        , placeholder_ "After del viernes"
-        , if Digestive.errors "name" view & null
-          then mempty
-          else class_ "is-danger"
-        ]
+    fieldset_ $ do
+      label_ $ do
+        "Nombre"
+        input_
+          [ value_ $ Digestive.fieldInputText "name" view
+          , name_ $ Digestive.absoluteRef "name" view
+          , id_ $ Digestive.absoluteRef "name" view
+          , type_ "text"
+          , placeholder_ "After del viernes"
+          , if Digestive.errors "name" view & null
+            then mempty
+            else makeAttributes "aria-invalid" "true"
+          ]
 
-      forM_ (Digestive.errors "name" view) $ \t -> do
-        p_ [class_ "help is-danger"] $ toHtml t
-    button_ [class_ "button is-primary"] "Crear nuevo grupo"
+        forM_ (Digestive.errors "name" view) $ \t -> do
+          small_ $ toHtml t
+    button_ "Crear nuevo grupo"
 
 handleShowGrupo :: ULID -> AppHandler RawHtml
 handleShowGrupo grupoId = do
@@ -105,14 +106,14 @@ handleShowGrupo grupoId = do
 
   renderHtml $ htmlLayout (navBarItemsForGrupo grupo) $ do
       section_ [id_ "pagos"] $ do
-        h3_ [class_ "title"] "Netos:"
+        h3_ "Netos:"
         forM_ (calcularDeudasTotales grupo & deudasToPairs) $ \(participante, monto) ->
           p_ $ do
             toHtml $ buscarParticipante grupo participante & participanteNombre
             ": "
             toHtml monto
 
-        h3_ [class_ "title"] "Transferencias para saldar deudas"
+        h3_ "Transferencias para saldar deudas"
         forM_ (grupo & calcularDeudasTotales & resolverDeudasNaif) $ \(Transaccion pagador deudor monto) -> do
           p_ $ do
             toHtml $ buscarParticipante grupo pagador & participanteNombre
@@ -148,8 +149,8 @@ handleShowParticipantes grupoId = do
   view <- Digestive.getForm "participante" newParticipanteForm
 
   renderHtml $ htmlLayout (navBarItemsForGrupo grupo) $ do
-    newParticipanteView grupoId view
-    div_ [id_ "participantes"] $ do
+    main_ [class_ "container"] $ newParticipanteView grupoId view
+    div_ [id_ "participantes", class_ "container"] $ do
       forM_ grupo.participantes $ \p ->
         p_ $ toHtml p.participanteNombre
 
@@ -172,22 +173,22 @@ newParticipanteView grupoId view =
   form_
     [ hxPost_ $ ("/" <>) $ toUrlPiece $ fieldLink _routeGrupoParticipanteAdd grupoId
     ] $ do
-    div_ [class_ "field"] $ do
-      label_ [class_ "label"] "Nombre"
-      input_
-        [ value_ $ Digestive.fieldInputText "name" view
-        , name_ $ Digestive.absoluteRef "name" view
-        , id_ $ Digestive.absoluteRef "name" view
-        , class_ "input"
-        , type_ "text"
-        , placeholder_ "Juan Perez"
-        , if Digestive.errors "name" view & null
-          then mempty
-          else class_ "is-danger"
-        ]
+    fieldset_ $ do
+      label_ $ do
+        "Nombre"
+        input_
+          [ value_ $ Digestive.fieldInputText "name" view
+          , name_ $ Digestive.absoluteRef "name" view
+          , id_ $ Digestive.absoluteRef "name" view
+          , type_ "text"
+          , placeholder_ "Juan Perez"
+          , if Digestive.errors "name" view & null
+            then mempty
+            else makeAttributes "aria-invalid" "true"
+          ]
 
-      forM_ (Digestive.errors "name" view) $ \t -> do
-        p_ [class_ "help is-danger"] $ toHtml t
+        forM_ (Digestive.errors "name" view) $ \t -> do
+          small_ $ toHtml t
     button_ [class_ "button is-primary"] "Agregar Participante"
 
 runSelda :: SeldaT PG AppHandler a -> AppHandler a

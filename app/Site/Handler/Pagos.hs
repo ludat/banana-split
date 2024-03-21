@@ -49,7 +49,7 @@ import qualified Text.Digestive.Form.List as Digestive
 import Text.Read (readMaybe)
 import Site.Api
 import Site.Layout (navBarItemsForGrupo)
-import Lucid.Base (makeAttributes)
+import Lucid.Base (makeAttributes, makeElement)
 import Control.Monad (forM_)
 
 _pagosUpdatedEvent :: Text
@@ -112,18 +112,21 @@ handlePagoNew grupoId = do
   view <- Digestive.getForm "pago" $ pagosForm (Just pago)
 
   renderHtml $ do
-    div_ [class_ "modal is-active"] $ do
-      div_
-        [ class_ "modal-background"
-        , makeAttributes "hx-on:click" "this.closest('.modal').remove()"
-        ] mempty
-      div_ [ class_ "modal-content" ] $ do
-        div_ [ class_ "box" ] $ do
+    makeElement "dialog"
+      [ makeAttributes "open" ""
+      -- TODO aca estaria bueno que cuando se clickea el backdrop el modal se fuera
+      -- , makeAttributes "hx-on:click" "this.remove()"
+      ] $ do
+      article_ $ do
+        header_ $ do
+          button_
+            [ makeAttributes "hx-on:click" "this.closest('dialog').remove()"
+            , makeAttributes "aria-label" "Close"
+            , rel_ "prev"
+            ] mempty
+          p_ $ strong_ "Editar pago"
+        p_ $ do
           pagosView grupoId Nothing participantes view
-      button_
-        [ class_ "modal-close is-large"
-        , makeAttributes "hx-on:click" "this.closest('.modal').remove()"
-        ] mempty
 
 handlePagoNewPatch :: ULID -> Maybe ULID -> Form -> AppHandler RawHtml
 handlePagoNewPatch grupoId pagoId form = do
@@ -198,18 +201,21 @@ handlePagoEdit grupoId pId = do
   view <- Digestive.getForm "pago" $ pagosForm pago
 
   renderHtml $ do
-    div_ [class_ "modal is-active"] $ do
-      div_
-        [ class_ "modal-background"
-        , makeAttributes "hx-on:click" "this.closest('.modal').remove()"
-        ] mempty
-      div_ [ class_ "modal-content" ] $ do
-        div_ [ class_ "box" ] $ do
+    makeElement "dialog"
+      [ makeAttributes "open" ""
+      -- TODO aca estaria bueno que cuando se clickea el backdrop el modal se fuera
+      -- , makeAttributes "hx-on:click" "this.remove()"
+      ] $ do
+      article_ $ do
+        header_ $ do
+          button_
+            [ makeAttributes "hx-on:click" "this.closest('dialog').remove()"
+            , makeAttributes "aria-label" "Close"
+            , rel_ "prev"
+            ] mempty
+          p_ $ strong_ "Editar pago"
+        p_ [] $ do
           pagosView grupoId (Just pId) grupo.participantes view
-      button_
-        [ class_ "modal-close is-large"
-        , makeAttributes "hx-on:click" "this.closest('.modal').remove()"
-        ] mempty
 
 handlePagoDelete :: ULID -> ULID -> AppHandler (Headers '[HXTrigger] RawHtml)
 handlePagoDelete _grupoId pagoId = do
@@ -223,30 +229,31 @@ handlePagosGet grupoId = do
     `orElseMay` throwHtml (h1_ $ toHtml @Text "grupo no encontrado")
 
   renderHtml $ htmlLayout (navBarItemsForGrupo grupo) $ do
-    section_ [class_ "section"] $ do
-      div_ [class_ "container"] $ do
-        h1_ [class_ "title"] "Pagos"
-      div_ [class_ "container"] $ do
-        button_
-          [ hxGet_  $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNew grupo.grupoId
-          , hxSwap_ "beforeend"
-          , hxTarget_ "body"
-          ]
-          "Agregar pago"
+    main_ [class_ "container"] $ do
+      section_ $ do
+        h1_ "Pagos"
+      section_ $ do
+        div_ [role_ "group"] $ do
+          button_
+            [ hxGet_  $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNew grupo.grupoId
+            , hxSwap_ "beforeend"
+            , hxTarget_ "body"
+            ]
+            "Agregar pago"
 
-        button_
-          [ hxGet_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagosGet grupo.grupoId
-          , hxTrigger_ [i|click, #{_pagosUpdatedEvent} from:body|]
-          , hxSelect_ "#pagos"
-          , hxTarget_ "#pagos"
-          , hxSwap_ "outerHTML"
-          ] "Refrescar pagos"
-      div_
+          button_
+            [ hxGet_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagosGet grupo.grupoId
+            , hxTrigger_ [i|click, #{_pagosUpdatedEvent} from:body|]
+            , hxSelect_ "#pagos"
+            , hxTarget_ "#pagos"
+            , hxSwap_ "outerHTML"
+            , class_ "secondary"
+            ] "Refrescar pagos"
+      section_
         [ id_ "pagos"
-        , class_ "columns"
         ] $ do
         forM_ grupo.pagos $ \pago -> do
-          div_ [class_ "column"] $ renderPago grupo grupoId pago
+          renderPago grupo grupoId pago
 
 data PagoFormEvent
   = RemoveParte TipoParte Int
@@ -288,43 +295,49 @@ pagosView grupoId existentPago participantes view =
       existentPago
     , hxTarget_ "this"
     , hxSwap_ "outerHTML"
-    , makeAttributes "hx-on:htmx:after-request" "this.closest('.modal').remove()"
+    , makeAttributes "hx-on:htmx:after-request" "this.closest('dialog[open]').remove()"
     , id_ "pagos-form"
     ] $ do
-    p_ $ do
-      label_ "nombre"
-      input_
-        [ name_ $ Digestive.absoluteRef "nombre" view
-        , value_ $ Digestive.fieldInputText "nombre" view
-        ]
-      forM_ (Digestive.errors "nombre" view) $ \err -> do
-        span_ $ toHtml err
+    fieldset_ $ do
+      label_ $ do
+        "Nombre"
+        input_
+          [ name_ $ Digestive.absoluteRef "nombre" view
+          , id_ $ Digestive.absoluteRef "nombre" view
+          , value_ $ Digestive.fieldInputText "nombre" view
+          , if Digestive.errors "nombre" view & null
+            then mempty
+            else makeAttributes "aria-invalid" "true"
+          ]
+        forM_ (Digestive.errors "nombre" view) $ \err -> do
+          small_ $ toHtml err
 
-    p_ $ do
-      label_ "monto"
-      input_
-        [ name_ $ Digestive.absoluteRef "monto" view
-        , value_ $ Digestive.fieldInputText "monto" view
-        , placeholder_ "1000"
-        ]
-      forM_ (Digestive.errors "monto" view) $ \err -> do
-        span_ $ toHtml err
+    fieldset_ $ do
+      label_ $ do
+        "Monto"
+        input_
+          [ name_ $ Digestive.absoluteRef "monto" view
+          , id_ $ Digestive.absoluteRef "monto" view
+          , value_ $ Digestive.fieldInputText "monto" view
+          , placeholder_ "1000"
+          , if Digestive.errors "monto" view & null
+            then mempty
+            else makeAttributes "aria-invalid" "true"
+          ]
+        forM_ (Digestive.errors "monto" view) $ \err -> do
+          small_ $ toHtml err
 
     div_
       [ id_ "seccion-pagadores"
       , hxVals_ [i|{"tipoParte": "pagador"}|]
       ] $ do
-      label_ "Pagadores"
-      div_
-        [ id_ "pagadores"
-        , class_ "partes"
-        ] $ do
-        input_
-          [ mempty
-          , type_ "hidden"
-          , value_ $ Digestive.fieldInputText "pagadores.indices" view
-          , name_ $ Digestive.absoluteRef "pagadores.indices" view
-          ]
+      h5_ "Pagadores"
+      input_
+        [ type_ "hidden"
+        , name_ $ Digestive.absoluteRef "pagadores.indices" view
+        , value_ $ Digestive.fieldInputText "pagadores.indices" view
+        ]
+      div_ $ do
         forM_ (Digestive.fieldInputText "pagadores.indices" view & Digestive.parseIndices) $ \index -> do
           parteView grupoId existentPago participantes index (Digestive.makeListSubView "pagadores" index view)
       div_ [] $ do
@@ -333,33 +346,29 @@ pagosView grupoId existentPago participantes view =
           , type_ "button"
           , hxVals_ "{\"event\": \"AGREGAR_PARTE\"}"
           ]
-          "agregar pagador"
+          "Agregar Pagador"
 
     div_
       [ id_ "seccion-deudores"
       , hxVals_ [i|{"tipoParte": "deudor"}|]
       ] $ do
-      label_ "Deudores"
-      div_
-        [ id_ "deudores"
-        , class_ "partes"
-        ] $ do
-        input_
-          [ mempty
-          , type_ "hidden"
-          , value_ $ Digestive.fieldInputText "deudores.indices" view
-          , name_ $ Digestive.absoluteRef "deudores.indices" view
-          ]
+      h5_ "Deudores"
+      input_
+        [ type_ "hidden"
+        , value_ $ Digestive.fieldInputText "deudores.indices" view
+        , name_ $ Digestive.absoluteRef "deudores.indices" view
+        ]
+      div_ $ do
         forM_ (Digestive.fieldInputText "deudores.indices" view & Digestive.parseIndices) $ \index -> do
           parteView grupoId existentPago participantes index (Digestive.makeListSubView "deudores" index view)
 
-      div_ [] $ do
+      div_ $ do
         button_
           [ hxPatch_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNewPatch grupoId existentPago
           , type_ "button"
           , hxVals_ "{\"event\": \"AGREGAR_PARTE\"}"
           ]
-          "agregar deudor"
+          "Agregar deudor"
 
     p_ $ button_ 
         [ type_ "submit"
@@ -371,7 +380,7 @@ pagosView grupoId existentPago participantes view =
 parteView :: Monad m => ULID -> Maybe ULID -> [Participante] -> Int -> Digestive.View Text -> HtmlT m ()
 parteView grupoId pagoId participantes index view = do
   let tipo = Digestive.fieldInputText "tipo" view
-  div_ [class_ "parte-form" ] $ do
+  fieldset_ [role_ "group"] $ do
     participantsView participantes (Digestive.subView "participante" view)
     input_
       [ name_ $ Digestive.absoluteRef "cuota" view
@@ -385,6 +394,7 @@ parteView grupoId pagoId participantes index view = do
       ]
     select_
       [ name_ $ Digestive.absoluteRef "tipo" view
+      , id_ $ Digestive.absoluteRef "tipo" view
       , hxPatch_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNewPatch grupoId pagoId
       ] $ do
       option_
@@ -401,11 +411,11 @@ parteView grupoId pagoId participantes index view = do
             "MontoFijo" -> mempty
             _ -> mempty
         ] "Ponderado"
-    forM_ (Digestive.errors "" view) $ span_ . toHtml
-    forM_ (Digestive.errors "tipo" view) $ span_ . toHtml
-    forM_ (Digestive.errors "monto" view) $ span_ . toHtml
-    forM_ (Digestive.errors "cuota" view) $ span_ . toHtml
-    forM_ (Digestive.errors "participante" view) $ span_ . toHtml
+    forM_ (Digestive.errors "" view) $ small_ . toHtml
+    forM_ (Digestive.errors "tipo" view) $ small_ . toHtml
+    forM_ (Digestive.errors "monto" view) $ small_ . toHtml
+    forM_ (Digestive.errors "cuota" view) $ small_ . toHtml
+    forM_ (Digestive.errors "participante" view) $ small_ . toHtml
     button_
       [ hxPatch_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNewPatch grupoId pagoId
       , type_ "button"
@@ -500,15 +510,14 @@ runSelda dbAction = do
 
 renderPago :: Monad m => Grupo -> ULID -> Pago -> HtmlT m ()
 renderPago grupo grupoId pago = do
-  div_ 
+  article_
     [ hxTarget_ "this"
     , id_ [i|p-#{pagoId pago}|]
-    , class_ "card"
     ] $ do
     div_
-      [ class_ "card-content"
+      [ class_ "container"
       ] $ do
-      p_ [class_ "title"] $ toHtml $ nombre pago
+      h3_ [class_ "title"] $ toHtml $ nombre pago
       p_ [class_ "subtitle"] $ do
         toHtml $ monto pago
         span_ " pagado por "
@@ -524,16 +533,17 @@ renderPago grupo grupoId pago = do
                 " y otras "
                 toHtml $ show $ length rest
                 " personas"
-    footer_ [class_ "card-footer"] $ do
-      p_ [class_  "card-footer-item"] $ span_ [] $ a_
-        [ hxGet_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoEdit grupoId pago.pagoId
-        , hxSwap_ "beforeend"
-        , hxTarget_ "body"
-        -- , class_ "button"
-        ] "Editar"
-      p_ [class_  "card-footer-item"] $ span_ [] $ a_
-        [ hxDelete_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoDelete grupoId pago.pagoId
-        , hxConfirm_ "Estas seguro de borrar este pago?"
-        , hxSwap_ "outerHTML"
-        -- , class_ "button"
-        ] "Borrar"
+    footer_ $ do
+      div_ [role_ "group"] $ do
+        button_
+          [ hxGet_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoEdit grupoId pago.pagoId
+          , hxSwap_ "beforeend"
+          , hxTarget_ "body"
+          , class_ "outline"
+          ] "Editar"
+        button_
+          [ hxDelete_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoDelete grupoId pago.pagoId
+          , hxConfirm_ "Estas seguro de borrar este pago?"
+          , hxSwap_ "outerHTML"
+          , class_ "outline"
+          ] "Borrar"
