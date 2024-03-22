@@ -513,26 +513,24 @@ renderPago grupo grupoId pago = do
   article_
     [ hxTarget_ "this"
     , id_ [i|p-#{pagoId pago}|]
+    , class_ "container"
     ] $ do
-    div_
-      [ class_ "container"
-      ] $ do
-      h3_ [class_ "title"] $ toHtml $ nombre pago
-      p_ [class_ "subtitle"] $ do
-        toHtml $ monto pago
-        span_ " pagado por "
-        span_ $ case pagadores pago of
-          [] -> "nadie (?"
-          [pagador] ->
-            toHtml $ pagador & parteParticipante & buscarParticipante grupo & participanteNombre
-          pagador:rest -> do
-            toHtml $ pagador & parteParticipante & buscarParticipante grupo & participanteNombre
-            if length rest == 1
-              then " y alguien mas"
-              else do
-                " y otras "
-                toHtml $ show $ length rest
-                " personas"
+    h3_ $ toHtml $ nombre pago
+    p_ $ do
+      toHtml $ monto pago
+      span_ " pagado por "
+      span_ $ case pagadores pago of
+        [] -> "nadie (?"
+        [pagador] ->
+          toHtml $ pagador & parteParticipante & buscarParticipante grupo & participanteNombre
+        pagador:rest -> do
+          toHtml $ pagador & parteParticipante & buscarParticipante grupo & participanteNombre
+          if length rest == 1
+            then " y alguien mas"
+            else do
+              " y otras "
+              toHtml $ show $ length rest
+              " personas"
     footer_ $ do
       div_ [role_ "group"] $ do
         button_
