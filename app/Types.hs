@@ -14,10 +14,11 @@ import Control.Monad.Reader
 import Servant
 import Database.Selda.Backend
 import Database.Selda.PostgreSQL
+import Data.Pool
 
 ------------------------------------------------------------------------------
 data App = App
-  { connection :: SeldaConnection PG
+  { connection :: Pool (SeldaConnection PG)
   }
 
 ------------------------------------------------------------------------------

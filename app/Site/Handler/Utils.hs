@@ -40,7 +40,11 @@ redirect s = throwError err200 {errHeaders = [("Hx-Location", s)]}
 
 
 err200 :: ServerError
-err200 = err500 {errHTTPCode = 200}
+err200 = ServerError { errHTTPCode = 200
+                     , errReasonPhrase = "OK"
+                     , errBody = ""
+                     , errHeaders = []
+                     }
 
 throwHtml :: (MonadError ServerError m) => HtmlT m () -> m a
 throwHtml html = do

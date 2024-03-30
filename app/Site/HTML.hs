@@ -3,11 +3,8 @@ module Site.HTML (HTML, RawHtml(..)) where
 
 import Data.List.NonEmpty qualified as NE
 import Data.Typeable (Typeable)
-import Lucid (ToHtml (..), renderBS)
 import Network.HTTP.Media qualified as M
 import Servant.API (Accept (..), MimeRender (..))
-import Data.ByteString (ByteString)
-import Data.ByteString qualified as BS
 
 -- import Data.ByteString.Lazy (ByteString)
 import Data.ByteString.Lazy qualified as LBS

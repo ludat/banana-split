@@ -43,6 +43,7 @@ import Site.Api
 import Site.Layout (navBarItemsForGrupo)
 import Control.Monad (forM_)
 import Lucid.Base (makeAttributes)
+import qualified Data.Pool as Pool
 
 handleIndex :: AppHandler RawHtml
 handleIndex = do
@@ -191,10 +192,12 @@ newParticipanteView grupoId view =
           small_ $ toHtml t
     button_ [class_ "button is-primary"] "Agregar Participante"
 
-runSelda :: SeldaT PG AppHandler a -> AppHandler a
+runSelda :: SeldaT PG IO a -> AppHandler a
 runSelda dbAction = do
-  seldaConn <- asks (.connection)
-  runSeldaT dbAction seldaConn
+  pool <- asks (.connection)
+
+  liftIO $ Pool.withResource pool $ \seldaConn -> do
+    runSeldaT dbAction seldaConn
 
 renderPago :: Monad m => Grupo -> ULID -> Pago -> HtmlT m ()
 renderPago grupo grupoId pago = do

@@ -20,10 +20,11 @@ import Site.Config (createConfig)
 import System.Posix (Handler (..), installHandler, sigTERM)
 
 import Types
-import Database.Selda.PostgreSQL (pgOpen')
+import Database.Selda.PostgreSQL (pgOpen', seldaClose)
 import Database.Selda.Backend (runSeldaT)
 import BananaSplit.Persistence (createTables)
 import qualified Site.Server
+import qualified Data.Pool as Pool
 
 main :: IO ()
 main = runBackend
@@ -46,9 +47,9 @@ runBackend = do
             & Warp.setPort 8000
         )
 
-  conn <- pgOpen' Nothing connString
-  let appState = App conn
+  pool <- Pool.newPool $ Pool.defaultPoolConfig (pgOpen' Nothing connString) seldaClose 60 10
+  let appState = App pool
 
-  runSeldaT createTables conn
+  Pool.withResource pool $ \conn -> runSeldaT createTables conn
   putStrLn $ "Listening on port " ++ show (Warp.getPort settings) ++ " ..."
   Warp.runSettings settings $ logStdoutDev $ Site.Server.app appState

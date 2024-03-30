@@ -42,6 +42,7 @@ library
     , postgresql-migration
     , pretty-simple
     , random
+    , resource-pool
     , safe-money
     , selda
     , selda-postgresql
@@ -100,6 +101,7 @@ executable banana-split
     , postgresql-migration
     , pretty-simple
     , random
+    , resource-pool
     , safe-money
     , selda
     , selda-postgresql
@@ -152,6 +154,7 @@ test-suite spec
     , postgresql-migration
     , pretty-simple
     , random
+    , resource-pool
     , safe-money
     , selda
     , selda-postgresql

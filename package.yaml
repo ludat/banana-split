@@ -20,6 +20,7 @@ dependencies:
   - postgresql-migration
   - pretty-simple
   - random
+  - resource-pool
   - safe-money
   - selda
   - selda-postgresql

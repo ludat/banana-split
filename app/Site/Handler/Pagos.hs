@@ -51,6 +51,7 @@ import Site.Api
 import Site.Layout (navBarItemsForGrupo)
 import Lucid.Base (makeAttributes, makeElement)
 import Control.Monad (forM_)
+import qualified Data.Pool as Pool
 
 _pagosUpdatedEvent :: Text
 _pagosUpdatedEvent = "pagos-updated"
@@ -479,7 +480,7 @@ parteForm parteDef =
 
             Digestive.Success $ Ponderado cuota participante
 
-          ( a, b, c, participante) -> Digestive.Error $ cs $ show (a,b,c,participante)
+          (a, b, c, participante) -> Digestive.Error $ cs $ show (a,b,c,participante)
       )
 
 montoForm :: Monad m => Digestive.Formlet Text m Monto
@@ -503,10 +504,12 @@ optionalMontoForm montoDefault =
       Nothing -> Digestive.Error "numero invalido"
   ) $ Digestive.optionalText (fmap monto2Text montoDefault)
 
-runSelda :: SeldaT PG AppHandler a -> AppHandler a
+runSelda :: SeldaT PG IO a -> AppHandler a
 runSelda dbAction = do
-  seldaConn <- asks (.connection)
-  runSeldaT dbAction seldaConn
+  pool <- asks (.connection)
+
+  liftIO $ Pool.withResource pool $ \seldaConn -> do
+    runSeldaT dbAction seldaConn
 
 renderPago :: Monad m => Grupo -> ULID -> Pago -> HtmlT m ()
 renderPago grupo grupoId pago = do
