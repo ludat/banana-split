@@ -1,17 +1,19 @@
-module BananaSplit.Solver (main2) where
+module BananaSplit.Solver
+    ( main2
+    ) where
+
+import Numeric.LinearAlgebra
+import Numeric.LinearProgramming
 
 import Prelude hiding ((<>))
-
-import Numeric.LinearProgramming
-import Numeric.LinearAlgebra
 
 
 
 -- prob = Maximize [4, -3, 2]
 coso =
-    matrix 3 
+    matrix 3
     [  0,  1, 12
-    , 82,  0,  0 
+    , 82,  0,  0
     ,  2, 21,  0
     ]
 
@@ -23,7 +25,7 @@ coso =
 -- In an equation for `it_akMd':
 --     it_akMd = (tr coso - coso) #> (row [1, 1, 1])
 
-prob = 
+prob =
     [ 1  -- 1 -> 2
     , 12 -- 1 -> 3
     , 82 -- 2 -> 1
@@ -43,9 +45,9 @@ constr1 = [ [1, 1, -1, 0, -1, 0] :==: (prob !! 0 + prob !! 1 - prob !! 2 - prob 
 {-
 |   |  1 |  2 |  3 |
 |---+----+----+----|
-| 1 |  0 |  0 | 10 | = 10 - 81 = 
-| 2 | 81 |  0 |  0 | = 81 - 22 = 
-| 3 |  0 | 21 |  0 | = 23 - 12 = 
+| 1 |  0 |  0 | 10 | = 10 - 81 =
+| 2 | 81 |  0 |  0 | = 81 - 22 =
+| 3 |  0 | 21 |  0 | = 23 - 12 =
 |   | 81 | 21 | 12 | = 23
 -}
 main2 :: IO ()

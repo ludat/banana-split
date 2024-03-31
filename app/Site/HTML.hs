@@ -1,13 +1,16 @@
 
-module Site.HTML (HTML, RawHtml(..)) where
+module Site.HTML
+    ( HTML
+    , RawHtml (..)
+    ) where
 
+import Data.ByteString.Lazy qualified as LBS
 import Data.List.NonEmpty qualified as NE
 import Data.Typeable (Typeable)
-import Network.HTTP.Media qualified as M
-import Servant.API (Accept (..), MimeRender (..))
 
--- import Data.ByteString.Lazy (ByteString)
-import Data.ByteString.Lazy qualified as LBS
+import Network.HTTP.Media qualified as M
+
+import Servant.API (Accept (..), MimeRender (..))
 
 data HTML deriving Typeable
 

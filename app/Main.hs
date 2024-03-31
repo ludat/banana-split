@@ -1,7 +1,8 @@
-{-# LANGUAGE DataKinds #-}
-{-# LANGUAGE OverloadedStrings #-}
+module Main
+    ( main
+    ) where
 
-module Main where
+import BananaSplit.Persistence (createTables)
 
 import Conferer qualified
 
@@ -9,22 +10,21 @@ import Control.Monad (void)
 import Control.Monad.IO.Class (liftIO)
 
 import Data.Function ((&))
+import Data.Pool qualified as Pool
+
+import Database.Selda.Backend (runSeldaT)
+import Database.Selda.PostgreSQL (pgOpen', seldaClose)
 
 import Network.Wai.Handler.Warp (Settings)
 import Network.Wai.Handler.Warp qualified as Warp
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 
-import Site.Api qualified
 import Site.Config (createConfig)
+import Site.Server qualified
 
 import System.Posix (Handler (..), installHandler, sigTERM)
 
 import Types
-import Database.Selda.PostgreSQL (pgOpen', seldaClose)
-import Database.Selda.Backend (runSeldaT)
-import BananaSplit.Persistence (createTables)
-import qualified Site.Server
-import qualified Data.Pool as Pool
 
 main :: IO ()
 main = runBackend
@@ -47,7 +47,7 @@ runBackend = do
             & Warp.setPort 8000
         )
 
-  pool <- Pool.newPool $ Pool.defaultPoolConfig (pgOpen' Nothing connString) seldaClose 60 10
+  pool <- Pool.newPool $ Pool.defaultPoolConfig (pgOpen' Nothing connString) seldaClose 60 60
   let appState = App pool
 
   Pool.withResource pool $ \conn -> runSeldaT createTables conn

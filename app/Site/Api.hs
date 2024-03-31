@@ -8,16 +8,16 @@ module Site.Api where
 
 
 
-import GHC.Generics
+import Data.Text (Text)
+import Data.ULID (ULID)
 
+import GHC.Generics
 
 import Servant
 
-
 import Site.HTML
+
 import Web.FormUrlEncoded (Form)
-import Data.ULID (ULID)
-import Data.Text (Text)
 
 type HXTrigger = Header "HX-Trigger" Text
 type HXRetarget = Header "HX-Retarget" Text

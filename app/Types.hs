@@ -1,5 +1,5 @@
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 
 ------------------------------------------------------------------------------
 
@@ -11,10 +11,12 @@ module Types where
 
 import Control.Monad.Reader
 
-import Servant
+import Data.Pool
+
 import Database.Selda.Backend
 import Database.Selda.PostgreSQL
-import Data.Pool
+
+import Servant
 
 ------------------------------------------------------------------------------
 data App = App

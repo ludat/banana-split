@@ -7,19 +7,18 @@ module Site.Server where
 
 import Control.Monad.Reader
 
-
+import Data.FileEmbed
 
 import Network.Wai
 
-import Data.FileEmbed
 import Servant
 import Servant.Server.Generic
 
-
-import Types
 import Site.Api
 import Site.Handler.Grupos
 import Site.Handler.Pagos
+
+import Types
 
 serverT :: Api (AsServerT AppHandler)
 serverT =

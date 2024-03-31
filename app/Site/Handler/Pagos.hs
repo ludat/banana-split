@@ -1,57 +1,61 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
 
 module Site.Handler.Pagos
-  ( handlePagoCreate
-  , handlePagoDelete
-  , handlePagoEdit
-  , handlePagoNewPatch
-  , handlePagoUpdate
-  , handlePagoNew
-  , handlePagosGet
-  ) where
+    ( handlePagoCreate
+    , handlePagoDelete
+    , handlePagoEdit
+    , handlePagoNew
+    , handlePagoNewPatch
+    , handlePagoUpdate
+    , handlePagosGet
+    ) where
 
+import BananaSplit
+import BananaSplit.Persistence (deletePago, fetchGrupo, fetchParticipantes, savePago, updatePago)
+
+import Control.Monad (forM_)
 import Control.Monad.Reader
 
 import Data.Function ((&))
+import Data.HashMap.Strict qualified as HashMap
+import Data.List qualified as List
+import Data.Maybe (fromJust, fromMaybe, listToMaybe)
+import Data.Pool qualified as Pool
+import Data.String.Conversions (cs)
+import Data.String.Interpolate
 import Data.Text (Text, pack)
+import Data.Text qualified as Text
+import Data.ULID (ULID)
 
+import Database.Selda.Backend
+import Database.Selda.PostgreSQL (PG)
+
+import Lucid
+import Lucid.Base (makeAttributes, makeElement)
+import Lucid.Htmx
 
 import Servant
 
-import Site.Handler.Utils (renderHtml, postForm, orElseMay, throwHtml, htmlLayout)
-import Lucid
-import Lucid.Htmx
+import Site.Api
+import Site.Handler.Utils (htmlLayout, orElseMay, postForm, renderHtml, throwHtml)
+import Site.HTML
+import Site.Layout (navBarItemsForGrupo)
+
+import Text.Digestive qualified as Digestive
+import Text.Digestive.Form.List qualified as Digestive
+import Text.Pretty.Simple
+import Text.Read (readMaybe)
 
 import Types
-import Site.HTML
-import Data.String.Interpolate
-import BananaSplit.Persistence (fetchGrupo, fetchParticipantes, savePago, deletePago, updatePago)
-import BananaSplit
-import Web.FormUrlEncoded (FromForm (..), Form, parseUnique, lookupAll)
-import Data.Maybe (listToMaybe, fromJust, fromMaybe)
-import Data.ULID (ULID)
-import Database.Selda.Backend
-import Database.Selda.PostgreSQL (PG)
-import qualified Data.List as List
-import Text.Pretty.Simple
-import qualified Text.Digestive as Digestive
-import Web.Internal.FormUrlEncoded (Form(..))
-import qualified Data.HashMap.Strict as HashMap
-import qualified Data.Text as Text
-import Data.String.Conversions (cs)
-import qualified Text.Digestive.Form.List as Digestive
-import Text.Read (readMaybe)
-import Site.Api
-import Site.Layout (navBarItemsForGrupo)
-import Lucid.Base (makeAttributes, makeElement)
-import Control.Monad (forM_)
-import qualified Data.Pool as Pool
+
+import Web.FormUrlEncoded (Form, FromForm (..), lookupAll, parseUnique)
+import Web.Internal.FormUrlEncoded (Form (..))
 
 _pagosUpdatedEvent :: Text
 _pagosUpdatedEvent = "pagos-updated"
@@ -371,10 +375,10 @@ pagosView grupoId existentPago participantes view =
           ]
           "Agregar deudor"
 
-    p_ $ button_ 
+    p_ $ button_
         [ type_ "submit"
         ] $
-      case existentPago of 
+      case existentPago of
         Just _ -> "Actualizar pago"
         Nothing -> "Crear pago"
 

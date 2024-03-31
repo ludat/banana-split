@@ -1,49 +1,53 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE TypeFamilies #-}
 
 module Site.Handler.Grupos
-  ( handleCreateGrupo
-  , handleCreateParticipante
-  , handleIndex
-  , handleShowGrupo
-  , handleShowParticipantes
-  ) where
+    ( handleCreateGrupo
+    , handleCreateParticipante
+    , handleIndex
+    , handleShowGrupo
+    , handleShowParticipantes
+    ) where
 
+import BananaSplit
+import BananaSplit.Persistence (addParticipante, createGrupo, fetchGrupo)
+
+import Control.Monad (forM_)
 import Control.Monad.Reader
 
 import Data.Function ((&))
+import Data.Pool qualified as Pool
 import Data.Text (Text)
+import Data.Text qualified as Text
 import Data.Text.Encoding (encodeUtf8)
+import Data.ULID (ULID)
+
+import Database.Selda.Backend
+import Database.Selda.PostgreSQL (PG)
 
 import GHC.Generics
 
+import Lucid
+import Lucid.Base (makeAttributes)
+import Lucid.Htmx
 
 import Servant
 
-import Site.Handler.Utils (orElseMay, redirect, throwHtml, htmlLayout, renderHtml, postForm, orElse)
-import Lucid
-import Lucid.Htmx
+import Site.Api
+import Site.Handler.Utils (htmlLayout, orElse, orElseMay, postForm, redirect, renderHtml, throwHtml)
+import Site.HTML
+import Site.Layout (navBarItemsForGrupo)
+
+import Text.Digestive qualified as Digestive
 
 import Types
-import Site.HTML
-import BananaSplit.Persistence (createGrupo, fetchGrupo, addParticipante)
-import BananaSplit
-import Web.FormUrlEncoded (FromForm (..), Form)
-import Data.ULID (ULID)
-import Database.Selda.Backend
-import Database.Selda.PostgreSQL (PG)
-import Text.Digestive qualified as Digestive
-import Data.Text qualified as Text
-import Site.Api
-import Site.Layout (navBarItemsForGrupo)
-import Control.Monad (forM_)
-import Lucid.Base (makeAttributes)
-import qualified Data.Pool as Pool
+
+import Web.FormUrlEncoded (Form, FromForm (..))
 
 handleIndex :: AppHandler RawHtml
 handleIndex = do

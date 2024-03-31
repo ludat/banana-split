@@ -1,48 +1,52 @@
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LexicalNegation #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module BananaSplit
-  ( Grupo(..)
-  , Participante(..)
-  , ParticipanteId
-  , Pago(..)
-  , Parte(..)
-  , Transaccion(..)
-  , Monto(..)
-  , calcularDeudasTotales
-  , parteParticipante
-  , calcularDeudasPago
-  , deudasToPairs
-  , resolverDeudasNaif
-  , buscarParticipante
-  , monto2Text
-  , monto2Dense
-  , nullUlid
-  , text2Monto
-  ) where
+    ( Grupo (..)
+    , Monto (..)
+    , Pago (..)
+    , Parte (..)
+    , Participante (..)
+    , ParticipanteId
+    , Transaccion (..)
+    , buscarParticipante
+    , calcularDeudasPago
+    , calcularDeudasTotales
+    , deudasToPairs
+    , monto2Dense
+    , monto2Text
+    , nullUlid
+    , parteParticipante
+    , resolverDeudasNaif
+    , text2Monto
+    ) where
 
-import Data.Text (Text, pack, unpack)
-import GHC.Generics (Generic)
+import Data.Either (partitionEithers)
 import Data.Function
+import Data.List (maximumBy, sortOn)
+import Data.List qualified as List
 import Data.Map.Strict (Map)
 import Data.Map.Strict qualified as Map
-import Servant
-import Data.Either (partitionEithers)
-import Data.List (sortOn, maximumBy)
-import Data.Ord (Down(..))
+import Data.Maybe qualified as Maybe
+import Data.Ord (Down (..))
+import Data.Text (Text, pack, unpack)
+import Data.ULID (ULID)
+
+import GHC.Generics (Generic)
+
 import Lucid (ToHtml)
-import Lucid.Base (ToHtml(..))
+import Lucid.Base (ToHtml (..))
+
 import Money qualified
-import Data.ULID (ULID, getULID)
+
+import Servant
+
 import Text.Read (readMaybe)
-import qualified Data.List as List
-import qualified Data.Maybe as Maybe
 
 data Grupo = Grupo
   { grupoId :: ULID
@@ -82,7 +86,7 @@ data Participante = Participante
 
 instance ToHttpApiData ULID where
   toQueryParam :: ULID -> Text
-  toQueryParam ulid = pack . show $ ulid
+  toQueryParam = pack . show
 
 instance FromHttpApiData ULID where
   parseUrlPiece :: Text -> Either Text ULID
@@ -95,7 +99,7 @@ type ParticipanteId = ULID
 
 data Pago = Pago
   { pagoId :: ULID
-  , monto :: Monto 
+  , monto :: Monto
   , nombre :: Text
   , deudores :: [Parte]
   , pagadores :: [Parte]
@@ -137,7 +141,7 @@ newtype Deudas a = Deudas (Map ParticipanteId a)
   deriving newtype (Show, Eq, Functor)
 
 deudasToPairs :: Ord a => Deudas a -> [(ParticipanteId, a)]
-deudasToPairs (Deudas deudasMap) = 
+deudasToPairs (Deudas deudasMap) =
   deudasMap
   & Map.toAscList
   & sortOn (\(p, m) -> (Down m, p))
@@ -157,7 +161,7 @@ totalDeudas (Deudas deudasMap) =
 calcularDeudasTotales :: Grupo -> Deudas Monto
 calcularDeudasTotales grupo =
   grupo.pagos
-  & fmap calcularDeudasPago 
+  & fmap calcularDeudasPago
   & mconcat
 
 mkDeuda :: ParticipanteId -> a -> Deudas a
@@ -166,7 +170,7 @@ mkDeuda participanteId monto =
 
 calcularDeudasPago :: Pago -> Deudas Monto
 calcularDeudasPago pago =
-  calcularDeudas pago.monto pago.pagadores <> (fmap (* -1) $ calcularDeudas pago.monto pago.deudores)
+  calcularDeudas pago.monto pago.pagadores <> fmap (* -1) (calcularDeudas pago.monto pago.deudores)
   where
     calcularDeudas montoOriginal partes =
       let
@@ -176,7 +180,7 @@ calcularDeudasPago pago =
             Ponderado parte participante -> Left (participante, parte)
             MontoFijo monto participante -> Right (participante, monto)
           )
-          & partitionEithers 
+          & partitionEithers
         deudasFijos =
           fijos
           & fmap (uncurry mkDeuda)
@@ -203,7 +207,7 @@ extraerMaximoDeudor (Deudas deudasMap) =
   & fmap (* -1)
   & Map.toList
   & maximumBy (compare `on` snd)
-  
+
 extraerMaximoPagador :: Deudas Monto -> (ParticipanteId, Monto)
 extraerMaximoPagador (Deudas deudasMap) =
   deudasMap
@@ -223,7 +227,7 @@ resolverDeudasNaif :: Deudas Monto -> [Transaccion]
 resolverDeudasNaif deudas
   | deudoresNoNulos deudas == 0 = []
   | deudoresNoNulos deudas == 1 = error $ show deudas
-  | otherwise = 
+  | otherwise =
       let
         (mayorDeudor, mayorDeuda) = extraerMaximoDeudor deudas
         deudas' = removerDeudor mayorDeudor deudas
@@ -238,7 +242,7 @@ resolverDeudasNaif deudas
             : resolverDeudasNaif (deudas'')
 
 deudoresNoNulos :: Deudas Monto -> Int
-deudoresNoNulos (Deudas deudasMap) = 
+deudoresNoNulos (Deudas deudasMap) =
   deudasMap
   & Map.toList
   & filter (\(_p, m) -> m /= 0)

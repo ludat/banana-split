@@ -1,25 +1,41 @@
 {-# LANGUAGE OverloadedLabels #-}
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE StrictData #-}
 {-# LANGUAGE OverloadedRecordDot #-}
-module BananaSplit.Persistence where
+{-# LANGUAGE StrictData #-}
+module BananaSplit.Persistence
+    ( addParticipante
+    , createGrupo
+    , createTables
+    , deletePago
+    , fetchGrupo
+    , pagoTable
+    , parteDeudorTable
+    , partePagadorTable
+    , participanteTable
+    , savePago
+    , updatePago
+    ) where
+
+import BananaSplit qualified as M
+
+import Data.Data (Proxy)
+import Data.Either (fromRight)
+import Data.Function ((&))
+import Data.Map.Strict qualified as Map
+import Data.Maybe (fromMaybe)
+import Data.Ratio ((%))
+import Data.Ratio qualified as Ratio
+import Data.Text (pack, unpack)
+import Data.ULID (ULID)
+import Data.ULID qualified as ULID
 
 import Database.Selda
-import BananaSplit qualified as M
-import Data.ULID (ULID)
 import Database.Selda.SqlType
-import Data.Data (Proxy)
-import Data.ULID qualified as ULID
-import Data.Text (pack, unpack)
-import Text.Read (readMaybe)
-import Data.Either (fromRight)
+
 import Money qualified
-import Data.Function ((&))
-import qualified Data.Ratio as Ratio
-import Data.Ratio ((%))
-import qualified Data.Map.Strict as Map
-import Data.Maybe (fromMaybe)
+
+import Text.Read (readMaybe)
 
 data GrupoRecord = GrupoRecord
   { grupoId :: ULID
@@ -130,9 +146,9 @@ fetchPagos grupoId = do
     order (parte ! #partePagoId) ascending
     pure parte
   let deudoresMap = partesDeudoresR & fmap parteRecord2Parte & Map.fromListWith (++)
-  let pagadoresMap = partesPagadoresR & fmap parteRecord2Parte & Map.fromListWith (++) 
+  let pagadoresMap = partesPagadoresR & fmap parteRecord2Parte & Map.fromListWith (++)
   pagosR
-    & fmap (\pagoR -> 
+    & fmap (\pagoR ->
         let monto = M.Monto $ Money.dense' $ fromIntegral (pagoMontoNumerador pagoR) % fromIntegral (pagoMontoDenominador pagoR)
         in M.Pago
         { M.pagoId = pagoId pagoR
@@ -143,7 +159,7 @@ fetchPagos grupoId = do
         }
       )
     & pure
-  where 
+  where
     parteRecord2Parte :: ParteRecord -> (ULID, [M.Parte])
     parteRecord2Parte parteR =
       case parteTipo parteR of
@@ -152,7 +168,7 @@ fetchPagos grupoId = do
             (Just cuota) ->
               (partePagoId parteR, [M.Ponderado (fromIntegral cuota) (parteParticipanteId parteR)])
             _ -> undefined
-        "MontoFijo" -> 
+        "MontoFijo" ->
           case (parteMontoDenominador parteR, parteMontoNumerador parteR) of
             (Just denominador, Just numerador) ->
               let monto = M.Monto $ Money.dense' $ fromIntegral numerador % fromIntegral denominador
@@ -187,14 +203,14 @@ deletePartesFromPago pagoId = do
   deleteFrom_ parteDeudorTable (\p -> p ! #partePagoId .== literal pagoId)
   deleteFrom_ partePagadorTable (\p -> p ! #partePagoId .== literal pagoId)
 
-deleteShallowPago :: MonadSelda m => ULID -> m ()
-deleteShallowPago pagoId =
-    deleteFrom_ pagoTable (\p -> p ! #pagoId .== literal pagoId)
-
 deletePago :: MonadSelda m => ULID -> m ()
 deletePago pagoId = do
   deletePartesFromPago pagoId
   deleteShallowPago pagoId
+
+deleteShallowPago :: MonadSelda m => ULID -> m ()
+deleteShallowPago pagoId =
+    deleteFrom_ pagoTable (\p -> p ! #pagoId .== literal pagoId)
 
 pago2PagoRecord :: ULID -> M.Pago -> PagoRecord
 pago2PagoRecord grupoId pago =
@@ -215,11 +231,9 @@ saveShallowPago grupoId pago = do
 
 savePartes :: MonadSelda m => ULID -> M.Pago -> m ()
 savePartes pagoId pago = do
-  insert_ parteDeudorTable $
-    fmap (parte2ParteRecord pagoId) $ M.deudores pago
+  insert_ parteDeudorTable (parte2ParteRecord pagoId <$> M.deudores pago)
 
-  insert_ partePagadorTable $
-    fmap (parte2ParteRecord pagoId) $ M.pagadores pago
+  insert_ partePagadorTable (parte2ParteRecord pagoId <$> M.pagadores pago)
 
 savePago :: (MonadSelda m) => ULID -> M.Pago -> m M.Pago
 savePago grupoId pagoWihtoutId = do
@@ -227,12 +241,10 @@ savePago grupoId pagoWihtoutId = do
   let pago = pagoWihtoutId { M.pagoId = pagoId }
   saveShallowPago grupoId pago
 
-  insert_ parteDeudorTable $
-    fmap (parte2ParteRecord pagoId) $ M.deudores pago
+  insert_ parteDeudorTable (parte2ParteRecord pagoId <$> M.deudores pago)
 
-  insert_ partePagadorTable $
-    fmap (parte2ParteRecord pagoId) $ M.pagadores pago
-  
+  insert_ partePagadorTable (parte2ParteRecord pagoId <$> M.pagadores pago)
+
   pure pago
 
 deconstructMonto :: M.Monto -> (Int, Int)
@@ -262,9 +274,9 @@ fetchParticipantes ulid = do
       , M.participanteNombre = participante.participanteNombre
       }
 
-createGrupo :: MonadSelda m => Text -> m (M.Grupo)
+createGrupo :: MonadSelda m => Text -> m M.Grupo
 createGrupo nombre = do
-  ulid <- liftIO $ ULID.getULID
+  ulid <- liftIO ULID.getULID
   insert_ grupoTable
     [ GrupoRecord { grupoId = ulid, grupoNombre = nombre }
     ]
@@ -277,7 +289,7 @@ createGrupo nombre = do
 
 addParticipante :: MonadSelda m => ULID -> Text -> m (Either String M.Participante)
 addParticipante grupoId nombre = do
-  ulid <- liftIO $ ULID.getULID
+  ulid <- liftIO ULID.getULID
   insert_ participanteTable
     [ ParticipanteRecord
       { participanteId = ulid
@@ -300,8 +312,8 @@ createTables = do
 
 instance SqlType ULID where
   mkLit :: ULID -> Lit ULID
-  mkLit ulid = 
-    LCustom TText $ LText $ pack $ show ulid 
+  mkLit ulid =
+    LCustom TText $ LText $ pack $ show ulid
   sqlType :: Proxy ULID -> SqlTypeRep
   sqlType _ = TText
   fromSql :: SqlValue -> ULID

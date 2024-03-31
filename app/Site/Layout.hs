@@ -1,12 +1,15 @@
 {-# LANGUAGE OverloadedRecordDot #-}
 
 module Site.Layout
-  ( navBarItemsForGrupo
-  ) where
+    ( navBarItemsForGrupo
+    ) where
 import BananaSplit
+
 import Lucid
-import Site.Api
+
 import Servant
+
+import Site.Api
 
 navBarItemsForGrupo :: Monad m => Grupo -> HtmlT m ()
 navBarItemsForGrupo grupo = do

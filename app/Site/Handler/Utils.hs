@@ -1,29 +1,34 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Site.Handler.Utils
-  ( orElse
-  , orElseMay
-  , orElse_
-  , redirect
-  , throwHtml
-  , htmlLayout
-  , renderHtml
-  , postForm
-  ) where
+    ( htmlLayout
+    , orElse
+    , orElseMay
+    , orElse_
+    , postForm
+    , redirect
+    , renderHtml
+    , throwHtml
+    ) where
+
+import Control.Monad.Error.Class
+import Control.Monad.IO.Class
 
 import Data.ByteString (ByteString)
+import Data.Function
+import Data.Text (Text)
+
+import Lucid
+import Lucid.Htmx (hxBoost_)
 
 import Servant
 
+import Site.HTML (RawHtml (..))
+
+import Text.Digestive qualified as Digestive
+
 import Types
-import Lucid
-import Control.Monad.Error.Class
-import Data.Text (Text)
-import Site.HTML (RawHtml(..))
-import Control.Monad.IO.Class
-import qualified Text.Digestive as Digestive
-import qualified Web.FormUrlEncoded as Form
-import Data.Function
-import Lucid.Htmx (hxBoost_)
+
+import Web.FormUrlEncoded qualified as Form
 
 orElse :: Monad m => m (Either error a) -> (error -> m a) -> m a
 orElse action recovery = action >>= either recovery pure
