@@ -9,6 +9,7 @@ module BananaSplit.Persistence
     , createTables
     , deletePago
     , fetchGrupo
+    , fetchParticipantes
     , pagoTable
     , parteDeudorTable
     , partePagadorTable
