@@ -8,9 +8,8 @@
       let
         pkgs = import nixpkgs { inherit system; };
 
-        hPkgs =
-          pkgs.haskell.packages.ghc964; # need to match Stackage LTS version
-                                        # from stack.yaml resolver
+          # need to match Stackage LTS version from stack.yaml resolver
+        hPkgs = pkgs.haskell.packages.ghc964;
 
         bananasplitDeps = with pkgs; [
           zlib
@@ -55,7 +54,18 @@
 
         banana-split = pkgs.haskell.lib.buildStackProject {
           name = "banana-split";
-          src = ./.;
+          src = with pkgs.lib.fileset; toSource {
+            root = ./.;
+            fileset = unions [
+              ./app
+              ./package.yaml
+              ./public
+              ./src
+              ./stack.yaml
+              ./stack.yaml.lock
+              # ./tests
+            ];
+          };
           nativeBuildInputs = with pkgs; [git];
           doCheck = false;
           stack = stack-wrapped;
@@ -72,6 +82,7 @@
               name = "image-root";
               paths = with pkgs; [
                 banana-split
+                dockerTools.binSh
                 iana-etc
                 cacert
               ];
