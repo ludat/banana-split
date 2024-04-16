@@ -78,9 +78,8 @@
             pnpm run build
           '';
           installPhase = ''
-            ls -lahR dist
-            mkdir -p dist $out/opt/banana-split/public
-            mv -v dist $out/opt/banana-split/public
+            mkdir -p $out/opt/banana-split
+            mv -v dist/ $out/opt/banana-split/public
           '';
         };
 
