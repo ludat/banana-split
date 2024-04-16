@@ -8,6 +8,7 @@ module BananaSplit.Persistence
     , createGrupo
     , createTables
     , deletePago
+    , deleteShallowParticipante
     , fetchGrupo
     , fetchParticipantes
     , pagoTable
@@ -165,22 +166,22 @@ fetchPagos grupoId = do
     parteRecord2Parte parteR =
       case parteTipo parteR of
         "Ponderado" ->
-          case (parteCuota parteR) of
+          case parteCuota parteR of
             (Just cuota) ->
-              (partePagoId parteR, [M.Ponderado (fromIntegral cuota) (parteParticipanteId parteR)])
+              (partePagoId parteR, [M.Ponderado (fromIntegral cuota) (M.ParticipanteId $ parteParticipanteId parteR)])
             _ -> undefined
         "MontoFijo" ->
           case (parteMontoDenominador parteR, parteMontoNumerador parteR) of
             (Just denominador, Just numerador) ->
               let monto = M.Monto $ Money.dense' $ fromIntegral numerador % fromIntegral denominador
-              in (partePagoId parteR, [M.MontoFijo monto $ parteParticipanteId parteR])
+              in (partePagoId parteR, [M.MontoFijo monto $ M.ParticipanteId $ parteParticipanteId parteR])
             _ -> undefined
         _ -> undefined
 
 parte2ParteRecord :: ULID -> M.Parte -> ParteRecord
 parte2ParteRecord pagoId parte =
   case parte of
-    M.Ponderado cuota participanteId ->
+    M.Ponderado cuota (M.ParticipanteId participanteId) ->
       ParteRecord
         { partePagoId = pagoId
         , parteParticipanteId = participanteId
@@ -189,7 +190,7 @@ parte2ParteRecord pagoId parte =
         , parteMontoNumerador = Nothing
         , parteCuota = Just $ fromInteger cuota
         }
-    M.MontoFijo monto participanteId ->
+    M.MontoFijo monto (M.ParticipanteId participanteId) ->
       let (numerador, denominador) = deconstructMonto monto
       in ParteRecord
         { partePagoId = pagoId
@@ -204,14 +205,16 @@ deletePartesFromPago pagoId = do
   deleteFrom_ parteDeudorTable (\p -> p ! #partePagoId .== literal pagoId)
   deleteFrom_ partePagadorTable (\p -> p ! #partePagoId .== literal pagoId)
 
-deletePago :: MonadSelda m => ULID -> m ()
-deletePago pagoId = do
-  deletePartesFromPago pagoId
-  deleteShallowPago pagoId
+deletePago :: (MonadSelda m, MonadMask m) => ULID -> ULID -> m ()
+deletePago grupoId pagoId = do
+  transaction $ do
+    deletePartesFromPago pagoId
+    deleteShallowPago grupoId pagoId
 
-deleteShallowPago :: MonadSelda m => ULID -> m ()
-deleteShallowPago pagoId =
-    deleteFrom_ pagoTable (\p -> p ! #pagoId .== literal pagoId)
+-- TODO(ludat): check if the pago belongs to the grupo
+deleteShallowPago :: MonadSelda m => ULID -> ULID -> m ()
+deleteShallowPago grupoId pagoId =
+  deleteFrom_ pagoTable (\p -> p ! #pagoId .== literal pagoId)
 
 pago2PagoRecord :: ULID -> M.Pago -> PagoRecord
 pago2PagoRecord grupoId pago =
@@ -302,6 +305,10 @@ addParticipante grupoId nombre = do
     { M.participanteId = ulid
     , M.participanteNombre = nombre
     }
+
+deleteShallowParticipante :: MonadSelda m => ULID -> ULID -> m ()
+deleteShallowParticipante grupoId participanteId =
+    deleteFrom_ participanteTable (\p -> p ! #participanteId .== literal participanteId .&& p ! #participanteGrupoId .== literal grupoId)
 
 createTables :: MonadSelda m => m ()
 createTables = do

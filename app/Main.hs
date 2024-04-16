@@ -2,6 +2,7 @@ module Main
     ( main
     ) where
 
+import BananaSplit.Elm (generateElmFiles)
 import BananaSplit.Persistence (createTables)
 
 import Conferer qualified
@@ -27,7 +28,9 @@ import System.Posix (Handler (..), installHandler, sigTERM)
 import Types
 
 main :: IO ()
-main = runBackend
+main = do
+  -- generateElmFiles
+  runBackend
 
 runBackend :: IO ()
 runBackend = do
@@ -44,8 +47,7 @@ runBackend = do
         "server"
         ( Warp.defaultSettings
             & Warp.setInstallShutdownHandler shutdownHandler
-            & Warp.setPort 8000
-        )
+            & Warp.setPort 8000)
 
   pool <- Pool.newPool $ Pool.defaultPoolConfig (pgOpen' Nothing connString) seldaClose 60 60
   let appState = App pool

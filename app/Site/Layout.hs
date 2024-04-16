@@ -17,11 +17,3 @@ navBarItemsForGrupo grupo = do
     [ class_ "contrast"
     , href_ $ ("/" <>) $ toUrlPiece $ fieldLink _routeGrupoGet grupo.grupoId
     ] $ toHtml grupo.grupoNombre
-  li_ $ a_
-    [ class_ "contrast"
-    , href_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagosGet grupo.grupoId
-    ] "Pagos"
-  li_ $ a_
-    [ class_ "contrast"
-    , href_ $ ("/" <>) $ toUrlPiece $ fieldLink _routeGrupoParticipantesShow grupo.grupoId
-    ] "Participantes"

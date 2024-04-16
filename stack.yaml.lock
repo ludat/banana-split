@@ -93,6 +93,13 @@ packages:
       size: 1682
   original:
     hackage: digestive-functors-0.8.4.2@sha256:badff1797b6dcd860a48ed4558985b2f6bec501e1016fa5afd9d7d6b0d8e4c08,3364
+- completed:
+    hackage: safe-money-aeson-0.1.1@sha256:d7383134649d5e63177731f3b5a0ff1992a1d4edf9d224178b264eb4fcdd6c14,1405
+    pantry-tree:
+      sha256: c5d74f991f75d978c4a0bf080adfcd0c46baceaa2d1d062f3f1cfe91b696549c
+      size: 374
+  original:
+    hackage: safe-money-aeson-0.1.1@sha256:d7383134649d5e63177731f3b5a0ff1992a1d4edf9d224178b264eb4fcdd6c14,1405
 snapshots:
 - completed:
     sha256: 6f0bea3ba5b07360f25bc886e8cff8d847767557a492a6f7f6dcb06e3cc79ee9

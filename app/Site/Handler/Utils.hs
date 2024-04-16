@@ -8,11 +8,13 @@ module Site.Handler.Utils
     , redirect
     , renderHtml
     , throwHtml
+    , throwJsonError
     ) where
 
 import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 
+import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.Function
 import Data.Text (Text)
@@ -88,13 +90,13 @@ postForm :: Monad m => Text -> Form.Form -> Digestive.Form v m a -> m (Digestive
 postForm name form digestiveForm =
   Digestive.postForm name digestiveForm
     (\_e -> pure $ \p ->
-      Form.lookupAll (Digestive.fromPath p) form & fmap (Digestive.TextInput) & pure)
+      Form.lookupAll (Digestive.fromPath p) form & fmap Digestive.TextInput & pure)
 
 -- | This function always overrides the error message and append
 -- the content type header (to be json)
--- throwJsonError :: ServerError -> Text -> AppHandler a
--- throwJsonError serverError errorMessage =
---   throwError serverError
---     { errBody = encode $ object ["error" .= errorMessage]
---     , errHeaders = serverError.errHeaders ++ [("Content-Type", "application/json")]
---     }
+throwJsonError :: ServerError -> Text -> AppHandler a
+throwJsonError serverError errorMessage =
+  throwError serverError
+    { errBody = encode $ object ["error" .= errorMessage]
+    , errHeaders = errHeaders serverError ++ [("Content-Type", "application/json")]
+    }

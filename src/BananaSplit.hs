@@ -3,16 +3,18 @@
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE LexicalNegation #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module BananaSplit
-    ( Grupo (..)
+    ( Deudas (..)
+    , Grupo (..)
     , Monto (..)
     , Pago (..)
     , Parte (..)
     , Participante (..)
-    , ParticipanteId
+    , ParticipanteId (..)
     , Transaccion (..)
     , buscarParticipante
     , calcularDeudasPago
@@ -22,10 +24,13 @@ module BananaSplit
     , monto2Text
     , nullUlid
     , parteParticipante
+    , participanteId2ULID
     , resolverDeudasNaif
     , text2Monto
     ) where
 
+import Data.Aeson
+import Data.Aeson.Types
 import Data.Either (partitionEithers)
 import Data.Function
 import Data.List (maximumBy, sortOn)
@@ -37,12 +42,17 @@ import Data.Ord (Down (..))
 import Data.Text (Text, pack, unpack)
 import Data.ULID (ULID)
 
+import Elm.Derive qualified as Elm
+import Elm.TyRep (EPrimAlias (..), ETCon (..), EType (..), ETypeDef (..), ETypeName (..),
+                  IsElmDefinition (..))
+
 import GHC.Generics (Generic)
 
 import Lucid (ToHtml)
 import Lucid.Base (ToHtml (..))
 
 import Money qualified
+import Money.Aeson ()
 
 import Servant
 
@@ -57,7 +67,7 @@ data Grupo = Grupo
 
 newtype Monto = Monto (Money.Dense "ARS")
   deriving stock (Show, Eq, Ord)
-  deriving newtype (Num)
+  deriving newtype (Num, ToJSON, FromJSON)
 
 monto2Text :: Monto -> Text
 monto2Text (Monto m) =
@@ -82,7 +92,22 @@ data Participante = Participante
   { participanteId :: ULID
   , participanteNombre :: Text
   }
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
+
+instance ToJSON ULID where
+  toJSON :: ULID -> Value
+  toJSON = String . pack . show
+
+instance FromJSON ULID where
+  parseJSON :: Value -> Parser ULID
+  parseJSON = withText "ULID" $ \t ->
+    case readMaybe @ULID $ unpack t of
+      Just ulid -> pure ulid
+      Nothing -> fail "Invalid ulid"
+
+instance ToJSONKey ULID
+
+instance FromJSONKey ULID
 
 instance ToHttpApiData ULID where
   toQueryParam :: ULID -> Text
@@ -95,7 +120,12 @@ instance FromHttpApiData ULID where
       Just ulid -> pure ulid
       Nothing -> Left $ "cant parse a ulid from: " <> pack (show t) <> ""
 
-type ParticipanteId = ULID
+newtype ParticipanteId = ParticipanteId ULID
+  deriving (Generic)
+  deriving newtype (Show, Eq, Ord, ToJSONKey, FromJSONKey)
+
+participanteId2ULID :: ParticipanteId -> ULID
+participanteId2ULID (ParticipanteId ulid) = ulid
 
 data Pago = Pago
   { pagoId :: ULID
@@ -108,7 +138,7 @@ data Pago = Pago
 data Parte
   = MontoFijo Monto ParticipanteId
   | Ponderado Integer ParticipanteId
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 parteParticipante :: Parte -> ParticipanteId
 parteParticipante (Ponderado _ p) = p
@@ -129,9 +159,9 @@ instance FromHttpApiData Monto where
       Nothing -> Left $ "monto invalido: " <> pack (show t)
 
 buscarParticipante :: Grupo -> ParticipanteId -> Participante
-buscarParticipante grupo pId =
+buscarParticipante grupo (ParticipanteId pId) =
   grupo.participantes
-  & List.find (\p -> participanteId p == pId )
+  & List.find (\p -> participanteId p == pId)
   & Maybe.fromMaybe (error $ "participante " <> show pId <> "not found")
 
 nullUlid :: ULID
@@ -221,7 +251,7 @@ removerDeudor participanteId (Deudas deudasMap) =
 
 data Transaccion =
   Transaccion ParticipanteId ParticipanteId Monto
-  deriving (Show, Eq)
+  deriving (Show, Eq, Generic)
 
 resolverDeudasNaif :: Deudas Monto -> [Transaccion]
 resolverDeudasNaif deudas
@@ -231,15 +261,17 @@ resolverDeudasNaif deudas
       let
         (mayorDeudor, mayorDeuda) = extraerMaximoDeudor deudas
         deudas' = removerDeudor mayorDeudor deudas
+
         (mayorPagador, mayorPagado) = extraerMaximoPagador deudas'
         deudas'' = removerDeudor mayorPagador deudas'
+
       in case compare mayorDeuda mayorPagado of
           LT -> Transaccion mayorDeudor mayorPagador mayorDeuda
             : resolverDeudasNaif (deudas'' <> mkDeuda mayorPagador (mayorPagado - mayorDeuda))
           GT -> Transaccion mayorDeudor mayorPagador mayorPagado
             : resolverDeudasNaif (deudas'' <> mkDeuda mayorDeudor (-mayorDeuda + mayorPagado))
           EQ -> Transaccion mayorDeudor mayorPagador mayorPagado
-            : resolverDeudasNaif (deudas'')
+            : resolverDeudasNaif deudas''
 
 deudoresNoNulos :: Deudas Monto -> Int
 deudoresNoNulos (Deudas deudasMap) =
@@ -247,3 +279,30 @@ deudoresNoNulos (Deudas deudasMap) =
   & Map.toList
   & filter (\(_p, m) -> m /= 0)
   & length
+
+instance IsElmDefinition ULID where
+  compileElmDef :: Proxy ULID -> ETypeDef
+  compileElmDef _ =
+    ETypePrimAlias (EPrimAlias {epa_name = ETypeName {et_name = "ULID", et_args = []}, epa_type = ETyCon (ETCon {tc_name = "String"})})
+
+instance IsElmDefinition Monto where
+  compileElmDef :: Proxy Monto -> ETypeDef
+  compileElmDef _ =
+    ETypePrimAlias $ EPrimAlias
+      { epa_name = ETypeName
+          { et_name = "Monto"
+          , et_args = []
+          }
+      , epa_type = ETyTuple 3
+          & flip ETyApp (ETyCon (ETCon {tc_name = "String"}))
+          & flip ETyApp (ETyCon (ETCon {tc_name = "Int"}))
+          & flip ETyApp (ETyCon (ETCon {tc_name = "Int"}))
+      }
+
+Elm.deriveBoth Elm.defaultOptions ''ParticipanteId
+Elm.deriveBoth Elm.defaultOptions ''Parte
+Elm.deriveBoth Elm.defaultOptions ''Pago
+Elm.deriveBoth Elm.defaultOptions ''Participante
+Elm.deriveBoth Elm.defaultOptions ''Transaccion
+Elm.deriveBoth Elm.defaultOptions ''Deudas
+Elm.deriveBoth Elm.defaultOptions ''Grupo

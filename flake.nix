@@ -17,6 +17,8 @@
           lapack
           glpk
           postgresql
+          nodePackages.pnpm
+          nodejs
         ];
 
         myDevTools = [
@@ -52,6 +54,36 @@
           '';
         };
 
+        elm-ui = pkgs.stdenv.mkDerivation {
+          name = "banana-split-elm";
+          __noChroot = true;
+          src = with pkgs.lib.fileset; toSource {
+            root = ./ui;
+            fileset = unions [
+              ./ui/package.json
+              ./ui/pnpm-lock.yaml
+              ./ui/.npmrc
+
+              ./ui/src
+
+              ./ui/elm.json
+              ./ui/elm-land.json
+            ];
+          };
+          nativeBuildInputs = with pkgs; [ nodePackages.pnpm cacert ];
+
+          buildPhase = ''
+            HOME=$PWD
+            pnpm install --frozen-lockfile
+            pnpm run build
+          '';
+          installPhase = ''
+            ls -lahR dist
+            mkdir -p dist $out/opt/banana-split/public
+            mv -v dist $out/opt/banana-split/public
+          '';
+        };
+
         banana-split = pkgs.haskell.lib.buildStackProject {
           name = "banana-split";
           src = with pkgs.lib.fileset; toSource {
@@ -74,6 +106,7 @@
       in {
         packages = {
           inherit banana-split;
+          elm-ui = elm-ui;
           docker = pkgs.dockerTools.buildImage {
             name = "banana-split";
             tag = "latest";
@@ -82,6 +115,7 @@
               name = "image-root";
               paths = with pkgs; [
                 banana-split
+                elm-ui
                 dockerTools.binSh
                 iana-etc
                 cacert
@@ -89,6 +123,7 @@
             };
             config = {
               Cmd = ["/bin/banana-split"];
+              WorkingDir = "/opt/banana-split";
             };
           };
           default = banana-split;

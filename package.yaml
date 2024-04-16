@@ -22,9 +22,12 @@ dependencies:
   - random
   - resource-pool
   - safe-money
+  - safe-money-aeson
   - selda
   - selda-postgresql
   - servant
+  - servant-elm
+  - elm-bridge
   - servant-htmx
   - servant-server
   - string-conversions
@@ -84,4 +87,3 @@ tests:
       - -threaded
       - -rtsopts
       - -with-rtsopts=-N
-

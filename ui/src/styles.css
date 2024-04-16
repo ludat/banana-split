@@ -1,0 +1,15 @@
+@import "https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css";
+
+.barras-precio {
+    & > .izquierda {
+        text-align: right;
+        display: flex;
+        justify-content: flex-end;
+    }
+    & > .monto > .barra.positivo  {
+        background-color: green;
+    }
+    & > .monto > .barra.negativo {
+        background-color: red;
+    }
+}

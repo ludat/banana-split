@@ -7,16 +7,18 @@
 {-# LANGUAGE TypeOperators #-}
 
 module Site.Handler.Pagos
-    ( handlePagoCreate
-    , handlePagoDelete
+    ( handleDeletePago
     , handlePagoEdit
     , handlePagoNew
     , handlePagoNewPatch
+    , handlePagoPost
     , handlePagoUpdate
     , handlePagosGet
     ) where
 
-import BananaSplit
+import BananaSplit (Grupo (..), Monto, Pago (..), Parte (..), Participante (..),
+                    ParticipanteId (ParticipanteId), buscarParticipante, monto2Text, nullUlid,
+                    parteParticipante, text2Monto)
 import BananaSplit.Persistence (deletePago, fetchGrupo, fetchParticipantes, savePago, updatePago)
 
 import Control.Monad (forM_)
@@ -60,23 +62,22 @@ import Web.Internal.FormUrlEncoded (Form (..))
 _pagosUpdatedEvent :: Text
 _pagosUpdatedEvent = "pagos-updated"
 
-handlePagoCreate :: ULID -> Form -> AppHandler (Headers '[HXTrigger, HXRetarget, HXReswap] RawHtml)
-handlePagoCreate grupoId form = do
-  (view, maybePago) <- postForm "pago" form (pagosForm Nothing)
+handlePagoPost :: ULID -> Pago -> AppHandler Pago
+handlePagoPost grupoId pago = do
+  runSelda (savePago grupoId pago)
 
-  case maybePago of
-    Just pago -> do
-      _ <- runSelda (savePago grupoId pago)
-      grupo <- fromJust <$> runSelda (fetchGrupo grupoId)
+    --   fmap (noHeader . addHeader "#pagos" . addHeader "afterbegin") $ renderHtml $ do
+    --     renderPago grupo grupoId pago
 
-      fmap (noHeader . addHeader "#pagos" . addHeader "afterbegin") $ renderHtml $ do
-        renderPago grupo grupoId pago
+    -- Nothing -> do
+    --   grupo <- fromJust <$> runSelda (fetchGrupo grupoId)
 
-    Nothing -> do
-      grupo <- fromJust <$> runSelda (fetchGrupo grupoId)
-
-      fmap (noHeader . noHeader . noHeader) $ renderHtml $ do
-        pagosView grupo.grupoId Nothing grupo.participantes view
+    --   fmap (noHeader . noHeader . noHeader) $ renderHtml $ do
+    --     pagosView grupo.grupoId Nothing grupo.participantes view
+handleDeletePago :: ULID -> ULID -> AppHandler ULID
+handleDeletePago grupoId pagoId = do
+  runSelda (deletePago grupoId pagoId)
+  pure pagoId
 
 handlePagoUpdate :: ULID -> ULID -> Form -> AppHandler (Headers '[HXTrigger, HXRetarget, HXReswap] RawHtml)
 handlePagoUpdate grupoId pagoId form = do
@@ -104,13 +105,13 @@ handlePagoNew grupoId = do
   let fakeDeudores :: [Parte] =
         participantes
         & fmap participanteId
-        & fmap (\pId -> Ponderado 1 pId)
+        & fmap (\pId -> Ponderado 1 $ ParticipanteId pId)
 
   let fakePagadores :: [Parte] =
         participantes
         & fmap participanteId
         & listToMaybe
-        & maybe mempty (\pId -> [Ponderado 1 pId])
+        & maybe mempty (\pId -> [Ponderado 1 $ ParticipanteId pId])
 
   let pago = Pago nullUlid 0 "" fakeDeudores fakePagadores
 
@@ -222,11 +223,11 @@ handlePagoEdit grupoId pId = do
         p_ [] $ do
           pagosView grupoId (Just pId) grupo.participantes view
 
-handlePagoDelete :: ULID -> ULID -> AppHandler (Headers '[HXTrigger] RawHtml)
-handlePagoDelete _grupoId pagoId = do
-  runSelda $ deletePago pagoId
+-- handlePagoDelete :: ULID -> ULID -> AppHandler (Headers '[HXTrigger] RawHtml)
+-- handlePagoDelete _grupoId pagoId = do
+--   runSelda $ deletePago pagoId
 
-  addHeader _pagosUpdatedEvent <$> renderHtml mempty
+--   addHeader _pagosUpdatedEvent <$> renderHtml mempty
 
 handlePagosGet :: ULID -> AppHandler RawHtml
 handlePagosGet grupoId = do
@@ -240,14 +241,14 @@ handlePagosGet grupoId = do
       section_ $ do
         div_ [role_ "group"] $ do
           button_
-            [ hxGet_  $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNew grupo.grupoId
+            [ hxGet_ "/"
             , hxSwap_ "beforeend"
             , hxTarget_ "body"
             ]
             "Agregar pago"
 
           button_
-            [ hxGet_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagosGet grupo.grupoId
+            [ hxGet_ ""
             , hxTrigger_ [i|click, #{_pagosUpdatedEvent} from:body|]
             , hxSelect_ "#pagos"
             , hxTarget_ "#pagos"
@@ -291,10 +292,10 @@ pagosView :: Monad m => ULID -> Maybe ULID -> [Participante] -> Digestive.View T
 pagosView grupoId existentPago participantes view =
   form_
     [ mconcat $ maybe
-      [ hxPost_ $ ("/" <>) $ toUrlPiece $ fieldLink _routeGrupoPagoAdd grupoId
+      [ hxPost_ ""
       ]
       (\pagoId ->
-        [ hxPut_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoUpdate grupoId pagoId
+        [ hxPut_ ""
         ]
       )
       existentPago
@@ -347,7 +348,7 @@ pagosView grupoId existentPago participantes view =
           parteView grupoId existentPago participantes index (Digestive.makeListSubView "pagadores" index view)
       div_ [] $ do
         button_
-          [ hxPatch_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNewPatch grupoId existentPago
+          [ hxPatch_ ""
           , type_ "button"
           , hxVals_ "{\"event\": \"AGREGAR_PARTE\"}"
           ]
@@ -369,7 +370,7 @@ pagosView grupoId existentPago participantes view =
 
       div_ $ do
         button_
-          [ hxPatch_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNewPatch grupoId existentPago
+          [ hxPatch_ ""
           , type_ "button"
           , hxVals_ "{\"event\": \"AGREGAR_PARTE\"}"
           ]
@@ -400,7 +401,7 @@ parteView grupoId pagoId participantes index view = do
     select_
       [ name_ $ Digestive.absoluteRef "tipo" view
       , id_ $ Digestive.absoluteRef "tipo" view
-      , hxPatch_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNewPatch grupoId pagoId
+      , hxPatch_ ""
       ] $ do
       option_
         [ value_ "MontoFijo"
@@ -422,7 +423,7 @@ parteView grupoId pagoId participantes index view = do
     forM_ (Digestive.errors "cuota" view) $ small_ . toHtml
     forM_ (Digestive.errors "participante" view) $ small_ . toHtml
     button_
-      [ hxPatch_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoNewPatch grupoId pagoId
+      [ hxPatch_ ""
       , type_ "button"
       , hxVals_ [i|{"event": "BORRAR_PARTE", "index": #{index}}|]
       ] "borrar"
@@ -471,7 +472,7 @@ parteForm parteDef =
       <$> "tipo" Digestive..: Digestive.text (Just tipoDef)
       <*> "monto" Digestive..: Digestive.text (Just $ monto2Text $ fromMaybe 0 montoDef)
       <*> "cuota" Digestive..: Digestive.text (Just $ cs $ show $ fromMaybe 1 cuotaDef)
-      <*> "participante" Digestive..: Digestive.stringRead "participante invalido" participanteDef
+      <*> "participante" Digestive..: undefined "participante invalido" participanteDef
       ) & Digestive.validate (\case
           ("MontoFijo", montoRaw,          _,  participante) -> do
             monto <- validateMonto montoRaw
@@ -541,13 +542,13 @@ renderPago grupo grupoId pago = do
     footer_ $ do
       div_ [role_ "group"] $ do
         button_
-          [ hxGet_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoEdit grupoId pago.pagoId
+          [ hxGet_ ""
           , hxSwap_ "beforeend"
           , hxTarget_ "body"
           , class_ "outline"
           ] "Editar"
         button_
-          [ hxDelete_ $ ("/" <>) $ toUrlPiece $ fieldLink _routePagoDelete grupoId pago.pagoId
+          [ hxDelete_ ""
           , hxConfirm_ "Estas seguro de borrar este pago?"
           , hxSwap_ "outerHTML"
           , class_ "outline"

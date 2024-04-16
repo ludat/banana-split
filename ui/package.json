@@ -1,0 +1,23 @@
+{
+  "name": "banana-split",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "start": "elm-land server",
+    "build": "elm-land build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@ryannhg/css-in-elm": "^1.0.0",
+    "elm": "0.19.1-6",
+    "elm-format": "^0.8.7",
+    "elm-json": "^0.2.13",
+    "elm-land": "^0.20.1"
+  }
+}
