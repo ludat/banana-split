@@ -80,7 +80,7 @@ update msg model =
                 Just createGrupoParams ->
                     ( { model | form = Form.update validate Form.Submit model.form }
                     , Effect.sendCmd <|
-                        Api.postApiGrupo createGrupoParams
+                        Api.postGrupo createGrupoParams
                             (\r ->
                                 case r of
                                     Ok grupo ->

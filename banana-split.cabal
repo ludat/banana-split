@@ -37,6 +37,7 @@ library
     , hmatrix-glpk
     , http-api-data
     , http-media
+    , http-types
     , lucid2
     , lucid2-htmx
     , mtl
@@ -100,6 +101,7 @@ executable banana-split
     , hmatrix-glpk
     , http-api-data
     , http-media
+    , http-types
     , lucid2
     , lucid2-htmx
     , mtl
@@ -156,6 +158,7 @@ test-suite spec
     , hspec
     , http-api-data
     , http-media
+    , http-types
     , lucid2
     , lucid2-htmx
     , mtl

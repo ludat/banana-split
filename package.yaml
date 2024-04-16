@@ -8,11 +8,14 @@ dependencies:
   - conferer
   - containers
   - digestive-functors
+  - elm-bridge
+  - file-embed
   - glpk-hs
   - hmatrix
   - hmatrix-glpk
   - http-api-data
   - http-media
+  - http-types
   - lucid2
   - lucid2-htmx
   - mtl
@@ -27,7 +30,6 @@ dependencies:
   - selda-postgresql
   - servant
   - servant-elm
-  - elm-bridge
   - servant-htmx
   - servant-server
   - string-conversions
@@ -38,9 +40,8 @@ dependencies:
   - unix
   - unordered-containers
   - wai
-  - wai-extra
   - wai-app-static
-  - file-embed
+  - wai-extra
   - warp
 
 language: GHC2021

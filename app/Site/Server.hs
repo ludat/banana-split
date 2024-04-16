@@ -9,7 +9,9 @@ import Control.Monad.Reader
 
 import Data.FileEmbed
 
+import Network.HTTP.Types.Status (ok200)
 import Network.Wai
+import Network.Wai.Application.Static (defaultWebAppSettings)
 
 import Servant
 import Servant.Server.Generic
@@ -20,7 +22,9 @@ import Site.Handler.Pagos
 
 import Types
 
-serverT :: ServerT (ToServantApi Api :<|> Raw) AppHandler
+import WaiAppStatic.Types (StaticSettings (..))
+
+serverT :: ServerT ("api" :> ToServantApi Api :<|> Raw) AppHandler
 serverT =
   genericServerT Api
     { _routeGrupoGet = handleShowGrupo
@@ -40,9 +44,12 @@ serverT =
     -- , _routePagoNewPatch = handlePagoNewPatch
     -- , _routePagoEdit = handlePagoEdit
     -- , _routePagoDelete = handlePagoDelete
-    } :<|> serveDirectoryWebApp "/public"
+    } :<|> serveDirectoryWith (defaultWebAppSettings "./public")
+      { ss404Handler = Just $ \_req cb -> do
+        cb $ responseFile ok200 [("Content-Type", "text/html")] "./public/index.html" Nothing
+      }
 
-proxyApi :: Proxy (ToServantApi Api :<|> Raw)
+proxyApi :: Proxy ("api" :> ToServantApi Api :<|> Raw)
 proxyApi = Proxy
 
 nt :: App -> AppHandler a -> Handler a

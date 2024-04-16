@@ -209,8 +209,8 @@ jsonEncMonto : Monto -> Value
 jsonEncMonto  val = (\(t1,t2,t3) -> Json.Encode.list identity [(Json.Encode.string) t1,(Json.Encode.int) t2,(Json.Encode.int) t3]) val
 
 
-postApiGrupo : CreateGrupoParams -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
-postApiGrupo body toMsg =
+postGrupo : CreateGrupoParams -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
+postGrupo body toMsg =
     let
         params =
             List.filterMap identity
@@ -223,9 +223,8 @@ postApiGrupo body toMsg =
             , headers =
                 []
             , url =
-                Url.Builder.crossOrigin ""
-                    [ "api"
-                    , "grupo"
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
                     ]
                     params
             , body =
@@ -238,8 +237,8 @@ postApiGrupo body toMsg =
                 Nothing
             }
 
-getApiGrupoById : ULID -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
-getApiGrupoById capture_id toMsg =
+getGrupoById : ULID -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
+getGrupoById capture_id toMsg =
     let
         params =
             List.filterMap identity
@@ -252,9 +251,8 @@ getApiGrupoById capture_id toMsg =
             , headers =
                 []
             , url =
-                Url.Builder.crossOrigin ""
-                    [ "api"
-                    , "grupo"
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
                     , (capture_id)
                     ]
                     params
@@ -268,8 +266,8 @@ getApiGrupoById capture_id toMsg =
                 Nothing
             }
 
-getApiGrupoByIdNetos : ULID -> (Result Http.Error  (Netos)  -> msg) -> Cmd msg
-getApiGrupoByIdNetos capture_id toMsg =
+getGrupoByIdNetos : ULID -> (Result Http.Error  (Netos)  -> msg) -> Cmd msg
+getGrupoByIdNetos capture_id toMsg =
     let
         params =
             List.filterMap identity
@@ -282,9 +280,8 @@ getApiGrupoByIdNetos capture_id toMsg =
             , headers =
                 []
             , url =
-                Url.Builder.crossOrigin ""
-                    [ "api"
-                    , "grupo"
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
                     , (capture_id)
                     , "netos"
                     ]
@@ -299,8 +296,8 @@ getApiGrupoByIdNetos capture_id toMsg =
                 Nothing
             }
 
-postApiGrupoByIdParticipantes : ULID -> ParticipanteAddParams -> (Result Http.Error  (Participante)  -> msg) -> Cmd msg
-postApiGrupoByIdParticipantes capture_id body toMsg =
+postGrupoByIdParticipantes : ULID -> ParticipanteAddParams -> (Result Http.Error  (Participante)  -> msg) -> Cmd msg
+postGrupoByIdParticipantes capture_id body toMsg =
     let
         params =
             List.filterMap identity
@@ -313,9 +310,8 @@ postApiGrupoByIdParticipantes capture_id body toMsg =
             , headers =
                 []
             , url =
-                Url.Builder.crossOrigin ""
-                    [ "api"
-                    , "grupo"
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
                     , (capture_id)
                     , "participantes"
                     ]
@@ -330,8 +326,8 @@ postApiGrupoByIdParticipantes capture_id body toMsg =
                 Nothing
             }
 
-postApiGrupoByIdPagos : ULID -> Pago -> (Result Http.Error  (Pago)  -> msg) -> Cmd msg
-postApiGrupoByIdPagos capture_id body toMsg =
+postGrupoByIdPagos : ULID -> Pago -> (Result Http.Error  (Pago)  -> msg) -> Cmd msg
+postGrupoByIdPagos capture_id body toMsg =
     let
         params =
             List.filterMap identity
@@ -344,9 +340,8 @@ postApiGrupoByIdPagos capture_id body toMsg =
             , headers =
                 []
             , url =
-                Url.Builder.crossOrigin ""
-                    [ "api"
-                    , "grupo"
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
                     , (capture_id)
                     , "pagos"
                     ]
@@ -361,8 +356,8 @@ postApiGrupoByIdPagos capture_id body toMsg =
                 Nothing
             }
 
-deleteApiGrupoByIdParticipantesByParticipanteId : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
-deleteApiGrupoByIdParticipantesByParticipanteId capture_id capture_participanteId toMsg =
+deleteGrupoByIdParticipantesByParticipanteId : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
+deleteGrupoByIdParticipantesByParticipanteId capture_id capture_participanteId toMsg =
     let
         params =
             List.filterMap identity
@@ -375,9 +370,8 @@ deleteApiGrupoByIdParticipantesByParticipanteId capture_id capture_participanteI
             , headers =
                 []
             , url =
-                Url.Builder.crossOrigin ""
-                    [ "api"
-                    , "grupo"
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
                     , (capture_id)
                     , "participantes"
                     , (capture_participanteId)
@@ -393,8 +387,8 @@ deleteApiGrupoByIdParticipantesByParticipanteId capture_id capture_participanteI
                 Nothing
             }
 
-deleteApiGrupoByIdPagosByPagoId : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
-deleteApiGrupoByIdPagosByPagoId capture_id capture_pagoId toMsg =
+deleteGrupoByIdPagosByPagoId : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
+deleteGrupoByIdPagosByPagoId capture_id capture_pagoId toMsg =
     let
         params =
             List.filterMap identity
@@ -407,9 +401,8 @@ deleteApiGrupoByIdPagosByPagoId capture_id capture_pagoId toMsg =
             , headers =
                 []
             , url =
-                Url.Builder.crossOrigin ""
-                    [ "api"
-                    , "grupo"
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
                     , (capture_id)
                     , "pagos"
                     , (capture_pagoId)

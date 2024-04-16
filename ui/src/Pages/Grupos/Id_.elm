@@ -52,8 +52,8 @@ init grupoId =
       , netos = Loading
       }
     , Effect.batch
-        [ Effect.sendCmd <| Api.getApiGrupoById grupoId (RemoteData.fromResult >> GrupoResponse)
-        , Effect.sendCmd <| Api.getApiGrupoByIdNetos grupoId (RemoteData.fromResult >> NetosResponse)
+        [ Effect.sendCmd <| Api.getGrupoById grupoId (RemoteData.fromResult >> GrupoResponse)
+        , Effect.sendCmd <| Api.getGrupoByIdNetos grupoId (RemoteData.fromResult >> NetosResponse)
         ]
     )
 

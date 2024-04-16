@@ -57,7 +57,7 @@ init grupoId =
       , participanteForm = Form.initial [] validateParticipante
       }
     , Effect.batch
-        [ Effect.sendCmd <| Api.getApiGrupoById grupoId (RemoteData.fromResult >> GrupoResponse)
+        [ Effect.sendCmd <| Api.getGrupoById grupoId (RemoteData.fromResult >> GrupoResponse)
         ]
     )
 
@@ -92,7 +92,7 @@ update msg model =
                         | participanteForm = Form.update validateParticipante Form.Submit model.participanteForm
                       }
                     , Effect.sendCmd <|
-                        Api.postApiGrupoByIdParticipantes grupoId
+                        Api.postGrupoByIdParticipantes grupoId
                             participanteParams
                             (\r ->
                                 case r of
@@ -140,7 +140,7 @@ update msg model =
                     ( model
                     , Effect.batch
                         [ Effect.sendCmd <|
-                            Api.deleteApiGrupoByIdParticipantesByParticipanteId
+                            Api.deleteGrupoByIdParticipantesByParticipanteId
                                 grupo.grupoId
                                 participanteId
                                 DeleteParticipanteResponse

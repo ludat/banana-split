@@ -33,25 +33,25 @@ type HXReswap = Header "HX-Reswap" Text
 data Api routes
   = Api
     { _routeGrupoPost ::
-      routes :- "api" :> "grupo" :> ReqBody '[JSON] CreateGrupoParams :> Post '[JSON] Grupo
+      routes :- "grupo" :> ReqBody '[JSON] CreateGrupoParams :> Post '[JSON] Grupo
     , _routeGrupoGet ::
-      routes :- "api" :> "grupo" :> Capture "id" ULID :> Get '[JSON] Grupo
+      routes :- "grupo" :> Capture "id" ULID :> Get '[JSON] Grupo
     , _routeGrupoGetNetos ::
-      routes :- "api" :> "grupo" :> Capture "id" ULID :> "netos" :> Get '[JSON] Netos
+      routes :- "grupo" :> Capture "id" ULID :> "netos" :> Get '[JSON] Netos
     , _routeGrupoParticipanteAdd ::
-      routes :- "api" :> "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
+      routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
     -- , _routePagosGet ::
     --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Get '[HTML] RawHtml
     , _routePagoPost ::
-      routes :- "api" :> "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
+      routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
     -- , _routePagoNewPatch ::
     --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> QueryParam "pagoId" ULID :> ReqBody '[FormUrlEncoded] Form :> Patch '[HTML] RawHtml
     -- , _routeGrupoPagoAdd ::
     --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[FormUrlEncoded] Form :> Post '[HTML] (Headers '[HXTrigger, HXRetarget, HXReswap] RawHtml)
     , _routeGrupoParticipanteDelete ::
-      routes :- "api" :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> Delete '[JSON] ULID
+      routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> Delete '[JSON] ULID
     , _routeGrupoPagoDelete ::
-      routes :- "api" :> "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> Delete '[JSON] ULID
+      routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> Delete '[JSON] ULID
     -- , _routePagoEdit ::
     --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> Get '[HTML] RawHtml
     -- , _routePagoUpdate ::

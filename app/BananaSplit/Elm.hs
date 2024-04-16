@@ -29,7 +29,7 @@ generateElmFiles = do
         ETyApp (ETyCon (ETCon "Maybe")) v -> "(Maybe.map " <> defaultElmToString v <> " >> Maybe.withDefault \"\")"
         ETyCon (ETCon "ULID") -> ""
         e -> error $ show e
-      --  , urlPrefix = Static ""
+       , urlPrefix = Static "/api"
       })
     [ "Generated",
       "Api"

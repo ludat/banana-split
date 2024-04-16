@@ -66,7 +66,7 @@ init grupoId =
       , pagoForm = Form.initial [] validatePago
       }
     , Effect.batch
-        [ Effect.sendCmd <| Api.getApiGrupoById grupoId (RemoteData.fromResult >> GrupoResponse)
+        [ Effect.sendCmd <| Api.getGrupoById grupoId (RemoteData.fromResult >> GrupoResponse)
         ]
     )
 
@@ -172,7 +172,7 @@ update msg model =
                         | pagoForm = Form.update validatePago Form.Submit model.pagoForm
                       }
                     , Effect.sendCmd <|
-                        Api.postApiGrupoByIdPagos
+                        Api.postGrupoByIdPagos
                             grupoId
                             pago
                             (\r ->
@@ -277,7 +277,7 @@ update msg model =
                 Success grupo ->
                     ( model
                     , Effect.batch
-                        [ Effect.sendCmd <| Api.deleteApiGrupoByIdPagosByPagoId grupo.grupoId pagoId DeletePagoResponse
+                        [ Effect.sendCmd <| Api.deleteGrupoByIdPagosByPagoId grupo.grupoId pagoId DeletePagoResponse
                         ]
                     )
 
