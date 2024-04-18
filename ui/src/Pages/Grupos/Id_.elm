@@ -162,7 +162,7 @@ view model =
                                                             div [ class "cell monto izquierda" ]
                                                                 [ div
                                                                     [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
-                                                                    , class "barra negativo"
+                                                                    , class "barra has-background-danger has-text-primary-invert"
                                                                     ]
                                                                     [ p [] [ text <| Decimal.toString monto ]
                                                                     ]
@@ -172,11 +172,9 @@ view model =
                                                             div [ class "cell monto derecha" ]
                                                                 [ div
                                                                     [ style "width" <| String.fromFloat (Decimal.toFloat monto * 100 / maximo) ++ "%"
-                                                                    , class "barra positivo"
+                                                                    , class "barra has-background-success has-text-primary-invert"
                                                                     ]
-                                                                    [ p []
-                                                                        [ text <| Decimal.toString monto
-                                                                        ]
+                                                                    [ text <| Decimal.toString monto
                                                                     ]
                                                                 ]
                                                     in

@@ -6,10 +6,4 @@
         display: flex;
         justify-content: flex-end;
     }
-    & > .monto > .barra.positivo  {
-        background-color: green;
-    }
-    & > .monto > .barra.negativo {
-        background-color: red;
-    }
 }
