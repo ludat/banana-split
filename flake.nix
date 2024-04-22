@@ -116,6 +116,7 @@
               paths = with pkgs; [
                 banana-split
                 elm-ui
+                reshape
                 dockerTools.binSh
                 iana-etc
                 cacert
