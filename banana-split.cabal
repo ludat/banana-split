@@ -43,6 +43,7 @@ library
     , mtl
     , postgresql-migration
     , pretty-simple
+    , process
     , random
     , resource-pool
     , safe-money
@@ -107,6 +108,7 @@ executable banana-split
     , mtl
     , postgresql-migration
     , pretty-simple
+    , process
     , random
     , resource-pool
     , safe-money
@@ -164,6 +166,7 @@ test-suite spec
     , mtl
     , postgresql-migration
     , pretty-simple
+    , process
     , random
     , resource-pool
     , safe-money

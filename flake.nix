@@ -19,6 +19,7 @@
           postgresql
           nodePackages.pnpm
           nodejs
+          reshape
         ];
 
         myDevTools = [
@@ -90,10 +91,10 @@
             fileset = unions [
               ./app
               ./package.yaml
-              ./public
               ./src
               ./stack.yaml
               ./stack.yaml.lock
+              ./migrations
               # ./tests
             ];
           };

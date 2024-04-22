@@ -2,6 +2,7 @@
 {-# LANGUAGE TypeApplications #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE OverloadedRecordDot #-}
+{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE StrictData #-}
 module BananaSplit.Persistence
     ( addParticipante
@@ -38,91 +39,105 @@ import Database.Selda.SqlType
 import Money qualified
 
 import Text.Read (readMaybe)
+import qualified Data.Text as Text
+import Data.String.Interpolate (i)
 
 data GrupoRecord = GrupoRecord
-  { grupoId :: ULID
-  , grupoNombre :: Text
+  { grupo_id :: ULID
+  , grupo_nombre :: Text
   } deriving (Show, Eq, Generic)
 
 instance SqlRow GrupoRecord
 
+unprefixAndLower :: Text -> Text -> Text
+unprefixAndLower prefix t =
+  t
+  & Text.stripPrefix prefix
+  & fromMaybe (error [i|Failed to unprefix table name: '#{prefix}' is not a prefix of table name '#{t}'|])
+  & Text.toLower
+
 grupoTable :: Table GrupoRecord
-grupoTable = table "grupos"
-  [ #grupoId :- primary
+grupoTable = tableFieldMod "grupos"
+  [ #grupo_id :- primary
   ]
+  (unprefixAndLower "grupo_")
 
 data ParticipanteRecord = ParticipanteRecord
-  { participanteId :: ULID
-  , participanteGrupoId :: ULID
-  , participanteNombre :: Text
+  { participante_id :: ULID
+  , participante_grupo_id :: ULID
+  , participante_nombre :: Text
   } deriving (Show, Eq, Generic)
 
 instance SqlRow ParticipanteRecord
 
 participanteTable :: Table ParticipanteRecord
-participanteTable = table "participantes"
-  [ #participanteId :- primary
-  , #participanteGrupoId :- foreignKey grupoTable #grupoId
+participanteTable = tableFieldMod "participantes"
+  [ #participante_id :- primary
+  , #participante_grupo_id :- foreignKey grupoTable #grupo_id
   ]
+  (unprefixAndLower "participante_")
 
 data PagoRecord = PagoRecord
-  { pagoId :: ULID
-  , pagoGrupoId :: ULID
-  , pagoNombre :: Text
-  , pagoMontoNumerador :: Int
-  , pagoMontoDenominador :: Int
+  { pago_id :: ULID
+  , pago_grupo_id :: ULID
+  , pago_nombre :: Text
+  , pago_monto_numerador :: Int
+  , pago_monto_denominador :: Int
   } deriving (Show, Eq, Generic)
 
 instance SqlRow PagoRecord
 
 pagoTable :: Table PagoRecord
-pagoTable = table "pagos"
-  [ #pagoId :- primary
-  , #pagoGrupoId :- foreignKey grupoTable #grupoId
+pagoTable = tableFieldMod "pagos"
+  [ #pago_id :- primary
+  , #pago_grupo_id :- foreignKey grupoTable #grupo_id
   ]
+  (unprefixAndLower "pago_")
 
 data ParteRecord = ParteRecord
-  { partePagoId :: ULID
-  , parteParticipanteId :: ULID
-  , parteTipo :: Text
-  , parteMontoNumerador :: Maybe Int
-  , parteMontoDenominador :: Maybe Int
-  , parteCuota :: Maybe Int
+  { parte_pago_id :: ULID
+  , parte_participante_id :: ULID
+  , parte_tipo :: Text
+  , parte_monto_numerador :: Maybe Int
+  , parte_monto_denominador :: Maybe Int
+  , parte_cuota :: Maybe Int
   } deriving (Show, Eq, Generic)
 
 instance SqlRow ParteRecord
 
 parteDeudorTable :: Table ParteRecord
-parteDeudorTable = table "partes_deudores"
-  [ #partePagoId :- foreignKey pagoTable #pagoId
-  , #parteParticipanteId :- foreignKey participanteTable #participanteId
+parteDeudorTable = tableFieldMod "partes_deudores"
+  [ #parte_pago_id :- foreignKey pagoTable #pago_id
+  , #parte_participante_id :- foreignKey participanteTable #participante_id
   ]
+  (unprefixAndLower "parte_")
 
 partePagadorTable :: Table ParteRecord
-partePagadorTable = table "partes_pagadores"
-  [ #partePagoId :- foreignKey pagoTable #pagoId
-  , #parteParticipanteId :- foreignKey participanteTable #participanteId
+partePagadorTable = tableFieldMod "partes_pagadores"
+  [ #parte_pago_id :- foreignKey pagoTable #pago_id
+  , #parte_participante_id :- foreignKey participanteTable #participante_id
   ]
+  (unprefixAndLower "parte_")
 
 updatePago :: (MonadSelda m, MonadMask m) => ULID -> ULID -> M.Pago -> m ()
 updatePago grupoId pagoId pago = do
   let realPago = pago { M.pagoId = pagoId}
   transaction $ do
-    update_ pagoTable (\p -> p ! #pagoId .== literal pagoId) (\_p -> row $ pago2PagoRecord grupoId realPago)
+    update_ pagoTable (\p -> p ! #pago_id .== literal pagoId) (\_p -> row $ pago2PagoRecord grupoId realPago)
     deletePartesFromPago pagoId
     savePartes pagoId pago
 
 fetchGrupo :: MonadSelda m => ULID -> m (Maybe M.Grupo)
 fetchGrupo ulid = do
   grupos :: [GrupoRecord] <- query $ do
-    select grupoTable `suchThat` (\grupo -> grupo ! #grupoId .== literal ulid)
+    select grupoTable `suchThat` (\grupo -> grupo ! #grupo_id .== literal ulid)
   case grupos of
-    [GrupoRecord {grupoId, grupoNombre}] -> do
+    [GrupoRecord {grupo_id, grupo_nombre}] -> do
       participantes <- fetchParticipantes ulid
       pagos <- fetchPagos ulid
       pure $ Just $ M.Grupo
-        { M.grupoId = grupoId
-        , M.grupoNombre = grupoNombre
+        { M.grupoId = grupo_id
+        , M.grupoNombre = grupo_nombre
         , M.pagos = pagos
         , M.participantes = participantes
         }
@@ -133,48 +148,48 @@ fetchPagos :: MonadSelda m => ULID -> m [M.Pago]
 fetchPagos grupoId = do
   pagosR :: [PagoRecord] <- query $ do
     pago <- select pagoTable
-    restrict (pago ! #pagoGrupoId .== literal grupoId)
-    order (pago ! #pagoId) descending
+    restrict (pago ! #pago_grupo_id .== literal grupoId)
+    order (pago ! #pago_id) descending
     pure pago
-  let pagosIds = fmap pagoId pagosR
+  let pagosIds = fmap pago_id pagosR
   partesDeudoresR <- query $ do
     parte <- select parteDeudorTable
-    restrict (parte ! #partePagoId `isIn` (literal <$> pagosIds))
-    order (parte ! #partePagoId) ascending
+    restrict (parte ! #parte_pago_id `isIn` (literal <$> pagosIds))
+    order (parte ! #parte_pago_id) ascending
     pure parte
   partesPagadoresR <- query $ do
     parte <- select partePagadorTable
-    restrict (parte ! #partePagoId `isIn` (literal <$> pagosIds))
-    order (parte ! #partePagoId) ascending
+    restrict (parte ! #parte_pago_id `isIn` (literal <$> pagosIds))
+    order (parte ! #parte_pago_id) ascending
     pure parte
   let deudoresMap = partesDeudoresR & fmap parteRecord2Parte & Map.fromListWith (++)
   let pagadoresMap = partesPagadoresR & fmap parteRecord2Parte & Map.fromListWith (++)
   pagosR
     & fmap (\pagoR ->
-        let monto = M.Monto $ Money.dense' $ fromIntegral (pagoMontoNumerador pagoR) % fromIntegral (pagoMontoDenominador pagoR)
+        let monto = M.Monto $ Money.dense' $ fromIntegral (pago_monto_numerador pagoR) % fromIntegral (pago_monto_denominador pagoR)
         in M.Pago
-        { M.pagoId = pagoId pagoR
+        { M.pagoId = pago_id pagoR
         , M.monto = monto
-        , M.nombre = pagoNombre pagoR
-        , M.deudores = Map.lookup (pagoId pagoR) deudoresMap & fromMaybe []
-        , M.pagadores = Map.lookup (pagoId pagoR) pagadoresMap & fromMaybe []
+        , M.nombre = pago_nombre pagoR
+        , M.deudores = Map.lookup (pago_id pagoR) deudoresMap & fromMaybe []
+        , M.pagadores = Map.lookup (pago_id pagoR) pagadoresMap & fromMaybe []
         }
       )
     & pure
   where
     parteRecord2Parte :: ParteRecord -> (ULID, [M.Parte])
     parteRecord2Parte parteR =
-      case parteTipo parteR of
+      case parte_tipo parteR of
         "Ponderado" ->
-          case parteCuota parteR of
+          case parte_cuota parteR of
             (Just cuota) ->
-              (partePagoId parteR, [M.Ponderado (fromIntegral cuota) (M.ParticipanteId $ parteParticipanteId parteR)])
+              (parte_pago_id parteR, [M.Ponderado (fromIntegral cuota) (M.ParticipanteId $ parte_participante_id parteR)])
             _ -> undefined
         "MontoFijo" ->
-          case (parteMontoDenominador parteR, parteMontoNumerador parteR) of
+          case (parte_monto_denominador parteR, parte_monto_numerador parteR) of
             (Just denominador, Just numerador) ->
               let monto = M.Monto $ Money.dense' $ fromIntegral numerador % fromIntegral denominador
-              in (partePagoId parteR, [M.MontoFijo monto $ M.ParticipanteId $ parteParticipanteId parteR])
+              in (parte_pago_id parteR, [M.MontoFijo monto $ M.ParticipanteId $ parte_participante_id parteR])
             _ -> undefined
         _ -> undefined
 
@@ -183,27 +198,27 @@ parte2ParteRecord pagoId parte =
   case parte of
     M.Ponderado cuota (M.ParticipanteId participanteId) ->
       ParteRecord
-        { partePagoId = pagoId
-        , parteParticipanteId = participanteId
-        , parteTipo = "Ponderado"
-        , parteMontoDenominador = Nothing
-        , parteMontoNumerador = Nothing
-        , parteCuota = Just $ fromInteger cuota
+        { parte_pago_id = pagoId
+        , parte_participante_id = participanteId
+        , parte_tipo = "Ponderado"
+        , parte_monto_denominador = Nothing
+        , parte_monto_numerador = Nothing
+        , parte_cuota = Just $ fromInteger cuota
         }
     M.MontoFijo monto (M.ParticipanteId participanteId) ->
       let (numerador, denominador) = deconstructMonto monto
       in ParteRecord
-        { partePagoId = pagoId
-        , parteParticipanteId = participanteId
-        , parteTipo = "MontoFijo"
-        , parteMontoDenominador = Just denominador
-        , parteMontoNumerador = Just numerador
-        , parteCuota = Nothing
+        { parte_pago_id = pagoId
+        , parte_participante_id = participanteId
+        , parte_tipo = "MontoFijo"
+        , parte_monto_denominador = Just denominador
+        , parte_monto_numerador = Just numerador
+        , parte_cuota = Nothing
         }
 deletePartesFromPago :: MonadSelda m => ULID -> m ()
 deletePartesFromPago pagoId = do
-  deleteFrom_ parteDeudorTable (\p -> p ! #partePagoId .== literal pagoId)
-  deleteFrom_ partePagadorTable (\p -> p ! #partePagoId .== literal pagoId)
+  deleteFrom_ parteDeudorTable (\p -> p ! #parte_pago_id .== literal pagoId)
+  deleteFrom_ partePagadorTable (\p -> p ! #parte_pago_id .== literal pagoId)
 
 deletePago :: (MonadSelda m, MonadMask m) => ULID -> ULID -> m ()
 deletePago grupoId pagoId = do
@@ -214,17 +229,17 @@ deletePago grupoId pagoId = do
 -- TODO(ludat): check if the pago belongs to the grupo
 deleteShallowPago :: MonadSelda m => ULID -> ULID -> m ()
 deleteShallowPago grupoId pagoId =
-  deleteFrom_ pagoTable (\p -> p ! #pagoId .== literal pagoId)
+  deleteFrom_ pagoTable (\p -> p ! #pago_id .== literal pagoId)
 
 pago2PagoRecord :: ULID -> M.Pago -> PagoRecord
 pago2PagoRecord grupoId pago =
   let (numerador, denominador) = deconstructMonto $ M.monto pago
   in PagoRecord
-    { pagoId = M.pagoId pago
-    , pagoGrupoId = grupoId
-    , pagoNombre = M.nombre pago
-    , pagoMontoDenominador = denominador
-    , pagoMontoNumerador = numerador
+    { pago_id = M.pagoId pago
+    , pago_grupo_id = grupoId
+    , pago_nombre = M.nombre pago
+    , pago_monto_denominador = denominador
+    , pago_monto_numerador = numerador
     }
 
 saveShallowPago :: MonadSelda m => ULID -> M.Pago -> m ()
@@ -239,17 +254,18 @@ savePartes pagoId pago = do
 
   insert_ partePagadorTable (parte2ParteRecord pagoId <$> M.pagadores pago)
 
-savePago :: (MonadSelda m) => ULID -> M.Pago -> m M.Pago
+savePago :: (MonadSelda m, MonadMask m) => ULID -> M.Pago -> m M.Pago
 savePago grupoId pagoWihtoutId = do
-  pagoId <- liftIO $ ULID.getULID
+  pagoId <- liftIO ULID.getULID
   let pago = pagoWihtoutId { M.pagoId = pagoId }
-  saveShallowPago grupoId pago
+  transaction $ do
+    saveShallowPago grupoId pago
 
-  insert_ parteDeudorTable (parte2ParteRecord pagoId <$> M.deudores pago)
+    insert_ parteDeudorTable (parte2ParteRecord pagoId <$> M.deudores pago)
 
-  insert_ partePagadorTable (parte2ParteRecord pagoId <$> M.pagadores pago)
+    insert_ partePagadorTable (parte2ParteRecord pagoId <$> M.pagadores pago)
 
-  pure pago
+    pure pago
 
 deconstructMonto :: M.Monto -> (Int, Int)
 deconstructMonto (M.Monto money) =
@@ -266,23 +282,23 @@ fetchParticipantes :: MonadSelda m => ULID -> m [M.Participante]
 fetchParticipantes ulid = do
   participantesR <- query $ do
     participante <- select participanteTable
-    restrict (participante ! #participanteGrupoId .== literal ulid)
-    order (participante ! #participanteId) ascending
+    restrict (participante ! #participante_grupo_id .== literal ulid)
+    order (participante ! #participante_id) ascending
     return participante
   pure $ fmap record2Participante participantesR
   where
     record2Participante :: ParticipanteRecord -> M.Participante
     record2Participante participante =
       M.Participante
-      { M.participanteId = participante.participanteId
-      , M.participanteNombre = participante.participanteNombre
+      { M.participanteId = participante.participante_id
+      , M.participanteNombre = participante.participante_nombre
       }
 
 createGrupo :: MonadSelda m => Text -> m M.Grupo
 createGrupo nombre = do
   ulid <- liftIO ULID.getULID
   insert_ grupoTable
-    [ GrupoRecord { grupoId = ulid, grupoNombre = nombre }
+    [ GrupoRecord { grupo_id = ulid, grupo_nombre = nombre }
     ]
   pure $ M.Grupo
     { M.grupoId = ulid
@@ -296,9 +312,9 @@ addParticipante grupoId nombre = do
   ulid <- liftIO ULID.getULID
   insert_ participanteTable
     [ ParticipanteRecord
-      { participanteId = ulid
-      , participanteNombre = nombre
-      , participanteGrupoId = grupoId
+      { participante_id = ulid
+      , participante_nombre = nombre
+      , participante_grupo_id = grupoId
       }
     ]
   pure $ Right $ M.Participante
@@ -308,7 +324,7 @@ addParticipante grupoId nombre = do
 
 deleteShallowParticipante :: MonadSelda m => ULID -> ULID -> m ()
 deleteShallowParticipante grupoId participanteId =
-    deleteFrom_ participanteTable (\p -> p ! #participanteId .== literal participanteId .&& p ! #participanteGrupoId .== literal grupoId)
+    deleteFrom_ participanteTable (\p -> p ! #participante_id .== literal participanteId .&& p ! #participante_grupo_id .== literal grupoId)
 
 createTables :: MonadSelda m => m ()
 createTables = do

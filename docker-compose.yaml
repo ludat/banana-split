@@ -3,7 +3,7 @@ services:
     image: "postgres:16-alpine"
     restart: always
     environment:
-      - POSTGRES_DB=rompepiernas_dev
+      - POSTGRES_DB=bananasplit_dev
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:

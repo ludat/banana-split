@@ -22,6 +22,7 @@ dependencies:
   # - optics
   - postgresql-migration
   - pretty-simple
+  - process
   - random
   - resource-pool
   - safe-money
