@@ -84,6 +84,15 @@
           '';
         };
 
+        migrations = pkgs.stdenv.mkDerivation {
+          name = "banana-split-migrations";
+          src = ./migrations;
+          postBuild = ''
+            mkdir -p $out/opt/banana-split/migrations
+            cp -vr . $out/opt/banana-split/migrations
+          '';
+        };
+
         banana-split = pkgs.haskell.lib.buildStackProject {
           name = "banana-split";
           src = with pkgs.lib.fileset; toSource {
@@ -107,6 +116,7 @@
         packages = {
           inherit banana-split;
           elm-ui = elm-ui;
+          migrations = migrations;
           docker = pkgs.dockerTools.buildImage {
             name = "banana-split";
             tag = "latest";
@@ -116,6 +126,7 @@
               paths = with pkgs; [
                 banana-split
                 elm-ui
+                migrations
                 reshape
                 dockerTools.binSh
                 iana-etc
