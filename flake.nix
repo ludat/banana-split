@@ -87,8 +87,12 @@
         migrations = pkgs.stdenv.mkDerivation {
           name = "banana-split-migrations";
           src = ./migrations;
+          buildInputs = with pkgs; [ reshape ];
           postBuild = ''
             mkdir -p $out/opt/banana-split/migrations
+            mkdir -p $out/bin/
+
+            cp -v ${pkgs.reshape}/bin/reshape $out/bin/
             cp -vr . $out/opt/banana-split/migrations
           '';
         };
@@ -103,7 +107,6 @@
               ./src
               ./stack.yaml
               ./stack.yaml.lock
-              ./migrations
               # ./tests
             ];
           };
@@ -127,7 +130,6 @@
                 banana-split
                 elm-ui
                 migrations
-                reshape
                 dockerTools.binSh
                 iana-etc
                 cacert
