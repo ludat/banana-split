@@ -16,16 +16,16 @@ packages:
     commit: efcb8354daa1205de2b862898353da2e4beb76b2
     git: https://github.com/ludat/glpk-hs.git
 - completed:
-    commit: 786e8fd72cc51020220f45aa3627b0cf8931cf9d
-    git: https://github.com/aergus/gasp.git
+    commit: feb8046b1f54222db1e41c4712f22f4a7ecec75d
+    git: https://github.com/jyp/gasp.git
     name: gasp
     pantry-tree:
-      sha256: 7b2ecd84ce13d79174e631255acdd9d02b59374c6f5127bce39ff91f3cc07851
+      sha256: d575a786fe94f503894a760344c358ada9e8e26fc6f582a752ea345fa8347cd2
       size: 1644
     version: 1.4.0.0
   original:
-    commit: 786e8fd72cc51020220f45aa3627b0cf8931cf9d
-    git: https://github.com/aergus/gasp.git
+    commit: feb8046b1f54222db1e41c4712f22f4a7ecec75d
+    git: https://github.com/jyp/gasp.git
 - completed:
     hackage: hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
     pantry-tree:
