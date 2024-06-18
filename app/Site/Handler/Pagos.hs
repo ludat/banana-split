@@ -79,24 +79,28 @@ handleDeletePago grupoId pagoId = do
   runSelda (deletePago grupoId pagoId)
   pure pagoId
 
-handlePagoUpdate :: ULID -> ULID -> Form -> AppHandler (Headers '[HXTrigger, HXRetarget, HXReswap] RawHtml)
-handlePagoUpdate grupoId pagoId form = do
-  (view, maybePago) <- postForm "pago" form (pagosForm Nothing)
+handlePagoUpdate :: ULID -> ULID -> Pago -> AppHandler Pago
+handlePagoUpdate grupoId pagoId pago = do
+  runSelda $ updatePago grupoId pagoId pago
 
-  case maybePago of
-    Just pagoWithoutId -> do
-      let pago = pagoWithoutId { pagoId = pagoId }
-      runSelda $ updatePago grupoId pagoId pago
-      grupo <- fromJust <$> runSelda (fetchGrupo grupoId)
+-- handlePagoUpdate :: ULID -> ULID -> Form -> AppHandler (Headers '[HXTrigger, HXRetarget, HXReswap] RawHtml)
+-- handlePagoUpdate grupoId pagoId form = do
+--   (view, maybePago) <- postForm "pago" form (pagosForm Nothing)
 
-      fmap (noHeader . addHeader [i|\#p-#{pagoId}|] . addHeader "outerHTML") $ renderHtml $ do
-            -- ^ necesito triggerear el refresh si actualizo el pago justo?
-        renderPago grupo grupoId pago
-    Nothing -> do
-      grupo <- fromJust <$> runSelda (fetchGrupo grupoId)
+--   case maybePago of
+--     Just pagoWithoutId -> do
+--       let pago = pagoWithoutId { pagoId = pagoId }
+--       runSelda $ updatePago grupoId pagoId pago
+--       grupo <- fromJust <$> runSelda (fetchGrupo grupoId)
 
-      fmap (noHeader . noHeader . noHeader) $ renderHtml $ do
-        pagosView grupo.grupoId (Just pagoId) grupo.participantes view
+--       fmap (noHeader . addHeader [i|\#p-#{pagoId}|] . addHeader "outerHTML") $ renderHtml $ do
+--             -- ^ necesito triggerear el refresh si actualizo el pago justo?
+--         renderPago grupo grupoId pago
+--     Nothing -> do
+--       grupo <- fromJust <$> runSelda (fetchGrupo grupoId)
+
+--       fmap (noHeader . noHeader . noHeader) $ renderHtml $ do
+--         pagosView grupo.grupoId (Just pagoId) grupo.participantes view
 
 handlePagoNew :: ULID -> AppHandler RawHtml
 handlePagoNew grupoId = do

@@ -2,9 +2,11 @@ module Pages.Grupos.Id_.Pagos exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
+import FeatherIcons as Icons
 import Form exposing (Form)
 import Form.Error as FormError
 import Form.Field as FormField
+import Form.Init as Form
 import Form.Input as FormInput
 import Form.Validate as V exposing (Validation, nonEmpty)
 import Generated.Api as Api exposing (Grupo, Monto, Pago, Parte(..), Participante, ULID)
@@ -49,13 +51,22 @@ type Msg
     = NoOp
     | GrupoResponse (WebData Grupo)
     | PagoForm Form.Msg
+    | ChangePagoPopoverState PagoPopoverState
     | AddedPago Pago
+    | UpdatedPago Pago
     | DeletePago ULID
     | DeletePagoResponse (Result Http.Error ULID)
 
 
+type PagoPopoverState
+    = EditingPago Pago
+    | CreateNewPago
+    | Closed
+
+
 type alias Model =
     { remoteGrupo : WebData Grupo
+    , pagoPopoverState : PagoPopoverState
     , pagoForm : Form CustomFormError Pago
     }
 
@@ -63,6 +74,7 @@ type alias Model =
 init : ULID -> ( Model, Effect Msg )
 init grupoId =
     ( { remoteGrupo = Loading
+      , pagoPopoverState = Closed
       , pagoForm = Form.initial [] validatePago
       }
     , Effect.batch
@@ -165,25 +177,72 @@ update msg model =
             , Effect.none
             )
 
+        UpdatedPago pago ->
+            ( { model
+                | remoteGrupo =
+                    model.remoteGrupo
+                        |> RemoteData.map
+                            (\grupo ->
+                                { grupo
+                                    | pagos =
+                                        List.map
+                                            (\oldPago ->
+                                                if oldPago.pagoId == pago.pagoId then
+                                                    pago
+
+                                                else
+                                                    oldPago
+                                            )
+                                            grupo.pagos
+                                }
+                            )
+              }
+            , Effect.none
+            )
+
         PagoForm Form.Submit ->
             case ( Form.getOutput model.pagoForm, model.remoteGrupo ) of
                 ( Just pago, Success { grupoId } ) ->
-                    ( { model
-                        | pagoForm = Form.update validatePago Form.Submit model.pagoForm
-                      }
-                    , Effect.sendCmd <|
-                        Api.postGrupoByIdPagos
-                            grupoId
-                            pago
-                            (\r ->
-                                case r of
-                                    Ok newPago ->
-                                        AddedPago newPago
+                    case model.pagoPopoverState of
+                        Closed ->
+                            ( model, Effect.none )
 
-                                    Err error ->
-                                        NoOp
+                        EditingPago oldPago ->
+                            ( { model
+                                | pagoForm = Form.update validatePago Form.Submit model.pagoForm
+                              }
+                            , Effect.sendCmd <|
+                                Api.putGrupoByIdPagosByPagoId
+                                    grupoId
+                                    oldPago.pagoId
+                                    pago
+                                    (\r ->
+                                        case r of
+                                            Ok newPago ->
+                                                UpdatedPago newPago
+
+                                            Err error ->
+                                                NoOp
+                                    )
                             )
-                    )
+
+                        CreateNewPago ->
+                            ( { model
+                                | pagoForm = Form.update validatePago Form.Submit model.pagoForm
+                              }
+                            , Effect.sendCmd <|
+                                Api.postGrupoByIdPagos
+                                    grupoId
+                                    pago
+                                    (\r ->
+                                        case r of
+                                            Ok newPago ->
+                                                AddedPago newPago
+
+                                            Err error ->
+                                                NoOp
+                                    )
+                            )
 
                 ( _, _ ) ->
                     ( { model
@@ -302,6 +361,74 @@ update msg model =
                 Err e ->
                     ( model, Effect.none )
 
+        ChangePagoPopoverState pagoPopoverState ->
+            ( { model
+                | pagoPopoverState = pagoPopoverState
+                , pagoForm =
+                    case pagoPopoverState of
+                        Closed ->
+                            model.pagoForm
+
+                        EditingPago pago ->
+                            let
+                                parteToForm parte =
+                                    case parte of
+                                        MontoFijo montoRaw participanteId ->
+                                            let
+                                                monto =
+                                                    montoRaw2Decimal montoRaw
+                                            in
+                                            FormField.group
+                                                [ Form.setString "tipo" "fijo"
+                                                , Form.setString "monto" (Decimal.toString monto)
+                                                , Form.setString "participante" participanteId
+                                                ]
+
+                                        Ponderado int participanteId ->
+                                            FormField.group
+                                                [ Form.setString "tipo" "ponderado"
+                                                , Form.setString "cuota" (String.fromInt int)
+                                                , Form.setString "participante" participanteId
+                                                ]
+
+                                montoPago =
+                                    montoRaw2Decimal pago.monto
+                            in
+                            Form.initial
+                                (List.concat
+                                    [ [ Form.setString "monto" (Decimal.toString montoPago)
+                                      , Form.setString "nombre" pago.nombre
+                                      ]
+                                    , [ Form.setList "deudores"
+                                            (List.map
+                                                parteToForm
+                                                pago.deudores
+                                            )
+                                      ]
+                                    , [ Form.setList "pagadores"
+                                            (List.map
+                                                parteToForm
+                                                pago.pagadores
+                                            )
+                                      ]
+                                    ]
+                                )
+                                validatePago
+
+                        CreateNewPago ->
+                            Form.initial [] validatePago
+              }
+            , Effect.none
+            )
+
+
+montoRaw2Decimal : ( a, Int, Int ) -> Decimal.Decimal s Int
+montoRaw2Decimal montoRaw =
+    case montoRaw of
+        ( _, numerador, denominador ) ->
+            Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
+                |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
+
 
 
 -- SUBSCRIPTIONS
@@ -357,17 +484,92 @@ view model =
                                 div [ class "card" ]
                                     [ p []
                                         [ text pago.nombre
+                                        , text " ($"
+                                        , text (Decimal.toString monto)
+                                        , text ")"
+                                        , button [ class "button", onClick <| ChangePagoPopoverState <| EditingPago pago ]
+                                            [ Icons.toHtml [] Icons.edit
+                                            ]
                                         , button [ class "delete", onClick <| DeletePago pago.pagoId ] []
                                         ]
                                     , p []
                                         [ text <| "pagado por alguien (?"
+                                        , pre [] [ text <| Debug.toString pago ]
                                         ]
                                     ]
                             )
                     )
-                , div [ class "container" ] [ pagosForm grupo.participantes model.pagoForm ]
+                , div [ class "container" ]
+                    [ button [ class "button", onClick <| ChangePagoPopoverState CreateNewPago ] [ text "Agregar pago" ]
+                    ]
+                , pagosModal grupo model
                 ]
             }
+
+
+pagosModal : Grupo -> Model -> Html Msg
+pagosModal grupo model =
+    div
+        ([ class "modal"
+         ]
+            ++ (case model.pagoPopoverState of
+                    Closed ->
+                        []
+
+                    EditingPago _ ->
+                        [ class "is-active" ]
+
+                    CreateNewPago ->
+                        [ class "is-active" ]
+               )
+        )
+        [ div
+            [ class "modal-background"
+            , onClick <| ChangePagoPopoverState Closed
+            ]
+            []
+        , div
+            [ class "modal-card"
+            ]
+            [ header
+                [ class "modal-card-head"
+                ]
+                [ p
+                    [ class "modal-card-title"
+                    ]
+                    [ text "Agregar pago" ]
+                , button
+                    [ class "delete"
+                    , attribute "aria-label" "close"
+                    , onClick <| ChangePagoPopoverState Closed
+                    ]
+                    []
+                ]
+            , section
+                [ class "modal-card-body"
+                ]
+                [ pagosForm grupo.participantes model.pagoForm
+                ]
+            , footer
+                [ class "modal-card-foot"
+                ]
+                [ div
+                    [ class "buttons"
+                    ]
+                    [ button
+                        [ class "button is-success"
+                        , onClick <| PagoForm <| Form.Submit
+                        ]
+                        [ text "Crear pago" ]
+                    , button
+                        [ class "button"
+                        , onClick <| ChangePagoPopoverState Closed
+                        ]
+                        [ text "Cancel" ]
+                    ]
+                ]
+            ]
+        ]
 
 
 pagosForm : List Participante -> Form CustomFormError Pago -> Html Msg
@@ -490,12 +692,13 @@ pagosForm participantes form =
                 ]
                 [ text "Agregar parte" ]
             ]
-        , div [ class "control" ]
-            [ button
-                [ class "button is-primary"
-                ]
-                [ text "Crear" ]
-            ]
+
+        --, div [ class "control" ]
+        --    [ button
+        --        [ class "button is-primary"
+        --        ]
+        --        [ text "Crear" ]
+        --    ]
         ]
 
 

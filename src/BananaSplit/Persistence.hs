@@ -119,13 +119,14 @@ partePagadorTable = tableFieldMod "partes_pagadores"
   ]
   (unprefixAndLower "parte_")
 
-updatePago :: (MonadSelda m, MonadMask m) => ULID -> ULID -> M.Pago -> m ()
+updatePago :: (MonadSelda m, MonadMask m) => ULID -> ULID -> M.Pago -> m M.Pago
 updatePago grupoId pagoId pago = do
-  let realPago = pago { M.pagoId = pagoId}
+  let realPago = pago {M.pagoId = pagoId}
   transaction $ do
     update_ pagoTable (\p -> p ! #pago_id .== literal pagoId) (\_p -> row $ pago2PagoRecord grupoId realPago)
     deletePartesFromPago pagoId
     savePartes pagoId pago
+  pure realPago
 
 fetchGrupo :: MonadSelda m => ULID -> m (Maybe M.Grupo)
 fetchGrupo ulid = do

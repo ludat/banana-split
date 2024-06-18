@@ -39,7 +39,7 @@ serverT =
 
     -- , _routePagosGet = handlePagosGet
     -- , _routeGrupoPagoAdd = handlePagoCreate
-    -- , _routePagoUpdate = handlePagoUpdate
+    , _routePagoUpdate = handlePagoUpdate
     -- , _routePagoNew = handlePagoNew
     -- , _routePagoNewPatch = handlePagoNewPatch
     -- , _routePagoEdit = handlePagoEdit

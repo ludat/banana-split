@@ -417,3 +417,34 @@ deleteGrupoByIdPagosByPagoId capture_id capture_pagoId toMsg =
             , tracker =
                 Nothing
             }
+
+putGrupoByIdPagosByPagoId : ULID -> ULID -> Pago -> (Result Http.Error  (Pago)  -> msg) -> Cmd msg
+putGrupoByIdPagosByPagoId capture_id capture_pagoId body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "pagos"
+                    , (capture_pagoId)
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncPago body)
+            , expect =
+                Http.expectJson toMsg jsonDecPago
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
