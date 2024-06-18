@@ -160,22 +160,26 @@ view model =
 
                                                         barraIzquierda =
                                                             div [ class "cell monto izquierda" ]
-                                                                [ div
+                                                                [ p
+                                                                    []
+                                                                    [ text <| Decimal.toString monto ]
+                                                                , div
                                                                     [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
-                                                                    , class "barra has-background-danger has-text-primary-invert"
+                                                                    , class "barra has-background-danger"
                                                                     ]
-                                                                    [ p [] [ text <| Decimal.toString monto ]
-                                                                    ]
+                                                                    []
                                                                 ]
 
                                                         barraDerecha =
                                                             div [ class "cell monto derecha" ]
-                                                                [ div
+                                                                [ p
+                                                                    []
+                                                                    [ text <| Decimal.toString monto ]
+                                                                , div
                                                                     [ style "width" <| String.fromFloat (Decimal.toFloat monto * 100 / maximo) ++ "%"
-                                                                    , class "barra has-background-success has-text-primary-invert"
+                                                                    , class "barra has-background-success"
                                                                     ]
-                                                                    [ text <| Decimal.toString monto
-                                                                    ]
+                                                                    []
                                                                 ]
                                                     in
                                                     case compare numerador 0 of

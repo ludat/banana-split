@@ -1,9 +1,21 @@
 @import "https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css";
 
 .barras-precio {
+
+    .monto {
+        position: relative;
+    }
+
+    .barra {
+        position: absolute;
+        height: 3px;
+    }
+
     & > .izquierda {
         text-align: right;
-        display: flex;
-        justify-content: flex-end;
+
+        .barra {
+            right: 0;
+        }
     }
 }
