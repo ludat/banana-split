@@ -494,7 +494,8 @@ view model =
                                         ]
                                     , p []
                                         [ text <| "pagado por alguien (?"
-                                        , pre [] [ text <| Debug.toString pago ]
+
+                                        --, pre [] [ text <| Debug.toString pago ]
                                         ]
                                     ]
                             )
