@@ -16,13 +16,10 @@ import Data.Text (Text)
 import Data.ULID (ULID)
 
 import Elm.Derive qualified as Elm
-import Elm.Module qualified as Elm
 
 import GHC.Generics
 
 import Servant
-
-import Site.HTML
 
 
 type HXTrigger = Header "HX-Trigger" Text
