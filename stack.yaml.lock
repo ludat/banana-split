@@ -102,8 +102,8 @@ packages:
     hackage: safe-money-aeson-0.1.1@sha256:d7383134649d5e63177731f3b5a0ff1992a1d4edf9d224178b264eb4fcdd6c14,1405
 snapshots:
 - completed:
-    sha256: 6f0bea3ba5b07360f25bc886e8cff8d847767557a492a6f7f6dcb06e3cc79ee9
-    size: 712905
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/13.yaml
+    sha256: bc144ddf301a5c99f2cf51c7de50279ba144fd4486cb3c66f87ed761d6bbf6e9
+    size: 719131
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/27.yaml
   original:
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/13.yaml
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/27.yaml
