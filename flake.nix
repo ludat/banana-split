@@ -71,11 +71,11 @@
               ./ui/elm-land.json
             ];
           };
-          nativeBuildInputs = with pkgs; [ nodePackages.pnpm cacert ];
+          nativeBuildInputs = with pkgs; [ nodejs nodePackages.pnpm cacert ];
 
           buildPhase = ''
             HOME=$PWD
-            pnpm install --frozen-lockfile
+            pnpm install --reporter=append-only --frozen-lockfile
             pnpm run build
           '';
           installPhase = ''
