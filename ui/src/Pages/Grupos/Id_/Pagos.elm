@@ -9,7 +9,7 @@ import Form.Field as FormField
 import Form.Init as Form
 import Form.Input as FormInput
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Grupo, Monto, Pago, Parte(..), Participante, ULID)
+import Generated.Api as Api exposing (Grupo, Monto, Pago, Parte(..), Participante, ParticipanteId, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
@@ -493,7 +493,25 @@ view model =
                                         , button [ class "delete", onClick <| DeletePago pago.pagoId ] []
                                         ]
                                     , p []
-                                        [ text <| "pagado por alguien (?"
+                                        [ let
+                                            pagador2Text pagador =
+                                                Maybe.withDefault "persona desconocida" <| resolvePagadorName grupo <| extractPagadorFromParte pagador
+                                          in
+                                          case pago.pagadores of
+                                            [] ->
+                                                text <| "pagador por nadie!"
+
+                                            [ pagador ] ->
+                                                text <| "pagador por " ++ pagador2Text pagador
+
+                                            [ pagador1, pagador2 ] ->
+                                                text <| ("pagador por " ++ pagador2Text pagador1 ++ " y " ++ pagador2Text pagador2)
+
+                                            [ pagador1, pagador2, pagador3 ] ->
+                                                text <| ("pagador por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ pagador2Text pagador3)
+
+                                            pagador1 :: pagador2 :: rest ->
+                                                text <| ("pagador por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ String.fromInt (List.length rest) ++ " personas mas")
 
                                         --, pre [] [ text <| Debug.toString pago ]
                                         ]
@@ -506,6 +524,30 @@ view model =
                 , pagosModal grupo model
                 ]
             }
+
+
+extractPagadorFromParte : Parte -> ParticipanteId
+extractPagadorFromParte parte =
+    case parte of
+        MontoFijo _ participanteId ->
+            participanteId
+
+        Ponderado _ participanteId ->
+            participanteId
+
+
+resolvePagadorName : Grupo -> ParticipanteId -> Maybe String
+resolvePagadorName grupo participanteId =
+    grupo.participantes
+        |> List.filterMap
+            (\participante ->
+                if participante.participanteId == participanteId then
+                    Just participante.participanteNombre
+
+                else
+                    Nothing
+            )
+        |> List.head
 
 
 pagosModal : Grupo -> Model -> Html Msg
