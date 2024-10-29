@@ -7,7 +7,6 @@ dependencies:
   - bytestring
   - conferer
   - containers
-  - digestive-functors
   - elm-bridge
   - file-embed
   - glpk-hs
@@ -16,11 +15,8 @@ dependencies:
   - http-api-data
   - http-media
   - http-types
-  - lucid2
-  - lucid2-htmx
   - mtl
   # - optics
-  - postgresql-migration
   - pretty-simple
   - process
   - random
@@ -31,7 +27,6 @@ dependencies:
   - selda-postgresql
   - servant
   - servant-elm
-  - servant-htmx
   - servant-server
   - string-conversions
   - string-interpolate
@@ -50,6 +45,7 @@ language: GHC2021
 default-extensions:
   - OverloadedStrings
   - LambdaCase
+  - OverloadedRecordDot
 
 ghc-options:
   - -Wall

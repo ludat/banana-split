@@ -121,6 +121,7 @@ update msg model =
                 | remoteGrupo =
                     model.remoteGrupo
                         |> RemoteData.map (\grupo -> { grupo | participantes = grupo.participantes ++ [ participante ] })
+                , participanteForm = Form.initial [] validateParticipante
               }
             , Effect.none
             )

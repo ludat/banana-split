@@ -12,9 +12,12 @@ import Control.Monad.IO.Class (liftIO)
 
 import Data.Function ((&))
 import Data.Pool qualified as Pool
+import Data.String (fromString)
+import Data.String.Interpolate (i)
 
-import Database.Selda.Backend (runSeldaT, SeldaBackend (closeConnection))
+import Database.Selda.Backend (SeldaBackend (closeConnection), runSeldaT)
 import Database.Selda.PostgreSQL (pgOpen', seldaClose)
+import Database.Selda.Unsafe (rawStm)
 
 import Network.Wai.Handler.Warp (Settings)
 import Network.Wai.Handler.Warp qualified as Warp
@@ -27,13 +30,10 @@ import System.Posix (Handler (..), installHandler, sigTERM)
 import System.Process (readProcess)
 
 import Types
-import Database.Selda.Unsafe (rawStm)
-import Data.String (fromString)
-import Data.String.Interpolate (i)
 
 main :: IO ()
 main = do
-  -- generateElmFiles
+  generateElmFiles
   runBackend
 
 runBackend :: IO ()

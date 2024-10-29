@@ -29,7 +29,9 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe)
 import Data.Ratio ((%))
 import Data.Ratio qualified as Ratio
+import Data.String.Interpolate (i)
 import Data.Text (pack, unpack)
+import Data.Text qualified as Text
 import Data.ULID (ULID)
 import Data.ULID qualified as ULID
 
@@ -39,8 +41,6 @@ import Database.Selda.SqlType
 import Money qualified
 
 import Text.Read (readMaybe)
-import qualified Data.Text as Text
-import Data.String.Interpolate (i)
 
 data GrupoRecord = GrupoRecord
   { grupo_id :: ULID

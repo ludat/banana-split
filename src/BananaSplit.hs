@@ -48,9 +48,6 @@ import Elm.TyRep (EPrimAlias (..), ETCon (..), EType (..), ETypeDef (..), ETypeN
 
 import GHC.Generics (Generic)
 
-import Lucid (ToHtml)
-import Lucid.Base (ToHtml (..))
-
 import Money qualified
 import Money.Aeson ()
 
@@ -81,12 +78,6 @@ text2Monto rawNumber =
 
 monto2Dense :: Monto -> Money.Dense "ARS"
 monto2Dense (Monto m) = m
-
-instance ToHtml Monto where
-  toHtml m =
-    toHtml $ "$" <> monto2Text m
-  toHtmlRaw m =
-    toHtmlRaw $ "$" <> monto2Text m
 
 data Participante = Participante
   { participanteId :: ULID

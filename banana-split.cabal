@@ -1,6 +1,6 @@
 cabal-version: 1.12
 
--- This file has been generated from package.yaml by hpack version 0.36.0.
+-- This file has been generated from package.yaml by hpack version 0.37.0.
 --
 -- see: https://github.com/sol/hpack
 
@@ -22,6 +22,7 @@ library
   default-extensions:
       OverloadedStrings
       LambdaCase
+      OverloadedRecordDot
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       aeson
@@ -29,7 +30,6 @@ library
     , bytestring
     , conferer
     , containers
-    , digestive-functors
     , elm-bridge
     , file-embed
     , glpk-hs
@@ -38,10 +38,7 @@ library
     , http-api-data
     , http-media
     , http-types
-    , lucid2
-    , lucid2-htmx
     , mtl
-    , postgresql-migration
     , pretty-simple
     , process
     , random
@@ -52,7 +49,6 @@ library
     , selda-postgresql
     , servant
     , servant-elm
-    , servant-htmx
     , servant-server
     , string-conversions
     , string-interpolate
@@ -76,8 +72,6 @@ executable banana-split
       Site.Handler.Grupos
       Site.Handler.Pagos
       Site.Handler.Utils
-      Site.HTML
-      Site.Layout
       Site.Server
       Types
       Paths_banana_split
@@ -86,6 +80,7 @@ executable banana-split
   default-extensions:
       OverloadedStrings
       LambdaCase
+      OverloadedRecordDot
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
@@ -94,7 +89,6 @@ executable banana-split
     , bytestring
     , conferer
     , containers
-    , digestive-functors
     , elm-bridge
     , file-embed
     , glpk-hs
@@ -103,10 +97,7 @@ executable banana-split
     , http-api-data
     , http-media
     , http-types
-    , lucid2
-    , lucid2-htmx
     , mtl
-    , postgresql-migration
     , pretty-simple
     , process
     , random
@@ -117,7 +108,6 @@ executable banana-split
     , selda-postgresql
     , servant
     , servant-elm
-    , servant-htmx
     , servant-server
     , string-conversions
     , string-interpolate
@@ -142,6 +132,7 @@ test-suite spec
   default-extensions:
       OverloadedStrings
       LambdaCase
+      OverloadedRecordDot
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -151,7 +142,6 @@ test-suite spec
     , bytestring
     , conferer
     , containers
-    , digestive-functors
     , elm-bridge
     , file-embed
     , glpk-hs
@@ -161,10 +151,7 @@ test-suite spec
     , http-api-data
     , http-media
     , http-types
-    , lucid2
-    , lucid2-htmx
     , mtl
-    , postgresql-migration
     , pretty-simple
     , process
     , random
@@ -175,7 +162,6 @@ test-suite spec
     , selda-postgresql
     , servant
     , servant-elm
-    , servant-htmx
     , servant-server
     , string-conversions
     , string-interpolate
