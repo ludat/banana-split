@@ -82,7 +82,7 @@ En caso de no querer instalar ghcid (y perder el hotreload) podemos levantar el 
 stack run
 ```
 
-### Instalar el Frontend
+### Correr el Frontend
 
 Entramos a la carpeta de ui y corremos 
 
