@@ -40,6 +40,8 @@ data Api routes
     --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Get '[HTML] RawHtml
     , _routePagoPost ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
+    , _routePagoNetosPost ::
+      routes :- "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Netos
     -- , _routePagoNewPatch ::
     --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> QueryParam "pagoId" ULID :> ReqBody '[FormUrlEncoded] Form :> Patch '[HTML] RawHtml
     -- , _routeGrupoPagoAdd ::

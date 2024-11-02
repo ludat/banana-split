@@ -356,6 +356,34 @@ postGrupoByIdPagos capture_id body toMsg =
                 Nothing
             }
 
+postPagos : Pago -> (Result Http.Error  (Netos)  -> msg) -> Cmd msg
+postPagos body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "pagos"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncPago body)
+            , expect =
+                Http.expectJson toMsg jsonDecNetos
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
 deleteGrupoByIdParticipantesByParticipanteId : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
 deleteGrupoByIdParticipantesByParticipanteId capture_id capture_participanteId toMsg =
     let

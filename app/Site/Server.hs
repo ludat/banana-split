@@ -36,7 +36,7 @@ serverT =
     , _routeGrupoPagoDelete = handleDeletePago
 
     , _routePagoPost = handlePagoPost
-
+    , _routePagoNetosPost = handlePagoNetosPost
     -- , _routePagosGet = handlePagosGet
     -- , _routeGrupoPagoAdd = handlePagoCreate
     , _routePagoUpdate = handlePagoUpdate

@@ -9,10 +9,11 @@
 module Site.Handler.Pagos
     ( handleDeletePago
     , handlePagoPost
+    , handlePagoNetosPost
     , handlePagoUpdate
     ) where
 
-import BananaSplit (Pago (..))
+import BananaSplit (Pago (..), calcularDeudasPago)
 import BananaSplit.Persistence (deletePago, savePago, updatePago)
 
 import Control.Monad.Reader
@@ -25,6 +26,7 @@ import Database.Selda.Backend
 import Database.Selda.PostgreSQL (PG)
 
 import Types
+import Site.Api (Netos (Netos, transaccionesParaSaldar, netos))
 
 
 _pagosUpdatedEvent :: Text
@@ -33,6 +35,10 @@ _pagosUpdatedEvent = "pagos-updated"
 handlePagoPost :: ULID -> Pago -> AppHandler Pago
 handlePagoPost grupoId pago = do
   runSelda (savePago grupoId pago)
+
+handlePagoNetosPost :: Pago -> AppHandler Netos
+handlePagoNetosPost pago = do
+  pure $ Netos { transaccionesParaSaldar = [], netos = calcularDeudasPago pago}
 
 handleDeletePago :: ULID -> ULID -> AppHandler ULID
 handleDeletePago grupoId pagoId = do
