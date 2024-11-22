@@ -1,5 +1,15 @@
 # 🍌 banana-split
 
+
+## Para levantar todo ya setupeado
+
+```
+docker-compose up -d
+ghcid -c='stack repl' --run=':main' --warning
+cd ui
+pnpm start
+```
+
 ## Instalación
 
 ### Instalar ghcup 
