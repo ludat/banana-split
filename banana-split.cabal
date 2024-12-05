@@ -15,8 +15,6 @@ library
       BananaSplit
       BananaSplit.Persistence
       BananaSplit.Solver
-  other-modules:
-      Paths_banana_split
   hs-source-dirs:
       src
   default-extensions:
@@ -74,7 +72,6 @@ executable banana-split
       Site.Handler.Utils
       Site.Server
       Types
-      Paths_banana_split
   hs-source-dirs:
       app
   default-extensions:
@@ -126,7 +123,8 @@ test-suite spec
   type: exitcode-stdio-1.0
   main-is: Spec.hs
   other-modules:
-      Paths_banana_split
+      BananaSplitSpec
+      Site.Handler.GruposSpec
   hs-source-dirs:
       test
   default-extensions:

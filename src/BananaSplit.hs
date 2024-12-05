@@ -40,7 +40,7 @@ import Data.Map.Strict qualified as Map
 import Data.Maybe qualified as Maybe
 import Data.Ord (Down (..))
 import Data.Text (Text, pack, unpack)
-import Data.ULID (ULID)
+import Data.ULID (ULID, ulidToInteger)
 
 import Elm.Derive qualified as Elm
 import Elm.TyRep (EPrimAlias (..), ETCon (..), EType (..), ETypeDef (..), ETypeName (..),
@@ -113,7 +113,11 @@ instance FromHttpApiData ULID where
 
 newtype ParticipanteId = ParticipanteId ULID
   deriving (Generic)
-  deriving newtype (Show, Eq, Ord, ToJSONKey, FromJSONKey)
+  deriving newtype (Show, Eq, ToJSONKey, FromJSONKey)
+
+instance Ord ParticipanteId where
+  compare (ParticipanteId ulid1) (ParticipanteId ulid2) =
+    ulidToInteger ulid1 `compare` ulidToInteger ulid2
 
 participanteId2ULID :: ParticipanteId -> ULID
 participanteId2ULID (ParticipanteId ulid) = ulid

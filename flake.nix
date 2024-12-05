@@ -16,7 +16,7 @@
           blas
           lapack
           glpk
-          postgresql
+          postgresql.dev
           nodePackages.pnpm
           nodejs
           reshape
