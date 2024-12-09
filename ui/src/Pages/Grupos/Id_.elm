@@ -1,30 +1,18 @@
 module Pages.Grupos.Id_ exposing (Model, Msg, page)
 
+import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
 import Css
-import Dict
 import Effect exposing (Effect)
-import Form exposing (Form)
-import Form.Error as FormError
-import Form.Field as FormField
-import Form.Input as FormInput
-import Form.Validate as V exposing (Validation, andMap, andThen, field, int, nonEmpty, string, succeed)
-import Generated.Api as Api exposing (Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteAddParams, ParticipanteId, ULID)
+import Generated.Api as Api exposing (Grupo, Netos, ULID)
 import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (onClick, onSubmit)
+import Html.Attributes exposing (..)
 import Layouts
-import Numeric.ArithmeticError as DecimalError
-import Numeric.Decimal as Decimal
-import Numeric.Decimal.Rounding as Decimal
-import Numeric.Nat as Nat
-import Numeric.Rational as Rational
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
-import Utils.Form exposing (CustomFormError(..))
 import View exposing (View)
 
 
@@ -133,87 +121,7 @@ view model =
                          else
                             case model.netos of
                                 Success netos ->
-                                    [ div [ class "fixed-grid" ]
-                                        [ div [ class "grid", Css.barras_precio ]
-                                            (let
-                                                maximo =
-                                                    netos.netos
-                                                        |> List.map
-                                                            (\( _, ( _, numerador, denominador ) ) ->
-                                                                Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                                                                    |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                                                                    |> Decimal.abs
-                                                            )
-                                                        |> List.map Decimal.toFloat
-                                                        |> List.maximum
-                                                        |> Maybe.withDefault 0
-                                             in
-                                             netos.netos
-                                                |> List.sortBy
-                                                    (\( _, ( _, numerador, denominador ) ) ->
-                                                        Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                                                            |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                                                            |> Decimal.toFloat
-                                                    )
-                                                |> List.reverse
-                                                |> List.concatMap
-                                                    (\( participanteId, ( _, numerador, denominador ) ) ->
-                                                        let
-                                                            monto =
-                                                                Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                                                                    |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-
-                                                            participante =
-                                                                lookupParticipante grupo participanteId
-
-                                                            nombreDerecha =
-                                                                div [ class "cell nombre derecha" ] [ text participante.participanteNombre ]
-
-                                                            nombreIzquierda =
-                                                                div [ class "cell nombre izquierda" ] [ text participante.participanteNombre ]
-
-                                                            barraIzquierda =
-                                                                div [ class "cell monto izquierda" ]
-                                                                    [ p
-                                                                        []
-                                                                        [ text <| Decimal.toString monto ]
-                                                                    , div
-                                                                        [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
-                                                                        , class "barra has-background-danger"
-                                                                        ]
-                                                                        []
-                                                                    ]
-
-                                                            barraDerecha =
-                                                                div [ class "cell monto derecha" ]
-                                                                    [ p
-                                                                        []
-                                                                        [ text <| Decimal.toString monto ]
-                                                                    , div
-                                                                        [ style "width" <| String.fromFloat (Decimal.toFloat monto * 100 / maximo) ++ "%"
-                                                                        , class "barra has-background-success"
-                                                                        ]
-                                                                        []
-                                                                    ]
-                                                        in
-                                                        case compare numerador 0 of
-                                                            LT ->
-                                                                [ barraIzquierda
-                                                                , nombreDerecha
-                                                                ]
-
-                                                            EQ ->
-                                                                [ nombreIzquierda
-                                                                , barraDerecha
-                                                                ]
-
-                                                            GT ->
-                                                                [ nombreIzquierda
-                                                                , barraDerecha
-                                                                ]
-                                                    )
-                                            )
-                                        ]
+                                    [ viewNetosBarras grupo netos
                                     ]
 
                                 NotAsked ->
@@ -229,11 +137,3 @@ view model =
                     ]
                 ]
             }
-
-
-lookupParticipante : Grupo -> ParticipanteId -> Participante
-lookupParticipante grupo participanteId =
-    grupo.participantes
-        |> List.filter (\p -> p.participanteId == participanteId)
-        |> List.head
-        |> Maybe.withDefault { participanteId = participanteId, participanteNombre = "Desconocido" }

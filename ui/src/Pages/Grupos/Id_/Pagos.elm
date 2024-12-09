@@ -1,5 +1,6 @@
 module Pages.Grupos.Id_.Pagos exposing (Model, Msg, page)
 
+import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import FeatherIcons as Icons
@@ -9,7 +10,7 @@ import Form.Field as FormField
 import Form.Init as Form
 import Form.Input as FormInput
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Grupo, Monto, Pago, Parte(..), Participante, ParticipanteId, ULID)
+import Generated.Api as Api exposing (Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
@@ -56,11 +57,12 @@ type Msg
     | UpdatedPago Pago
     | DeletePago ULID
     | DeletePagoResponse (Result Http.Error ULID)
+    | NetosUpdated (WebData Netos)
 
 
 type PagoPopoverState
     = EditingPago Pago
-    | CreateNewPago
+    | CreatingNewPago
     | Closed
 
 
@@ -68,6 +70,7 @@ type alias Model =
     { remoteGrupo : WebData Grupo
     , pagoPopoverState : PagoPopoverState
     , pagoForm : Form CustomFormError Pago
+    , editingPagoNeto : WebData Netos
     }
 
 
@@ -76,6 +79,7 @@ init grupoId =
     ( { remoteGrupo = Loading
       , pagoPopoverState = Closed
       , pagoForm = Form.initial [] validatePago
+      , editingPagoNeto = NotAsked
       }
     , Effect.batch
         [ Effect.sendCmd <| Api.getGrupoById grupoId (RemoteData.fromResult >> GrupoResponse)
@@ -226,7 +230,7 @@ update msg model =
                                     )
                             )
 
-                        CreateNewPago ->
+                        CreatingNewPago ->
                             ( { model
                                 | pagoForm = Form.update validatePago Form.Submit model.pagoForm
                               }
@@ -316,11 +320,13 @@ update msg model =
                       }
                     , Effect.none
                     )
+                        |> andThenUpdateNetosFromForm
 
                 _ ->
                     ( { model | pagoForm = Form.update validatePago formMsg model.pagoForm }
                     , Effect.none
                     )
+                        |> andThenUpdateNetosFromForm
 
         DeletePago pagoId ->
             case model.remoteGrupo of
@@ -415,11 +421,36 @@ update msg model =
                                 )
                                 validatePago
 
-                        CreateNewPago ->
+                        CreatingNewPago ->
                             Form.initial [] validatePago
               }
             , Effect.none
             )
+                |> andThenUpdateNetosFromForm
+
+        NetosUpdated webData ->
+            ( { model | editingPagoNeto = webData }
+            , Effect.none
+            )
+
+
+andThenUpdateNetosFromForm : ( Model, Effect Msg ) -> ( Model, Effect Msg )
+andThenUpdateNetosFromForm ( oldModel, oldEffects ) =
+    ( oldModel
+    , case Form.getOutput oldModel.pagoForm of
+        Just pago ->
+            Effect.batch
+                [ oldEffects
+                , Effect.sendMsg <| NetosUpdated Loading
+                , Effect.sendCmd <| Api.postPagos pago (RemoteData.fromResult >> NetosUpdated)
+                ]
+
+        Nothing ->
+            Effect.batch
+                [ oldEffects
+                , Effect.sendMsg <| NetosUpdated NotAsked
+                ]
+    )
 
 
 montoRaw2Decimal : ( a, Int, Int ) -> Decimal.Decimal s Int
@@ -512,14 +543,13 @@ view model =
 
                                             pagador1 :: pagador2 :: rest ->
                                                 text <| ("pagador por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ String.fromInt (List.length rest) ++ " personas mas")
-
-                                        --, pre [] [ text <| Debug.toString pago ]
+                                        , pre [] [ text <| Debug.toString pago ]
                                         ]
                                     ]
                             )
                     )
                 , div [ class "container" ]
-                    [ button [ class "button", onClick <| ChangePagoPopoverState CreateNewPago ] [ text "Agregar pago" ]
+                    [ button [ class "button", onClick <| ChangePagoPopoverState CreatingNewPago ] [ text "Agregar pago" ]
                     ]
                 , pagosModal grupo model
                 ]
@@ -562,7 +592,7 @@ pagosModal grupo model =
                     EditingPago _ ->
                         [ class "is-active" ]
 
-                    CreateNewPago ->
+                    CreatingNewPago ->
                         [ class "is-active" ]
                )
         )
@@ -592,6 +622,18 @@ pagosModal grupo model =
                 [ class "modal-card-body"
                 ]
                 [ pagosForm grupo.participantes model.pagoForm
+                , case model.editingPagoNeto of
+                    Success netos ->
+                        viewNetosBarras grupo netos
+
+                    NotAsked ->
+                        text ""
+
+                    Loading ->
+                        text "cargando netos"
+
+                    Failure e ->
+                        text "falle consiguiendo los netos"
                 ]
             , footer
                 [ class "modal-card-foot"
