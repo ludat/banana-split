@@ -1,5 +1,6 @@
 module Pages.Grupos.Id_.Participantes exposing (Model, Msg, page)
 
+import Browser.Dom
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import Form exposing (Form)
@@ -16,6 +17,7 @@ import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Shared
+import Task
 import Utils.Form exposing (CustomFormError)
 import View exposing (View)
 
@@ -123,7 +125,7 @@ update msg model =
                         |> RemoteData.map (\grupo -> { grupo | participantes = grupo.participantes ++ [ participante ] })
                 , participanteForm = Form.initial [] validateParticipante
               }
-            , Effect.none
+            , Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "nombre"
             )
 
         DeleteParticipante participanteId ->
@@ -253,7 +255,8 @@ participantesForm form =
                     FormInput.textInput nombreField
                         [ class "input"
                         , type_ "text"
-                        , placeholder "After del viernes"
+                        , placeholder "Juan"
+                        , id nombreField.path
                         , classList [ ( "is-danger", hasError nombreField ) ]
                         ]
                 , errorFor nombreField

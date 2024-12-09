@@ -2,6 +2,7 @@ module Pages.Grupos.Id_ exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
 import Css
+import Dict
 import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Error as FormError
@@ -21,6 +22,7 @@ import Numeric.Rational as Rational
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
+import Route.Path as Path
 import Shared
 import Utils.Form exposing (CustomFormError(..))
 import View exposing (View)
@@ -117,99 +119,111 @@ view model =
             , body =
                 [ div [ class "columns" ]
                     [ div [ class "column" ]
-                        (case model.netos of
-                            Success netos ->
-                                [ div [ class "fixed-grid" ]
-                                    [ div [ class "grid", Css.barras_precio ]
-                                        (let
-                                            maximo =
-                                                netos.netos
-                                                    |> List.map
-                                                        (\( _, ( _, numerador, denominador ) ) ->
-                                                            Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                                                                |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                                                                |> Decimal.abs
-                                                        )
-                                                    |> List.map Decimal.toFloat
-                                                    |> List.maximum
-                                                    |> Maybe.withDefault 0
-                                         in
-                                         netos.netos
-                                            |> List.sortBy
-                                                (\( _, ( _, numerador, denominador ) ) ->
-                                                    Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                                                        |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                                                        |> Decimal.toFloat
-                                                )
-                                            |> List.reverse
-                                            |> List.concatMap
-                                                (\( participanteId, ( _, numerador, denominador ) ) ->
-                                                    let
-                                                        monto =
-                                                            Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                                                                |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-
-                                                        participante =
-                                                            lookupParticipante grupo participanteId
-
-                                                        nombreDerecha =
-                                                            div [ class "cell nombre derecha" ] [ text participante.participanteNombre ]
-
-                                                        nombreIzquierda =
-                                                            div [ class "cell nombre izquierda" ] [ text participante.participanteNombre ]
-
-                                                        barraIzquierda =
-                                                            div [ class "cell monto izquierda" ]
-                                                                [ p
-                                                                    []
-                                                                    [ text <| Decimal.toString monto ]
-                                                                , div
-                                                                    [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
-                                                                    , class "barra has-background-danger"
-                                                                    ]
-                                                                    []
-                                                                ]
-
-                                                        barraDerecha =
-                                                            div [ class "cell monto derecha" ]
-                                                                [ p
-                                                                    []
-                                                                    [ text <| Decimal.toString monto ]
-                                                                , div
-                                                                    [ style "width" <| String.fromFloat (Decimal.toFloat monto * 100 / maximo) ++ "%"
-                                                                    , class "barra has-background-success"
-                                                                    ]
-                                                                    []
-                                                                ]
-                                                    in
-                                                    case compare numerador 0 of
-                                                        LT ->
-                                                            [ barraIzquierda
-                                                            , nombreDerecha
-                                                            ]
-
-                                                        EQ ->
-                                                            [ nombreIzquierda
-                                                            , barraDerecha
-                                                            ]
-
-                                                        GT ->
-                                                            [ nombreIzquierda
-                                                            , barraDerecha
-                                                            ]
-                                                )
-                                        )
+                        (if grupo.participantes == [] then
+                            [ p [] [ text "Tu grupo todavía no tiene participantes!" ]
+                            , p []
+                                [ text "Agregalos "
+                                , a
+                                    [ Path.href <| Path.Grupos_Id__Participantes { id = grupo.grupoId }
                                     ]
+                                    [ text "acá" ]
                                 ]
+                            ]
 
-                            NotAsked ->
-                                [ text "jajan't" ]
+                         else
+                            case model.netos of
+                                Success netos ->
+                                    [ div [ class "fixed-grid" ]
+                                        [ div [ class "grid", Css.barras_precio ]
+                                            (let
+                                                maximo =
+                                                    netos.netos
+                                                        |> List.map
+                                                            (\( _, ( _, numerador, denominador ) ) ->
+                                                                Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
+                                                                    |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
+                                                                    |> Decimal.abs
+                                                            )
+                                                        |> List.map Decimal.toFloat
+                                                        |> List.maximum
+                                                        |> Maybe.withDefault 0
+                                             in
+                                             netos.netos
+                                                |> List.sortBy
+                                                    (\( _, ( _, numerador, denominador ) ) ->
+                                                        Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
+                                                            |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
+                                                            |> Decimal.toFloat
+                                                    )
+                                                |> List.reverse
+                                                |> List.concatMap
+                                                    (\( participanteId, ( _, numerador, denominador ) ) ->
+                                                        let
+                                                            monto =
+                                                                Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
+                                                                    |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
 
-                            Loading ->
-                                [ text "jajan't" ]
+                                                            participante =
+                                                                lookupParticipante grupo participanteId
 
-                            Failure e ->
-                                [ text "jajan't" ]
+                                                            nombreDerecha =
+                                                                div [ class "cell nombre derecha" ] [ text participante.participanteNombre ]
+
+                                                            nombreIzquierda =
+                                                                div [ class "cell nombre izquierda" ] [ text participante.participanteNombre ]
+
+                                                            barraIzquierda =
+                                                                div [ class "cell monto izquierda" ]
+                                                                    [ p
+                                                                        []
+                                                                        [ text <| Decimal.toString monto ]
+                                                                    , div
+                                                                        [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
+                                                                        , class "barra has-background-danger"
+                                                                        ]
+                                                                        []
+                                                                    ]
+
+                                                            barraDerecha =
+                                                                div [ class "cell monto derecha" ]
+                                                                    [ p
+                                                                        []
+                                                                        [ text <| Decimal.toString monto ]
+                                                                    , div
+                                                                        [ style "width" <| String.fromFloat (Decimal.toFloat monto * 100 / maximo) ++ "%"
+                                                                        , class "barra has-background-success"
+                                                                        ]
+                                                                        []
+                                                                    ]
+                                                        in
+                                                        case compare numerador 0 of
+                                                            LT ->
+                                                                [ barraIzquierda
+                                                                , nombreDerecha
+                                                                ]
+
+                                                            EQ ->
+                                                                [ nombreIzquierda
+                                                                , barraDerecha
+                                                                ]
+
+                                                            GT ->
+                                                                [ nombreIzquierda
+                                                                , barraDerecha
+                                                                ]
+                                                    )
+                                            )
+                                        ]
+                                    ]
+
+                                NotAsked ->
+                                    [ text "jajan't" ]
+
+                                Loading ->
+                                    [ text "jajan't" ]
+
+                                Failure e ->
+                                    [ text "jajan't:" ]
                         )
                     , div [ class "column" ] []
                     ]
