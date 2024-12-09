@@ -543,7 +543,8 @@ view model =
 
                                             pagador1 :: pagador2 :: rest ->
                                                 text <| ("pagador por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ String.fromInt (List.length rest) ++ " personas mas")
-                                        , pre [] [ text <| Debug.toString pago ]
+
+                                        --, pre [] [ text <| Debug.toString pago ]
                                         ]
                                     ]
                             )
