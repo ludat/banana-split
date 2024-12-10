@@ -320,13 +320,13 @@ update msg model =
                       }
                     , Effect.none
                     )
-                        |> andThenUpdateNetosFromForm
+                        |> andThenUpdateNetosFromForm model.pagoForm
 
                 _ ->
                     ( { model | pagoForm = Form.update validatePago formMsg model.pagoForm }
                     , Effect.none
                     )
-                        |> andThenUpdateNetosFromForm
+                        |> andThenUpdateNetosFromForm model.pagoForm
 
         DeletePago pagoId ->
             case model.remoteGrupo of
@@ -426,7 +426,7 @@ update msg model =
               }
             , Effect.none
             )
-                |> andThenUpdateNetosFromForm
+                |> andThenUpdateNetosFromForm model.pagoForm
 
         NetosUpdated webData ->
             ( { model | editingPagoNeto = webData }
@@ -434,18 +434,29 @@ update msg model =
             )
 
 
-andThenUpdateNetosFromForm : ( Model, Effect Msg ) -> ( Model, Effect Msg )
-andThenUpdateNetosFromForm ( oldModel, oldEffects ) =
-    ( oldModel
-    , case Form.getOutput oldModel.pagoForm of
-        Just pago ->
+andThenUpdateNetosFromForm : Form CustomFormError Pago -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
+andThenUpdateNetosFromForm pagoForm ( model, oldEffects ) =
+    ( model
+    , case ( Form.getOutput pagoForm, Form.getOutput model.pagoForm ) of
+        ( Just oldPago, Just pago ) ->
+            if oldPago /= pago then
+                Effect.batch
+                    [ oldEffects
+                    , Effect.sendMsg <| NetosUpdated Loading
+                    , Effect.sendCmd <| Api.postPagos pago (RemoteData.fromResult >> NetosUpdated)
+                    ]
+
+            else
+                Effect.none
+
+        ( Nothing, Just pago ) ->
             Effect.batch
                 [ oldEffects
                 , Effect.sendMsg <| NetosUpdated Loading
                 , Effect.sendCmd <| Api.postPagos pago (RemoteData.fromResult >> NetosUpdated)
                 ]
 
-        Nothing ->
+        ( _, Nothing ) ->
             Effect.batch
                 [ oldEffects
                 , Effect.sendMsg <| NetosUpdated NotAsked
