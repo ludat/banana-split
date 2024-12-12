@@ -18,7 +18,8 @@
             "elm/url": "1.0.0",
             "etaque/elm-form": "4.0.0",
             "krisajenkins/remotedata": "6.0.1",
-            "obiloud/numeric-decimal": "3.0.1"
+            "obiloud/numeric-decimal": "3.0.1",
+            "pablen/toasty": "1.2.0"
         },
         "indirect": {
             "elm/bytes": "1.0.8",

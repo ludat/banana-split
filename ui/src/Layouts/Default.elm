@@ -9,6 +9,8 @@ import Route exposing (Route)
 import Shared
 import Svg
 import Svg.Attributes as SvgAttr
+import Toasty
+import Utils.Toasts exposing (addToast)
 import View exposing (View)
 
 
@@ -22,7 +24,7 @@ layout props shared route =
     Layout.new
         { init = \() -> init props
         , update = update
-        , view = view props.navBarContent
+        , view = view props.navBarContent shared.toasties
         , subscriptions = subscriptions
         }
 
@@ -51,6 +53,7 @@ init props =
 type Msg
     = NoOp
     | ToggleNavBar
+    | ToastyMsg (Toasty.Msg String)
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -68,6 +71,11 @@ update msg model =
             , Effect.none
             )
 
+        ToastyMsg toastyMsg ->
+            ( model
+            , Effect.sendToastyMsg toastyMsg
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -78,8 +86,8 @@ subscriptions model =
 -- VIEW
 
 
-view : Maybe (Bool -> Html Msg) -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
-view navBarFunction { toContentMsg, model, content } =
+view : Maybe (Bool -> Html Msg) -> Toasty.Stack String -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
+view navBarFunction toasties { toContentMsg, model, content } =
     { title =
         if content.title == "" then
             "Banana split"
@@ -116,6 +124,16 @@ view navBarFunction { toContentMsg, model, content } =
                 Nothing ->
                     text ""
             ]
+        , div []
+            [ h1 [] [ text "Toasty example" ]
+            , Html.map toContentMsg <|
+                Toasty.view Toasty.config renderToast ToastyMsg toasties
+            ]
         , div [] content.body
         ]
     }
+
+
+renderToast : String -> Html Msg
+renderToast toast =
+    div [] [ text toast ]

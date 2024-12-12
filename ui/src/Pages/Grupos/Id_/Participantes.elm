@@ -169,7 +169,7 @@ update msg model =
                     )
 
                 Err e ->
-                    ( model, Effect.none )
+                    ( model, Effect.sendToast "Fallo al borrar el participante." )
 
 
 subscriptions : Model -> Sub Msg

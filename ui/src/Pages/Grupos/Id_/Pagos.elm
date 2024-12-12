@@ -336,7 +336,7 @@ update msg model =
                 Loading ->
                     ( model, Effect.none )
 
-                Failure e ->
+                Failure _ ->
                     ( model, Effect.none )
 
                 Success grupo ->
