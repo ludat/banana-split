@@ -112,7 +112,7 @@ update store msg model =
             , Effect.none
             )
 
-        AddedParticipante participante ->
+        AddedParticipante _ ->
             ( { model
                 | participanteForm = Form.initial [] validateParticipante
               }
@@ -122,14 +122,6 @@ update store msg model =
                 ]
             )
 
-        --( { model
-        --    | remoteGrupo =
-        --        model.remoteGrupo
-        --            |> RemoteData.map (\grupo -> { grupo | participantes = grupo.participantes ++ [ participante ] })
-        --    , participanteForm = Form.initial [] validateParticipante
-        --  }
-        --, Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "nombre"
-        --)
         DeleteParticipante participanteId ->
             ( model
             , Effect.batch
