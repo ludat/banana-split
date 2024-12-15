@@ -6,7 +6,7 @@ module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , sendToast, sendToastyMsg
+    , sendStoreMsg, sendToast, sendToastyMsg
     )
 
 {-|
@@ -26,6 +26,7 @@ module Effect exposing
 
 import Browser.Navigation
 import Dict exposing (Dict)
+import Models.Store.Types exposing (StoreMsg)
 import Route exposing (Route)
 import Route.Path
 import Shared.Model
@@ -150,6 +151,11 @@ sendToastyMsg toastyMsg =
 sendToast : String -> Effect msg
 sendToast toast =
     SendSharedMsg <| Shared.Msg.AddToast toast
+
+
+sendStoreMsg : StoreMsg -> Effect msg
+sendStoreMsg toast =
+    SendSharedMsg <| Shared.Msg.StoreMsg toast
 
 
 

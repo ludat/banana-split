@@ -16,6 +16,8 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
 import Http
 import Layouts
+import Models.Store as Store
+import Models.Store.Types exposing (Store)
 import Numeric.Decimal as Decimal
 import Numeric.Decimal.Rounding as Decimal
 import Numeric.Nat as Nat
@@ -31,15 +33,15 @@ import View exposing (View)
 page : Shared.Model -> Route { id : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route.params.id
-        , update = update
+        { init = \() -> init route.params.id shared.store
+        , update = update shared.store
         , subscriptions = subscriptions
-        , view = view
+        , view = view shared.store
         }
         |> Page.withLayout
             (\m ->
                 Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar route.params.id m.remoteGrupo
+                    { navBarContent = Just <| NavBar.navBar route.params.id shared.store
                     }
             )
 
@@ -50,7 +52,7 @@ page shared route =
 
 type Msg
     = NoOp
-    | GrupoResponse (WebData Grupo)
+      --| GrupoResponse (WebData Grupo)
     | PagoForm Form.Msg
     | ChangePagoPopoverState PagoPopoverState
     | AddedPago Pago
@@ -67,22 +69,22 @@ type PagoPopoverState
 
 
 type alias Model =
-    { remoteGrupo : WebData Grupo
+    { grupoId : String
     , pagoPopoverState : PagoPopoverState
     , pagoForm : Form CustomFormError Pago
     , editingPagoNeto : WebData Netos
     }
 
 
-init : ULID -> ( Model, Effect Msg )
-init grupoId =
-    ( { remoteGrupo = Loading
+init : ULID -> Store -> ( Model, Effect Msg )
+init grupoId store =
+    ( { grupoId = grupoId
       , pagoPopoverState = Closed
       , pagoForm = Form.initial [] validatePago
       , editingPagoNeto = NotAsked
       }
     , Effect.batch
-        [ Effect.sendCmd <| Api.getGrupoById grupoId (RemoteData.fromResult >> GrupoResponse)
+        [ Store.ensureGrupo grupoId store
         ]
     )
 
@@ -152,60 +154,55 @@ validateMonto =
 -- UPDATE
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : Store -> Msg -> Model -> ( Model, Effect Msg )
+update store msg model =
     case msg of
         NoOp ->
-            ( model
-            , Effect.none
-            )
-
-        GrupoResponse webData ->
-            ( { model | remoteGrupo = webData }
-            , Effect.none
-            )
+            ( model, Effect.none )
 
         AddedPago pago ->
-            ( { model
-                | remoteGrupo =
-                    model.remoteGrupo
-                        |> RemoteData.map
-                            (\grupo ->
-                                { grupo
-                                    | pagos =
-                                        pago :: grupo.pagos
-                                }
-                            )
-                , pagoForm = Form.initial [] validatePago
-              }
-            , Effect.none
-            )
+            ( model, Effect.none )
 
+        --( { model
+        --    | remoteGrupo =
+        --        model.remoteGrupo
+        --            |> RemoteData.map
+        --                (\grupo ->
+        --                    { grupo
+        --                        | pagos =
+        --                            pago :: grupo.pagos
+        --                    }
+        --                )
+        --    , pagoForm = Form.initial [] validatePago
+        --  }
+        --, Effect.none
+        --)
         UpdatedPago pago ->
-            ( { model
-                | remoteGrupo =
-                    model.remoteGrupo
-                        |> RemoteData.map
-                            (\grupo ->
-                                { grupo
-                                    | pagos =
-                                        List.map
-                                            (\oldPago ->
-                                                if oldPago.pagoId == pago.pagoId then
-                                                    pago
+            ( model, Effect.none )
 
-                                                else
-                                                    oldPago
-                                            )
-                                            grupo.pagos
-                                }
-                            )
-              }
-            , Effect.none
-            )
-
+        --( { model
+        --    | remoteGrupo =
+        --        model.remoteGrupo
+        --            |> RemoteData.map
+        --                (\grupo ->
+        --                    { grupo
+        --                        | pagos =
+        --                            List.map
+        --                                (\oldPago ->
+        --                                    if oldPago.pagoId == pago.pagoId then
+        --                                        pago
+        --
+        --                                    else
+        --                                        oldPago
+        --                                )
+        --                                grupo.pagos
+        --                    }
+        --                )
+        --  }
+        --, Effect.none
+        --)
         PagoForm Form.Submit ->
-            case ( Form.getOutput model.pagoForm, model.remoteGrupo ) of
+            case ( Form.getOutput model.pagoForm, store |> Store.getGrupo model.grupoId ) of
                 ( Just pago, Success { grupoId } ) ->
                     case model.pagoPopoverState of
                         Closed ->
@@ -296,7 +293,7 @@ update msg model =
                                     nextForm
 
                         nextNextNextForm =
-                            case ( maximumIndex, model.remoteGrupo ) of
+                            case ( maximumIndex, store |> Store.getGrupo model.grupoId ) of
                                 ( Just n, Success { participantes } ) ->
                                     case List.head participantes of
                                         Nothing ->
@@ -329,7 +326,7 @@ update msg model =
                         |> andThenUpdateNetosFromForm model.pagoForm
 
         DeletePago pagoId ->
-            case model.remoteGrupo of
+            case store |> Store.getGrupo model.grupoId of
                 NotAsked ->
                     ( model, Effect.none )
 
@@ -349,21 +346,22 @@ update msg model =
         DeletePagoResponse result ->
             case result of
                 Ok pagoBorradoId ->
-                    ( { model
-                        | remoteGrupo =
-                            model.remoteGrupo
-                                |> RemoteData.map
-                                    (\grupo ->
-                                        { grupo
-                                            | pagos =
-                                                grupo.pagos
-                                                    |> List.filter (\p -> p.pagoId /= pagoBorradoId)
-                                        }
-                                    )
-                      }
-                    , Effect.none
-                    )
+                    ( model, Effect.none )
 
+                --( { model
+                --    | remoteGrupo =
+                --        model.remoteGrupo
+                --            |> RemoteData.map
+                --                (\grupo ->
+                --                    { grupo
+                --                        | pagos =
+                --                            grupo.pagos
+                --                                |> List.filter (\p -> p.pagoId /= pagoBorradoId)
+                --                    }
+                --                )
+                --  }
+                --, Effect.none
+                --)
                 Err e ->
                     ( model, Effect.none )
 
@@ -485,9 +483,9 @@ subscriptions model =
 -- VIEW
 
 
-view : Model -> View Msg
-view model =
-    case model.remoteGrupo of
+view : Store -> Model -> View Msg
+view store model =
+    case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Impossible"
             , body = []

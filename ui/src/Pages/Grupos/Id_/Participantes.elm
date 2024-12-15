@@ -13,6 +13,8 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (..)
 import Http
 import Layouts
+import Models.Store as Store
+import Models.Store.Types exposing (Store)
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
@@ -25,42 +27,39 @@ import View exposing (View)
 page : Shared.Model -> Route { id : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route.params.id
-        , update = update
+        { init = \() -> init shared.store route.params.id
+        , update = update shared.store
         , subscriptions = subscriptions
-        , view = view
+        , view = view shared.store
         }
         |> Page.withLayout
             (\m ->
                 Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar route.params.id m.remoteGrupo
+                    { navBarContent = Just <| NavBar.navBar route.params.id shared.store
                     }
             )
 
 
 type alias Model =
-    { remoteGrupo : WebData Grupo
+    { grupoId : String
     , participanteForm : Form CustomFormError ParticipanteAddParams
     }
 
 
 type Msg
     = NoOp
-    | GrupoResponse (WebData Grupo)
     | ParticipanteForm Form.Msg
     | AddedParticipante Participante
     | DeleteParticipante ParticipanteId
     | DeleteParticipanteResponse (Result Http.Error ULID)
 
 
-init : ULID -> ( Model, Effect Msg )
-init grupoId =
-    ( { remoteGrupo = Loading
+init : Store -> ULID -> ( Model, Effect Msg )
+init store grupoId =
+    ( { grupoId = grupoId
       , participanteForm = Form.initial [] validateParticipante
       }
-    , Effect.batch
-        [ Effect.sendCmd <| Api.getGrupoById grupoId (RemoteData.fromResult >> GrupoResponse)
-        ]
+    , Store.ensureGrupo grupoId store
     )
 
 
@@ -74,21 +73,16 @@ validateParticipante =
 -- UPDATE
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : Store -> Msg -> Model -> ( Model, Effect Msg )
+update store msg model =
     case msg of
         NoOp ->
             ( model
             , Effect.none
             )
 
-        GrupoResponse webData ->
-            ( { model | remoteGrupo = webData }
-            , Effect.none
-            )
-
         ParticipanteForm Form.Submit ->
-            case ( Form.getOutput model.participanteForm, model.remoteGrupo ) of
+            case ( Form.getOutput model.participanteForm, store |> Store.getGrupo model.grupoId ) of
                 ( Just participanteParams, Success { grupoId } ) ->
                     ( { model
                         | participanteForm = Form.update validateParticipante Form.Submit model.participanteForm
@@ -120,53 +114,37 @@ update msg model =
 
         AddedParticipante participante ->
             ( { model
-                | remoteGrupo =
-                    model.remoteGrupo
-                        |> RemoteData.map (\grupo -> { grupo | participantes = grupo.participantes ++ [ participante ] })
-                , participanteForm = Form.initial [] validateParticipante
+                | participanteForm = Form.initial [] validateParticipante
               }
-            , Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "nombre"
+            , Effect.batch
+                [ Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "nombre"
+                , Store.refreshGrupo model.grupoId store
+                ]
             )
 
+        --( { model
+        --    | remoteGrupo =
+        --        model.remoteGrupo
+        --            |> RemoteData.map (\grupo -> { grupo | participantes = grupo.participantes ++ [ participante ] })
+        --    , participanteForm = Form.initial [] validateParticipante
+        --  }
+        --, Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "nombre"
+        --)
         DeleteParticipante participanteId ->
-            case model.remoteGrupo of
-                NotAsked ->
-                    ( model, Effect.none )
-
-                Loading ->
-                    ( model, Effect.none )
-
-                Failure e ->
-                    ( model, Effect.none )
-
-                Success grupo ->
-                    ( model
-                    , Effect.batch
-                        [ Effect.sendCmd <|
-                            Api.deleteGrupoByIdParticipantesByParticipanteId
-                                grupo.grupoId
-                                participanteId
-                                DeleteParticipanteResponse
-                        ]
-                    )
+            ( model
+            , Effect.batch
+                [ Effect.sendCmd <|
+                    Api.deleteGrupoByIdParticipantesByParticipanteId
+                        model.grupoId
+                        participanteId
+                        DeleteParticipanteResponse
+                ]
+            )
 
         DeleteParticipanteResponse result ->
             case result of
                 Ok participanteBorrado ->
-                    ( { model
-                        | remoteGrupo =
-                            model.remoteGrupo
-                                |> RemoteData.map
-                                    (\grupo ->
-                                        { grupo
-                                            | participantes =
-                                                grupo.participantes
-                                                    |> List.filter (\p -> p.participanteId /= participanteBorrado)
-                                        }
-                                    )
-                      }
-                    , Effect.none
-                    )
+                    ( model, Store.refreshGrupo model.grupoId store )
 
                 Err e ->
                     ( model, Effect.sendToast "Fallo al borrar el participante." )
@@ -177,9 +155,9 @@ subscriptions model =
     Sub.none
 
 
-view : Model -> View Msg
-view model =
-    case model.remoteGrupo of
+view : Store -> Model -> View Msg
+view store model =
+    case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Impossible"
             , body = []

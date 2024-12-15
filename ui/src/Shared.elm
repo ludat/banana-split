@@ -14,8 +14,8 @@ module Shared exposing
 
 import Effect exposing (Effect)
 import Json.Decode
+import Models.Store as Store
 import Route exposing (Route)
-import Route.Path
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Toasty
@@ -59,10 +59,10 @@ updateWithCmd f ( oldModel, oldEffects ) =
 init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
 init flagsResult route =
     ( { toasties = Toasty.initialState
+      , store = Store.empty
       }
     , Effect.none
     )
-        |> updateWithCmd (Toasty.addToast Toasty.config ToastyMsg "Entity successfully created!")
 
 
 
@@ -94,6 +94,13 @@ update route msg model =
                     Toasty.addToast Toasty.config ToastyMsg toast ( model, Cmd.none )
             in
             ( newModel, Effect.sendCmd cmd )
+
+        StoreMsg storeMsg ->
+            let
+                ( store, cmd ) =
+                    Store.update storeMsg model.store
+            in
+            ( { model | store = store }, cmd )
 
 
 

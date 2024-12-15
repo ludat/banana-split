@@ -8,6 +8,7 @@ own file, so they can be imported by `Effect.elm`
 
 -}
 
+import Models.Store.Types exposing (StoreMsg)
 import Toasty
 
 
@@ -15,3 +16,4 @@ type Msg
     = NoOp
     | AddToast String
     | ToastyMsg (Toasty.Msg String)
+    | StoreMsg StoreMsg
