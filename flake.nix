@@ -25,13 +25,12 @@
         myDevTools = [
           hPkgs.ghc # GHC compiler in the desired version (will be available on PATH)
           hPkgs.ghcid # Continuous terminal Haskell compile checker
-          hPkgs.ormolu # Haskell formatter
+          hPkgs.stylish-haskell # Haskell formatter
           hPkgs.hlint # Haskell codestyle checker
           hPkgs.hoogle # Lookup Haskell documentation
           hPkgs.haskell-language-server # LSP server for editor
           hPkgs.implicit-hie # auto generate LSP hie.yaml file from cabal
           hPkgs.retrie # Haskell refactoring tool
-          hPkgs.stylish-haskell
           stack-wrapped
         ] ++ bananasplitDeps;
 
