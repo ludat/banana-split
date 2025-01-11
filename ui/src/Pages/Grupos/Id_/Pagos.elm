@@ -27,6 +27,8 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Shared
 import Utils.Form exposing (CustomFormError(..))
+import Utils.Toasts exposing (pushToast)
+import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
 
@@ -161,46 +163,11 @@ update store msg model =
             ( model, Effect.none )
 
         AddedPago pago ->
-            ( model, Effect.none )
+            ( model, Store.refreshGrupo model.grupoId store )
 
-        --( { model
-        --    | remoteGrupo =
-        --        model.remoteGrupo
-        --            |> RemoteData.map
-        --                (\grupo ->
-        --                    { grupo
-        --                        | pagos =
-        --                            pago :: grupo.pagos
-        --                    }
-        --                )
-        --    , pagoForm = Form.initial [] validatePago
-        --  }
-        --, Effect.none
-        --)
         UpdatedPago pago ->
-            ( model, Effect.none )
+            ( model, Store.refreshGrupo model.grupoId store )
 
-        --( { model
-        --    | remoteGrupo =
-        --        model.remoteGrupo
-        --            |> RemoteData.map
-        --                (\grupo ->
-        --                    { grupo
-        --                        | pagos =
-        --                            List.map
-        --                                (\oldPago ->
-        --                                    if oldPago.pagoId == pago.pagoId then
-        --                                        pago
-        --
-        --                                    else
-        --                                        oldPago
-        --                                )
-        --                                grupo.pagos
-        --                    }
-        --                )
-        --  }
-        --, Effect.none
-        --)
         PagoForm Form.Submit ->
             case ( Form.getOutput model.pagoForm, store |> Store.getGrupo model.grupoId ) of
                 ( Just pago, Success { grupoId } ) ->
@@ -346,24 +313,10 @@ update store msg model =
         DeletePagoResponse result ->
             case result of
                 Ok pagoBorradoId ->
-                    ( model, Effect.none )
+                    ( model, pushToast ToastSuccess "Pago borrado" )
 
-                --( { model
-                --    | remoteGrupo =
-                --        model.remoteGrupo
-                --            |> RemoteData.map
-                --                (\grupo ->
-                --                    { grupo
-                --                        | pagos =
-                --                            grupo.pagos
-                --                                |> List.filter (\p -> p.pagoId /= pagoBorradoId)
-                --                    }
-                --                )
-                --  }
-                --, Effect.none
-                --)
                 Err e ->
-                    ( model, Effect.none )
+                    ( model, pushToast ToastDanger "Falle al borrar el pago" )
 
         ChangePagoPopoverState pagoPopoverState ->
             ( { model

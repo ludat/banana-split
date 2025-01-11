@@ -9,10 +9,10 @@ own file, so they can be imported by `Effect.elm`
 -}
 
 import Models.Store.Types exposing (Store)
-import Toasty
+import Utils.Toasts.Types exposing (Toast, Toasts)
 
 
 type alias Model =
-    { toasties : Toasty.Stack String
+    { toasties : Toasts
     , store : Store
     }

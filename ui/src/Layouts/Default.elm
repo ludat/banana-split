@@ -1,5 +1,6 @@
 module Layouts.Default exposing (Model, Msg, Props, layout)
 
+import Css
 import Effect exposing (Effect)
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -7,10 +8,8 @@ import Html.Events exposing (onClick)
 import Layout exposing (Layout)
 import Route exposing (Route)
 import Shared
-import Svg
-import Svg.Attributes as SvgAttr
-import Toasty
-import Utils.Toasts exposing (addToast)
+import Utils.Toasts as Toasts
+import Utils.Toasts.Types exposing (Toast, ToastLevel(..), ToastMsg, Toasts)
 import View exposing (View)
 
 
@@ -53,7 +52,7 @@ init props =
 type Msg
     = NoOp
     | ToggleNavBar
-    | ToastyMsg (Toasty.Msg String)
+    | ToastyMsg ToastMsg
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -86,7 +85,7 @@ subscriptions model =
 -- VIEW
 
 
-view : Maybe (Bool -> Html Msg) -> Toasty.Stack String -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
+view : Maybe (Bool -> Html Msg) -> Toasts -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
 view navBarFunction toasties { toContentMsg, model, content } =
     { title =
         if content.title == "" then
@@ -124,16 +123,35 @@ view navBarFunction toasties { toContentMsg, model, content } =
                 Nothing ->
                     text ""
             ]
-        , div []
-            [ h1 [] [ text "Toasty example" ]
-            , Html.map toContentMsg <|
-                Toasty.view Toasty.config renderToast ToastyMsg toasties
+        , div [ Css.toasts_container ]
+            [ Html.map toContentMsg <|
+                Toasts.view Toasts.config renderToast ToastyMsg toasties
             ]
         , div [] content.body
         ]
     }
 
 
-renderToast : String -> Html Msg
+renderToast : Toast -> Html Msg
 renderToast toast =
-    div [] [ text toast ]
+    div [ Css.toast ]
+        [ div
+            [ class "notification"
+            , case toast.level of
+                ToastNoLevel ->
+                    class ""
+
+                ToastSuccess ->
+                    class "is-success"
+
+                ToastInfo ->
+                    class "is-info"
+
+                ToastWarning ->
+                    class "is-warning"
+
+                ToastDanger ->
+                    class "is-danger"
+            ]
+            [ text toast.content ]
+        ]

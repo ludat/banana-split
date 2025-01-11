@@ -18,7 +18,7 @@ import Models.Store as Store
 import Route exposing (Route)
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
-import Toasty
+import Utils.Toasts as Toast
 
 
 
@@ -58,7 +58,7 @@ updateWithCmd f ( oldModel, oldEffects ) =
 
 init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
 init flagsResult route =
-    ( { toasties = Toasty.initialState
+    ( { toasties = Toast.initialState
       , store = Store.empty
       }
     , Effect.none
@@ -84,14 +84,14 @@ update route msg model =
         ToastyMsg toastyMsg ->
             let
                 ( newModel, cmd ) =
-                    Toasty.update Toasty.config ToastyMsg toastyMsg model
+                    Toast.update Toast.config ToastyMsg toastyMsg model
             in
             ( newModel, Effect.sendCmd cmd )
 
         AddToast toast ->
             let
                 ( newModel, cmd ) =
-                    Toasty.addToast Toasty.config ToastyMsg toast ( model, Cmd.none )
+                    Toast.addToast Toast.config ToastyMsg toast ( model, Cmd.none )
             in
             ( newModel, Effect.sendCmd cmd )
 

@@ -32,8 +32,8 @@ import Route.Path
 import Shared.Model
 import Shared.Msg
 import Task
-import Toasty
 import Url exposing (Url)
+import Utils.Toasts.Types exposing (Toast, ToastMsg)
 
 
 type Effect msg
@@ -143,12 +143,12 @@ back =
 
 {-| Propagate a toasty msg to the top of the state tree.
 -}
-sendToastyMsg : Toasty.Msg String -> Effect msg
+sendToastyMsg : ToastMsg -> Effect msg
 sendToastyMsg toastyMsg =
     SendSharedMsg <| Shared.Msg.ToastyMsg toastyMsg
 
 
-sendToast : String -> Effect msg
+sendToast : Toast -> Effect msg
 sendToast toast =
     SendSharedMsg <| Shared.Msg.AddToast toast
 

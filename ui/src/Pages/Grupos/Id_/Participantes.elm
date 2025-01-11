@@ -21,6 +21,8 @@ import Route exposing (Route)
 import Shared
 import Task
 import Utils.Form exposing (CustomFormError)
+import Utils.Toasts exposing (pushToast)
+import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
 
@@ -139,7 +141,7 @@ update store msg model =
                     ( model, Store.refreshGrupo model.grupoId store )
 
                 Err e ->
-                    ( model, Effect.sendToast "Fallo al borrar el participante." )
+                    ( model, pushToast ToastDanger "Fallo al borrar el participante." )
 
 
 subscriptions : Model -> Sub Msg

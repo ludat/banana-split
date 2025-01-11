@@ -9,11 +9,11 @@ own file, so they can be imported by `Effect.elm`
 -}
 
 import Models.Store.Types exposing (StoreMsg)
-import Toasty
+import Utils.Toasts.Types exposing (Toast, ToastMsg)
 
 
 type Msg
     = NoOp
-    | AddToast String
-    | ToastyMsg (Toasty.Msg String)
+    | AddToast Toast
+    | ToastyMsg ToastMsg
     | StoreMsg StoreMsg

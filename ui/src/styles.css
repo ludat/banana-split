@@ -19,3 +19,17 @@
         }
     }
 }
+
+// TODO get someone who knows css to review this
+.toasts-container {
+    position: fixed;
+    z-index: 9999;
+    bottom: 0;
+    width: 100%;
+}
+
+.toast {
+    max-width: 50rem;
+    padding-bottom: 1rem;
+    margin: auto;
+}
