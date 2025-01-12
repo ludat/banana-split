@@ -112,9 +112,8 @@ getNetos grupoId store =
 evictGroup : ULID -> Store -> Store
 evictGroup grupoId store =
     { store
-        | grupos =
-            store.grupos
-                |> Dict.remove grupoId
+        | grupos = store.grupos |> Dict.remove grupoId
+        , netos = store.netos |> Dict.remove grupoId
     }
 
 
