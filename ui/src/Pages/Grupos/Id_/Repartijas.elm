@@ -6,7 +6,7 @@ import Form exposing (Form)
 import Form.Error as FormError
 import Form.Input as FormInput
 import Form.Validate as V
-import Generated.Api as Api exposing (Participante, Repartija, RepartijaItem, ULID)
+import Generated.Api as Api exposing (Grupo, Participante, Repartija, RepartijaItem, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
@@ -46,13 +46,17 @@ page shared route =
 
 
 type alias Model =
-    { grupoId : ULID, repartijaForm : Form CustomFormError Repartija }
+    { grupoId : ULID
+    , repartijaForm : Form CustomFormError Repartija
+    , isNewRepartijaPopoverOpen : Bool
+    }
 
 
 init : Store -> ULID -> ( Model, Effect Msg )
 init store grupoId =
     ( { grupoId = grupoId
       , repartijaForm = Form.initial [] validateRepartija
+      , isNewRepartijaPopoverOpen = False
       }
     , Store.ensureGrupo grupoId store
     )
@@ -85,6 +89,8 @@ type Msg
     | RepartijaForm Form.Msg
     | CreateRepartijaSuccess Repartija
     | CreateRepartijaFailed Http.Error
+    | InitNewRepartija
+    | CloseNewRepartijaPopover
 
 
 update : Store -> Msg -> Model -> ( Model, Effect Msg )
@@ -134,6 +140,21 @@ update store msg model =
             , Toasts.pushToast Toasts.ToastDanger "Fallo la creacion de la repartija"
             )
 
+        InitNewRepartija ->
+            ( { model
+                | isNewRepartijaPopoverOpen = True
+                , repartijaForm = Form.initial [] validateRepartija
+              }
+            , Effect.none
+            )
+
+        CloseNewRepartijaPopover ->
+            ( { model
+                | isNewRepartijaPopoverOpen = False
+              }
+            , Effect.none
+            )
+
 
 
 -- SUBSCRIPTIONS
@@ -154,9 +175,8 @@ view store model =
         Success grupo ->
             { title = "Pages.Grupos.Id_.Repartijas"
             , body =
-                [ repartijaForm grupo.participantes model.repartijaForm
-
-                --, pre [] [ text <| Debug.toString <| Form.getOutput model.repartijaForm ]
+                [ newRepartijaModal model
+                , button [ class "button is-primary", onClick InitNewRepartija ] [ text "Crear repartija" ]
                 ]
             }
 
@@ -166,8 +186,69 @@ view store model =
             }
 
 
-repartijaForm : List Participante -> Form CustomFormError Repartija -> Html Msg
-repartijaForm participantes form =
+newRepartijaModal : Model -> Html Msg
+newRepartijaModal model =
+    div
+        ([ class "modal"
+         ]
+            ++ (if model.isNewRepartijaPopoverOpen then
+                    [ class "is-active" ]
+
+                else
+                    []
+               )
+        )
+        [ div
+            [ class "modal-background"
+            , onClick <| CloseNewRepartijaPopover
+            ]
+            []
+        , div
+            [ class "modal-card"
+            ]
+            [ header
+                [ class "modal-card-head"
+                ]
+                [ p
+                    [ class "modal-card-title"
+                    ]
+                    [ text "Agregar repartija" ]
+                , button
+                    [ class "delete"
+                    , attribute "aria-label" "close"
+                    , onClick <| CloseNewRepartijaPopover
+                    ]
+                    []
+                ]
+            , section
+                [ class "modal-card-body"
+                ]
+                [ repartijaForm model.repartijaForm
+                ]
+            , footer
+                [ class "modal-card-foot"
+                ]
+                [ div
+                    [ class "buttons"
+                    ]
+                    [ button
+                        [ class "button is-primary"
+                        , onClick <| RepartijaForm Form.Submit
+                        ]
+                        [ text "Crear repartija" ]
+                    , button
+                        [ class "button"
+                        , onClick CloseNewRepartijaPopover
+                        ]
+                        [ text "Cancel" ]
+                    ]
+                ]
+            ]
+        ]
+
+
+repartijaForm : Form CustomFormError Repartija -> Html Msg
+repartijaForm form =
     let
         errorFor field =
             case field.liveError of
@@ -250,7 +331,7 @@ repartijaForm participantes form =
             ]
         , div [ class "container" ]
             [ div [] [ text "Items a repartir" ]
-            , div [] <| List.map (\i -> repartijaItemForm participantes i form) (Form.getListIndexes "items" form)
+            , div [] <| List.map (\i -> repartijaItemForm i form) (Form.getListIndexes "items" form)
             ]
         , div [ class "container" ] <|
             [ button
@@ -274,17 +355,11 @@ repartijaForm participantes form =
                 , errorFor montoField
                 ]
             ]
-        , div [ class "control" ]
-            [ button
-                [ class "button is-primary"
-                ]
-                [ text "Crear" ]
-            ]
         ]
 
 
-repartijaItemForm : List Participante -> Int -> Form CustomFormError Repartija -> Html Msg
-repartijaItemForm participantes i form =
+repartijaItemForm : Int -> Form CustomFormError Repartija -> Html Msg
+repartijaItemForm i form =
     let
         errorFor field =
             case field.liveError of
