@@ -34,6 +34,8 @@ navBar grupoId store path navBarOpen =
                 [ text "Pagos" ]
             , navBarItem { currentPath = path, path = Route.Grupos_Id__Participantes { id = grupoId }, attrs = [] }
                 [ text "Participantes" ]
+            , navBarItem { currentPath = path, path = Route.Grupos_Id__Repartijas { id = grupoId }, attrs = [] }
+                [ text "Repartijas" ]
             ]
 
         --, div [ class "navbar-end" ]
