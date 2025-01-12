@@ -2,7 +2,8 @@ module BananaSplit.Elm
     ( generateElmFiles
     ) where
 
-import BananaSplit (Deudas, Grupo, Monto, Pago, Parte, Participante, ParticipanteId, Transaccion)
+import BananaSplit (Deudas, Grupo, Monto, Pago, Parte, Participante, ParticipanteId, Repartija,
+                    RepartijaItem, Transaccion)
 
 import Data.Data
 import Data.ULID (ULID)
@@ -48,5 +49,7 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy ULID)
     , DefineElm (Proxy :: Proxy (Deudas Monto))
     , DefineElm (Proxy :: Proxy Monto)
+    , DefineElm (Proxy :: Proxy Repartija)
+    , DefineElm (Proxy :: Proxy RepartijaItem)
     ]
     (Proxy :: Proxy (ToServantApi Api))

@@ -1,0 +1,23 @@
+{
+  "actions": [
+    {
+      "type": "create_table",
+      "name": "repartijas",
+      "primary_key": [ "id" ],
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "grupo_id", "type": "text", "nullable": false },
+        { "name": "nombre", "type": "text", "nullable": false },
+        { "name": "extra_numerador", "type": "bigint", "nullable": false },
+        { "name": "extra_denominador", "type": "bigint", "nullable": false }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [ "grupo_id" ],
+          "referenced_table": "grupos",
+          "referenced_columns": [ "id" ]
+        }
+      ]
+    }
+  ]
+}

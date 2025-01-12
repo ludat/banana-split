@@ -16,6 +16,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
 import Http
 import Layouts
+import Models.Monto exposing (validateMonto)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Numeric.Decimal as Decimal
@@ -54,7 +55,6 @@ page shared route =
 
 type Msg
     = NoOp
-      --| GrupoResponse (WebData Grupo)
     | PagoForm Form.Msg
     | ChangePagoPopoverState PagoPopoverState
     | AddedPago Pago
@@ -128,27 +128,6 @@ validateParte =
 
                     _ ->
                         V.fail <| FormError.value FormError.Empty
-            )
-
-
-validateMonto : Validation CustomFormError Monto
-validateMonto =
-    V.string
-        |> V.andThen
-            (\t ->
-                case Decimal.fromString Decimal.HalfUp (Nat.fromIntOrZero 2) t of
-                    Ok n ->
-                        let
-                            numerator =
-                                Decimal.toNumerator n
-
-                            denominator =
-                                Decimal.toDenominator n
-                        in
-                        V.succeed ( "ARS", numerator, denominator )
-
-                    Err e ->
-                        V.fail <| FormError.value <| FormError.CustomError <| DecimalError e
             )
 
 

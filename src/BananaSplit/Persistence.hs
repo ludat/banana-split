@@ -17,10 +17,13 @@ module BananaSplit.Persistence
     , partePagadorTable
     , participanteTable
     , savePago
+    , saveRepartija
     , updatePago
     ) where
 
 import BananaSplit qualified as M
+
+import Control.Monad (forM_)
 
 import Data.Data (Proxy)
 import Data.Either (fromRight)
@@ -118,6 +121,23 @@ partePagadorTable = tableFieldMod "partes_pagadores"
   , #parte_participante_id :- foreignKey participanteTable #participante_id
   ]
   (unprefixAndLower "parte_")
+
+data RepartijaRecord = RepartijaRecord
+  { repartija_id :: ULID
+  , repartija_grupo_id :: ULID
+  , repartija_nombre :: Text
+  , repartija_extra_numerador :: Int
+  , repartija_extra_denominador :: Int
+  } deriving (Show, Eq, Generic)
+
+instance SqlRow RepartijaRecord
+
+repartijaTable :: Table RepartijaRecord
+repartijaTable = tableFieldMod "repartijas"
+  [ #repartija_id :- primary
+  , #repartija_grupo_id :- foreignKey grupoTable #grupo_id
+  ]
+  (unprefixAndLower "repartija_")
 
 updatePago :: (MonadSelda m, MonadMask m) => ULID -> ULID -> M.Pago -> m M.Pago
 updatePago grupoId pagoId pago = do
@@ -267,6 +287,36 @@ savePago grupoId pagoWihtoutId = do
     insert_ partePagadorTable (parte2ParteRecord pagoId <$> M.pagadores pago)
 
     pure pago
+
+saveRepartija :: (MonadSelda m, MonadMask m) => ULID -> M.Repartija -> m M.Repartija
+saveRepartija grupoId repartijaWithoutId = do
+  repartijaId <- liftIO ULID.getULID
+  let repartija = repartijaWithoutId { M.repartijaId = repartijaId }
+  transaction $ do
+    saveShallowRepartija grupoId repartija
+
+    -- insert_ parteDeudorTable (parte2ParteRecord pagoId <$> M.deudores pago)
+    forM_ (M.repartijaItems repartija) $ do
+      error "existen repartijas y no lo esperaba"
+
+    pure repartija
+
+saveShallowRepartija :: MonadSelda m => ULID -> M.Repartija -> m ()
+saveShallowRepartija grupoId repartija = do
+  insert_ repartijaTable
+    [ repartija2RepartijaRecord grupoId repartija
+    ]
+
+repartija2RepartijaRecord :: ULID -> M.Repartija -> RepartijaRecord
+repartija2RepartijaRecord grupoId repartija =
+  let (numerador, denominador) = deconstructMonto $ M.repartijaExtra repartija
+  in RepartijaRecord
+    { repartija_id = M.repartijaId repartija
+    , repartija_grupo_id = grupoId
+    , repartija_nombre = M.repartijaNombre repartija
+    , repartija_extra_denominador = denominador
+    , repartija_extra_numerador = numerador
+    }
 
 deconstructMonto :: M.Monto -> (Int, Int)
 deconstructMonto (M.Monto money) =

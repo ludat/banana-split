@@ -15,6 +15,8 @@ module BananaSplit
     , Parte (..)
     , Participante (..)
     , ParticipanteId (..)
+    , Repartija (..)
+    , RepartijaItem (..)
     , Transaccion (..)
     , buscarParticipante
     , calcularDeudasPago
@@ -65,6 +67,19 @@ data Grupo = Grupo
 newtype Monto = Monto (Money.Dense "ARS")
   deriving stock (Show, Eq, Ord)
   deriving newtype (Num, ToJSON, FromJSON)
+
+data Repartija = Repartija
+  { repartijaId :: ULID
+  , repartijaNombre :: Text
+  , repartijaExtra :: Monto
+  , repartijaItems :: [RepartijaItem]
+  } deriving (Show, Eq, Generic)
+
+data RepartijaItem = RepartijaItem
+  { repartijaItemId :: ULID
+  , repartijaItemMonto :: Monto
+  , repartijaItemCantidad :: Maybe Int
+  } deriving (Show, Eq, Generic)
 
 monto2Text :: Monto -> Text
 monto2Text (Monto m) =
@@ -300,4 +315,6 @@ Elm.deriveBoth Elm.defaultOptions ''Pago
 Elm.deriveBoth Elm.defaultOptions ''Participante
 Elm.deriveBoth Elm.defaultOptions ''Transaccion
 Elm.deriveBoth Elm.defaultOptions ''Deudas
+Elm.deriveBoth Elm.defaultOptions ''RepartijaItem
+Elm.deriveBoth Elm.defaultOptions ''Repartija
 Elm.deriveBoth Elm.defaultOptions ''Grupo
