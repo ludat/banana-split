@@ -33,6 +33,7 @@ jobs:
     - name: Trigger infra-cluster deploy
       # https://gitlab.com/10Pines/infra/infra-cluster
       # Infra cluster project id = 32472203
+      if: github.ref == 'refs/heads/main'
       run: |
         curl --request POST \
           --header "PRIVATE-TOKEN: ${{ secrets.GITLAB_INFRA_TOKEN }}" \

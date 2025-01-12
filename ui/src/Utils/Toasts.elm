@@ -2,8 +2,6 @@ module Utils.Toasts exposing (..)
 
 import Effect exposing (Effect)
 import Html exposing (Html)
-import Shared.Model
-import Shared.Msg exposing (Msg(..))
 import Toasty
 import Utils.Toasts.Types exposing (Toast, ToastContent, ToastLevel, Toasts)
 

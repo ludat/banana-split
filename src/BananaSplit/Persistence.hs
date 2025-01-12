@@ -17,10 +17,14 @@ module BananaSplit.Persistence
     , partePagadorTable
     , participanteTable
     , savePago
+    , saveRepartija
     , updatePago
     ) where
 
+import BananaSplit (RepartijaItem)
 import BananaSplit qualified as M
+
+import Control.Monad (forM)
 
 import Data.Data (Proxy)
 import Data.Either (fromRight)
@@ -118,6 +122,41 @@ partePagadorTable = tableFieldMod "partes_pagadores"
   , #parte_participante_id :- foreignKey participanteTable #participante_id
   ]
   (unprefixAndLower "parte_")
+
+data RepartijaRecord = RepartijaRecord
+  { repartija_id :: ULID
+  , repartija_grupo_id :: ULID
+  , repartija_nombre :: Text
+  , repartija_extra_numerador :: Int
+  , repartija_extra_denominador :: Int
+  } deriving (Show, Eq, Generic)
+
+instance SqlRow RepartijaRecord
+
+repartijaTable :: Table RepartijaRecord
+repartijaTable = tableFieldMod "repartijas"
+  [ #repartija_id :- primary
+  , #repartija_grupo_id :- foreignKey grupoTable #grupo_id
+  ]
+  (unprefixAndLower "repartija_")
+
+data RepartijaItemRecord = RepartijaItemRecord
+  { repartija_item_id :: ULID
+  , repartija_item_repartija_id :: ULID
+  , repartija_item_nombre :: Text
+  , repartija_item_monto_numerador :: Int
+  , repartija_item_monto_denominador :: Int
+  , repartija_item_cantidad :: Maybe Int
+  } deriving (Show, Eq, Generic)
+
+instance SqlRow RepartijaItemRecord
+
+repartijaItemTable :: Table RepartijaItemRecord
+repartijaItemTable = tableFieldMod "repartijas_items"
+  [ #repartija_item_id :- primary
+  , #repartija_item_repartija_id :- foreignKey repartijaTable #repartija_id
+  ]
+  (unprefixAndLower "repartija_item_")
 
 updatePago :: (MonadSelda m, MonadMask m) => ULID -> ULID -> M.Pago -> m M.Pago
 updatePago grupoId pagoId pago = do
@@ -267,6 +306,52 @@ savePago grupoId pagoWihtoutId = do
     insert_ partePagadorTable (parte2ParteRecord pagoId <$> M.pagadores pago)
 
     pure pago
+
+saveRepartija :: (MonadSelda m, MonadMask m) => ULID -> M.Repartija -> m M.Repartija
+saveRepartija grupoId repartijaWithoutId = do
+  repartijaId <- liftIO ULID.getULID
+  let repartija = repartijaWithoutId { M.repartijaId = repartijaId }
+  transaction $ do
+    saveShallowRepartija grupoId repartija
+    repartijaItems <- saveRepartijaItems repartijaId (M.repartijaItems repartija)
+    pure repartija {M.repartijaItems = repartijaItems }
+
+saveRepartijaItems :: (MonadSelda m) => ULID -> [M.RepartijaItem] -> m [RepartijaItem]
+saveRepartijaItems repartijaId repartijaItemsWithoutId = do
+  repartijaItems <- forM repartijaItemsWithoutId $ \repartijaItem -> do
+    itemId <- liftIO ULID.getULID
+    pure $ repartijaItem {M.repartijaItemId = itemId}
+  insert_ repartijaItemTable (repartijaItem2repartijaItemRecord repartijaId <$> repartijaItems)
+  pure repartijaItems
+
+repartijaItem2repartijaItemRecord :: ULID -> M.RepartijaItem -> RepartijaItemRecord
+repartijaItem2repartijaItemRecord repartijaId item =
+  let (numerador, denominador) = deconstructMonto $ M.repartijaItemMonto item
+  in RepartijaItemRecord
+    { repartija_item_id = M.repartijaItemId item
+    , repartija_item_nombre = M.repartijaItemNombre item
+    , repartija_item_repartija_id = repartijaId
+    , repartija_item_cantidad = M.repartijaItemCantidad item
+    , repartija_item_monto_denominador = denominador
+    , repartija_item_monto_numerador = numerador
+    }
+
+saveShallowRepartija :: MonadSelda m => ULID -> M.Repartija -> m ()
+saveShallowRepartija grupoId repartija = do
+  insert_ repartijaTable
+    [ repartija2RepartijaRecord grupoId repartija
+    ]
+
+repartija2RepartijaRecord :: ULID -> M.Repartija -> RepartijaRecord
+repartija2RepartijaRecord grupoId repartija =
+  let (numerador, denominador) = deconstructMonto $ M.repartijaExtra repartija
+  in RepartijaRecord
+    { repartija_id = M.repartijaId repartija
+    , repartija_grupo_id = grupoId
+    , repartija_nombre = M.repartijaNombre repartija
+    , repartija_extra_denominador = denominador
+    , repartija_extra_numerador = numerador
+    }
 
 deconstructMonto :: M.Monto -> (Int, Int)
 deconstructMonto (M.Monto money) =

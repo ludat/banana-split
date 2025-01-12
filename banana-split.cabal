@@ -69,6 +69,7 @@ executable banana-split
       Site.Config
       Site.Handler.Grupos
       Site.Handler.Pagos
+      Site.Handler.Repartijas
       Site.Handler.Utils
       Site.Server
       Types

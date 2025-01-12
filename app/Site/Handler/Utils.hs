@@ -4,14 +4,20 @@ module Site.Handler.Utils
     , orElseMay
     , orElse_
     , redirect
+    , runSelda
     , throwJsonError
     ) where
 
 import Control.Monad.Error.Class
+import Control.Monad.Reader.Class
 
 import Data.Aeson
 import Data.ByteString (ByteString)
-import Data.Text (Text)
+import Data.Pool qualified as Pool
+
+import Database.Selda
+import Database.Selda.Backend (runSeldaT)
+import Database.Selda.PostgreSQL (PG)
 
 import Servant
 
@@ -47,3 +53,10 @@ throwJsonError serverError errorMessage =
     { errBody = encode $ object ["error" .= errorMessage]
     , errHeaders = errHeaders serverError ++ [("Content-Type", "application/json")]
     }
+
+runSelda :: SeldaT PG IO a -> AppHandler a
+runSelda dbAction = do
+  pool <- asks (.connection)
+
+  liftIO $ Pool.withResource pool $ \seldaConn -> do
+    runSeldaT dbAction seldaConn

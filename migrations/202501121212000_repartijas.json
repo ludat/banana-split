@@ -1,0 +1,43 @@
+{
+  "actions": [
+    {
+      "type": "create_table",
+      "name": "repartijas",
+      "primary_key": [ "id" ],
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "grupo_id", "type": "text", "nullable": false },
+        { "name": "nombre", "type": "text", "nullable": false },
+        { "name": "extra_numerador", "type": "bigint", "nullable": false },
+        { "name": "extra_denominador", "type": "bigint", "nullable": false }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [ "grupo_id" ],
+          "referenced_table": "grupos",
+          "referenced_columns": [ "id" ]
+        }
+      ]
+    },
+    {
+      "type": "create_table",
+      "name": "repartijas_items",
+      "primary_key": [ "id" ],
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "repartija_id", "type": "text", "nullable": false },
+        { "name": "nombre", "type": "text", "nullable": false },
+        { "name": "monto_numerador", "type": "bigint", "nullable": false },
+        { "name": "monto_denominador", "type": "bigint", "nullable": false },
+        { "name": "cantidad", "type": "integer", "nullable": true }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [ "repartija_id" ],
+          "referenced_table": "repartijas",
+          "referenced_columns": [ "id" ]
+        }
+      ]
+    }
+  ]
+}
