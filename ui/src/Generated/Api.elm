@@ -238,14 +238,16 @@ jsonEncRepartija  val =
 
 type alias RepartijaItem  =
    { repartijaItemId: ULID
+   , repartijaItemNombre: String
    , repartijaItemMonto: Monto
    , repartijaItemCantidad: (Maybe Int)
    }
 
 jsonDecRepartijaItem : Json.Decode.Decoder ( RepartijaItem )
 jsonDecRepartijaItem =
-   Json.Decode.succeed (\prepartijaItemId prepartijaItemMonto prepartijaItemCantidad -> {repartijaItemId = prepartijaItemId, repartijaItemMonto = prepartijaItemMonto, repartijaItemCantidad = prepartijaItemCantidad})
+   Json.Decode.succeed (\prepartijaItemId prepartijaItemNombre prepartijaItemMonto prepartijaItemCantidad -> {repartijaItemId = prepartijaItemId, repartijaItemNombre = prepartijaItemNombre, repartijaItemMonto = prepartijaItemMonto, repartijaItemCantidad = prepartijaItemCantidad})
    |> required "repartijaItemId" (jsonDecULID)
+   |> required "repartijaItemNombre" (Json.Decode.string)
    |> required "repartijaItemMonto" (jsonDecMonto)
    |> fnullable "repartijaItemCantidad" (Json.Decode.int)
 
@@ -253,6 +255,7 @@ jsonEncRepartijaItem : RepartijaItem -> Value
 jsonEncRepartijaItem  val =
    Json.Encode.object
    [ ("repartijaItemId", jsonEncULID val.repartijaItemId)
+   , ("repartijaItemNombre", Json.Encode.string val.repartijaItemNombre)
    , ("repartijaItemMonto", jsonEncMonto val.repartijaItemMonto)
    , ("repartijaItemCantidad", (maybeEncode (Json.Encode.int)) val.repartijaItemCantidad)
    ]

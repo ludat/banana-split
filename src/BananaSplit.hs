@@ -77,6 +77,7 @@ data Repartija = Repartija
 
 data RepartijaItem = RepartijaItem
   { repartijaItemId :: ULID
+  , repartijaItemNombre :: Text
   , repartijaItemMonto :: Monto
   , repartijaItemCantidad :: Maybe Int
   } deriving (Show, Eq, Generic)

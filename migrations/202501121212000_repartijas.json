@@ -18,6 +18,26 @@
           "referenced_columns": [ "id" ]
         }
       ]
+    },
+    {
+      "type": "create_table",
+      "name": "repartijas_items",
+      "primary_key": [ "id" ],
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "repartija_id", "type": "text", "nullable": false },
+        { "name": "nombre", "type": "text", "nullable": false },
+        { "name": "monto_numerador", "type": "bigint", "nullable": false },
+        { "name": "monto_denominador", "type": "bigint", "nullable": false },
+        { "name": "cantidad", "type": "integer", "nullable": true }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [ "repartija_id" ],
+          "referenced_table": "repartijas",
+          "referenced_columns": [ "id" ]
+        }
+      ]
     }
   ]
 }

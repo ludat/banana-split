@@ -21,9 +21,10 @@ module BananaSplit.Persistence
     , updatePago
     ) where
 
+import BananaSplit (RepartijaItem)
 import BananaSplit qualified as M
 
-import Control.Monad (forM_)
+import Control.Monad (forM)
 
 import Data.Data (Proxy)
 import Data.Either (fromRight)
@@ -138,6 +139,24 @@ repartijaTable = tableFieldMod "repartijas"
   , #repartija_grupo_id :- foreignKey grupoTable #grupo_id
   ]
   (unprefixAndLower "repartija_")
+
+data RepartijaItemRecord = RepartijaItemRecord
+  { repartija_item_id :: ULID
+  , repartija_item_repartija_id :: ULID
+  , repartija_item_nombre :: Text
+  , repartija_item_monto_numerador :: Int
+  , repartija_item_monto_denominador :: Int
+  , repartija_item_cantidad :: Maybe Int
+  } deriving (Show, Eq, Generic)
+
+instance SqlRow RepartijaItemRecord
+
+repartijaItemTable :: Table RepartijaItemRecord
+repartijaItemTable = tableFieldMod "repartijas_items"
+  [ #repartija_item_id :- primary
+  , #repartija_item_repartija_id :- foreignKey repartijaTable #repartija_id
+  ]
+  (unprefixAndLower "repartija_item_")
 
 updatePago :: (MonadSelda m, MonadMask m) => ULID -> ULID -> M.Pago -> m M.Pago
 updatePago grupoId pagoId pago = do
@@ -294,12 +313,28 @@ saveRepartija grupoId repartijaWithoutId = do
   let repartija = repartijaWithoutId { M.repartijaId = repartijaId }
   transaction $ do
     saveShallowRepartija grupoId repartija
+    repartijaItems <- saveRepartijaItems repartijaId (M.repartijaItems repartija)
+    pure repartija {M.repartijaItems = repartijaItems }
 
-    -- insert_ parteDeudorTable (parte2ParteRecord pagoId <$> M.deudores pago)
-    forM_ (M.repartijaItems repartija) $ do
-      error "existen repartijas y no lo esperaba"
+saveRepartijaItems :: (MonadSelda m) => ULID -> [M.RepartijaItem] -> m [RepartijaItem]
+saveRepartijaItems repartijaId repartijaItemsWithoutId = do
+  repartijaItems <- forM repartijaItemsWithoutId $ \repartijaItem -> do
+    itemId <- liftIO ULID.getULID
+    pure $ repartijaItem {M.repartijaItemId = itemId}
+  insert_ repartijaItemTable (repartijaItem2repartijaItemRecord repartijaId <$> repartijaItems)
+  pure repartijaItems
 
-    pure repartija
+repartijaItem2repartijaItemRecord :: ULID -> M.RepartijaItem -> RepartijaItemRecord
+repartijaItem2repartijaItemRecord repartijaId item =
+  let (numerador, denominador) = deconstructMonto $ M.repartijaItemMonto item
+  in RepartijaItemRecord
+    { repartija_item_id = M.repartijaItemId item
+    , repartija_item_nombre = M.repartijaItemNombre item
+    , repartija_item_repartija_id = repartijaId
+    , repartija_item_cantidad = M.repartijaItemCantidad item
+    , repartija_item_monto_denominador = denominador
+    , repartija_item_monto_numerador = numerador
+    }
 
 saveShallowRepartija :: MonadSelda m => ULID -> M.Repartija -> m ()
 saveShallowRepartija grupoId repartija = do

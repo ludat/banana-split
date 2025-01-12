@@ -6,7 +6,7 @@ import Form exposing (Form)
 import Form.Error as FormError
 import Form.Input as FormInput
 import Form.Validate as V
-import Generated.Api as Api exposing (Participante, Repartija, ULID)
+import Generated.Api as Api exposing (Participante, Repartija, RepartijaItem, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
@@ -64,7 +64,16 @@ validateRepartija =
         |> V.andMap (V.succeed "00000000000000000000000000")
         |> V.andMap (V.field "nombre" (V.string |> V.andThen V.nonEmpty))
         |> V.andMap (V.field "monto" validateMonto)
-        |> V.andMap (V.succeed [])
+        |> V.andMap (V.field "items" (V.list validateRepartijaItem))
+
+
+validateRepartijaItem : V.Validation CustomFormError RepartijaItem
+validateRepartijaItem =
+    V.succeed RepartijaItem
+        |> V.andMap (V.succeed "00000000000000000000000000")
+        |> V.andMap (V.field "nombre" V.string)
+        |> V.andMap (V.field "monto" validateMonto)
+        |> V.andMap (V.field "cantidad" (V.maybe V.int))
 
 
 
@@ -239,9 +248,21 @@ repartijaForm participantes form =
                 , errorFor nombreField
                 ]
             ]
+        , div [ class "container" ]
+            [ div [] [ text "Items a repartir" ]
+            , div [] <| List.map (\i -> repartijaItemForm participantes i form) (Form.getListIndexes "items" form)
+            ]
+        , div [ class "container" ] <|
+            [ button
+                [ class "button"
+                , onClick <| RepartijaForm <| Form.Append "items"
+                , type_ "button"
+                ]
+                [ text "Agregar item a repartir" ]
+            ]
         , div [ class "field" ]
             [ label [ class "label" ]
-                [ text "Monto" ]
+                [ text "Extra" ]
             , div [ class "control" ]
                 [ Html.map RepartijaForm <|
                     FormInput.textInput montoField
@@ -253,19 +274,6 @@ repartijaForm participantes form =
                 , errorFor montoField
                 ]
             ]
-
-        --, div [ class "container" ]
-        --    [ div [] [ text "Deudores" ]
-        --    , div [] <| List.map (\i -> parteForm participantes "deudores" i form) (Form.getListIndexes "deudores" form)
-        --    ]
-        --, div [ class "container" ] <|
-        --    [ button
-        --        [ class "button"
-        --        , onClick <| RepartijaForm <| Form.Append "items"
-        --        , type_ "button"
-        --        ]
-        --        [ text "Agregar parte" ]
-        --    ]
         , div [ class "control" ]
             [ button
                 [ class "button is-primary"
@@ -275,94 +283,68 @@ repartijaForm participantes form =
         ]
 
 
+repartijaItemForm : List Participante -> Int -> Form CustomFormError Repartija -> Html Msg
+repartijaItemForm participantes i form =
+    let
+        errorFor field =
+            case field.liveError of
+                Just FormError.Empty ->
+                    p [ class "help is-danger" ] [ text "No puede ser vacio" ]
 
---parteForm : List Participante -> String -> Int -> Form CustomFormError Pago -> Html Msg
---parteForm participantes prefix i form =
---    let
---        errorFor field =
---            case field.liveError of
---                Just FormError.Empty ->
---                    p [ class "help is-danger" ] [ text "No puede ser vacio" ]
---
---                Just _ ->
---                    p [ class "help is-danger" ] [ text "Algo esta maloso" ]
---
---                Nothing ->
---                    text ""
---
---        hasError field =
---            case field.liveError of
---                Just _ ->
---                    True
---
---                Nothing ->
---                    False
---
---        tipoField =
---            Form.getFieldAsString (prefix ++ "." ++ String.fromInt i ++ ".tipo") form
---
---        montoField =
---            Form.getFieldAsString (prefix ++ "." ++ String.fromInt i ++ ".monto") form
---
---        cuotaField =
---            Form.getFieldAsString (prefix ++ "." ++ String.fromInt i ++ ".cuota") form
---
---        participanteField =
---            Form.getFieldAsString (prefix ++ "." ++ String.fromInt i ++ ".participante") form
---    in
---    div [ class "field has-addons" ]
---        [ p [ class "control" ]
---            [ span [ class "select" ]
---                [ Html.map PagoForm <|
---                    FormInput.selectInput
---                        [ ( "ponderado", "Cuota" )
---                        , ( "fijo", "$" )
---                        ]
---                        tipoField
---                        []
---                ]
---            ]
---        , div [ class "control" ]
---            [ case tipoField.value of
---                Just "ponderado" ->
---                    Html.map PagoForm <|
---                        FormInput.textInput cuotaField
---                            [ class "input"
---                            , type_ "text"
---                            , placeholder "CUOTA"
---                            , classList [ ( "is-danger", hasError cuotaField ) ]
---                            ]
---
---                Just "fijo" ->
---                    Html.map PagoForm <|
---                        FormInput.textInput montoField
---                            [ class "input"
---                            , type_ "text"
---                            , placeholder "FIJO"
---                            , classList [ ( "is-danger", hasError montoField ) ]
---                            ]
---
---                _ ->
---                    Html.map PagoForm <|
---                        FormInput.textInput montoField
---                            [ class "input"
---                            , type_ "text"
---                            , placeholder "FIJO"
---                            , classList [ ( "is-danger", hasError montoField ) ]
---                            ]
---            ]
---        , p [ class "control" ]
---            [ span [ class "select" ]
---                [ Html.map PagoForm <|
---                    FormInput.selectInput
---                        (List.map (\p -> ( p.participanteId, p.participanteNombre )) participantes)
---                        participanteField
---                        []
---                ]
---            ]
---        , p [ class "control" ]
---            [ button [ class "button", type_ "button", onClick <| PagoForm <| Form.RemoveItem prefix i ]
---                [ text "borrame"
---                ]
---            ]
---        ]
+                Just _ ->
+                    p [ class "help is-danger" ] [ text "Algo esta maloso" ]
+
+                Nothing ->
+                    text ""
+
+        hasError field =
+            case field.liveError of
+                Just _ ->
+                    True
+
+                Nothing ->
+                    False
+
+        nombreField =
+            Form.getFieldAsString ("items." ++ String.fromInt i ++ ".nombre") form
+
+        montoField =
+            Form.getFieldAsString ("items." ++ String.fromInt i ++ ".monto") form
+
+        cantidadField =
+            Form.getFieldAsString ("items." ++ String.fromInt i ++ ".cantidad") form
+    in
+    div [ class "field has-addons" ]
+        [ div [ class "control" ]
+            [ Html.map RepartijaForm <|
+                FormInput.textInput nombreField
+                    [ class "input"
+                    , type_ "text"
+                    , placeholder "Birrita"
+                    , classList [ ( "is-danger", hasError nombreField ) ]
+                    ]
+            ]
+        , div [ class "control" ]
+            [ Html.map RepartijaForm <|
+                FormInput.textInput montoField
+                    [ class "input"
+                    , type_ "text"
+                    , placeholder "200"
+                    , classList [ ( "is-danger", hasError montoField ) ]
+                    ]
+            ]
+        , div [ class "control" ]
+            [ Html.map RepartijaForm <|
+                FormInput.textInput cantidadField
+                    [ class "input"
+                    , type_ "text"
+                    , placeholder "?"
+                    , classList [ ( "is-danger", hasError cantidadField ) ]
+                    ]
+            ]
+        , p [ class "control" ]
+            [ button [ class "button", type_ "button", onClick <| RepartijaForm <| Form.RemoveItem "items" i ]
+                [ text "borrame"
+                ]
+            ]
+        ]
