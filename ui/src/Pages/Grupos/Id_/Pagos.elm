@@ -313,7 +313,12 @@ update store msg model =
         DeletePagoResponse result ->
             case result of
                 Ok pagoBorradoId ->
-                    ( model, pushToast ToastSuccess "Pago borrado" )
+                    ( model
+                    , Effect.batch
+                        [ Store.refreshGrupo model.grupoId store
+                        , pushToast ToastSuccess "Pago borrado"
+                        ]
+                    )
 
                 Err e ->
                     ( model, pushToast ToastDanger "Falle al borrar el pago" )
