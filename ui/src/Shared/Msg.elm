@@ -15,5 +15,5 @@ import Utils.Toasts.Types exposing (Toast, ToastMsg)
 type Msg
     = NoOp
     | AddToast Toast
-    | ToastyMsg ToastMsg
+    | ToastMsg ToastMsg
     | StoreMsg StoreMsg

@@ -54,7 +54,7 @@ init props =
 type Msg
     = NoOp
     | ToggleNavBar
-    | ToastyMsg ToastMsg
+    | ToastMsg ToastMsg
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -72,9 +72,9 @@ update msg model =
             , Effect.none
             )
 
-        ToastyMsg toastyMsg ->
+        ToastMsg toastMsg ->
             ( model
-            , Effect.sendToastyMsg toastyMsg
+            , Effect.sendToastMsg toastMsg
             )
 
 
@@ -132,7 +132,7 @@ view navBarFunction toasts path { toContentMsg, model, content } =
             ]
         , div [ Css.toasts_container ]
             [ Html.map toContentMsg <|
-                Toasts.view Toasts.config renderToast ToastyMsg toasts
+                Toasts.view Toasts.config renderToast ToastMsg toasts
             ]
         , div [] content.body
         ]

@@ -81,17 +81,17 @@ update route msg model =
             , Effect.none
             )
 
-        ToastyMsg toastyMsg ->
+        ToastMsg toastMsg ->
             let
                 ( newModel, cmd ) =
-                    Toast.update Toast.config ToastyMsg toastyMsg model
+                    Toast.update Toast.config ToastMsg toastMsg model
             in
             ( newModel, Effect.sendCmd cmd )
 
         AddToast toast ->
             let
                 ( newModel, cmd ) =
-                    Toast.addToast Toast.config ToastyMsg toast ( model, Cmd.none )
+                    Toast.addToast Toast.config ToastMsg toast ( model, Cmd.none )
             in
             ( newModel, Effect.sendCmd cmd )
 

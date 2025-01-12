@@ -6,7 +6,7 @@ module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , sendStoreMsg, sendToast, sendToastyMsg
+    , sendStoreMsg, sendToast, sendToastMsg
     )
 
 {-|
@@ -141,11 +141,11 @@ back =
     Back
 
 
-{-| Propagate a toasty msg to the top of the state tree.
+{-| Propagate a toast msg to the top of the state tree.
 -}
-sendToastyMsg : ToastMsg -> Effect msg
-sendToastyMsg toastyMsg =
-    SendSharedMsg <| Shared.Msg.ToastyMsg toastyMsg
+sendToastMsg : ToastMsg -> Effect msg
+sendToastMsg toastMsg =
+    SendSharedMsg <| Shared.Msg.ToastMsg toastMsg
 
 
 sendToast : Toast -> Effect msg
