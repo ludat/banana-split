@@ -28,7 +28,7 @@ page shared route =
         }
         |> Page.withLayout
             (\m ->
-                Layouts.Default { navBarContent = Just <| NavBar.navBar route.params.id shared.store }
+                Layouts.Default { navBarContent = Just <| NavBar.navBar route.params.id shared.store route.path }
             )
 
 

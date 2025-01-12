@@ -1,5 +1,6 @@
 module Layouts.Default exposing (Model, Msg, Props, layout)
 
+import Components.NavBar exposing (navBarItem)
 import Css
 import Effect exposing (Effect)
 import Html exposing (..)
@@ -7,6 +8,7 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Layout exposing (Layout)
 import Route exposing (Route)
+import Route.Path exposing (Path)
 import Shared
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types exposing (Toast, ToastLevel(..), ToastMsg, Toasts)
@@ -23,7 +25,7 @@ layout props shared route =
     Layout.new
         { init = \() -> init props
         , update = update
-        , view = view props.navBarContent shared.toasties
+        , view = view props.navBarContent shared.toasties route.path
         , subscriptions = subscriptions
         }
 
@@ -85,8 +87,13 @@ subscriptions model =
 -- VIEW
 
 
-view : Maybe (Bool -> Html Msg) -> Toasts -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model } -> View contentMsg
-view navBarFunction toasties { toContentMsg, model, content } =
+view :
+    Maybe (Bool -> Html Msg)
+    -> Toasts
+    -> Path
+    -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
+    -> View contentMsg
+view navBarFunction toasts path { toContentMsg, model, content } =
     { title =
         if content.title == "" then
             "Banana split"
@@ -101,7 +108,7 @@ view navBarFunction toasties { toContentMsg, model, content } =
             ]
           <|
             [ div [ class "navbar-brand" ]
-                [ a [ class "navbar-item", href "/" ] [ text "🍌 Banana Split" ]
+                [ navBarItem { path = Route.Path.Home_, attrs = [], currentPath = path } [ text "🍌 Banana Split" ]
                 , span
                     [ attribute "role" "button"
                     , class "navbar-burger"
@@ -125,7 +132,7 @@ view navBarFunction toasties { toContentMsg, model, content } =
             ]
         , div [ Css.toasts_container ]
             [ Html.map toContentMsg <|
-                Toasts.view Toasts.config renderToast ToastyMsg toasties
+                Toasts.view Toasts.config renderToast ToastyMsg toasts
             ]
         , div [] content.body
         ]

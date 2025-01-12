@@ -9,17 +9,14 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route.Path as Route
 
 
-navBar : ULID -> Store -> Bool -> Html msg
-navBar grupoId store navBarOpen =
+navBar : ULID -> Store -> Route.Path -> Bool -> Html msg
+navBar grupoId store path navBarOpen =
     div
         [ classList [ ( "is-active", navBarOpen ) ]
         , class "navbar-menu"
         ]
         [ div [ class "navbar-start" ]
-            [ a
-                [ class "navbar-item"
-                , Route.href <| Route.Grupos_Id_ { id = grupoId }
-                ]
+            [ navBarItem { currentPath = path, path = Route.Grupos_Id_ { id = grupoId }, attrs = [] }
                 [ case store |> Store.getGrupo grupoId of
                     NotAsked ->
                         text ""
@@ -33,15 +30,9 @@ navBar grupoId store navBarOpen =
                     Success grupo ->
                         text <| grupo.grupoNombre
                 ]
-            , a
-                [ class "navbar-item"
-                , Route.href <| Route.Grupos_Id__Pagos { id = grupoId }
-                ]
+            , navBarItem { currentPath = path, path = Route.Grupos_Id__Pagos { id = grupoId }, attrs = [] }
                 [ text "Pagos" ]
-            , a
-                [ class "navbar-item"
-                , Route.href <| Route.Grupos_Id__Participantes { id = grupoId }
-                ]
+            , navBarItem { currentPath = path, path = Route.Grupos_Id__Participantes { id = grupoId }, attrs = [] }
                 [ text "Participantes" ]
             ]
 
@@ -54,3 +45,24 @@ navBar grupoId store navBarOpen =
         --        ]
         --    ]
         ]
+
+
+navBarItem :
+    { path : Route.Path
+    , currentPath : Route.Path
+    , attrs : List (Attribute msg)
+    }
+    -> List (Html msg)
+    -> Html msg
+navBarItem props =
+    a
+        ([ class "navbar-item is-tab"
+         , if props.path == props.currentPath then
+            class "is-active"
+
+           else
+            class ""
+         , Route.href props.path
+         ]
+            ++ props.attrs
+        )
