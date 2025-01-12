@@ -1,10 +1,12 @@
 module BananaSplitSpec where
 
-import Test.Hspec
 import BananaSplit
-import qualified Data.Map as Map
+
+import Data.Map qualified as Map
+import Data.Text qualified as Text
 import Data.ULID
-import qualified Data.Text as Text
+
+import Test.Hspec
 
 spec :: Spec
 spec = describe "calcularDeudasTotales" $ do

@@ -8,8 +8,8 @@
 
 module Site.Handler.Pagos
     ( handleDeletePago
-    , handlePagoPost
     , handlePagoNetosPost
+    , handlePagoPost
     , handlePagoUpdate
     ) where
 
@@ -25,8 +25,9 @@ import Data.ULID (ULID)
 import Database.Selda.Backend
 import Database.Selda.PostgreSQL (PG)
 
+import Site.Api (Netos (Netos, netos, transaccionesParaSaldar))
+
 import Types
-import Site.Api (Netos (Netos, transaccionesParaSaldar, netos))
 
 
 _pagosUpdatedEvent :: Text
