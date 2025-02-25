@@ -99,7 +99,7 @@ view store model =
                             , p []
                                 [ text "Agregalos "
                                 , a
-                                    [ Path.href <| Path.Grupos_Id__Participantes { id = grupo.grupoId }
+                                    [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.grupoId }
                                     ]
                                     [ text "acá" ]
                                 ]

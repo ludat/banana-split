@@ -29,7 +29,7 @@
         { "name": "nombre", "type": "text", "nullable": false },
         { "name": "monto_numerador", "type": "bigint", "nullable": false },
         { "name": "monto_denominador", "type": "bigint", "nullable": false },
-        { "name": "cantidad", "type": "integer", "nullable": true }
+        { "name": "cantidad", "type": "integer", "nullable": false }
       ],
       "foreign_keys": [
         {
@@ -38,6 +38,38 @@
           "referenced_columns": [ "id" ]
         }
       ]
+    },
+    {
+      "type": "create_table",
+      "name": "repartijas_claims",
+      "primary_key": [ "id" ],
+      "columns": [
+        { "name": "id", "type": "text" },
+        { "name": "participante_id", "type": "text", "nullable": false },
+        { "name": "repartija_item_id", "type": "text", "nullable": false },
+        { "name": "cantidad", "type": "integer", "nullable": true }
+      ],
+      "foreign_keys": [
+        {
+          "columns": [ "participante_id" ],
+          "referenced_table": "participantes",
+          "referenced_columns": [ "id" ]
+        },
+        {
+          "columns": [ "repartija_item_id" ],
+          "referenced_table": "repartijas_items",
+          "referenced_columns": [ "id" ]
+        }
+      ]
+    },
+    {
+      "type": "add_index",
+      "table": "repartijas_claims",
+      "index": {
+        "name": "repartija_item_id__repartija_participante__unique",
+        "columns": ["participante_id", "repartija_item_id"],
+	      "unique": true
+      }
     }
   ]
 }

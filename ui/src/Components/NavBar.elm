@@ -30,11 +30,11 @@ navBar grupoId store path navBarOpen =
                     Success grupo ->
                         text <| grupo.grupoNombre
                 ]
-            , navBarItem { currentPath = path, path = Route.Grupos_Id__Pagos { id = grupoId }, attrs = [] }
+            , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Pagos { grupoId = grupoId }, attrs = [] }
                 [ text "Pagos" ]
-            , navBarItem { currentPath = path, path = Route.Grupos_Id__Participantes { id = grupoId }, attrs = [] }
+            , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Participantes { grupoId = grupoId }, attrs = [] }
                 [ text "Participantes" ]
-            , navBarItem { currentPath = path, path = Route.Grupos_Id__Repartijas { id = grupoId }, attrs = [] }
+            , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Repartijas { grupoId = grupoId }, attrs = [] }
                 [ text "Repartijas" ]
             ]
 

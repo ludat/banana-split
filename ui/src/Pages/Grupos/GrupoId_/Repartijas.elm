@@ -1,4 +1,4 @@
-module Pages.Grupos.Id_.Repartijas exposing (Model, Msg, page)
+module Pages.Grupos.GrupoId_.Repartijas exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
@@ -15,9 +15,14 @@ import Layouts
 import Models.Monto exposing (validateMonto)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
+import Numeric.Decimal as Decimal
+import Numeric.Decimal.Rounding as Decimal
+import Numeric.Nat as Nat
+import Numeric.Rational as Rational
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
+import Route.Path as Path
 import Shared
 import Utils.Form exposing (CustomFormError)
 import Utils.Toasts as Toasts
@@ -25,10 +30,10 @@ import Utils.Toasts.Types as Toasts
 import View exposing (View)
 
 
-page : Shared.Model -> Route { id : String } -> Page Model Msg
+page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init shared.store route.params.id
+        { init = \() -> init shared.store route.params.grupoId
         , update = update shared.store
         , subscriptions = subscriptions
         , view = view shared.store
@@ -36,7 +41,7 @@ page shared route =
         |> Page.withLayout
             (\m ->
                 Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar route.params.id shared.store route.path
+                    { navBarContent = Just <| NavBar.navBar route.params.grupoId shared.store route.path
                     }
             )
 
@@ -58,7 +63,10 @@ init store grupoId =
       , repartijaForm = Form.initial [] validateRepartija
       , isNewRepartijaPopoverOpen = False
       }
-    , Store.ensureGrupo grupoId store
+    , Effect.batch
+        [ Store.ensureGrupo grupoId store
+        , Store.ensureRepartijas grupoId store
+        ]
     )
 
 
@@ -69,6 +77,7 @@ validateRepartija =
         |> V.andMap (V.field "nombre" (V.string |> V.andThen V.nonEmpty))
         |> V.andMap (V.field "monto" validateMonto)
         |> V.andMap (V.field "items" (V.list validateRepartijaItem))
+        |> V.andMap (V.field "claims" (V.succeed []))
 
 
 validateRepartijaItem : V.Validation CustomFormError RepartijaItem
@@ -77,7 +86,7 @@ validateRepartijaItem =
         |> V.andMap (V.succeed "00000000000000000000000000")
         |> V.andMap (V.field "nombre" V.string)
         |> V.andMap (V.field "monto" validateMonto)
-        |> V.andMap (V.field "cantidad" (V.maybe V.int))
+        |> V.andMap (V.field "cantidad" V.int)
 
 
 
@@ -132,7 +141,10 @@ update store msg model =
 
         CreateRepartijaSuccess repartija ->
             ( model
-            , Toasts.pushToast Toasts.ToastSuccess "Repartija creada con éxito"
+            , Effect.batch
+                [ Toasts.pushToast Toasts.ToastSuccess "Repartija creada con éxito"
+                , Store.refreshRepartijas model.grupoId store
+                ]
             )
 
         CreateRepartijaFailed e ->
@@ -171,18 +183,35 @@ subscriptions model =
 
 view : Store -> Model -> View Msg
 view store model =
-    case Store.getGrupo model.grupoId store of
-        Success grupo ->
-            { title = "Pages.Grupos.Id_.Repartijas"
+    case ( Store.getGrupo model.grupoId store, Store.getRepartijas model.grupoId store ) of
+        ( Success grupo, Success repartijas ) ->
+            { title = "Repartijas"
             , body =
                 [ newRepartijaModal model
                 , button [ class "button is-primary", onClick InitNewRepartija ] [ text "Crear repartija" ]
+                , div []
+                    (repartijas
+                        |> List.map
+                            (\repartija ->
+                                p []
+                                    [ a
+                                        [ Path.href <|
+                                            Path.Grupos_GrupoId__Repartijas_RepartijaId_
+                                                { grupoId = model.grupoId
+                                                , repartijaId = repartija.repartijaShallowId
+                                                }
+                                        ]
+                                        [ text <| repartija.repartijaShallowNombre
+                                        ]
+                                    ]
+                            )
+                    )
                 ]
             }
 
         _ ->
             { title = "Repartijas"
-            , body = [ text "nada por aqui" ]
+            , body = [ text "Cargando..." ]
             }
 
 
@@ -224,6 +253,7 @@ newRepartijaModal model =
                 [ class "modal-card-body"
                 ]
                 [ repartijaForm model.repartijaForm
+                , pre [] [ text <| Debug.toString <| Form.getOutput model.repartijaForm ]
                 ]
             , footer
                 [ class "modal-card-foot"

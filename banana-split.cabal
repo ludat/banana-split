@@ -25,6 +25,8 @@ library
   build-depends:
       aeson
     , base
+    , beam-core
+    , beam-postgres
     , bytestring
     , conferer
     , containers
@@ -37,14 +39,13 @@ library
     , http-media
     , http-types
     , mtl
+    , postgresql-simple
     , pretty-simple
     , process
     , random
     , resource-pool
     , safe-money
     , safe-money-aeson
-    , selda
-    , selda-postgresql
     , servant
     , servant-elm
     , servant-server
@@ -84,6 +85,8 @@ executable banana-split
       aeson
     , banana-split
     , base
+    , beam-core
+    , beam-postgres
     , bytestring
     , conferer
     , containers
@@ -96,14 +99,13 @@ executable banana-split
     , http-media
     , http-types
     , mtl
+    , postgresql-simple
     , pretty-simple
     , process
     , random
     , resource-pool
     , safe-money
     , safe-money-aeson
-    , selda
-    , selda-postgresql
     , servant
     , servant-elm
     , servant-server
@@ -138,6 +140,8 @@ test-suite spec
     , aeson
     , banana-split
     , base
+    , beam-core
+    , beam-postgres
     , bytestring
     , conferer
     , containers
@@ -151,14 +155,13 @@ test-suite spec
     , http-media
     , http-types
     , mtl
+    , postgresql-simple
     , pretty-simple
     , process
     , random
     , resource-pool
     , safe-money
     , safe-money-aeson
-    , selda
-    , selda-postgresql
     , servant
     , servant-elm
     , servant-server

@@ -4,8 +4,9 @@ module Site.Handler.Utils
     , orElseMay
     , orElse_
     , redirect
-    , runSelda
+    , runBeam
     , throwJsonError
+    , err200
     ) where
 
 import Control.Monad.Error.Class
@@ -15,13 +16,14 @@ import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.Pool qualified as Pool
 
-import Database.Selda
-import Database.Selda.Backend (runSeldaT)
-import Database.Selda.PostgreSQL (PG)
+import Database.Beam.Postgres qualified as Beam
 
+import Data.Text (Text)
 import Servant
 
 import Types
+import qualified Database.PostgreSQL.Simple as Simple
+import Control.Monad.IO.Class
 
 
 orElse :: Monad m => m (Either error a) -> (error -> m a) -> m a
@@ -54,9 +56,10 @@ throwJsonError serverError errorMessage =
     , errHeaders = errHeaders serverError ++ [("Content-Type", "application/json")]
     }
 
-runSelda :: SeldaT PG IO a -> AppHandler a
-runSelda dbAction = do
-  pool <- asks (.connection)
+runBeam :: Beam.Pg a -> AppHandler a
+runBeam dbAction = do
+  pool <- asks (.beamConnectionPool)
 
-  liftIO $ Pool.withResource pool $ \seldaConn -> do
-    runSeldaT dbAction seldaConn
+  liftIO $ Pool.withResource pool $ \conn -> do
+    Simple.withTransaction conn (Beam.runBeamPostgres conn dbAction)
+

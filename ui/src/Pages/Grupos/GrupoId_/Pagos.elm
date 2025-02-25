@@ -1,4 +1,4 @@
-module Pages.Grupos.Id_.Pagos exposing (Model, Msg, page)
+module Pages.Grupos.GrupoId_.Pagos exposing (Model, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
@@ -16,7 +16,8 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
 import Http
 import Layouts
-import Models.Monto exposing (validateMonto)
+import Models.Grupo exposing (lookupNombreParticipante, lookupParticipante)
+import Models.Monto exposing (monto2Decimal, validateMonto)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Numeric.Decimal as Decimal
@@ -33,10 +34,10 @@ import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
 
-page : Shared.Model -> Route { id : String } -> Page Model Msg
+page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route.params.id shared.store
+        { init = \() -> init route.params.grupoId shared.store
         , update = update shared.store
         , subscriptions = subscriptions
         , view = view shared.store
@@ -44,7 +45,7 @@ page shared route =
         |> Page.withLayout
             (\m ->
                 Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar route.params.id shared.store route.path
+                    { navBarContent = Just <| NavBar.navBar route.params.grupoId shared.store route.path
                     }
             )
 
@@ -142,10 +143,20 @@ update store msg model =
             ( model, Effect.none )
 
         AddedPago pago ->
-            ( model, Store.refreshGrupo model.grupoId store )
+            ( model
+            , Effect.batch
+                [ Store.refreshNetos model.grupoId store
+                , Store.refreshGrupo model.grupoId store
+                ]
+            )
 
         UpdatedPago pago ->
-            ( model, Store.refreshGrupo model.grupoId store )
+            ( model
+            , Effect.batch
+                [ Store.refreshNetos model.grupoId store
+                , Store.refreshGrupo model.grupoId store
+                ]
+            )
 
         PagoForm Form.Submit ->
             case ( Form.getOutput model.pagoForm, store |> Store.getGrupo model.grupoId ) of
@@ -317,7 +328,7 @@ update store msg model =
                                         MontoFijo montoRaw participanteId ->
                                             let
                                                 monto =
-                                                    montoRaw2Decimal montoRaw
+                                                    monto2Decimal montoRaw
                                             in
                                             FormField.group
                                                 [ Form.setString "tipo" "fijo"
@@ -333,7 +344,7 @@ update store msg model =
                                                 ]
 
                                 montoPago =
-                                    montoRaw2Decimal pago.monto
+                                    monto2Decimal pago.monto
                             in
                             Form.initial
                                 (List.concat
@@ -399,14 +410,6 @@ andThenUpdateNetosFromForm pagoForm ( model, oldEffects ) =
     )
 
 
-montoRaw2Decimal : ( a, Int, Int ) -> Decimal.Decimal s Int
-montoRaw2Decimal montoRaw =
-    case montoRaw of
-        ( _, numerador, denominador ) ->
-            Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-
-
 
 -- SUBSCRIPTIONS
 
@@ -451,18 +454,11 @@ view store model =
                     (grupo.pagos
                         |> List.map
                             (\pago ->
-                                let
-                                    monto =
-                                        case pago.monto of
-                                            ( _, numerador, denominador ) ->
-                                                Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                                                    |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                                in
                                 div [ class "card" ]
                                     [ p []
                                         [ text pago.nombre
                                         , text " ($"
-                                        , text (Decimal.toString monto)
+                                        , text (Decimal.toString <| monto2Decimal pago.monto)
                                         , text ")"
                                         , button [ class "button", onClick <| ChangePagoPopoverState <| EditingPago pago ]
                                             [ Icons.toHtml [] Icons.edit
@@ -472,7 +468,9 @@ view store model =
                                     , p []
                                         [ let
                                             pagador2Text pagador =
-                                                Maybe.withDefault "persona desconocida" <| resolvePagadorName grupo <| extractPagadorFromParte pagador
+                                                pagador
+                                                    |> extractPagadorFromParte
+                                                    |> lookupNombreParticipante grupo
                                           in
                                           case pago.pagadores of
                                             [] ->
@@ -511,20 +509,6 @@ extractPagadorFromParte parte =
 
         Ponderado _ participanteId ->
             participanteId
-
-
-resolvePagadorName : Grupo -> ParticipanteId -> Maybe String
-resolvePagadorName grupo participanteId =
-    grupo.participantes
-        |> List.filterMap
-            (\participante ->
-                if participante.participanteId == participanteId then
-                    Just participante.participanteNombre
-
-                else
-                    Nothing
-            )
-        |> List.head
 
 
 pagosModal : Grupo -> Model -> Html Msg

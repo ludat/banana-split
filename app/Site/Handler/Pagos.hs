@@ -1,6 +1,5 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Site.Handler.Pagos
@@ -11,18 +10,18 @@ module Site.Handler.Pagos
     ) where
 
 import BananaSplit (Pago (..), calcularDeudasPago)
-import BananaSplit.Persistence (deletePago, savePago, updatePago)
+import BananaSplit.Persistence (savePago, deletePago, updatePago)
 
 import Data.ULID (ULID)
 
 import Site.Api (Netos (Netos, netos, transaccionesParaSaldar))
-import Site.Handler.Utils (runSelda)
+import Site.Handler.Utils (runBeam)
 
 import Types
 
 handlePagoPost :: ULID -> Pago -> AppHandler Pago
 handlePagoPost grupoId pago = do
-  runSelda (savePago grupoId pago)
+  runBeam (savePago grupoId pago)
 
 handlePagoNetosPost :: Pago -> AppHandler Netos
 handlePagoNetosPost pago = do
@@ -30,9 +29,9 @@ handlePagoNetosPost pago = do
 
 handleDeletePago :: ULID -> ULID -> AppHandler ULID
 handleDeletePago grupoId pagoId = do
-  runSelda (deletePago grupoId pagoId)
+  runBeam (deletePago pagoId)
   pure pagoId
 
 handlePagoUpdate :: ULID -> ULID -> Pago -> AppHandler Pago
 handlePagoUpdate grupoId pagoId pago = do
-  runSelda $ updatePago grupoId pagoId pago
+  runBeam $ updatePago grupoId pagoId pago

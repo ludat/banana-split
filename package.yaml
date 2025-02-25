@@ -24,8 +24,9 @@ dependencies:
   - resource-pool
   - safe-money
   - safe-money-aeson
-  - selda
-  - selda-postgresql
+  - beam-core
+  - beam-postgres
+  - postgresql-simple
   - servant
   - servant-elm
   - servant-server

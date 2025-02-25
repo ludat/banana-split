@@ -17,6 +17,8 @@ module BananaSplit
     , ParticipanteId (..)
     , Repartija (..)
     , RepartijaItem (..)
+    , RepartijaClaim (..)
+    , ShallowRepartija (..)
     , Transaccion (..)
     , buscarParticipante
     , calcularDeudasPago
@@ -73,13 +75,26 @@ data Repartija = Repartija
   , repartijaNombre :: Text
   , repartijaExtra :: Monto
   , repartijaItems :: [RepartijaItem]
+  , repartijaClaims :: [RepartijaClaim]
+  } deriving (Show, Eq, Generic)
+
+data ShallowRepartija = ShallowRepartija
+  { repartijaShallowId :: ULID
+  , repartijaShallowNombre :: Text
   } deriving (Show, Eq, Generic)
 
 data RepartijaItem = RepartijaItem
   { repartijaItemId :: ULID
   , repartijaItemNombre :: Text
   , repartijaItemMonto :: Monto
-  , repartijaItemCantidad :: Maybe Int
+  , repartijaItemCantidad :: Int
+  } deriving (Show, Eq, Generic)
+
+data RepartijaClaim = RepartijaClaim
+  { repartijaClaimId :: ULID
+  , repartijaClaimParticipante :: ParticipanteId
+  , repartijaClaimItemId :: ULID
+  , repartijaClaimCantidad :: Maybe Int
   } deriving (Show, Eq, Generic)
 
 monto2Text :: Monto -> Text
@@ -317,5 +332,7 @@ Elm.deriveBoth Elm.defaultOptions ''Participante
 Elm.deriveBoth Elm.defaultOptions ''Transaccion
 Elm.deriveBoth Elm.defaultOptions ''Deudas
 Elm.deriveBoth Elm.defaultOptions ''RepartijaItem
+Elm.deriveBoth Elm.defaultOptions ''RepartijaClaim
+Elm.deriveBoth Elm.defaultOptions ''ShallowRepartija
 Elm.deriveBoth Elm.defaultOptions ''Repartija
 Elm.deriveBoth Elm.defaultOptions ''Grupo

@@ -8,31 +8,27 @@ module Site.Handler.Grupos
     ) where
 
 import BananaSplit (Grupo, Participante, calcularDeudasTotales, resolverDeudasNaif)
-import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParticipante, fetchGrupo)
+import BananaSplit.Persistence (createGrupo, fetchGrupo, addParticipante, deleteShallowParticipante)
 
-import Control.Monad.Reader
 
-import Data.Pool qualified as Pool
 import Data.ULID (ULID)
 
-import Database.Selda.Backend
-import Database.Selda.PostgreSQL (PG)
 
 import Servant
 
 import Site.Api
-import Site.Handler.Utils (orElse, orElseMay, throwJsonError)
+import Site.Handler.Utils
 
 import Types
 
 
 handleCreateGrupo :: CreateGrupoParams -> AppHandler Grupo
 handleCreateGrupo CreateGrupoParams{grupoName} = do
-  runSelda $ createGrupo grupoName
+  runBeam $ createGrupo grupoName
 
 handleGetNetos :: ULID -> AppHandler Netos
 handleGetNetos grupoId = do
-  grupo <- runSelda (fetchGrupo grupoId)
+  grupo <- runBeam (fetchGrupo grupoId)
     `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   let deudas = calcularDeudasTotales grupo
@@ -43,22 +39,15 @@ handleGetNetos grupoId = do
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
 handleDeleteParticipante grupoId participanteId = do
-  runSelda (deleteShallowParticipante grupoId participanteId)
+  _ <- runBeam (deleteShallowParticipante grupoId participanteId)
   pure participanteId
 
 handleShowGrupo :: ULID -> AppHandler Grupo
 handleShowGrupo grupoId = do
-  runSelda (fetchGrupo grupoId)
+  runBeam (fetchGrupo grupoId)
     `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
 handleCreateParticipante :: ULID -> ParticipanteAddParams -> AppHandler Participante
 handleCreateParticipante grupoId ParticipanteAddParams{name} = do
-  runSelda (addParticipante grupoId name)
+  runBeam (addParticipante grupoId name)
     `orElse` (\_e -> throwJsonError err400 "falle")
-
-runSelda :: SeldaT PG IO a -> AppHandler a
-runSelda dbAction = do
-  pool <- asks (.connection)
-
-  liftIO $ Pool.withResource pool $ \seldaConn -> do
-    runSeldaT dbAction seldaConn

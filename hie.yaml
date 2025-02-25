@@ -1,0 +1,10 @@
+cradle:
+  stack:
+    - path: "./src"
+      component: "banana-split:lib"
+
+    - path: "./app"
+      component: "banana-split:exe:banana-split"
+
+    - path: "./test"
+      component: "banana-split:test:spec"

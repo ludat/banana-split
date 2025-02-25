@@ -1,4 +1,4 @@
-module Pages.Grupos.Id_.Participantes exposing (Model, Msg, page)
+module Pages.Grupos.GrupoId_.Participantes exposing (Model, Msg, page)
 
 import Browser.Dom
 import Components.NavBar as NavBar
@@ -26,10 +26,10 @@ import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
 
-page : Shared.Model -> Route { id : String } -> Page Model Msg
+page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init shared.store route.params.id
+        { init = \() -> init shared.store route.params.grupoId
         , update = update shared.store
         , subscriptions = subscriptions
         , view = view shared.store
@@ -37,7 +37,7 @@ page shared route =
         |> Page.withLayout
             (\m ->
                 Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar route.params.id shared.store route.path
+                    { navBarContent = Just <| NavBar.navBar route.params.grupoId shared.store route.path
                     }
             )
 

@@ -3,7 +3,7 @@ module BananaSplit.Elm
     ) where
 
 import BananaSplit (Deudas, Grupo, Monto, Pago, Parte, Participante, ParticipanteId, Repartija,
-                    RepartijaItem, Transaccion)
+                    RepartijaItem, RepartijaClaim, Transaccion, ShallowRepartija)
 
 import Data.Data
 import Data.ULID (ULID)
@@ -13,7 +13,7 @@ import Elm.TyRep
 import Servant
 import Servant.Elm
 
-import Site.Api (Api (..), Netos, ParticipanteAddParams (ParticipanteAddParams))
+import Site.Api (Api (..), Netos, ParticipanteAddParams (..))
 import Site.Handler.Grupos (CreateGrupoParams)
 
 
@@ -51,5 +51,7 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy Monto)
     , DefineElm (Proxy :: Proxy Repartija)
     , DefineElm (Proxy :: Proxy RepartijaItem)
+    , DefineElm (Proxy :: Proxy RepartijaClaim)
+    , DefineElm (Proxy :: Proxy ShallowRepartija)
     ]
     (Proxy :: Proxy (ToServantApi Api))

@@ -1,4 +1,4 @@
-module Models.Grupo exposing (lookupParticipante)
+module Models.Grupo exposing (lookupNombreParticipante, lookupParticipante)
 
 import Generated.Api exposing (Grupo, Participante, ParticipanteId)
 
@@ -9,3 +9,8 @@ lookupParticipante grupo participanteId =
         |> List.filter (\p -> p.participanteId == participanteId)
         |> List.head
         |> Maybe.withDefault { participanteId = participanteId, participanteNombre = "Desconocido" }
+
+
+lookupNombreParticipante : Grupo -> ParticipanteId -> String
+lookupNombreParticipante grupo participanteId =
+    lookupParticipante grupo participanteId |> .participanteNombre

@@ -1,9 +1,11 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Site.Server where
+module Site.Server
+  ( serverT
+  , app
+  ) where
 
 import Control.Monad.Reader
 
@@ -40,6 +42,9 @@ serverT =
     -- , _routeGrupoPagoAdd = handlePagoCreate
     , _routePagoUpdate = handlePagoUpdate
     , _routeRepartijaPost = handleRepartijaPost
+    , _routeRepartijasGet = handleRepartijasGet
+    , _routeRepartijaGet = handleRepartijaGet
+    , _routeRepartijaClaimPut = handleRepartijaClaimPut
     -- , _routePagoNew = handlePagoNew
     -- , _routePagoNewPatch = handlePagoNewPatch
     -- , _routePagoEdit = handlePagoEdit
