@@ -143,7 +143,7 @@ update store msg model =
             ( model
             , Effect.batch
                 [ Toasts.pushToast Toasts.ToastSuccess "Repartija creada con éxito"
-                , Store.refreshRepartijas model.grupoId store
+                , Store.refreshRepartijas model.grupoId
                 ]
             )
 

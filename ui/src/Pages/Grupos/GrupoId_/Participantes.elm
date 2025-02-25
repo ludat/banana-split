@@ -120,7 +120,7 @@ update store msg model =
               }
             , Effect.batch
                 [ Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "nombre"
-                , Store.refreshGrupo model.grupoId store
+                , Store.refreshGrupo model.grupoId
                 ]
             )
 
@@ -138,7 +138,7 @@ update store msg model =
         DeleteParticipanteResponse result ->
             case result of
                 Ok participanteBorrado ->
-                    ( model, Store.refreshGrupo model.grupoId store )
+                    ( model, Store.refreshGrupo model.grupoId )
 
                 Err e ->
                     ( model, pushToast ToastDanger "Fallo al borrar el participante." )

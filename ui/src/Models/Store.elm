@@ -95,23 +95,23 @@ saveRepartija repartijaId repartija store =
     }
 
 
-refreshGrupo : ULID -> Store -> Effect msg
-refreshGrupo grupoId store =
+refreshGrupo : ULID -> Effect msg
+refreshGrupo grupoId =
     Effect.sendStoreMsg <| FetchGrupo grupoId
 
 
-refreshNetos : ULID -> Store -> Effect msg
-refreshNetos grupoId store =
+refreshNetos : ULID -> Effect msg
+refreshNetos grupoId =
     Effect.sendStoreMsg <| FetchNetos grupoId
 
 
-refreshRepartijas : ULID -> Store -> Effect msg
-refreshRepartijas grupoId store =
+refreshRepartijas : ULID -> Effect msg
+refreshRepartijas grupoId =
     Effect.sendStoreMsg <| FetchRepartijas grupoId
 
 
-refreshRepartija : ULID -> Store -> Effect msg
-refreshRepartija repartijaId store =
+refreshRepartija : ULID -> Effect msg
+refreshRepartija repartijaId =
     Effect.sendStoreMsg <| FetchRepartija repartijaId
 
 

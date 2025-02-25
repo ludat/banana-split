@@ -145,16 +145,16 @@ update store msg model =
         AddedPago pago ->
             ( model
             , Effect.batch
-                [ Store.refreshNetos model.grupoId store
-                , Store.refreshGrupo model.grupoId store
+                [ Store.refreshNetos model.grupoId
+                , Store.refreshGrupo model.grupoId
                 ]
             )
 
         UpdatedPago pago ->
             ( model
             , Effect.batch
-                [ Store.refreshNetos model.grupoId store
-                , Store.refreshGrupo model.grupoId store
+                [ Store.refreshNetos model.grupoId
+                , Store.refreshGrupo model.grupoId
                 ]
             )
 
@@ -305,7 +305,7 @@ update store msg model =
                 Ok pagoBorradoId ->
                     ( model
                     , Effect.batch
-                        [ Store.refreshGrupo model.grupoId store
+                        [ Store.refreshGrupo model.grupoId
                         , pushToast ToastSuccess "Pago borrado"
                         ]
                     )

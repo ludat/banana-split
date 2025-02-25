@@ -135,7 +135,7 @@ update store msg model =
 
         CreateRepartijaReponded newRepartijaClaim ->
             ( model
-            , Effect.batch [ Store.refreshRepartija model.repartijaId store ]
+            , Effect.batch [ Store.refreshRepartija model.repartijaId ]
             )
 
 
