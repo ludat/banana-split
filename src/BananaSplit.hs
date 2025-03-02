@@ -1,11 +1,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE DuplicateRecordFields #-}
+{-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE LexicalNegation #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE UndecidableInstances #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module BananaSplit
     ( Deudas (..)
@@ -16,8 +18,8 @@ module BananaSplit
     , Participante (..)
     , ParticipanteId (..)
     , Repartija (..)
-    , RepartijaItem (..)
     , RepartijaClaim (..)
+    , RepartijaItem (..)
     , ShallowRepartija (..)
     , Transaccion (..)
     , buscarParticipante
@@ -31,6 +33,7 @@ module BananaSplit
     , participanteId2ULID
     , resolverDeudasNaif
     , text2Monto
+    , repartija2Pago
     ) where
 
 import Data.Aeson
@@ -58,6 +61,7 @@ import Money.Aeson ()
 import Servant
 
 import Text.Read (readMaybe)
+import Data.Maybe (fromMaybe, isJust)
 
 data Grupo = Grupo
   { grupoId :: ULID
@@ -68,10 +72,11 @@ data Grupo = Grupo
 
 newtype Monto = Monto (Money.Dense "ARS")
   deriving stock (Show, Eq, Ord)
-  deriving newtype (Num, ToJSON, FromJSON)
+  deriving newtype (Num, Real, ToJSON, FromJSON)
 
 data Repartija = Repartija
   { repartijaId :: ULID
+  , repartijaGrupoId :: ULID
   , repartijaNombre :: Text
   , repartijaExtra :: Monto
   , repartijaItems :: [RepartijaItem]
@@ -187,7 +192,7 @@ instance FromHttpApiData Monto where
 buscarParticipante :: Grupo -> ParticipanteId -> Participante
 buscarParticipante grupo (ParticipanteId pId) =
   grupo.participantes
-  & List.find (\p -> participanteId p == pId)
+  & List.find (\p -> p.participanteId == pId)
   & Maybe.fromMaybe (error $ "participante " <> show pId <> "not found")
 
 nullUlid :: ULID
@@ -249,12 +254,12 @@ calcularDeudasPago pago =
           & mconcat
       in deudasFijos <> distribuirEntrePonderados (montoOriginal - totalFijo) deudasPonderados
 
-distribuirEntrePonderados :: Monto -> Deudas Integer -> Deudas Monto
+distribuirEntrePonderados :: (Real n) => Monto -> Deudas n -> Deudas Monto
 distribuirEntrePonderados (Monto m) deudas =
   let
     parteTotal = totalDeudas deudas
   in deudas
-      & fmap (\p -> Monto $ Money.dense' $ fromInteger p * toRational m / toRational parteTotal)
+      & fmap (\p -> Monto $ Money.dense' $ toRational p * toRational m / toRational parteTotal)
 
 extraerMaximoDeudor :: Deudas Monto -> (ParticipanteId, Monto)
 extraerMaximoDeudor (Deudas deudasMap) =
@@ -271,6 +276,11 @@ extraerMaximoPagador (Deudas deudasMap) =
   & Map.toList
   & maximumBy (compare `on` snd)
 
+extraerDeudor :: Num a => ParticipanteId -> Deudas a -> (a, Deudas a)
+extraerDeudor unId (Deudas deudasMap) =
+  ( deudasMap & Map.findWithDefault 0 unId
+  , Deudas $ deudasMap & Map.delete unId)
+
 removerDeudor :: ParticipanteId -> Deudas m -> Deudas m
 removerDeudor participanteId (Deudas deudasMap) =
   Deudas $ Map.delete participanteId deudasMap
@@ -282,7 +292,7 @@ data Transaccion =
 resolverDeudasNaif :: Deudas Monto -> [Transaccion]
 resolverDeudasNaif deudas
   | deudoresNoNulos deudas == 0 = []
-  | deudoresNoNulos deudas == 1 = error $ show deudas
+  | deudoresNoNulos deudas == 1 = [] -- error $ show deudas
   | otherwise =
       let
         (mayorDeudor, mayorDeuda) = extraerMaximoDeudor deudas
@@ -302,9 +312,14 @@ resolverDeudasNaif deudas
 deudoresNoNulos :: Deudas Monto -> Int
 deudoresNoNulos (Deudas deudasMap) =
   deudasMap
-  & Map.toList
-  & filter (\(_p, m) -> m /= 0)
+  & Map.filter (/= 0)
   & length
+
+filterDeudas :: (a -> Bool) -> Deudas a -> Deudas a
+filterDeudas f (Deudas deudasMap) =
+  deudasMap
+  & Map.filter f
+  & Deudas
 
 instance IsElmDefinition ULID where
   compileElmDef :: Proxy ULID -> ETypeDef
@@ -324,6 +339,68 @@ instance IsElmDefinition Monto where
           & flip ETyApp (ETyCon (ETCon {tc_name = "Int"}))
           & flip ETyApp (ETyCon (ETCon {tc_name = "Int"}))
       }
+
+repartija2Pago :: Repartija -> Pago
+repartija2Pago repartija =
+  let totalItems = repartija.repartijaItems
+        & fmap (.repartijaItemMonto)
+        & sum
+      total = repartija.repartijaExtra + totalItems
+      deudasIncluyendoNoRepartido =
+        repartija.repartijaItems
+        & fmap (\item ->
+              let claims =
+                    repartija.repartijaClaims
+                      & filter ((== item.repartijaItemId) . (.repartijaClaimItemId))
+              in
+                if | all tieneCantidad claims ->
+                      let claimsExplicitos = claims
+                            & fmap (\claim ->
+                              mkDeuda claim.repartijaClaimParticipante (fromMaybe (error "tieneCantidad") claim.repartijaClaimCantidad))
+                          claimsSobrante = item.repartijaItemCantidad - totalDeudas (mconcat claimsExplicitos)
+                      in claimsExplicitos
+                            & mconcat
+                            & (<> if claimsSobrante /= 0 then mkDeuda (ParticipanteId nullUlid) claimsSobrante else mempty)
+                            & distribuirEntrePonderados item.repartijaItemMonto
+
+                   | all (not . tieneCantidad) claims ->
+                      claims
+                        & fmap (\claim ->
+                          mkDeuda claim.repartijaClaimParticipante (fromMaybe 1 claim.repartijaClaimCantidad))
+                        & mconcat
+                        & distribuirEntrePonderados item.repartijaItemMonto
+                   | otherwise -> undefined
+                )
+        where
+          tieneCantidad :: RepartijaClaim -> Bool
+          tieneCantidad = isJust . (.repartijaClaimCantidad)
+      (montoNoRepartido, deudas) =
+        deudasIncluyendoNoRepartido
+        & fmap (extraerDeudor (ParticipanteId nullUlid))
+        & unzip
+      deudasDelExtraPonderado =
+        deudas
+        & mconcat
+        & distribuirEntrePonderados (repartija.repartijaExtra + sum montoNoRepartido)
+        & filterDeudas (/= 0)
+        & deudasToPartes
+
+  in Pago
+  { pagoId = nullUlid
+  , monto = total
+  , nombre = repartija.repartijaNombre
+  , deudores =
+    deudas
+    & fmap deudasToPartes
+    & mconcat
+    & (<> deudasDelExtraPonderado)
+  , pagadores = []
+  }
+  where
+    deudasToPartes :: Deudas Monto -> [Parte]
+    deudasToPartes =
+      fmap (\(participanteId, monto) -> MontoFijo monto participanteId) . deudasToPairs
+
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteId
 Elm.deriveBoth Elm.defaultOptions ''Parte

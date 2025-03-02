@@ -1,27 +1,28 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE OverloadedLabels #-}
-{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE QuasiQuotes #-}
-{-# LANGUAGE TypeFamilies #-}
-{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE StrictData #-}
+{-# LANGUAGE TypeApplications #-}
+{-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module BananaSplit.Persistence
-    ( createGrupo
-    , fetchGrupo
-    , addParticipante
+    ( addParticipante
+    , createGrupo
     , deletePago
-    , updatePago
+    , deleteRepartijaClaim
     , deleteShallowParticipante
-    , savePago
-    , saveRepartija
+    , fetchGrupo
     , fetchRepartija
     , fetchRepartijas
+    , savePago
+    , saveRepartija
     , saveRepartijaClaim
+    , updatePago
     ) where
 
 import BananaSplit qualified as M
@@ -29,26 +30,26 @@ import BananaSplit qualified as M
 import Control.Monad (forM)
 
 import Data.Function ((&))
+import Data.Int (Int32)
 import Data.Map.Strict qualified as Map
 import Data.Maybe (fromMaybe, maybeToList)
 import Data.Ratio ((%))
 import Data.Ratio qualified as Ratio
+import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.ULID (ULID)
 import Data.ULID qualified as ULID
+
 import Database.Beam as Beam
+import Database.Beam.Backend
+import Database.Beam.Postgres
+import Database.Beam.Postgres.Full hiding (insert)
+import Database.Beam.Postgres.Syntax
+import Database.PostgreSQL.Simple.FromField (FromField (..), returnError)
 
 import Money qualified
 
-import Data.Text (Text)
 import Text.Read (readEither)
-import Database.Beam.Backend
-import Database.Beam.Postgres
-import Database.Beam.Postgres.Syntax
-import Database.PostgreSQL.Simple.FromField (FromField(..), returnError)
-import Data.Int (Int32)
-import Debug.Pretty.Simple (pTraceShowIdForceColor, pTraceShowForceColor)
-import Database.Beam.Postgres.Full hiding (insert)
 
 data BananaSplitDb f = BananaSplitDb
   { _bananasplitGrupos :: f (TableEntity GrupoT)
@@ -352,7 +353,7 @@ fetchPagos aGrupoId = do
               let monto = montoFromDb $ Monto numerador denominador
               in (partePago parteR, [M.MontoFijo monto $ M.ParticipanteId $ participanteId2ULID $ parteParticipante parteR])
             _ -> error "parte monto es un para un monto fijo"
-        _ -> error "parte tipo desconocida"
+        _ -> error $ "parte tipo desconocida: " ++ show (parteTipo parteR)
 
 montoFromDb :: Monto -> M.Monto
 montoFromDb (Monto numerador denominador) =
@@ -548,6 +549,7 @@ fetchRepartija unRepartijaId = do
       { M.repartijaId = repartijaId repartija
       , M.repartijaExtra = montoFromDb $ repartijaExtra repartija
       , M.repartijaNombre = repartijaNombre repartija
+      , M.repartijaGrupoId = case repartijaGrupo repartija of GrupoId ulid -> ulid
       , M.repartijaClaims = claims
           & fmap (\RepartijaClaim{..} -> M.RepartijaClaim
             { M.repartijaClaimId = repartijaClaimId
@@ -581,6 +583,11 @@ saveRepartijaClaim unRepartijaId repartijaClaim = do
       -- (onConflictUpdateSet (\fields _oldValues ->
       --   repartijaClaimCantidad fields <-. val_ (fromIntegral <$> M.repartijaClaimCantidad claim')))
   pure claim'
+
+deleteRepartijaClaim :: ULID -> Pg ()
+deleteRepartijaClaim claimId = do
+  runDelete $ delete (_bananasplitRepartijaClaims db)
+    (\c -> repartijaClaimId c ==. val_ claimId)
 
 -- Helper function to convert RepartijaClaim to a row for insertion (without ID)
 claimToRow :: M.RepartijaClaim -> RepartijaClaim

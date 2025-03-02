@@ -74,6 +74,7 @@ validateRepartija : V.Validation CustomFormError Repartija
 validateRepartija =
     V.succeed Repartija
         |> V.andMap (V.succeed "00000000000000000000000000")
+        |> V.andMap (V.succeed "00000000000000000000000000")
         |> V.andMap (V.field "nombre" (V.string |> V.andThen V.nonEmpty))
         |> V.andMap (V.field "monto" validateMonto)
         |> V.andMap (V.field "items" (V.list validateRepartijaItem))
@@ -253,7 +254,6 @@ newRepartijaModal model =
                 [ class "modal-card-body"
                 ]
                 [ repartijaForm model.repartijaForm
-                , pre [] [ text <| Debug.toString <| Form.getOutput model.repartijaForm ]
                 ]
             , footer
                 [ class "modal-card-foot"

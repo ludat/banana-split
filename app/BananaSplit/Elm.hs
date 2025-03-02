@@ -3,7 +3,7 @@ module BananaSplit.Elm
     ) where
 
 import BananaSplit (Deudas, Grupo, Monto, Pago, Parte, Participante, ParticipanteId, Repartija,
-                    RepartijaItem, RepartijaClaim, Transaccion, ShallowRepartija)
+                    RepartijaClaim, RepartijaItem, ShallowRepartija, Transaccion)
 
 import Data.Data
 import Data.ULID (ULID)

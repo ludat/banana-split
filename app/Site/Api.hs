@@ -8,7 +8,8 @@
 module Site.Api where
 
 
-import BananaSplit (Deudas, Grupo, Monto, Pago, Participante, Repartija, Transaccion, ShallowRepartija, RepartijaClaim)
+import BananaSplit (Deudas, Grupo, Monto, Pago, Participante, Repartija, RepartijaClaim,
+                    ShallowRepartija, Transaccion)
 
 import Data.Text (Text)
 import Data.ULID (ULID)
@@ -39,7 +40,7 @@ data Api routes
     , _routePagoPost ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
     , _routePagoNetosPost ::
-      routes :- "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Netos
+      routes :- "pagos" :> "netos" :> ReqBody '[JSON] Pago :> Post '[JSON] Netos
     -- , _routePagoNewPatch ::
     --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> QueryParam "pagoId" ULID :> ReqBody '[FormUrlEncoded] Form :> Patch '[HTML] RawHtml
     -- , _routeGrupoPagoAdd ::
@@ -59,6 +60,10 @@ data Api routes
       routes :- "repartijas" :> Capture "repartijaId" ULID :> Get '[JSON] Repartija
     , _routeRepartijaClaimPut ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> ReqBody '[JSON] RepartijaClaim :> Put '[JSON] RepartijaClaim
+    , _routeRepartijaClaimDelete ::
+      routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] String
+    , _routeRepartijaToPago ::
+      routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] String
     -- , _routePagoUpdate ::
     --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> ReqBody '[FormUrlEncoded] Form :> Put '[HTML] (Headers '[HXTrigger, HXRetarget, HXReswap] RawHtml)
     -- , _routeStatic ::

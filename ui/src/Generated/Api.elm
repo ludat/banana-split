@@ -212,6 +212,7 @@ jsonEncMonto  val = (\(t1,t2,t3) -> Json.Encode.list identity [(Json.Encode.stri
 
 type alias Repartija  =
    { repartijaId: ULID
+   , repartijaGrupoId: ULID
    , repartijaNombre: String
    , repartijaExtra: Monto
    , repartijaItems: (List RepartijaItem)
@@ -220,8 +221,9 @@ type alias Repartija  =
 
 jsonDecRepartija : Json.Decode.Decoder ( Repartija )
 jsonDecRepartija =
-   Json.Decode.succeed (\prepartijaId prepartijaNombre prepartijaExtra prepartijaItems prepartijaClaims -> {repartijaId = prepartijaId, repartijaNombre = prepartijaNombre, repartijaExtra = prepartijaExtra, repartijaItems = prepartijaItems, repartijaClaims = prepartijaClaims})
+   Json.Decode.succeed (\prepartijaId prepartijaGrupoId prepartijaNombre prepartijaExtra prepartijaItems prepartijaClaims -> {repartijaId = prepartijaId, repartijaGrupoId = prepartijaGrupoId, repartijaNombre = prepartijaNombre, repartijaExtra = prepartijaExtra, repartijaItems = prepartijaItems, repartijaClaims = prepartijaClaims})
    |> required "repartijaId" (jsonDecULID)
+   |> required "repartijaGrupoId" (jsonDecULID)
    |> required "repartijaNombre" (Json.Decode.string)
    |> required "repartijaExtra" (jsonDecMonto)
    |> required "repartijaItems" (Json.Decode.list (jsonDecRepartijaItem))
@@ -231,6 +233,7 @@ jsonEncRepartija : Repartija -> Value
 jsonEncRepartija  val =
    Json.Encode.object
    [ ("repartijaId", jsonEncULID val.repartijaId)
+   , ("repartijaGrupoId", jsonEncULID val.repartijaGrupoId)
    , ("repartijaNombre", Json.Encode.string val.repartijaNombre)
    , ("repartijaExtra", jsonEncMonto val.repartijaExtra)
    , ("repartijaItems", (Json.Encode.list jsonEncRepartijaItem) val.repartijaItems)
@@ -457,8 +460,8 @@ postGrupoByIdPagos capture_id body toMsg =
                 Nothing
             }
 
-postPagos : Pago -> (Result Http.Error  (Netos)  -> msg) -> Cmd msg
-postPagos body toMsg =
+postPagosNetos : Pago -> (Result Http.Error  (Netos)  -> msg) -> Cmd msg
+postPagosNetos body toMsg =
     let
         params =
             List.filterMap identity
@@ -473,6 +476,7 @@ postPagos body toMsg =
             , url =
                 Url.Builder.crossOrigin "/api"
                     [ "pagos"
+                    , "netos"
                     ]
                     params
             , body =
@@ -690,6 +694,65 @@ putRepartijasByRepartijaId capture_repartijaId body toMsg =
                 Http.jsonBody (jsonEncRepartijaClaim body)
             , expect =
                 Http.expectJson toMsg jsonDecRepartijaClaim
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+deleteRepartijasClaimsByClaimId : ULID -> (Result Http.Error  (String)  -> msg) -> Cmd msg
+deleteRepartijasClaimsByClaimId capture_claimId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "DELETE"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , "claims"
+                    , (capture_claimId)
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg Json.Decode.string
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postRepartijasByRepartijaId : ULID -> (Result Http.Error  (String)  -> msg) -> Cmd msg
+postRepartijasByRepartijaId capture_repartijaId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , (capture_repartijaId)
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg Json.Decode.string
             , timeout =
                 Nothing
             , tracker =

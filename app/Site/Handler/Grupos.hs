@@ -8,11 +8,9 @@ module Site.Handler.Grupos
     ) where
 
 import BananaSplit (Grupo, Participante, calcularDeudasTotales, resolverDeudasNaif)
-import BananaSplit.Persistence (createGrupo, fetchGrupo, addParticipante, deleteShallowParticipante)
-
+import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParticipante, fetchGrupo)
 
 import Data.ULID (ULID)
-
 
 import Servant
 

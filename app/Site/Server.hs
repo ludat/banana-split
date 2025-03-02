@@ -3,9 +3,9 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Site.Server
-  ( serverT
-  , app
-  ) where
+    ( app
+    , serverT
+    ) where
 
 import Control.Monad.Reader
 
@@ -45,6 +45,8 @@ serverT =
     , _routeRepartijasGet = handleRepartijasGet
     , _routeRepartijaGet = handleRepartijaGet
     , _routeRepartijaClaimPut = handleRepartijaClaimPut
+    , _routeRepartijaClaimDelete = handleRepartijaClaimDelete
+    , _routeRepartijaToPago = handleRepartijaToPago
     -- , _routePagoNew = handlePagoNew
     -- , _routePagoNewPatch = handlePagoNewPatch
     -- , _routePagoEdit = handlePagoEdit

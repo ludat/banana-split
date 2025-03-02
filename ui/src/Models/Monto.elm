@@ -1,5 +1,5 @@
 module Models.Monto exposing
-    ( monto2Decimal
+    ( montoToDecimal
     , validateMonto
     )
 
@@ -34,8 +34,8 @@ validateMonto =
             )
 
 
-monto2Decimal : Monto -> Decimal.Decimal s Int
-monto2Decimal montoRaw =
+montoToDecimal : Monto -> Decimal.Decimal s Int
+montoToDecimal montoRaw =
     case montoRaw of
         ( _, numerador, denominador ) ->
             Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)

@@ -17,7 +17,7 @@ import Html.Events exposing (onClick, onSubmit)
 import Http
 import Layouts
 import Models.Grupo exposing (lookupNombreParticipante, lookupParticipante)
-import Models.Monto exposing (monto2Decimal, validateMonto)
+import Models.Monto exposing (montoToDecimal, validateMonto)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Numeric.Decimal as Decimal
@@ -328,7 +328,7 @@ update store msg model =
                                         MontoFijo montoRaw participanteId ->
                                             let
                                                 monto =
-                                                    monto2Decimal montoRaw
+                                                    montoToDecimal montoRaw
                                             in
                                             FormField.group
                                                 [ Form.setString "tipo" "fijo"
@@ -344,7 +344,7 @@ update store msg model =
                                                 ]
 
                                 montoPago =
-                                    monto2Decimal pago.monto
+                                    montoToDecimal pago.monto
                             in
                             Form.initial
                                 (List.concat
@@ -389,7 +389,7 @@ andThenUpdateNetosFromForm pagoForm ( model, oldEffects ) =
                 Effect.batch
                     [ oldEffects
                     , Effect.sendMsg <| NetosUpdated Loading
-                    , Effect.sendCmd <| Api.postPagos pago (RemoteData.fromResult >> NetosUpdated)
+                    , Effect.sendCmd <| Api.postPagosNetos pago (RemoteData.fromResult >> NetosUpdated)
                     ]
 
             else
@@ -399,7 +399,7 @@ andThenUpdateNetosFromForm pagoForm ( model, oldEffects ) =
             Effect.batch
                 [ oldEffects
                 , Effect.sendMsg <| NetosUpdated Loading
-                , Effect.sendCmd <| Api.postPagos pago (RemoteData.fromResult >> NetosUpdated)
+                , Effect.sendCmd <| Api.postPagosNetos pago (RemoteData.fromResult >> NetosUpdated)
                 ]
 
         ( _, Nothing ) ->
@@ -458,7 +458,7 @@ view store model =
                                     [ p []
                                         [ text pago.nombre
                                         , text " ($"
-                                        , text (Decimal.toString <| monto2Decimal pago.monto)
+                                        , text (Decimal.toString <| montoToDecimal pago.monto)
                                         , text ")"
                                         , button [ class "button", onClick <| ChangePagoPopoverState <| EditingPago pago ]
                                             [ Icons.toHtml [] Icons.edit
@@ -487,8 +487,6 @@ view store model =
 
                                             pagador1 :: pagador2 :: rest ->
                                                 text <| ("pagador por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ String.fromInt (List.length rest) ++ " personas mas")
-
-                                        --, pre [] [ text <| Debug.toString pago ]
                                         ]
                                     ]
                             )

@@ -1,29 +1,29 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Site.Handler.Utils
-    ( orElse
+    ( err200
+    , orElse
     , orElseMay
     , orElse_
     , redirect
     , runBeam
     , throwJsonError
-    , err200
     ) where
 
 import Control.Monad.Error.Class
+import Control.Monad.IO.Class
 import Control.Monad.Reader.Class
 
 import Data.Aeson
 import Data.ByteString (ByteString)
 import Data.Pool qualified as Pool
+import Data.Text (Text)
 
 import Database.Beam.Postgres qualified as Beam
+import Database.PostgreSQL.Simple qualified as Simple
 
-import Data.Text (Text)
 import Servant
 
 import Types
-import qualified Database.PostgreSQL.Simple as Simple
-import Control.Monad.IO.Class
 
 
 orElse :: Monad m => m (Either error a) -> (error -> m a) -> m a

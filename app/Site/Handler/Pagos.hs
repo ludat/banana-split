@@ -10,7 +10,7 @@ module Site.Handler.Pagos
     ) where
 
 import BananaSplit (Pago (..), calcularDeudasPago)
-import BananaSplit.Persistence (savePago, deletePago, updatePago)
+import BananaSplit.Persistence (deletePago, savePago, updatePago)
 
 import Data.ULID (ULID)
 

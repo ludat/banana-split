@@ -14,8 +14,8 @@ import Data.Function ((&))
 import Data.Pool qualified as Pool
 import Data.String (fromString)
 import Data.String.Interpolate (i)
-import Database.Beam.Postgres
 
+import Database.Beam.Postgres
 import Database.PostgreSQL.Simple
 
 import Network.Wai.Handler.Warp (Settings)

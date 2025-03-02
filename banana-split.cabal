@@ -127,6 +127,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
       BananaSplitSpec
+      RepartijaSpec
       Site.Handler.GruposSpec
   hs-source-dirs:
       test
