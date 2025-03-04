@@ -34,66 +34,6 @@ packages:
   original:
     hackage: hmatrix-glpk-0.19.0.0@sha256:cf46c54bc3878bd207674ad88c3389083809f4df862df68ee64c6708dc517a52,1683
 - completed:
-    hackage: lucid2-htmx-0.1.0.8@sha256:cde494a8e4d199dfcc59331f41c72e1a60c3d2106e1bee56e61d97b09425f850,1541
-    pantry-tree:
-      sha256: bccf8d27fd23db6daa9b1a7e64d54715537161014db7817dc9905015b1de5214
-      size: 318
-  original:
-    hackage: lucid2-htmx-0.1.0.8@sha256:cde494a8e4d199dfcc59331f41c72e1a60c3d2106e1bee56e61d97b09425f850,1541
-- completed:
-    hackage: servant-htmx-0.1.0.2@sha256:cdafd3165d28694ec4bf81fff3b87b4721415293d75a394a97c26d0d4d57e38c,1817
-    pantry-tree:
-      sha256: e2eac22dcc977e6081ba7614d748d7a6a83b2001d4e719d6afb9ae6edf6bb23d
-      size: 416
-  original:
-    hackage: servant-htmx-0.1.0.2@sha256:cdafd3165d28694ec4bf81fff3b87b4721415293d75a394a97c26d0d4d57e38c,1817
-- completed:
-    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
-    git: https://github.com/jchia/selda.git
-    name: selda
-    pantry-tree:
-      sha256: 1eca357bad6254a678ba993b390a87c8901f126511b7fade5106f585c87be9ea
-      size: 2365
-    subdir: selda
-    version: 0.5.2.1
-  original:
-    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
-    git: https://github.com/jchia/selda.git
-    subdir: selda
-- completed:
-    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
-    git: https://github.com/jchia/selda.git
-    name: selda-postgresql
-    pantry-tree:
-      sha256: db2889fdd283b92d615d5be660e1386ea0441a7ed79da5210c277bb7cb52abc1
-      size: 320
-    subdir: selda-postgresql
-    version: 0.1.8.2
-  original:
-    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
-    git: https://github.com/jchia/selda.git
-    subdir: selda-postgresql
-- completed:
-    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
-    git: https://github.com/jchia/selda.git
-    name: selda-json
-    pantry-tree:
-      sha256: cca637099136de66891b96a9839565e37ec05f8af21e7873142ccfee530bc189
-      size: 127
-    subdir: selda-json
-    version: 0.1.1.1
-  original:
-    commit: d8e2e8dec717505037cfef37965c1af6171cd77d
-    git: https://github.com/jchia/selda.git
-    subdir: selda-json
-- completed:
-    hackage: digestive-functors-0.8.4.2@sha256:badff1797b6dcd860a48ed4558985b2f6bec501e1016fa5afd9d7d6b0d8e4c08,3364
-    pantry-tree:
-      sha256: 53ce82c7f0c60c10009b1b764b537117a4ab402bbe1a147fba5ad2263acb3025
-      size: 1682
-  original:
-    hackage: digestive-functors-0.8.4.2@sha256:badff1797b6dcd860a48ed4558985b2f6bec501e1016fa5afd9d7d6b0d8e4c08,3364
-- completed:
     hackage: safe-money-aeson-0.1.1@sha256:d7383134649d5e63177731f3b5a0ff1992a1d4edf9d224178b264eb4fcdd6c14,1405
     pantry-tree:
       sha256: c5d74f991f75d978c4a0bf080adfcd0c46baceaa2d1d062f3f1cfe91b696549c
@@ -102,8 +42,8 @@ packages:
     hackage: safe-money-aeson-0.1.1@sha256:d7383134649d5e63177731f3b5a0ff1992a1d4edf9d224178b264eb4fcdd6c14,1405
 snapshots:
 - completed:
-    sha256: c6274f9587d6bf40b6aaa7d1092684c37a2d8bb1e0df999ae0e2b755db15682d
-    size: 720026
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/37.yaml
+    sha256: 04c9d37f2a00c2bd51bf6b25eb98872059bc58f225d50b5f306ac58f760a178c
+    size: 680567
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/23/9.yaml
   original:
-    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/22/37.yaml
+    url: https://raw.githubusercontent.com/commercialhaskell/stackage-snapshots/master/lts/23/9.yaml

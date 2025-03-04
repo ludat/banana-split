@@ -1,17 +1,25 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Site.Handler.Utils
-    ( orElse
+    ( err200
+    , orElse
     , orElseMay
     , orElse_
     , redirect
+    , runBeam
     , throwJsonError
     ) where
 
 import Control.Monad.Error.Class
+import Control.Monad.IO.Class
+import Control.Monad.Reader.Class
 
 import Data.Aeson
 import Data.ByteString (ByteString)
+import Data.Pool qualified as Pool
 import Data.Text (Text)
+
+import Database.Beam.Postgres qualified as Beam
+import Database.PostgreSQL.Simple qualified as Simple
 
 import Servant
 
@@ -47,3 +55,11 @@ throwJsonError serverError errorMessage =
     { errBody = encode $ object ["error" .= errorMessage]
     , errHeaders = errHeaders serverError ++ [("Content-Type", "application/json")]
     }
+
+runBeam :: Beam.Pg a -> AppHandler a
+runBeam dbAction = do
+  pool <- asks (.beamConnectionPool)
+
+  liftIO $ Pool.withResource pool $ \conn -> do
+    Simple.withTransaction conn (Beam.runBeamPostgres conn dbAction)
+

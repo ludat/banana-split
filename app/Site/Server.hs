@@ -1,13 +1,13 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 
-module Site.Server where
+module Site.Server
+    ( app
+    , serverT
+    ) where
 
 import Control.Monad.Reader
-
-import Data.FileEmbed
 
 import Network.HTTP.Types.Status (ok200)
 import Network.Wai
@@ -19,6 +19,7 @@ import Servant.Server.Generic
 import Site.Api
 import Site.Handler.Grupos
 import Site.Handler.Pagos
+import Site.Handler.Repartijas
 
 import Types
 
@@ -40,6 +41,12 @@ serverT =
     -- , _routePagosGet = handlePagosGet
     -- , _routeGrupoPagoAdd = handlePagoCreate
     , _routePagoUpdate = handlePagoUpdate
+    , _routeRepartijaPost = handleRepartijaPost
+    , _routeRepartijasGet = handleRepartijasGet
+    , _routeRepartijaGet = handleRepartijaGet
+    , _routeRepartijaClaimPut = handleRepartijaClaimPut
+    , _routeRepartijaClaimDelete = handleRepartijaClaimDelete
+    , _routeRepartijaToPago = handleRepartijaToPago
     -- , _routePagoNew = handlePagoNew
     -- , _routePagoNewPatch = handlePagoNewPatch
     -- , _routePagoEdit = handlePagoEdit

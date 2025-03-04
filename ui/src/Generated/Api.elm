@@ -209,6 +209,110 @@ jsonEncMonto : Monto -> Value
 jsonEncMonto  val = (\(t1,t2,t3) -> Json.Encode.list identity [(Json.Encode.string) t1,(Json.Encode.int) t2,(Json.Encode.int) t3]) val
 
 
+
+type alias Repartija  =
+   { repartijaId: ULID
+   , repartijaGrupoId: ULID
+   , repartijaNombre: String
+   , repartijaExtra: Monto
+   , repartijaItems: (List RepartijaItem)
+   , repartijaClaims: (List RepartijaClaim)
+   }
+
+jsonDecRepartija : Json.Decode.Decoder ( Repartija )
+jsonDecRepartija =
+   Json.Decode.succeed (\prepartijaId prepartijaGrupoId prepartijaNombre prepartijaExtra prepartijaItems prepartijaClaims -> {repartijaId = prepartijaId, repartijaGrupoId = prepartijaGrupoId, repartijaNombre = prepartijaNombre, repartijaExtra = prepartijaExtra, repartijaItems = prepartijaItems, repartijaClaims = prepartijaClaims})
+   |> required "repartijaId" (jsonDecULID)
+   |> required "repartijaGrupoId" (jsonDecULID)
+   |> required "repartijaNombre" (Json.Decode.string)
+   |> required "repartijaExtra" (jsonDecMonto)
+   |> required "repartijaItems" (Json.Decode.list (jsonDecRepartijaItem))
+   |> required "repartijaClaims" (Json.Decode.list (jsonDecRepartijaClaim))
+
+jsonEncRepartija : Repartija -> Value
+jsonEncRepartija  val =
+   Json.Encode.object
+   [ ("repartijaId", jsonEncULID val.repartijaId)
+   , ("repartijaGrupoId", jsonEncULID val.repartijaGrupoId)
+   , ("repartijaNombre", Json.Encode.string val.repartijaNombre)
+   , ("repartijaExtra", jsonEncMonto val.repartijaExtra)
+   , ("repartijaItems", (Json.Encode.list jsonEncRepartijaItem) val.repartijaItems)
+   , ("repartijaClaims", (Json.Encode.list jsonEncRepartijaClaim) val.repartijaClaims)
+   ]
+
+
+
+type alias RepartijaItem  =
+   { repartijaItemId: ULID
+   , repartijaItemNombre: String
+   , repartijaItemMonto: Monto
+   , repartijaItemCantidad: Int
+   }
+
+jsonDecRepartijaItem : Json.Decode.Decoder ( RepartijaItem )
+jsonDecRepartijaItem =
+   Json.Decode.succeed (\prepartijaItemId prepartijaItemNombre prepartijaItemMonto prepartijaItemCantidad -> {repartijaItemId = prepartijaItemId, repartijaItemNombre = prepartijaItemNombre, repartijaItemMonto = prepartijaItemMonto, repartijaItemCantidad = prepartijaItemCantidad})
+   |> required "repartijaItemId" (jsonDecULID)
+   |> required "repartijaItemNombre" (Json.Decode.string)
+   |> required "repartijaItemMonto" (jsonDecMonto)
+   |> required "repartijaItemCantidad" (Json.Decode.int)
+
+jsonEncRepartijaItem : RepartijaItem -> Value
+jsonEncRepartijaItem  val =
+   Json.Encode.object
+   [ ("repartijaItemId", jsonEncULID val.repartijaItemId)
+   , ("repartijaItemNombre", Json.Encode.string val.repartijaItemNombre)
+   , ("repartijaItemMonto", jsonEncMonto val.repartijaItemMonto)
+   , ("repartijaItemCantidad", Json.Encode.int val.repartijaItemCantidad)
+   ]
+
+
+
+type alias RepartijaClaim  =
+   { repartijaClaimId: ULID
+   , repartijaClaimParticipante: ParticipanteId
+   , repartijaClaimItemId: ULID
+   , repartijaClaimCantidad: (Maybe Int)
+   }
+
+jsonDecRepartijaClaim : Json.Decode.Decoder ( RepartijaClaim )
+jsonDecRepartijaClaim =
+   Json.Decode.succeed (\prepartijaClaimId prepartijaClaimParticipante prepartijaClaimItemId prepartijaClaimCantidad -> {repartijaClaimId = prepartijaClaimId, repartijaClaimParticipante = prepartijaClaimParticipante, repartijaClaimItemId = prepartijaClaimItemId, repartijaClaimCantidad = prepartijaClaimCantidad})
+   |> required "repartijaClaimId" (jsonDecULID)
+   |> required "repartijaClaimParticipante" (jsonDecParticipanteId)
+   |> required "repartijaClaimItemId" (jsonDecULID)
+   |> fnullable "repartijaClaimCantidad" (Json.Decode.int)
+
+jsonEncRepartijaClaim : RepartijaClaim -> Value
+jsonEncRepartijaClaim  val =
+   Json.Encode.object
+   [ ("repartijaClaimId", jsonEncULID val.repartijaClaimId)
+   , ("repartijaClaimParticipante", jsonEncParticipanteId val.repartijaClaimParticipante)
+   , ("repartijaClaimItemId", jsonEncULID val.repartijaClaimItemId)
+   , ("repartijaClaimCantidad", (maybeEncode (Json.Encode.int)) val.repartijaClaimCantidad)
+   ]
+
+
+
+type alias ShallowRepartija  =
+   { repartijaShallowId: ULID
+   , repartijaShallowNombre: String
+   }
+
+jsonDecShallowRepartija : Json.Decode.Decoder ( ShallowRepartija )
+jsonDecShallowRepartija =
+   Json.Decode.succeed (\prepartijaShallowId prepartijaShallowNombre -> {repartijaShallowId = prepartijaShallowId, repartijaShallowNombre = prepartijaShallowNombre})
+   |> required "repartijaShallowId" (jsonDecULID)
+   |> required "repartijaShallowNombre" (Json.Decode.string)
+
+jsonEncShallowRepartija : ShallowRepartija -> Value
+jsonEncShallowRepartija  val =
+   Json.Encode.object
+   [ ("repartijaShallowId", jsonEncULID val.repartijaShallowId)
+   , ("repartijaShallowNombre", Json.Encode.string val.repartijaShallowNombre)
+   ]
+
+
 postGrupo : CreateGrupoParams -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
 postGrupo body toMsg =
     let
@@ -356,8 +460,8 @@ postGrupoByIdPagos capture_id body toMsg =
                 Nothing
             }
 
-postPagos : Pago -> (Result Http.Error  (Netos)  -> msg) -> Cmd msg
-postPagos body toMsg =
+postPagosNetos : Pago -> (Result Http.Error  (Netos)  -> msg) -> Cmd msg
+postPagosNetos body toMsg =
     let
         params =
             List.filterMap identity
@@ -372,6 +476,7 @@ postPagos body toMsg =
             , url =
                 Url.Builder.crossOrigin "/api"
                     [ "pagos"
+                    , "netos"
                     ]
                     params
             , body =
@@ -471,6 +576,183 @@ putGrupoByIdPagosByPagoId capture_id capture_pagoId body toMsg =
                 Http.jsonBody (jsonEncPago body)
             , expect =
                 Http.expectJson toMsg jsonDecPago
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+getGrupoByIdRepartijas : ULID -> (Result Http.Error  ((List ShallowRepartija))  -> msg) -> Cmd msg
+getGrupoByIdRepartijas capture_id toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "repartijas"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg (Json.Decode.list (jsonDecShallowRepartija))
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postGrupoByIdRepartijas : ULID -> Repartija -> (Result Http.Error  (Repartija)  -> msg) -> Cmd msg
+postGrupoByIdRepartijas capture_id body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "repartijas"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncRepartija body)
+            , expect =
+                Http.expectJson toMsg jsonDecRepartija
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+getRepartijasByRepartijaId : ULID -> (Result Http.Error  (Repartija)  -> msg) -> Cmd msg
+getRepartijasByRepartijaId capture_repartijaId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , (capture_repartijaId)
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecRepartija
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+putRepartijasByRepartijaId : ULID -> RepartijaClaim -> (Result Http.Error  (RepartijaClaim)  -> msg) -> Cmd msg
+putRepartijasByRepartijaId capture_repartijaId body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , (capture_repartijaId)
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncRepartijaClaim body)
+            , expect =
+                Http.expectJson toMsg jsonDecRepartijaClaim
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+deleteRepartijasClaimsByClaimId : ULID -> (Result Http.Error  (String)  -> msg) -> Cmd msg
+deleteRepartijasClaimsByClaimId capture_claimId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "DELETE"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , "claims"
+                    , (capture_claimId)
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg Json.Decode.string
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postRepartijasByRepartijaId : ULID -> (Result Http.Error  (String)  -> msg) -> Cmd msg
+postRepartijasByRepartijaId capture_repartijaId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , (capture_repartijaId)
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg Json.Decode.string
             , timeout =
                 Nothing
             , tracker =

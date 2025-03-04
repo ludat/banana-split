@@ -1,11 +1,10 @@
-{-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-
 ------------------------------------------------------------------------------
-
 -- | This module defines our application's state type and an alias for its
 -- handler monad.
-module Types where
+module Types
+    ( App (..)
+    , AppHandler
+    ) where
 
 ------------------------------------------------------------------------------
 
@@ -13,14 +12,13 @@ import Control.Monad.Reader
 
 import Data.Pool
 
-import Database.Selda.Backend
-import Database.Selda.PostgreSQL
+import Database.Beam.Postgres qualified as Beam
 
 import Servant
 
 ------------------------------------------------------------------------------
 data App = App
-  { connection :: Pool (SeldaConnection PG)
+  { beamConnectionPool :: Pool Beam.Connection
   }
 
 ------------------------------------------------------------------------------

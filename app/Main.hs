@@ -15,9 +15,8 @@ import Data.Pool qualified as Pool
 import Data.String (fromString)
 import Data.String.Interpolate (i)
 
-import Database.Selda.Backend (SeldaBackend (closeConnection), runSeldaT)
-import Database.Selda.PostgreSQL (pgOpen', seldaClose)
-import Database.Selda.Unsafe (rawStm)
+import Database.Beam.Postgres
+import Database.PostgreSQL.Simple
 
 import Network.Wai.Handler.Warp (Settings)
 import Network.Wai.Handler.Warp qualified as Warp
@@ -45,15 +44,16 @@ runBackend = do
 
   setSearchPath <- readProcess "reshape" ["schema-query"] ""
 
-  pool <- Pool.newPool $ Pool.defaultPoolConfig (do
-      conn <- pgOpen' Nothing connString
-      runSeldaT (rawStm $ fromString setSearchPath) conn
+  beamPool <- Pool.newPool $ Pool.defaultPoolConfig (do
+      conn <- connectPostgreSQL connString
+      _ <- execute_ conn (fromString setSearchPath)
       pure conn
-    ) seldaClose 60 60
-  let appState = App pool
+    ) close 60 60
+
+  let appState = App beamPool
 
   let shutdownAction = do
-        Pool.destroyAllResources pool
+        Pool.destroyAllResources beamPool
   let shutdownHandler closeSocket = void $ installHandler sigTERM (Catch $ shutdownAction >> closeSocket) Nothing
   settings <-
     liftIO $
