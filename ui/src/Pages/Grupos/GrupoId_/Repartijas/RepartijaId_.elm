@@ -512,7 +512,7 @@ viewClaimModal model repartija participantes =
                                 [ class "button is-primary"
                                 , onClick <| ClaimFormMsg Form.Submit
                                 ]
-                                [ text "Crear repartija" ]
+                                [ text "Reclamar item" ]
                             , button
                                 [ class "button"
                                 , onClick CloseClaimModal
