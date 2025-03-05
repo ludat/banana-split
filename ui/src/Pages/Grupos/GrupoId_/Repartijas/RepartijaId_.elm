@@ -5,6 +5,7 @@ import Effect exposing (Effect)
 import FeatherIcons
 import Form exposing (Form)
 import Form.Error as FormError
+import Form.Field as Form
 import Form.Input as FormInput
 import Form.Validate as V
 import Generated.Api as Api exposing (Grupo, Participante, Repartija, RepartijaClaim, RepartijaItem, ULID)
@@ -75,7 +76,14 @@ validateClaim =
         |> V.andMap (V.succeed "00000000000000000000000000")
         |> V.andMap (V.field "participante" (V.string |> V.andThen V.nonEmpty))
         |> V.andMap (V.succeed "00000000000000000000000000")
-        |> V.andMap (V.field "cantidad" (V.maybe V.int))
+        |> V.andMap
+            (V.field "cantidad"
+                (V.oneOf
+                    [ V.emptyString |> V.map (always Nothing)
+                    , V.int |> V.map Just
+                    ]
+                )
+            )
 
 
 
@@ -132,6 +140,56 @@ update store msg model =
                             ( model
                             , Effect.none
                             )
+
+                Form.Input "participante" Form.Select (Form.String participanteId) ->
+                    let
+                        cantidadAnterior =
+                            case ( Store.getRepartija model.repartijaId store, model.isClaimModalOpen ) of
+                                ( NotAsked, _ ) ->
+                                    ""
+
+                                ( Loading, _ ) ->
+                                    ""
+
+                                ( Failure e, _ ) ->
+                                    ""
+
+                                ( Success _, Nothing ) ->
+                                    ""
+
+                                ( Success repartija, Just item ) ->
+                                    repartija.repartijaClaims
+                                        |> List.filter (\claim -> claim.repartijaClaimItemId == item.repartijaItemId)
+                                        |> interpretClaims
+                                        |> (\x ->
+                                                case x of
+                                                    NoClaims ->
+                                                        ""
+
+                                                    MixedClaims repartijaClaims ->
+                                                        "error"
+
+                                                    OnlyExactClaims list ->
+                                                        list
+                                                            |> List.filter (\( n, c ) -> c.repartijaClaimParticipante == participanteId)
+                                                            |> List.map Tuple.first
+                                                            |> List.sum
+                                                            |> String.fromInt
+
+                                                    OnlyParticipationClaims repartijaClaims ->
+                                                        ""
+                                           )
+
+                        newForm =
+                            model.claimForm
+                                |> Form.update validateClaim formMsg
+                                |> Form.update validateClaim (Form.Input "cantidad" Form.Text (Form.String cantidadAnterior))
+                    in
+                    ( { model
+                        | claimForm = newForm
+                      }
+                    , Effect.none
+                    )
 
                 _ ->
                     let
@@ -258,20 +316,11 @@ viewRepartijaItems grupo repartija =
                ]
 
 
-viewClaimsLine : Grupo -> Repartija -> RepartijaItem -> Html Msg
-viewClaimsLine grupo repartija item =
+interpretClaims : List RepartijaClaim -> Claims
+interpretClaims originalClaims =
     let
-        claimsForItem =
-            repartija.repartijaClaims
-                |> List.filter (\claim -> claim.repartijaClaimItemId == item.repartijaItemId)
-
-        itemsClaimed : Claims
-        itemsClaimed =
-            claimsForItem
-                |> List.foldl coso NoClaims
-
-        coso : RepartijaClaim -> Claims -> Claims
-        coso claim claimsState =
+        folder : RepartijaClaim -> Claims -> Claims
+        folder claim claimsState =
             case ( claimsState, claim.repartijaClaimCantidad ) of
                 ( NoClaims, Just n ) ->
                     OnlyExactClaims [ ( n, claim ) ]
@@ -294,6 +343,21 @@ viewClaimsLine grupo repartija item =
                 ( OnlyParticipationClaims claims, Just _ ) ->
                     MixedClaims (claims ++ [ claim ])
     in
+    List.foldl folder NoClaims originalClaims
+
+
+viewClaimsLine : Grupo -> Repartija -> RepartijaItem -> Html Msg
+viewClaimsLine grupo repartija item =
+    let
+        claimsForItem =
+            repartija.repartijaClaims
+                |> List.filter (\claim -> claim.repartijaClaimItemId == item.repartijaItemId)
+
+        itemsClaimed : Claims
+        itemsClaimed =
+            claimsForItem
+                |> interpretClaims
+    in
     tr []
         [ td [] [ text <| item.repartijaItemNombre ]
         , td [ class "has-text-right" ]
@@ -304,7 +368,8 @@ viewClaimsLine grupo repartija item =
         , td []
             [ div [ class "buttons has-addons" ]
                 [ button [ onClick <| OpenClaimItemModal item, class "button is-info" ] [ text "Claim" ]
-                , button [ onClick <| OpenDesdoblarItemModal item, class "button" ] [ text "Desdoblar" ]
+
+                --, button [ onClick <| OpenDesdoblarItemModal item, class "button" ] [ text "Desdoblar" ]
                 ]
             ]
         ]
@@ -400,76 +465,71 @@ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
 
 viewClaimModal : Model -> Repartija -> List Participante -> Html Msg
 viewClaimModal model repartija participantes =
-    let
-        isOpen =
-            case model.isClaimModalOpen of
-                Just _ ->
-                    True
-
-                Nothing ->
-                    False
-    in
-    div
-        ([ class "modal"
-         ]
-            ++ (if isOpen then
-                    [ class "is-active" ]
-
-                else
-                    []
-               )
-        )
-        [ div
-            [ class "modal-background"
-            , onClick <| CloseClaimModal
-            ]
-            []
-        , div
-            [ class "modal-card"
-            ]
-            [ header
-                [ class "modal-card-head"
-                ]
-                [ p
-                    [ class "modal-card-title"
-                    ]
-                    [ text "Reclamar un item" ]
-                , button
-                    [ class "delete"
-                    , attribute "aria-label" "close"
+    case model.isClaimModalOpen of
+        Just item ->
+            let
+                claims =
+                    repartija.repartijaClaims
+                        |> List.filter (\c -> c.repartijaClaimItemId == item.repartijaItemId)
+                        |> interpretClaims
+            in
+            div
+                [ class "modal is-active" ]
+                [ div
+                    [ class "modal-background"
                     , onClick <| CloseClaimModal
                     ]
                     []
-                ]
-            , section
-                [ class "modal-card-body"
-                ]
-                [ repartijaForm participantes model.claimForm
-                ]
-            , footer
-                [ class "modal-card-foot"
-                ]
-                [ div
-                    [ class "buttons"
+                , div
+                    [ class "modal-card"
                     ]
-                    [ button
-                        [ class "button is-primary"
-                        , onClick <| ClaimFormMsg Form.Submit
+                    [ header
+                        [ class "modal-card-head"
                         ]
-                        [ text "Crear repartija" ]
-                    , button
-                        [ class "button"
-                        , onClick CloseClaimModal
+                        [ p
+                            [ class "modal-card-title"
+                            ]
+                            [ text "Reclamar un item" ]
+                        , button
+                            [ class "delete"
+                            , attribute "aria-label" "close"
+                            , onClick <| CloseClaimModal
+                            ]
+                            []
                         ]
-                        [ text "Cancel" ]
+                    , section
+                        [ class "modal-card-body"
+                        ]
+                        [ div [] [ pre [] [ text <| Debug.toString model.claimForm ] ]
+                        , repartijaClaimForm participantes claims model.claimForm
+                        ]
+                    , footer
+                        [ class "modal-card-foot"
+                        ]
+                        [ div
+                            [ class "buttons"
+                            ]
+                            [ button
+                                [ class "button is-primary"
+                                , onClick <| ClaimFormMsg Form.Submit
+                                ]
+                                [ text "Crear repartija" ]
+                            , button
+                                [ class "button"
+                                , onClick CloseClaimModal
+                                ]
+                                [ text "Cancel" ]
+                            ]
+                        ]
                     ]
                 ]
-            ]
-        ]
+
+        Nothing ->
+            div [] []
 
 
-repartijaForm : List Participante -> Form CustomFormError RepartijaClaim -> Html Msg
-repartijaForm participantes form =
+repartijaClaimForm : List Participante -> Claims -> Form CustomFormError RepartijaClaim -> Html Msg
+repartijaClaimForm participantes claims form =
     let
         errorFor field =
             case field.liveError of
@@ -521,6 +581,20 @@ repartijaForm participantes form =
                 Nothing ->
                     text ""
 
+        shouldShowCantidad =
+            case claims of
+                MixedClaims _ ->
+                    False
+
+                OnlyExactClaims _ ->
+                    True
+
+                OnlyParticipationClaims _ ->
+                    False
+
+                NoClaims ->
+                    True
+
         hasError field =
             case field.liveError of
                 Just _ ->
@@ -550,7 +624,14 @@ repartijaForm participantes form =
                 , errorFor participanteField
                 ]
             ]
-        , div [ class "field" ]
+        , div
+            [ class "field"
+            , if shouldShowCantidad then
+                class ""
+
+              else
+                class "is-hidden"
+            ]
             [ label [ class "label" ]
                 [ text "Cantidad" ]
             , div [ class "control" ]
