@@ -35,16 +35,10 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "netos" :> Get '[JSON] Netos
     , _routeGrupoParticipanteAdd ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
-    -- , _routePagosGet ::
-    --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Get '[HTML] RawHtml
     , _routePagoPost ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
     , _routePagoNetosPost ::
       routes :- "pagos" :> "netos" :> ReqBody '[JSON] Pago :> Post '[JSON] Netos
-    -- , _routePagoNewPatch ::
-    --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> QueryParam "pagoId" ULID :> ReqBody '[FormUrlEncoded] Form :> Patch '[HTML] RawHtml
-    -- , _routeGrupoPagoAdd ::
-    --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[FormUrlEncoded] Form :> Post '[HTML] (Headers '[HXTrigger, HXRetarget, HXReswap] RawHtml)
     , _routeGrupoParticipanteDelete ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> Delete '[JSON] ULID
     , _routeGrupoPagoDelete ::
@@ -64,10 +58,8 @@ data Api routes
       routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] String
     , _routeRepartijaToPago ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] String
-    -- , _routePagoUpdate ::
-    --   routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> ReqBody '[FormUrlEncoded] Form :> Put '[HTML] (Headers '[HXTrigger, HXRetarget, HXReswap] RawHtml)
-    -- , _routeStatic ::
-    --   routes :- Raw
+    -- , _routeRepartijaItemDesdoblar ::
+    --   routes :- "repartijas" :> Capture "repartijaId" ULID :> "claim" :> Capture "claimId":> Post '[JSON] String
     }
   deriving (Generic)
 
