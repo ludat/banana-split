@@ -500,8 +500,7 @@ viewClaimModal model repartija participantes =
                     , section
                         [ class "modal-card-body"
                         ]
-                        [ div [] [ pre [] [ text <| Debug.toString model.claimForm ] ]
-                        , repartijaClaimForm participantes claims model.claimForm
+                        [ repartijaClaimForm participantes claims model.claimForm
                         ]
                     , footer
                         [ class "modal-card-foot"
