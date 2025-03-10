@@ -316,10 +316,10 @@ viewRepartijaItems grupo repartija =
                ]
 
 
-interpretClaims : List RepartijaClaim -> Claims
+interpretClaims : List RepartijaClaim -> ItemClaimsState
 interpretClaims originalClaims =
     let
-        folder : RepartijaClaim -> Claims -> Claims
+        folder : RepartijaClaim -> ItemClaimsState -> ItemClaimsState
         folder claim claimsState =
             case ( claimsState, claim.repartijaClaimCantidad ) of
                 ( NoClaims, Just n ) ->
@@ -353,7 +353,7 @@ viewClaimsLine grupo repartija item =
             repartija.repartijaClaims
                 |> List.filter (\claim -> claim.repartijaClaimItemId == item.repartijaItemId)
 
-        itemsClaimed : Claims
+        itemsClaimed : ItemClaimsState
         itemsClaimed =
             claimsForItem
                 |> interpretClaims
@@ -367,7 +367,7 @@ viewClaimsLine grupo repartija item =
         , td [] [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed ]
         , td []
             [ div [ class "buttons has-addons" ]
-                [ button [ onClick <| OpenClaimItemModal item, class "button is-info" ] [ text "Claim" ]
+                [ button [ onClick <| OpenClaimItemModal item, class "button" ] [ text "Claim" ]
 
                 --, button [ onClick <| OpenDesdoblarItemModal item, class "button" ] [ text "Desdoblar" ]
                 ]
@@ -375,20 +375,30 @@ viewClaimsLine grupo repartija item =
         ]
 
 
-type Claims
+type ItemClaimsState
     = MixedClaims (List RepartijaClaim)
     | OnlyExactClaims (List ( Int, RepartijaClaim ))
     | OnlyParticipationClaims (List RepartijaClaim)
     | NoClaims
 
 
-viewClaimProgressAndDropdown : Grupo -> Repartija -> RepartijaItem -> List RepartijaClaim -> Claims -> Html Msg
+type ItemRepartidoState
+    = SinRepartir
+    | RepartidoIncorrectamente
+    | RepartidoExactamente
+    | RepartidoEquitativamenteEntre Int
+    | FaltaRepartir Int
+    | RepartidoDeMas Int
+
+
+viewClaimProgressAndDropdown : Grupo -> Repartija -> RepartijaItem -> List RepartijaClaim -> ItemClaimsState -> Html Msg
 viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
     let
-        textoDeConsumido =
+        itemRepartidoState : ItemRepartidoState
+        itemRepartidoState =
             case itemsClaimed of
                 MixedClaims _ ->
-                    text <| "??/" ++ String.fromInt item.repartijaItemCantidad
+                    RepartidoIncorrectamente
 
                 OnlyExactClaims exactClaims ->
                     let
@@ -400,36 +410,34 @@ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
                     in
                     case compare 0 cantidadFaltante of
                         LT ->
-                            text <| "Falta repartir " ++ String.fromInt cantidadFaltante
+                            FaltaRepartir cantidadFaltante
 
                         EQ ->
-                            i [ class "icon" ] <| [ FeatherIcons.toHtml [] FeatherIcons.check ]
+                            RepartidoExactamente
 
                         GT ->
-                            text <| "Sobran " ++ String.fromInt (cantidadFaltante * -1)
+                            RepartidoDeMas (cantidadFaltante * -1)
 
                 OnlyParticipationClaims repartijaClaims ->
-                    text <| "Equitativo entre " ++ (String.fromInt <| List.length repartijaClaims)
+                    RepartidoEquitativamenteEntre <| List.length repartijaClaims
 
                 NoClaims ->
-                    text "Sin repartir"
+                    SinRepartir
     in
     div [ class "is-flex" ]
         [ div
             [ class "dropdown is-hoverable"
             ]
-            [ div
-                [ class "dropdown-trigger"
+            [ div [ class "dropdown-trigger" ]
+                [ viewRepartidoState itemRepartidoState
                 ]
-                [ button [ class "button", attribute "aria-haspopup" "true" ]
-                    [ textoDeConsumido
-                    , FeatherIcons.chevronDown
-                        |> FeatherIcons.toHtml []
-                    ]
-                ]
+
+            --[ button [ class "button", classForRepartido, style "pointer-events" "none", attribute "aria-haspopup" "true" ]
+            --    [ viewRepartidoState itemRepartidoState
+            --    ]
+            --]
             , div
                 [ class "dropdown-menu"
-                , id "dropdown-menu3"
                 , attribute "role" "menu"
                 ]
                 [ div
@@ -460,6 +468,54 @@ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
                     )
                 ]
             ]
+        ]
+
+
+viewRepartidoState : ItemRepartidoState -> Html Msg
+viewRepartidoState itemRepartidoState =
+    let
+        classForRepartido : Attribute msg
+        classForRepartido =
+            case itemRepartidoState of
+                SinRepartir ->
+                    class "is-info"
+
+                RepartidoIncorrectamente ->
+                    class "is-danger"
+
+                RepartidoExactamente ->
+                    class "is-success"
+
+                RepartidoEquitativamenteEntre _ ->
+                    class "is-success"
+
+                FaltaRepartir _ ->
+                    class "is-warning"
+
+                RepartidoDeMas _ ->
+                    class "is-warning"
+    in
+    button [ class "button", classForRepartido, style "pointer-events" "none", attribute "aria-haspopup" "true" ]
+        [ case itemRepartidoState of
+            SinRepartir ->
+                text "Sin repartir"
+
+            RepartidoIncorrectamente ->
+                text "Mal repartido"
+
+            RepartidoExactamente ->
+                i [ class "icon" ] <| [ FeatherIcons.toHtml [] FeatherIcons.check ]
+
+            RepartidoEquitativamenteEntre cantidadDeParticipantes ->
+                text <| "Equitativo entre " ++ String.fromInt cantidadDeParticipantes
+
+            FaltaRepartir restoARepartir ->
+                text <| "Falta repartir " ++ String.fromInt restoARepartir
+
+            RepartidoDeMas sobras ->
+                text <| "Sobran " ++ String.fromInt sobras
+        , FeatherIcons.chevronDown
+            |> FeatherIcons.toHtml []
         ]
 
 
@@ -527,7 +583,7 @@ viewClaimModal model repartija participantes =
             div [] []
 
 
-repartijaClaimForm : List Participante -> Claims -> Form CustomFormError RepartijaClaim -> Html Msg
+repartijaClaimForm : List Participante -> ItemClaimsState -> Form CustomFormError RepartijaClaim -> Html Msg
 repartijaClaimForm participantes claims form =
     let
         errorFor field =
