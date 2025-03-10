@@ -21,6 +21,7 @@ import Numeric.Decimal as Decimal
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
+import Set
 import Shared
 import Utils.Form exposing (CustomFormError)
 import Utils.Toasts as Toast exposing (..)
@@ -271,6 +272,7 @@ view store model =
         case ( Store.getRepartija model.repartijaId store, Store.getGrupo model.grupoId store ) of
             ( Success repartija, Success grupo ) ->
                 [ div [] [ text "Titulo: ", text repartija.repartijaNombre ]
+                , viewParticipantes grupo repartija
                 , viewRepartijaItems grupo repartija
                 , viewClaimModal model repartija grupo.participantes
                 , div [] [ text "Extra: $", text <| Decimal.toString <| montoToDecimal repartija.repartijaExtra ]
@@ -290,6 +292,30 @@ view store model =
             ( _, _ ) ->
                 [ text "cargando" ]
     }
+
+
+viewParticipantes : Grupo -> Repartija -> Html Msg
+viewParticipantes grupo repartija =
+    let
+        participantesConClaims =
+            repartija.repartijaClaims
+                |> List.map (\claim -> claim.repartijaClaimParticipante)
+                |> Set.fromList
+    in
+    div []
+        [ text "Participantes:"
+        , div [ class "tags has-addons" ]
+            (grupo.participantes
+                |> List.map
+                    (\participante ->
+                        if Set.member participante.participanteId participantesConClaims then
+                            span [ class "tag is-success" ] [ text participante.participanteNombre ]
+
+                        else
+                            span [ class "tag is-danger" ] [ text participante.participanteNombre ]
+                    )
+            )
+        ]
 
 
 viewRepartijaItems : Grupo -> Repartija -> Html Msg
