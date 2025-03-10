@@ -8,7 +8,7 @@ import Form.Error as FormError
 import Form.Field as Form
 import Form.Input as FormInput
 import Form.Validate as V
-import Generated.Api as Api exposing (Grupo, Participante, Repartija, RepartijaClaim, RepartijaItem, ULID)
+import Generated.Api as Api exposing (Grupo, Participante, ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
@@ -54,6 +54,7 @@ type alias Model =
     , repartijaId : ULID
     , isClaimModalOpen : Maybe RepartijaItem
     , claimForm : Form CustomFormError RepartijaClaim
+    , participanteClaimsModal : Maybe ParticipanteId
     }
 
 
@@ -63,6 +64,7 @@ init grupoId repartijaId store =
       , repartijaId = repartijaId
       , isClaimModalOpen = Nothing
       , claimForm = Form.initial [] validateClaim
+      , participanteClaimsModal = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -102,6 +104,8 @@ type Msg
     | DeleteRepartijaClaimResponded (WebData String)
     | CreatePago
     | CreatePagoResponded (WebData String)
+    | OpenParticipanteClaimsPopup ParticipanteId
+    | CloseParticipanteClaimsPopup
 
 
 update : Store -> Msg -> Model -> ( Model, Effect Msg )
@@ -251,6 +255,16 @@ update store msg model =
             , Effect.none
             )
 
+        OpenParticipanteClaimsPopup participanteId ->
+            ( { model | participanteClaimsModal = Just participanteId }
+            , Effect.none
+            )
+
+        CloseParticipanteClaimsPopup ->
+            ( { model | participanteClaimsModal = Nothing }
+            , Effect.none
+            )
+
 
 
 -- SUBSCRIPTIONS
@@ -275,6 +289,7 @@ view store model =
                 , viewParticipantes grupo repartija
                 , viewRepartijaItems grupo repartija
                 , viewClaimModal model repartija grupo.participantes
+                , viewParticipanteClaimsModal model grupo repartija
                 , div [] [ text "Extra: $", text <| Decimal.toString <| montoToDecimal repartija.repartijaExtra ]
                 , button
                     [ class "button is-primary"
@@ -304,15 +319,21 @@ viewParticipantes grupo repartija =
     in
     div []
         [ text "Participantes:"
-        , div [ class "tags has-addons" ]
+        , div [ class "buttons has-addons" ]
             (grupo.participantes
                 |> List.map
                     (\participante ->
-                        if Set.member participante.participanteId participantesConClaims then
-                            span [ class "tag is-success" ] [ text participante.participanteNombre ]
+                        button
+                            [ class "button is-success"
+                            , if Set.member participante.participanteId participantesConClaims then
+                                class "is-success"
 
-                        else
-                            span [ class "tag is-danger" ] [ text participante.participanteNombre ]
+                              else
+                                class "is-danger"
+                            , onClick <| OpenParticipanteClaimsPopup participante.participanteId
+                            ]
+                            [ text participante.participanteNombre
+                            ]
                     )
             )
         ]
@@ -541,6 +562,82 @@ viewRepartidoState itemRepartidoState =
         , FeatherIcons.chevronDown
             |> FeatherIcons.toHtml []
         ]
+
+
+viewParticipanteClaimsModal : Model -> Grupo -> Repartija -> Html Msg
+viewParticipanteClaimsModal model grupo repartija =
+    case model.participanteClaimsModal of
+        Just participanteId ->
+            let
+                claims =
+                    repartija.repartijaClaims
+                        |> List.filter (\c -> c.repartijaClaimParticipante == participanteId)
+
+                participanteNombre =
+                    lookupNombreParticipante grupo participanteId
+
+                lookupItemName : ULID -> String
+                lookupItemName itemId =
+                    repartija.repartijaItems
+                        |> List.filter (\item -> item.repartijaItemId == itemId)
+                        |> List.head
+                        |> Maybe.map .repartijaItemNombre
+                        |> Maybe.withDefault "Item desconocido"
+            in
+            div
+                [ class "modal is-active" ]
+                [ div
+                    [ class "modal-background"
+                    , onClick CloseParticipanteClaimsPopup
+                    ]
+                    []
+                , div
+                    [ class "modal-card"
+                    ]
+                    [ header
+                        [ class "modal-card-head"
+                        ]
+                        [ p
+                            [ class "modal-card-title"
+                            ]
+                            [ text <| "Asignaciones para " ++ participanteNombre ]
+                        , button
+                            [ class "delete"
+                            , attribute "aria-label" "close"
+                            , onClick CloseParticipanteClaimsPopup
+                            ]
+                            []
+                        ]
+                    , section
+                        [ class "modal-card-body"
+                        ]
+                        [ table [ class "table is-hoverable" ] <|
+                            (tr []
+                                [ th [] [ text "Nombre" ]
+                                , th [] [ text "Cantidad" ]
+                                ]
+                                :: (claims
+                                        |> List.map
+                                            (\claim ->
+                                                tr []
+                                                    [ td [] [ text <| lookupItemName claim.repartijaClaimItemId ]
+                                                    , td []
+                                                        [ text
+                                                            (claim.repartijaClaimCantidad
+                                                                |> Maybe.map String.fromInt
+                                                                |> Maybe.withDefault "Equitativo"
+                                                            )
+                                                        ]
+                                                    ]
+                                            )
+                                   )
+                            )
+                        ]
+                    ]
+                ]
+
+        Nothing ->
+            div [] []
 
 
 viewClaimModal : Model -> Repartija -> List Participante -> Html Msg
