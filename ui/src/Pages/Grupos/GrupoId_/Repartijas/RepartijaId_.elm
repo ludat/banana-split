@@ -454,11 +454,6 @@ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
             [ div [ class "dropdown-trigger" ]
                 [ viewRepartidoState itemRepartidoState
                 ]
-
-            --[ button [ class "button", classForRepartido, style "pointer-events" "none", attribute "aria-haspopup" "true" ]
-            --    [ viewRepartidoState itemRepartidoState
-            --    ]
-            --]
             , div
                 [ class "dropdown-menu"
                 , attribute "role" "menu"
