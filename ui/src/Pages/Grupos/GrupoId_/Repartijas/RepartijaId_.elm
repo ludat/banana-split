@@ -281,17 +281,14 @@ view store model =
                     [ text "Crear Pago" ]
                 ]
 
-            ( Success repartija, _ ) ->
-                [ text "cargando" ]
-
-            ( NotAsked, _ ) ->
-                [ text "ni idea" ]
-
-            ( Loading, _ ) ->
-                [ text "cargando" ]
-
             ( Failure e, _ ) ->
                 [ text "falle" ]
+
+            ( _, Failure _ ) ->
+                [ text "falle" ]
+
+            ( _, _ ) ->
+                [ text "cargando" ]
     }
 
 
