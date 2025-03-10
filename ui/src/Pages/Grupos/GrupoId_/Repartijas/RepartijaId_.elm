@@ -390,7 +390,7 @@ viewClaimsLine grupo repartija item =
         , td [] [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed ]
         , td []
             [ div [ class "buttons has-addons" ]
-                [ button [ onClick <| OpenClaimItemModal item, class "button" ] [ text "Claim" ]
+                [ button [ onClick <| OpenClaimItemModal item, class "button is-link" ] [ text "Claim" ]
 
                 --, button [ onClick <| OpenDesdoblarItemModal item, class "button" ] [ text "Desdoblar" ]
                 ]
@@ -518,7 +518,13 @@ viewRepartidoState itemRepartidoState =
                 RepartidoDeMas _ ->
                     class "is-warning"
     in
-    button [ class "button", classForRepartido, style "pointer-events" "none", attribute "aria-haspopup" "true" ]
+    button
+        [ class "button"
+        , class "is-outlined"
+        , classForRepartido
+        , style "pointer-events" "none"
+        , attribute "aria-haspopup" "true"
+        ]
         [ case itemRepartidoState of
             SinRepartir ->
                 text "Sin repartir"
