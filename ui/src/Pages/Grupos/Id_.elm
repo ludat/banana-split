@@ -2,14 +2,16 @@ module Pages.Grupos.Id_ exposing (Model, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
-import Css
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Grupo, Netos, ULID)
+import Generated.Api as Api exposing (Grupo, Netos, Transaccion(..), ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Layouts
+import Models.Grupo exposing (lookupNombreParticipante)
+import Models.Monto exposing (montoToDecimal)
 import Models.Store as Store
 import Models.Store.Types as Store exposing (Store)
+import Numeric.Decimal as Decimal
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
@@ -109,6 +111,7 @@ view store model =
                             case store |> Store.getNetos model.grupoId of
                                 Success netos ->
                                     [ viewNetosBarras grupo netos
+                                    , viewTransferencias grupo netos
                                     ]
 
                                 NotAsked ->
@@ -124,3 +127,22 @@ view store model =
                     ]
                 ]
             }
+
+
+viewTransferencias : Grupo -> Netos -> Html Msg
+viewTransferencias grupo netos =
+    div []
+        (netos.transaccionesParaSaldar
+            |> List.map
+                (\t ->
+                    case t of
+                        Transaccion from to monto ->
+                            div []
+                                [ text <| lookupNombreParticipante grupo from
+                                , text " -> "
+                                , text <| lookupNombreParticipante grupo to
+                                , text " "
+                                , text <| Decimal.toString <| montoToDecimal monto
+                                ]
+                )
+        )
