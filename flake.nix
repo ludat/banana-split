@@ -9,7 +9,7 @@
         pkgs = import nixpkgs { inherit system; };
 
         # need to match Stackage LTS version from stack.yaml resolver
-        hPkgs = pkgs.haskell.packages.ghc966;
+        hPkgs = pkgs.haskell.packages.ghc984;
 
         bananasplitDeps = with pkgs; [
           zlib
