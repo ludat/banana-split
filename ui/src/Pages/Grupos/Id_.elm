@@ -1,7 +1,7 @@
 module Pages.Grupos.Id_ exposing (Model, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
-import Components.NavBar as NavBar
+import Components.NavBar as NavBar exposing (modelFromShared)
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Grupo, Netos, Transaccion(..), ULID)
 import Html exposing (..)
@@ -30,7 +30,7 @@ page shared route =
         }
         |> Page.withLayout
             (\m ->
-                Layouts.Default { navBarContent = Just <| NavBar.navBar route.params.id shared.store route.path }
+                Layouts.Default { navBarContent = Just <| NavBar.navBar (modelFromShared shared route.params.id) shared.store route.path }
             )
 
 
