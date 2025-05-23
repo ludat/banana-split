@@ -448,50 +448,61 @@ view store model =
         Success grupo ->
             { title = grupo.grupoNombre
             , body =
-                [ div [ class "container" ]
+                [ div [ class "container columns is-mobile is-justify-content-end px-4 pt-2 pb-1 m-0" ]
+                    [ button [ class "button mx-3", onClick <| ChangePagoPopoverState CreatingNewPago ] [ text "Agregar pago" ]
+                    ]
+                , div
+                    [ class "container columns px-4 pb-4 pt-1" ]
                     (grupo.pagos
                         |> List.map
                             (\pago ->
-                                div [ class "card" ]
-                                    [ p []
-                                        [ text pago.nombre
-                                        , text " ($"
-                                        , text (Decimal.toString <| montoToDecimal pago.monto)
-                                        , text ")"
-                                        , button [ class "button", onClick <| ChangePagoPopoverState <| EditingPago pago ]
-                                            [ Icons.toHtml [] Icons.edit
+                                div [ class "column is-one-third" ]
+                                    [ div [ class "card" ]
+                                        [ header [ class "card-header" ]
+                                            [ p [ class "card-header-title py-2 px-4" ]
+                                                [ text pago.nombre ]
                                             ]
-                                        , button [ class "delete", onClick <| DeletePago pago.pagoId ] []
-                                        ]
-                                    , p []
-                                        [ let
-                                            pagador2Text pagador =
-                                                pagador
-                                                    |> extractPagadorFromParte
-                                                    |> lookupNombreParticipante grupo
-                                          in
-                                          case pago.pagadores of
-                                            [] ->
-                                                text <| "pagador por nadie!"
+                                        , div [ class "card-content" ]
+                                            [ p [ class "title is-3 m-0" ]
+                                                [ text "$ "
+                                                , text (Decimal.toString <| montoToDecimal pago.monto)
+                                                ]
+                                            , p []
+                                                [ let
+                                                    pagador2Text pagador =
+                                                        pagador
+                                                            |> extractPagadorFromParte
+                                                            |> lookupNombreParticipante grupo
+                                                  in
+                                                  case pago.pagadores of
+                                                    [] ->
+                                                        text <| "pagado por nadie!"
 
-                                            [ pagador ] ->
-                                                text <| "pagador por " ++ pagador2Text pagador
+                                                    [ pagador ] ->
+                                                        text <| "pagado por " ++ pagador2Text pagador
 
-                                            [ pagador1, pagador2 ] ->
-                                                text <| ("pagador por " ++ pagador2Text pagador1 ++ " y " ++ pagador2Text pagador2)
+                                                    [ pagador1, pagador2 ] ->
+                                                        text <| ("pagado  por " ++ pagador2Text pagador1 ++ " y " ++ pagador2Text pagador2)
 
-                                            [ pagador1, pagador2, pagador3 ] ->
-                                                text <| ("pagador por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ pagador2Text pagador3)
+                                                    [ pagador1, pagador2, pagador3 ] ->
+                                                        text <| ("pagado por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ pagador2Text pagador3)
 
-                                            pagador1 :: pagador2 :: rest ->
-                                                text <| ("pagador por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ String.fromInt (List.length rest) ++ " personas mas")
+                                                    pagador1 :: pagador2 :: rest ->
+                                                        text <| ("pagado por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ String.fromInt (List.length rest) ++ " personas mas")
+                                                ]
+                                            ]
+                                        , footer [ class "card-footer" ]
+                                            [ button [ class "card-footer-item", onClick <| ChangePagoPopoverState <| EditingPago pago ]
+                                                [ Icons.toHtml [] Icons.edit
+                                                ]
+                                            , button [ class "card-footer-item", onClick <| DeletePago pago.pagoId ]
+                                                [ Icons.toHtml [] Icons.trash2
+                                                ]
+                                            ]
                                         ]
                                     ]
                             )
                     )
-                , div [ class "container" ]
-                    [ button [ class "button", onClick <| ChangePagoPopoverState CreatingNewPago ] [ text "Agregar pago" ]
-                    ]
                 , pagosModal grupo model
                 ]
             }
