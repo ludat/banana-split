@@ -2,8 +2,10 @@ module Pages.Grupos.GrupoId_.Repartijas exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
+import FeatherIcons as Icons
 import Form exposing (Form)
 import Form.Error as FormError
+import Form.Field as Form
 import Form.Input as FormInput
 import Form.Validate as V
 import Generated.Api as Api exposing (Grupo, Participante, Repartija, RepartijaItem, ULID)
@@ -57,10 +59,17 @@ type alias Model =
     }
 
 
+initialRepartijaForm =
+    Form.initial
+        [ ( "items", Form.list [ Form.value Form.EmptyField ] )
+        ]
+        validateRepartija
+
+
 init : Store -> ULID -> ( Model, Effect Msg )
 init store grupoId =
     ( { grupoId = grupoId
-      , repartijaForm = Form.initial [] validateRepartija
+      , repartijaForm = initialRepartijaForm
       , isNewRepartijaPopoverOpen = False
       }
     , Effect.batch
@@ -150,13 +159,13 @@ update store msg model =
 
         CreateRepartijaFailed e ->
             ( model
-            , Toasts.pushToast Toasts.ToastDanger "Fallo la creacion de la repartija"
+            , Toasts.pushToast Toasts.ToastDanger "Falló la creación de la repartija"
             )
 
         InitNewRepartija ->
             ( { model
                 | isNewRepartijaPopoverOpen = True
-                , repartijaForm = Form.initial [] validateRepartija
+                , repartijaForm = initialRepartijaForm
               }
             , Effect.none
             )
@@ -270,7 +279,7 @@ newRepartijaModal model =
                         [ class "button"
                         , onClick CloseNewRepartijaPopover
                         ]
-                        [ text "Cancel" ]
+                        [ text "Cancelar" ]
                     ]
                 ]
             ]
@@ -343,9 +352,12 @@ repartijaForm form =
 
         montoField =
             Form.getFieldAsString "monto" form
+
+        itemsIndexes =
+            Form.getListIndexes "items" form
     in
     Html.form [ onSubmit <| RepartijaForm Form.Submit ]
-        [ div [ class "field" ]
+        [ div [ class "field mb-5" ]
             [ label [ class "label" ]
                 [ text "Nombre" ]
             , div [ class "control" ]
@@ -353,33 +365,49 @@ repartijaForm form =
                     FormInput.textInput nombreField
                         [ class "input"
                         , type_ "text"
-                        , placeholder "After del viernes"
+                        , placeholder "El bar"
                         , classList [ ( "is-danger", hasError nombreField ) ]
                         ]
                 , errorFor nombreField
                 ]
             ]
         , div [ class "container" ]
-            [ div [] [ text "Items a repartir" ]
-            , div [] <| List.map (\i -> repartijaItemForm i form) (Form.getListIndexes "items" form)
+            [ table [ class "table is-fullwidth" ]
+                [ thead []
+                    [ tr []
+                        [ th [ class "pl-0" ] [ text "Item" ]
+                        , th [] [ text "Monto total" ]
+                        , th [] [ text "Cantidad" ]
+                        , th [] []
+                        ]
+                    ]
+                , tbody [] <|
+                    List.map
+                        (\i -> repartijaItemForm (List.length itemsIndexes > 1) i form)
+                        itemsIndexes
+                ]
             ]
-        , div [ class "container" ] <|
+        , div [ class "container mb-5" ] <|
             [ button
-                [ class "button"
+                [ class "button is-outlined is-primary is-align-items-center is-flex pr-5"
+                , style "gap" ".5rem"
                 , onClick <| RepartijaForm <| Form.Append "items"
                 , type_ "button"
                 ]
-                [ text "Agregar item a repartir" ]
+                [ Icons.toHtml [] Icons.plus
+                , span []
+                    [ text "Agregar item" ]
+                ]
             ]
         , div [ class "field" ]
             [ label [ class "label" ]
-                [ text "Extra" ]
+                [ text "Propina" ]
             , div [ class "control" ]
                 [ Html.map RepartijaForm <|
                     FormInput.textInput montoField
                         [ class "input"
                         , type_ "text"
-                        , placeholder "After del viernes"
+                        , placeholder "1000"
                         , classList [ ( "is-danger", hasError montoField ) ]
                         ]
                 , errorFor montoField
@@ -388,8 +416,8 @@ repartijaForm form =
         ]
 
 
-repartijaItemForm : Int -> Form CustomFormError Repartija -> Html Msg
-repartijaItemForm i form =
+repartijaItemForm : Bool -> Int -> Form CustomFormError Repartija -> Html Msg
+repartijaItemForm shouldMostrarBorrar i form =
     let
         errorFor field =
             case field.liveError of
@@ -419,8 +447,8 @@ repartijaItemForm i form =
         cantidadField =
             Form.getFieldAsString ("items." ++ String.fromInt i ++ ".cantidad") form
     in
-    div [ class "field has-addons" ]
-        [ div [ class "control" ]
+    tr []
+        [ td [ class "control pl-0" ]
             [ Html.map RepartijaForm <|
                 FormInput.textInput nombreField
                     [ class "input"
@@ -429,27 +457,31 @@ repartijaItemForm i form =
                     , classList [ ( "is-danger", hasError nombreField ) ]
                     ]
             ]
-        , div [ class "control" ]
+        , td [ class "control" ]
             [ Html.map RepartijaForm <|
                 FormInput.textInput montoField
                     [ class "input"
                     , type_ "text"
-                    , placeholder "200"
+                    , placeholder "20000"
                     , classList [ ( "is-danger", hasError montoField ) ]
                     ]
             ]
-        , div [ class "control" ]
+        , td [ class "control" ]
             [ Html.map RepartijaForm <|
                 FormInput.textInput cantidadField
                     [ class "input"
                     , type_ "text"
-                    , placeholder "?"
+                    , placeholder "4"
                     , classList [ ( "is-danger", hasError cantidadField ) ]
                     ]
             ]
-        , p [ class "control" ]
-            [ button [ class "button", type_ "button", onClick <| RepartijaForm <| Form.RemoveItem "items" i ]
-                [ text "borrame"
-                ]
+        , td [ class "control" ]
+            [ if shouldMostrarBorrar then
+                button [ class "button is-danger is-outlined", type_ "button", onClick <| RepartijaForm <| Form.RemoveItem "items" i ]
+                    [ Icons.toHtml [] Icons.trash2
+                    ]
+
+              else
+                text ""
             ]
         ]
