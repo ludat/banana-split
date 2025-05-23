@@ -3,6 +3,7 @@ module Pages.Grupos.Id_ exposing (Model, Msg, page)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Effect exposing (Effect)
+import FeatherIcons as Icons
 import Generated.Api as Api exposing (Grupo, Netos, Pago, Parte(..), Transaccion(..), ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
@@ -134,55 +135,64 @@ view store model =
         Success grupo ->
             { title = grupo.grupoNombre
             , body =
-                [ div [ class "columns" ]
-                    [ div [ class "column" ]
-                        (if grupo.participantes == [] then
-                            [ p [] [ text "Tu grupo todavía no tiene participantes!" ]
-                            , p []
-                                [ text "Agregalos "
-                                , a
-                                    [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.grupoId }
-                                    ]
-                                    [ text "acá" ]
+                [ div [ class "container columns is-flex-direction-column is-align-items-center" ]
+                    (if grupo.participantes == [] then
+                        [ p [] [ text "Tu grupo todavía no tiene participantes!" ]
+                        , p []
+                            [ text "Agregalos "
+                            , a
+                                [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.grupoId }
                                 ]
+                                [ text "acá" ]
                             ]
+                        ]
 
-                         else
-                            case store |> Store.getNetos model.grupoId of
-                                Success netos ->
-                                    [ viewNetosBarras grupo netos
-                                    , viewTransferencias grupo netos
-                                    ]
+                     else
+                        case store |> Store.getNetos model.grupoId of
+                            Success netos ->
+                                [ div [ class "column is-two-thirds mb-6" ]
+                                    [ viewNetosBarras grupo netos ]
+                                , viewTransferencias grupo netos
+                                ]
 
-                                NotAsked ->
-                                    [ text "Carganding" ]
+                            NotAsked ->
+                                [ text "Carganding" ]
 
-                                Loading ->
-                                    [ text "Carganding" ]
+                            Loading ->
+                                [ text "Carganding" ]
 
-                                Failure e ->
-                                    [ text "Error cargando los netos" ]
-                        )
-                    , div [ class "column" ] []
-                    ]
+                            Failure e ->
+                                [ text "Error cargando los netos" ]
+                    )
                 ]
             }
 
 
 viewTransferencias : Grupo -> Netos -> Html Msg
 viewTransferencias grupo netos =
-    div []
+    div [ class "column is-two-thirds" ]
         (netos.transaccionesParaSaldar
             |> List.map
                 (\t ->
                     case t of
                         Transaccion from to monto ->
-                            div []
-                                [ text <| lookupNombreParticipante grupo from
-                                , text " -> "
-                                , text <| lookupNombreParticipante grupo to
-                                , text " "
-                                , text <| Decimal.toString <| montoToDecimal monto
+                            div [ class "fixed-grid has-11-cols mb-2" ]
+                                [ div [ class "grid" ]
+                                    [ div [ class "cell is-col-span-5 has-text-right" ]
+                                        [ p [ class "" ]
+                                            [ text <| lookupNombreParticipante grupo from
+                                            , p [ class "has-text-danger is-size-6-5" ]
+                                                [ text "$"
+                                                , text <| Decimal.toString <| montoToDecimal monto
+                                                ]
+                                            ]
+                                        ]
+                                    , div [ class "cell is-col-span-1 is-flex is-justify-content-center is-align-items-center" ]
+                                        [ span [ class "arrow-container" ] [ Icons.toHtml [] Icons.arrowRight ] ]
+                                    , div [ class "cell is-col-span-5 is-flex is-align-items-center" ]
+                                        [ text <| lookupNombreParticipante grupo to
+                                        ]
+                                    ]
                                 ]
                 )
         )
