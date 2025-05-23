@@ -29,8 +29,8 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Shared
 import Utils.Form exposing (CustomFormError(..))
-import Utils.Toasts exposing (pushToast)
-import Utils.Toasts.Types exposing (ToastLevel(..))
+import Utils.Toasts as Toasts exposing (pushToast)
+import Utils.Toasts.Types as Toasts exposing (ToastLevel(..))
 import View exposing (View)
 
 
@@ -58,8 +58,8 @@ type Msg
     = NoOp
     | PagoForm Form.Msg
     | ChangePagoPopoverState PagoPopoverState
-    | AddedPago Pago
-    | UpdatedPago Pago
+    | AddedPagoResponse (Result Http.Error Pago)
+    | UpdatedPagoResponse (Result Http.Error Pago)
     | DeletePago ULID
     | DeletePagoResponse (Result Http.Error ULID)
     | NetosUpdated (WebData Netos)
@@ -142,20 +142,32 @@ update store msg model =
         NoOp ->
             ( model, Effect.none )
 
-        AddedPago pago ->
-            ( model
+        AddedPagoResponse (Ok pago) ->
+            ( { model | pagoPopoverState = Closed }
             , Effect.batch
                 [ Store.refreshNetos model.grupoId
                 , Store.refreshGrupo model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Se creó el pago"
                 ]
             )
 
-        UpdatedPago pago ->
+        AddedPagoResponse (Err error) ->
             ( model
+            , Toasts.pushToast Toasts.ToastDanger "Falló la creación del pago"
+            )
+
+        UpdatedPagoResponse (Ok pago) ->
+            ( { model | pagoPopoverState = Closed }
             , Effect.batch
                 [ Store.refreshNetos model.grupoId
                 , Store.refreshGrupo model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el pago"
                 ]
+            )
+
+        UpdatedPagoResponse (Err error) ->
+            ( model
+            , Toasts.pushToast Toasts.ToastDanger "Falló la actualización del pago"
             )
 
         PagoForm Form.Submit ->
@@ -174,14 +186,7 @@ update store msg model =
                                     grupoId
                                     oldPago.pagoId
                                     pago
-                                    (\r ->
-                                        case r of
-                                            Ok newPago ->
-                                                UpdatedPago newPago
-
-                                            Err error ->
-                                                NoOp
-                                    )
+                                    UpdatedPagoResponse
                             )
 
                         CreatingNewPago ->
@@ -192,14 +197,7 @@ update store msg model =
                                 Api.postGrupoByIdPagos
                                     grupoId
                                     pago
-                                    (\r ->
-                                        case r of
-                                            Ok newPago ->
-                                                AddedPago newPago
-
-                                            Err error ->
-                                                NoOp
-                                    )
+                                    AddedPagoResponse
                             )
 
                 ( _, _ ) ->
