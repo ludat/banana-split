@@ -588,7 +588,7 @@ pagosModal grupo model =
                         [ class "button"
                         , onClick <| ChangePagoPopoverState Closed
                         ]
-                        [ text "Cancel" ]
+                        [ text "Cancelar" ]
                     ]
                 ]
             ]
@@ -662,8 +662,8 @@ pagosForm participantes form =
         montoField =
             Form.getFieldAsString "monto" form
     in
-    Html.form [ onSubmit <| PagoForm Form.Submit ]
-        [ div [ class "field" ]
+    Html.form [ class "mb-6", onSubmit <| PagoForm Form.Submit ]
+        [ div [ class "field mb-5" ]
             [ label [ class "label" ]
                 [ text "Nombre" ]
             , div [ class "control" ]
@@ -671,13 +671,13 @@ pagosForm participantes form =
                     FormInput.textInput nombreField
                         [ class "input"
                         , type_ "text"
-                        , placeholder "After del viernes"
+                        , placeholder "Pago de deudas"
                         , classList [ ( "is-danger", hasError nombreField ) ]
                         ]
                 , errorFor nombreField
                 ]
             ]
-        , div [ class "field" ]
+        , div [ class "field mb-5" ]
             [ label [ class "label" ]
                 [ text "Monto" ]
             , div [ class "control" ]
@@ -685,35 +685,43 @@ pagosForm participantes form =
                     FormInput.textInput montoField
                         [ class "input"
                         , type_ "text"
-                        , placeholder "After del viernes"
+                        , placeholder "10000"
                         , classList [ ( "is-danger", hasError montoField ) ]
                         ]
                 , errorFor montoField
                 ]
             ]
-        , div [ class "container" ]
-            [ div [] [ text "Pagadores" ]
+        , div [ class "container mb-2" ]
+            [ label [ class "label" ] [ text "Pagadores" ]
             , div [] <| List.map (\i -> parteForm participantes "pagadores" i form) (Form.getListIndexes "pagadores" form)
             ]
-        , div [ class "container" ] <|
+        , div [ class "container mb-5" ] <|
             [ button
-                [ class "button"
+                [ class "button is-outlined is-primary is-flex pr-5"
+                , style "gap" ".5rem"
                 , onClick <| PagoForm <| Form.Append "pagadores"
                 , type_ "button"
                 ]
-                [ text "Agregar parte" ]
+                [ Icons.toHtml [] Icons.plus
+                , span []
+                    [ text "Agregar pagador" ]
+                ]
             ]
-        , div [ class "container" ]
-            [ div [] [ text "Deudores" ]
+        , div [ class "container mb-2" ]
+            [ label [ class "label" ] [ text "Deudores" ]
             , div [] <| List.map (\i -> parteForm participantes "deudores" i form) (Form.getListIndexes "deudores" form)
             ]
         , div [ class "container" ] <|
             [ button
-                [ class "button"
+                [ class "button is-outlined is-primary is-flex pr-5"
+                , style "gap" ".5rem"
                 , onClick <| PagoForm <| Form.Append "deudores"
                 , type_ "button"
                 ]
-                [ text "Agregar parte" ]
+                [ Icons.toHtml [] Icons.plus
+                , span []
+                    [ text "Agregar deudor" ]
+                ]
             ]
 
         --, div [ class "control" ]
@@ -810,8 +818,8 @@ parteForm participantes prefix i form =
                 ]
             ]
         , p [ class "control" ]
-            [ button [ class "button", type_ "button", onClick <| PagoForm <| Form.RemoveItem prefix i ]
-                [ text "borrame"
+            [ button [ class "button is-outlined is-danger", type_ "button", onClick <| PagoForm <| Form.RemoveItem prefix i ]
+                [ Icons.toHtml [] Icons.trash2
                 ]
             ]
         ]
