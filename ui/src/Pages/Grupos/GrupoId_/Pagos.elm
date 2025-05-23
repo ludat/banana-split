@@ -452,7 +452,7 @@ view store model =
                     [ button [ class "button mx-3", onClick <| ChangePagoPopoverState CreatingNewPago ] [ text "Agregar pago" ]
                     ]
                 , div
-                    [ class "container columns px-4 pb-4 pt-1" ]
+                    [ class "container columns is-flex-wrap-wrap px-4 pb-4 pt-1" ]
                     (grupo.pagos
                         |> List.map
                             (\pago ->
