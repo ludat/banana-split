@@ -3,6 +3,7 @@ module Layouts.Default exposing (Model, Msg, Props, layout)
 import Components.NavBar exposing (navBarItem)
 import Css
 import Effect exposing (Effect)
+import Generated.Api exposing (ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
@@ -16,7 +17,7 @@ import View exposing (View)
 
 
 type alias Props =
-    { navBarContent : Maybe (Bool -> Html Msg)
+    { navBarContent : Maybe (Bool -> Html Shared.Msg)
     }
 
 
@@ -25,7 +26,7 @@ layout props shared route =
     Layout.new
         { init = \() -> init props
         , update = update
-        , view = view props.navBarContent shared.toasties route.path
+        , view = view props.navBarContent shared.userId shared.toasties route.path
         , subscriptions = subscriptions
         }
 
@@ -55,6 +56,7 @@ type Msg
     = NoOp
     | ToggleNavBar
     | ToastMsg ToastMsg
+    | ForwardSharedMessage Shared.Msg
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -77,6 +79,11 @@ update msg model =
             , Effect.sendToastMsg toastMsg
             )
 
+        ForwardSharedMessage sharedMsg ->
+            ( model
+            , Effect.sendSharedMsg sharedMsg
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions model =
@@ -88,12 +95,13 @@ subscriptions model =
 
 
 view :
-    Maybe (Bool -> Html Msg)
+    Maybe (Bool -> Html Shared.Msg)
+    -> Maybe ULID
     -> Toasts
     -> Path
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view navBarFunction toasts path { toContentMsg, model, content } =
+view navBarFunction activeUser toasts path { toContentMsg, model, content } =
     { title =
         if content.title == "" then
             "Banana split"
@@ -125,7 +133,7 @@ view navBarFunction toasts path { toContentMsg, model, content } =
                 ]
             , case navBarFunction of
                 Just navBarF ->
-                    Html.map toContentMsg <| navBarF model.navBarOpen
+                    Html.map toContentMsg <| Html.map ForwardSharedMessage <| navBarF model.navBarOpen
 
                 Nothing ->
                     text ""

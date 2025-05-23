@@ -60,6 +60,7 @@ init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
 init flagsResult route =
     ( { toasties = Toast.initialState
       , store = Store.empty
+      , userId = Nothing
       }
     , Effect.none
     )
@@ -101,6 +102,9 @@ update route msg model =
                     Store.update storeMsg model.store
             in
             ( { model | store = store }, cmd )
+
+        SetCurrentUser userId ->
+            ( { model | userId = Just userId }, Effect.none )
 
 
 

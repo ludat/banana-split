@@ -6,7 +6,7 @@ module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , sendStoreMsg, sendToast, sendToastMsg
+    , sendSharedMsg, sendStoreMsg, sendToast, sendToastMsg
     )
 
 {-|
@@ -145,17 +145,22 @@ back =
 -}
 sendToastMsg : ToastMsg -> Effect msg
 sendToastMsg toastMsg =
-    SendSharedMsg <| Shared.Msg.ToastMsg toastMsg
+    sendSharedMsg <| Shared.Msg.ToastMsg toastMsg
 
 
 sendToast : Toast -> Effect msg
 sendToast toast =
-    SendSharedMsg <| Shared.Msg.AddToast toast
+    sendSharedMsg <| Shared.Msg.AddToast toast
 
 
 sendStoreMsg : StoreMsg -> Effect msg
 sendStoreMsg toast =
-    SendSharedMsg <| Shared.Msg.StoreMsg toast
+    sendSharedMsg <| Shared.Msg.StoreMsg toast
+
+
+sendSharedMsg : Shared.Msg.Msg -> Effect msg
+sendSharedMsg msg =
+    SendSharedMsg msg
 
 
 

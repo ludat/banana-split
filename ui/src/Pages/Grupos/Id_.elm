@@ -1,12 +1,14 @@
 module Pages.Grupos.Id_ exposing (Model, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
-import Components.NavBar as NavBar
+import Components.NavBar as NavBar exposing (modelFromShared)
 import Effect exposing (Effect)
 import FeatherIcons as Icons
-import Generated.Api as Api exposing (Grupo, Netos, Transaccion(..), ULID)
+import Generated.Api as Api exposing (Grupo, Netos, Pago, Parte(..), Transaccion(..), ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
+import Html.Events exposing (onClick)
+import Http
 import Layouts
 import Models.Grupo exposing (lookupNombreParticipante)
 import Models.Monto exposing (montoToDecimal)
@@ -18,6 +20,9 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
+import Utils.Toasts as Toasts
+import Utils.Toasts.Types as Toasts
+import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
 
@@ -31,7 +36,7 @@ page shared route =
         }
         |> Page.withLayout
             (\m ->
-                Layouts.Default { navBarContent = Just <| NavBar.navBar route.params.id shared.store route.path }
+                Layouts.Default { navBarContent = Just <| NavBar.navBar (modelFromShared shared route.params.id) shared.store route.path }
             )
 
 
@@ -52,6 +57,8 @@ init grupoId store =
 
 type Msg
     = NoOp
+    | CrearPago Pago
+    | AddedPagoResponse (Result Http.Error Pago)
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -61,6 +68,39 @@ update msg model =
             ( model
             , Effect.none
             )
+
+        AddedPagoResponse (Ok pago) ->
+            ( model
+            , Effect.batch
+                [ Store.refreshNetos model.grupoId
+                , Store.refreshGrupo model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Se completó el pago"
+                ]
+            )
+
+        AddedPagoResponse (Err error) ->
+            ( model
+            , Toasts.pushToast Toasts.ToastDanger "No se pudo completar el pago"
+            )
+
+        CrearPago pago ->
+            ( model
+            , Effect.sendCmd <|
+                Api.postGrupoByIdPagos
+                    model.grupoId
+                    pago
+                    AddedPagoResponse
+            )
+
+
+pagoFromTransaccion : Transaccion -> Pago
+pagoFromTransaccion (Transaccion pagador deudor monto) =
+    { pagoId = emptyUlid
+    , monto = monto
+    , nombre = "Pago saldado"
+    , pagadores = [ Ponderado 1 pagador ]
+    , deudores = [ Ponderado 1 deudor ]
+    }
 
 
 subscriptions : Model -> Sub Msg
