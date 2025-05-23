@@ -3,6 +3,7 @@ module Pages.Grupos.GrupoId_.Participantes exposing (Model, Msg, page)
 import Browser.Dom
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
+import FeatherIcons as Icons
 import Form exposing (Form)
 import Form.Error as FormError
 import Form.Input as FormInput
@@ -11,6 +12,7 @@ import Generated.Api as Api exposing (Grupo, Participante, ParticipanteAddParams
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (..)
+import Html.Keyed
 import Http
 import Layouts
 import Models.Store as Store
@@ -176,18 +178,36 @@ view store model =
         Success grupo ->
             { title = grupo.grupoNombre
             , body =
-                [ div [ class "container" ]
-                    (grupo.participantes
-                        |> List.map
-                            (\p ->
-                                div []
-                                    [ text p.participanteNombre
-                                    , button [ class "delete", onClick <| DeleteParticipante p.participanteId ] []
+                [ div [ class "container px-4" ]
+                    [ Html.form
+                        [ onSubmit <| ParticipanteForm Form.Submit ]
+                        [ table [ class "table" ]
+                            [ thead []
+                                [ tr []
+                                    [ th [ class "px-2" ] [ text "Nombre" ]
+                                    , th [] []
                                     ]
-                            )
-                    )
-                , div [ class "container" ]
-                    [ participantesForm model.participanteForm
+                                ]
+                            , Html.Keyed.node "tbody"
+                                []
+                                ((grupo.participantes
+                                    |> List.map
+                                        (\p ->
+                                            ( p.participanteId
+                                            , tr []
+                                                [ td [ class "is-vcentered px-4" ] [ text p.participanteNombre ]
+                                                , td []
+                                                    [ div [ class "button is-danger is-outlined", onClick <| DeleteParticipante p.participanteId ]
+                                                        [ Icons.toHtml [] Icons.trash2 ]
+                                                    ]
+                                                ]
+                                            )
+                                        )
+                                 )
+                                    ++ [ ( "new", participantesForm model.participanteForm ) ]
+                                )
+                            ]
+                        ]
                     ]
                 ]
             }
@@ -218,11 +238,9 @@ participantesForm form =
         nombreField =
             Form.getFieldAsString "nombre" form
     in
-    Html.form [ onSubmit <| ParticipanteForm Form.Submit ]
-        [ div [ class "field" ]
-            [ label [ class "label" ]
-                [ text "Nombre" ]
-            , div [ class "control" ]
+    tr []
+        [ td [ class "field" ]
+            [ div [ class "control" ]
                 [ Html.map ParticipanteForm <|
                     FormInput.textInput nombreField
                         [ class "input"
@@ -234,10 +252,9 @@ participantesForm form =
                 , errorFor nombreField
                 ]
             ]
-        , div [ class "control" ]
+        , td [ class "control" ]
             [ button
-                [ class "button is-primary"
-                ]
-                [ text "Agregar Participante" ]
+                [ class "button is-primary has-text-white" ]
+                [ Icons.toHtml [] Icons.userPlus ]
             ]
         ]
