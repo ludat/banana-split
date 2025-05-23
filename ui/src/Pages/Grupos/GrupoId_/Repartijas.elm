@@ -141,7 +141,7 @@ update store msg model =
             )
 
         CreateRepartijaSuccess repartija ->
-            ( model
+            ( { model | isNewRepartijaPopoverOpen = False }
             , Effect.batch
                 [ Toasts.pushToast Toasts.ToastSuccess "Repartija creada con éxito"
                 , Store.refreshRepartijas model.grupoId
