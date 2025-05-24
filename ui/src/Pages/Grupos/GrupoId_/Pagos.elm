@@ -16,14 +16,11 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
 import Http
 import Layouts
-import Models.Grupo exposing (lookupNombreParticipante, lookupParticipante)
+import Models.Grupo exposing (lookupNombreParticipante)
 import Models.Monto exposing (montoToDecimal, validateMonto)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Numeric.Decimal as Decimal
-import Numeric.Decimal.Rounding as Decimal
-import Numeric.Nat as Nat
-import Numeric.Rational as Rational
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
@@ -31,6 +28,7 @@ import Shared
 import Utils.Form exposing (CustomFormError(..))
 import Utils.Toasts as Toasts exposing (pushToast)
 import Utils.Toasts.Types as Toasts exposing (ToastLevel(..))
+import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
 
@@ -38,7 +36,7 @@ page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route.params.grupoId shared.store
-        , update = update shared.store
+        , update = update shared.store shared.userId
         , subscriptions = subscriptions
         , view = view shared.store
         }
@@ -79,6 +77,39 @@ type alias Model =
     }
 
 
+initialPagoForm : Maybe ULID -> List Participante -> Form CustomFormError Pago
+initialPagoForm maybeCreador participantes =
+    Form.initial
+        ((case maybeCreador of
+            Just creador ->
+                [ ( "pagadores", FormField.list [ participanteIdToField creador ] ) ]
+
+            Nothing ->
+                []
+         )
+            ++ [ ( "deudores"
+                 , participantes
+                    |> List.map
+                        (\participante ->
+                            participanteIdToField <| participante.participanteId
+                        )
+                    |> FormField.list
+                 )
+               ]
+        )
+        validatePago
+
+
+participanteIdToField : String -> FormField.Field
+participanteIdToField participanteId =
+    FormField.group
+        [ ( "cuota", FormField.string "1" )
+        , ( "monto", FormField.string "100.0" )
+        , ( "participante", FormField.string participanteId )
+        , ( "tipo", FormField.string "ponderado" )
+        ]
+
+
 init : ULID -> Store -> ( Model, Effect Msg )
 init grupoId store =
     ( { grupoId = grupoId
@@ -95,7 +126,7 @@ init grupoId store =
 validatePago : Validation CustomFormError Pago
 validatePago =
     V.succeed Pago
-        |> V.andMap (V.succeed "00000000000000000000000000")
+        |> V.andMap (V.succeed emptyUlid)
         |> V.andMap (V.field "monto" validateMonto)
         |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
         |> V.andMap (V.field "deudores" (V.list validateParte |> V.andThen nonEmptyList))
@@ -136,8 +167,8 @@ validateParte =
 -- UPDATE
 
 
-update : Store -> Msg -> Model -> ( Model, Effect Msg )
-update store msg model =
+update : Store -> Maybe ULID -> Msg -> Model -> ( Model, Effect Msg )
+update store userId msg model =
     case msg of
         NoOp ->
             ( model, Effect.none )
@@ -366,7 +397,12 @@ update store msg model =
                                 validatePago
 
                         CreatingNewPago ->
-                            Form.initial [] validatePago
+                            case Store.getGrupo model.grupoId store |> RemoteData.toMaybe of
+                                Just grupo ->
+                                    initialPagoForm userId grupo.participantes
+
+                                Nothing ->
+                                    Form.initial [] validatePago
               }
             , Effect.none
             )
@@ -588,7 +624,7 @@ pagosModal grupo model =
                         [ class "button"
                         , onClick <| ChangePagoPopoverState Closed
                         ]
-                        [ text "Cancel" ]
+                        [ text "Cancelar" ]
                     ]
                 ]
             ]
@@ -662,8 +698,8 @@ pagosForm participantes form =
         montoField =
             Form.getFieldAsString "monto" form
     in
-    Html.form [ onSubmit <| PagoForm Form.Submit ]
-        [ div [ class "field" ]
+    Html.form [ class "mb-6", onSubmit <| PagoForm Form.Submit ]
+        [ div [ class "field mb-5" ]
             [ label [ class "label" ]
                 [ text "Nombre" ]
             , div [ class "control" ]
@@ -671,13 +707,13 @@ pagosForm participantes form =
                     FormInput.textInput nombreField
                         [ class "input"
                         , type_ "text"
-                        , placeholder "After del viernes"
+                        , placeholder "Pago de deudas"
                         , classList [ ( "is-danger", hasError nombreField ) ]
                         ]
                 , errorFor nombreField
                 ]
             ]
-        , div [ class "field" ]
+        , div [ class "field mb-5" ]
             [ label [ class "label" ]
                 [ text "Monto" ]
             , div [ class "control" ]
@@ -685,35 +721,43 @@ pagosForm participantes form =
                     FormInput.textInput montoField
                         [ class "input"
                         , type_ "text"
-                        , placeholder "After del viernes"
+                        , placeholder "10000"
                         , classList [ ( "is-danger", hasError montoField ) ]
                         ]
                 , errorFor montoField
                 ]
             ]
-        , div [ class "container" ]
-            [ div [] [ text "Pagadores" ]
+        , div [ class "container mb-2" ]
+            [ label [ class "label" ] [ text "Pagadores" ]
             , div [] <| List.map (\i -> parteForm participantes "pagadores" i form) (Form.getListIndexes "pagadores" form)
             ]
-        , div [ class "container" ] <|
+        , div [ class "container mb-5" ] <|
             [ button
-                [ class "button"
+                [ class "button is-outlined is-primary is-flex pr-5"
+                , style "gap" ".5rem"
                 , onClick <| PagoForm <| Form.Append "pagadores"
                 , type_ "button"
                 ]
-                [ text "Agregar parte" ]
+                [ Icons.toHtml [] Icons.plus
+                , span []
+                    [ text "Agregar pagador" ]
+                ]
             ]
-        , div [ class "container" ]
-            [ div [] [ text "Deudores" ]
+        , div [ class "container mb-2" ]
+            [ label [ class "label" ] [ text "Deudores" ]
             , div [] <| List.map (\i -> parteForm participantes "deudores" i form) (Form.getListIndexes "deudores" form)
             ]
         , div [ class "container" ] <|
             [ button
-                [ class "button"
+                [ class "button is-outlined is-primary is-flex pr-5"
+                , style "gap" ".5rem"
                 , onClick <| PagoForm <| Form.Append "deudores"
                 , type_ "button"
                 ]
-                [ text "Agregar parte" ]
+                [ Icons.toHtml [] Icons.plus
+                , span []
+                    [ text "Agregar deudor" ]
+                ]
             ]
 
         --, div [ class "control" ]
@@ -810,8 +854,8 @@ parteForm participantes prefix i form =
                 ]
             ]
         , p [ class "control" ]
-            [ button [ class "button", type_ "button", onClick <| PagoForm <| Form.RemoveItem prefix i ]
-                [ text "borrame"
+            [ button [ class "button is-outlined is-danger", type_ "button", onClick <| PagoForm <| Form.RemoveItem prefix i ]
+                [ Icons.toHtml [] Icons.trash2
                 ]
             ]
         ]
