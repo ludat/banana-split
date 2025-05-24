@@ -1,6 +1,12 @@
 @import "https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css";
 
+:root {
+    --alto-barra: 11px;
+}
+
 .barras-precio {
+    gap: 30px 0;
+    position: relative;
 
     .monto {
         position: relative;
@@ -8,15 +14,22 @@
 
     .barra {
         position: absolute;
-        height: 6px;
+        height: var(--alto-barra);
     }
 
     & > .izquierda {
         text-align: right;
 
         .barra {
+            border-bottom-left-radius: 8px;
+            border-top-left-radius: 8px;
             right: 0;
         }
+    }
+
+    & > .derecha .barra {
+        border-bottom-right-radius: 8px;
+        border-top-right-radius: 8px;
     }
 }
 
@@ -31,6 +44,17 @@
 
 .is-size-6-5 {
     font-size: 0.85rem;
+}
+
+.eje-vertical {
+    background-color: gray;
+    height: calc(100% + var(--alto-barra) + 24px);
+    left: 50%;
+    position: absolute;
+    top: 0;
+    transform: translate(-50%, -8px);
+    width: 2px;
+    z-index: 1;
 }
 
 /*TODO get someone who knows css to review this*/

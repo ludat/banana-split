@@ -1,4 +1,4 @@
-module Css exposing (barras_precio, arrow_container, is_size_6_5, toasts_container, toast)
+module Css exposing (barras_precio, arrow_container, is_size_6_5, eje_vertical, toasts_container, toast)
 
 import Html
 import Html.Attributes
@@ -17,6 +17,11 @@ arrow_container =
 is_size_6_5 : Html.Attribute msg
 is_size_6_5 =
     Html.Attributes.class "is-size-6-5"
+
+
+eje_vertical : Html.Attribute msg
+eje_vertical =
+    Html.Attributes.class "eje-vertical"
 
 
 toasts_container : Html.Attribute msg

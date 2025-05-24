@@ -47,15 +47,15 @@ viewNetosBarras grupo netos =
                                 lookupParticipante grupo participanteId
 
                             nombreDerecha =
-                                div [ class "cell nombre derecha" ] [ text participante.participanteNombre ]
+                                div [ class "cell nombre derecha ml-2" ] [ text participante.participanteNombre ]
 
                             nombreIzquierda =
-                                div [ class "cell nombre izquierda" ] [ text participante.participanteNombre ]
+                                div [ class "cell nombre izquierda mr-2" ] [ text participante.participanteNombre ]
 
                             barraIzquierda =
                                 div [ class "cell monto izquierda" ]
                                     [ p
-                                        []
+                                        [ class "mr-2" ]
                                         [ text <| Decimal.toString monto ]
                                     , div
                                         [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
@@ -67,7 +67,7 @@ viewNetosBarras grupo netos =
                             barraDerecha =
                                 div [ class "cell monto derecha" ]
                                     [ p
-                                        []
+                                        [ class "ml-2" ]
                                         [ text <| Decimal.toString monto ]
                                     , div
                                         [ style "width" <| String.fromFloat (Decimal.toFloat monto * 100 / maximo) ++ "%"
@@ -92,5 +92,6 @@ viewNetosBarras grupo netos =
                                 , barraDerecha
                                 ]
                     )
+                |> List.append [ div [ class "eje-vertical" ] [] ]
             )
         ]
