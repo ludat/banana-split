@@ -17,10 +17,6 @@ import Layouts
 import Models.Monto exposing (validateMonto)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
-import Numeric.Decimal as Decimal
-import Numeric.Decimal.Rounding as Decimal
-import Numeric.Nat as Nat
-import Numeric.Rational as Rational
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)

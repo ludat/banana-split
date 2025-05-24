@@ -142,7 +142,7 @@ view navBarFunction activeUser toasts path { toContentMsg, model, content } =
             [ Html.map toContentMsg <|
                 Toasts.view Toasts.config renderToast ToastMsg toasts
             ]
-        , div [] content.body
+        , div [ class "container p-4" ] content.body
         ]
     }
 
