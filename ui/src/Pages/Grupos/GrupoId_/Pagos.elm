@@ -619,7 +619,16 @@ pagosModal grupo model =
                         [ class "button is-success"
                         , onClick <| PagoForm <| Form.Submit
                         ]
-                        [ text "Crear pago" ]
+                        (case model.pagoPopoverState of
+                            Closed ->
+                                [ text "Imposibru" ]
+
+                            EditingPago _ ->
+                                [ text "Editar pago" ]
+
+                            CreatingNewPago ->
+                                [ text "Crear pago" ]
+                        )
                     , button
                         [ class "button"
                         , onClick <| ChangePagoPopoverState Closed
@@ -759,13 +768,6 @@ pagosForm participantes form =
                     [ text "Agregar deudor" ]
                 ]
             ]
-
-        --, div [ class "control" ]
-        --    [ button
-        --        [ class "button is-primary"
-        --        ]
-        --        [ text "Crear" ]
-        --    ]
         ]
 
 
