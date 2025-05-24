@@ -285,12 +285,11 @@ view store model =
     , body =
         case ( Store.getRepartija model.repartijaId store, Store.getGrupo model.grupoId store ) of
             ( Success repartija, Success grupo ) ->
-                [ div [] [ text "Titulo: ", text repartija.repartijaNombre ]
+                [ div [ class "is-size-2 has-text-weight-bold" ] [ text repartija.repartijaNombre ]
                 , viewParticipantes grupo repartija
                 , viewRepartijaItems grupo repartija
                 , viewClaimModal model repartija grupo.participantes
                 , viewParticipanteClaimsModal model grupo repartija
-                , div [] [ text "Extra: $", text <| Decimal.toString <| montoToDecimal repartija.repartijaExtra ]
                 , button
                     [ class "button is-primary"
                     , onClick CreatePago
@@ -318,18 +317,17 @@ viewParticipantes grupo repartija =
                 |> Set.fromList
     in
     div []
-        [ text "Participantes:"
-        , div [ class "buttons has-addons" ]
+        [ div [ class "buttons has-addons my-5" ]
             (grupo.participantes
                 |> List.map
                     (\participante ->
                         button
                             [ class "button is-success"
                             , if Set.member participante.participanteId participantesConClaims then
-                                class "is-success"
+                                class "is-success is-light"
 
                               else
-                                class "is-danger"
+                                class "is-danger is-light"
                             , onClick <| OpenParticipanteClaimsPopup participante.participanteId
                             ]
                             [ text participante.participanteNombre
@@ -341,12 +339,12 @@ viewParticipantes grupo repartija =
 
 viewRepartijaItems : Grupo -> Repartija -> Html Msg
 viewRepartijaItems grupo repartija =
-    table [ class "table is-striped is-hoverable" ] <|
+    table [ class "table is-fullwidth is-striped is-hoverable" ] <|
         [ thead []
             [ tr []
                 [ th [] [ text "Descripcion" ]
-                , th [] [ text "Monto total" ]
-                , th [] [ text "Cantidad" ]
+                , th [ class "has-text-right" ] [ text "Monto total" ]
+                , th [ class "has-text-right" ] [ text "Cantidad" ]
                 , th [] [ text "Repartido" ]
                 , th [] []
                 ]
@@ -357,6 +355,14 @@ viewRepartijaItems grupo repartija =
                         |> List.map
                             (\item -> viewClaimsLine grupo repartija item)
                     )
+                        ++ [ tr []
+                                [ td [] [ text "Propina" ]
+                                , td [ class "has-text-right" ] [ text "$", text <| Decimal.toString <| montoToDecimal repartija.repartijaExtra ]
+                                , td [] []
+                                , td [] []
+                                , td [] []
+                                ]
+                           ]
                ]
 
 
@@ -403,11 +409,11 @@ viewClaimsLine grupo repartija item =
                 |> interpretClaims
     in
     tr []
-        [ td [] [ text <| item.repartijaItemNombre ]
-        , td [ class "has-text-right" ]
+        [ td [ class "is-vcentered" ] [ text <| item.repartijaItemNombre ]
+        , td [ class "has-text-right is-vcentered" ]
             [ text <| "$" ++ Decimal.toString (montoToDecimal item.repartijaItemMonto)
             ]
-        , td [ class "has-text-right" ] [ text <| String.fromInt item.repartijaItemCantidad ]
+        , td [ class "has-text-right is-vcentered" ] [ text <| String.fromInt item.repartijaItemCantidad ]
         , td [] [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed ]
         , td []
             [ div [ class "buttons has-addons" ]
@@ -497,7 +503,7 @@ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
                                         Nothing ->
                                             text <| "parte para " ++ nombre
                                     , button
-                                        [ class "delete"
+                                        [ class "delete ml-1"
                                         , attribute "aria-label" "close"
                                         , onClick <| DeleteClaim claim
                                         ]
