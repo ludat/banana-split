@@ -13,11 +13,14 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
 import Layouts
+import List.Extra exposing (find)
 import Models.Grupo exposing (lookupNombreParticipante)
 import Models.Monto exposing (montoToDecimal)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Numeric.Decimal as Decimal
+import Numeric.Decimal.Rounding as Decimal
+import Numeric.Nat as Nat
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
@@ -26,6 +29,7 @@ import Shared
 import Utils.Form exposing (CustomFormError)
 import Utils.Toasts as Toast exposing (..)
 import Utils.Toasts.Types as Toast exposing (..)
+import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
 
@@ -33,9 +37,9 @@ page : Shared.Model -> Route { grupoId : String, repartijaId : String } -> Page 
 page shared route =
     Page.new
         { init = \() -> init route.params.grupoId route.params.repartijaId shared.store
-        , update = update shared.store
+        , update = update shared.userId shared.store
         , subscriptions = subscriptions
-        , view = view shared.store
+        , view = view shared.userId shared.store
         }
         |> Page.withLayout
             (\m ->
@@ -96,6 +100,9 @@ validateClaim =
 type Msg
     = NoOp
     | OpenClaimItemModal RepartijaItem
+    | ChangeCurrentClaim RepartijaItem Int
+    | JoinCurrentClaim RepartijaItem
+    | LeaveCurrentClaim RepartijaClaim
     | OpenDesdoblarItemModal RepartijaItem
     | CloseClaimModal
     | ClaimFormMsg Form.Msg
@@ -108,8 +115,8 @@ type Msg
     | CloseParticipanteClaimsPopup
 
 
-update : Store -> Msg -> Model -> ( Model, Effect Msg )
-update store msg model =
+update : Maybe ULID -> Store -> Msg -> Model -> ( Model, Effect Msg )
+update maybeParticipanteId store msg model =
     case msg of
         NoOp ->
             ( model
@@ -226,7 +233,6 @@ update store msg model =
             ( model
             , Effect.batch
                 [ Store.refreshRepartija model.repartijaId
-                , pushToast ToastSuccess "Asignacion borrada."
                 ]
             )
 
@@ -265,6 +271,98 @@ update store msg model =
             , Effect.none
             )
 
+        ChangeCurrentClaim item deltaCantidad ->
+            case store |> Store.getRepartija model.repartijaId |> RemoteData.toMaybe of
+                Just repartija ->
+                    case maybeParticipanteId of
+                        Just participanteId ->
+                            let
+                                oldClaimFound =
+                                    repartija.repartijaClaims
+                                        |> List.filter
+                                            (\claim ->
+                                                claim.repartijaClaimParticipante == participanteId && claim.repartijaClaimItemId == item.repartijaItemId
+                                            )
+                                        |> List.head
+                            in
+                            case oldClaimFound of
+                                Just oldClaim ->
+                                    let
+                                        newCantidad =
+                                            oldClaim
+                                                |> .repartijaClaimCantidad
+                                                |> Maybe.withDefault 0
+                                                |> (\x -> x + deltaCantidad)
+                                                |> Basics.max 0
+                                    in
+                                    ( model
+                                    , if newCantidad > 0 then
+                                        Effect.sendCmd <|
+                                            Api.putRepartijasByRepartijaId model.repartijaId
+                                                { repartijaClaimId = emptyUlid
+                                                , repartijaClaimParticipante = participanteId
+                                                , repartijaClaimItemId = item.repartijaItemId
+                                                , repartijaClaimCantidad = Just <| newCantidad
+                                                }
+                                                (RemoteData.fromResult >> CreateRepartijaResponded)
+
+                                      else
+                                        Effect.sendCmd <|
+                                            Api.deleteRepartijasClaimsByClaimId oldClaim.repartijaClaimId
+                                                (RemoteData.fromResult >> DeleteRepartijaClaimResponded)
+                                    )
+
+                                Nothing ->
+                                    ( model
+                                    , if deltaCantidad > 0 then
+                                        Effect.sendCmd <|
+                                            Api.putRepartijasByRepartijaId model.repartijaId
+                                                { repartijaClaimId = emptyUlid
+                                                , repartijaClaimParticipante = participanteId
+                                                , repartijaClaimItemId = item.repartijaItemId
+                                                , repartijaClaimCantidad = Just deltaCantidad
+                                                }
+                                                (RemoteData.fromResult >> CreateRepartijaResponded)
+
+                                      else
+                                        Effect.none
+                                    )
+
+                        Nothing ->
+                            ( model, Effect.none )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        JoinCurrentClaim item ->
+            case maybeParticipanteId of
+                Just participanteId ->
+                    ( model
+                    , Effect.sendCmd <|
+                        Api.putRepartijasByRepartijaId model.repartijaId
+                            { repartijaClaimId = emptyUlid
+                            , repartijaClaimParticipante = participanteId
+                            , repartijaClaimItemId = item.repartijaItemId
+                            , repartijaClaimCantidad = Nothing
+                            }
+                            (RemoteData.fromResult >> CreateRepartijaResponded)
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        LeaveCurrentClaim item ->
+            case maybeParticipanteId of
+                Just participanteId ->
+                    ( model
+                    , Effect.sendCmd <|
+                        Api.deleteRepartijasClaimsByClaimId item.repartijaClaimId
+                            (RemoteData.fromResult >> DeleteRepartijaClaimResponded)
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
 
 
 -- SUBSCRIPTIONS
@@ -279,15 +377,15 @@ subscriptions model =
 -- VIEW
 
 
-view : Store -> Model -> View Msg
-view store model =
+view : Maybe ULID -> Store -> Model -> View Msg
+view userId store model =
     { title = "Repartija"
     , body =
         case ( Store.getRepartija model.repartijaId store, Store.getGrupo model.grupoId store ) of
             ( Success repartija, Success grupo ) ->
                 [ div [ class "is-size-2 has-text-weight-bold" ] [ text repartija.repartijaNombre ]
                 , viewParticipantes grupo repartija
-                , viewRepartijaItems grupo repartija
+                , viewRepartijaItems userId grupo repartija
                 , viewClaimModal model repartija grupo.participantes
                 , viewParticipanteClaimsModal model grupo repartija
                 , button
@@ -337,8 +435,8 @@ viewParticipantes grupo repartija =
         ]
 
 
-viewRepartijaItems : Grupo -> Repartija -> Html Msg
-viewRepartijaItems grupo repartija =
+viewRepartijaItems : Maybe ULID -> Grupo -> Repartija -> Html Msg
+viewRepartijaItems userId grupo repartija =
     table [ class "table is-fullwidth is-striped is-hoverable" ] <|
         [ thead []
             [ tr []
@@ -349,21 +447,37 @@ viewRepartijaItems grupo repartija =
                 , th [] []
                 ]
             ]
-        ]
-            ++ [ tbody [] <|
-                    (repartija.repartijaItems
-                        |> List.map
-                            (\item -> viewClaimsLine grupo repartija item)
-                    )
-                        ++ [ tr []
+        , tbody []
+            (repartija.repartijaItems
+                |> List.map (\item -> viewClaimsLine userId grupo repartija item)
+                |> (\x ->
+                        List.append x
+                            [ tr []
                                 [ td [] [ text "Propina" ]
                                 , td [ class "has-text-right" ] [ text "$", text <| Decimal.toString <| montoToDecimal repartija.repartijaExtra ]
                                 , td [] []
                                 , td [] []
                                 , td [] []
                                 ]
-                           ]
-               ]
+                            , tr []
+                                [ td [] [ text "Total" ]
+                                , td [ class "has-text-right" ]
+                                    [ text "$"
+                                    , repartija.repartijaItems
+                                        |> List.map (\i -> montoToDecimal i.repartijaItemMonto)
+                                        |> List.foldl Decimal.add (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
+                                        |> Decimal.add (montoToDecimal repartija.repartijaExtra)
+                                        |> Decimal.toString
+                                        |> text
+                                    ]
+                                , td [] []
+                                , td [] []
+                                , td [] []
+                                ]
+                            ]
+                   )
+            )
+        ]
 
 
 interpretClaims : List RepartijaClaim -> ItemClaimsState
@@ -396,8 +510,8 @@ interpretClaims originalClaims =
     List.foldl folder NoClaims originalClaims
 
 
-viewClaimsLine : Grupo -> Repartija -> RepartijaItem -> Html Msg
-viewClaimsLine grupo repartija item =
+viewClaimsLine : Maybe ULID -> Grupo -> Repartija -> RepartijaItem -> Html Msg
+viewClaimsLine userId grupo repartija item =
     let
         claimsForItem =
             repartija.repartijaClaims
@@ -416,11 +530,48 @@ viewClaimsLine grupo repartija item =
         , td [ class "has-text-right is-vcentered" ] [ text <| String.fromInt item.repartijaItemCantidad ]
         , td [] [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed ]
         , td []
-            [ div [ class "buttons has-addons" ]
-                [ button [ onClick <| OpenClaimItemModal item, class "button is-link" ] [ text "Claim" ]
+            [ case ( userId, itemsClaimed, claimsForItem |> find (\c -> Just c.repartijaClaimParticipante == userId) ) of
+                ( Nothing, _, _ ) ->
+                    div [ class "buttons has-addons" ]
+                        [ text "Selecciona tu nombre arriba a la derecha"
+                        ]
 
-                --, button [ onClick <| OpenDesdoblarItemModal item, class "button" ] [ text "Desdoblar" ]
-                ]
+                ( Just _, MixedClaims _, Just userClaim ) ->
+                    div [ class "buttons has-addons" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
+                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link" ] [ text "Salirse" ]
+                        ]
+
+                ( Just _, MixedClaims _, Nothing ) ->
+                    div [ class "buttons has-addons" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        ]
+
+                ( Just _, OnlyExactClaims _, _ ) ->
+                    div [ class "buttons has-addons" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link is-disabled" ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
+                        ]
+
+                ( Just _, OnlyParticipationClaims _, Just userClaim ) ->
+                    div [ class "buttons has-addons" ]
+                        [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link" ] [ text "Salirse" ]
+                        ]
+
+                ( Just _, OnlyParticipationClaims _, Nothing ) ->
+                    div [ class "buttons has-addons" ]
+                        [ button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        ]
+
+                ( Just _, NoClaims, _ ) ->
+                    div [ class "buttons has-addons" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "-1" ]
+                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        ]
             ]
         ]
 

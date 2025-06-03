@@ -72,14 +72,16 @@ navBar navBarModel store path navBarOpen =
                         ( Just grupo, Nothing ) ->
                             div [ class "select" ]
                                 [ select [ onInput Shared.SetCurrentUser ]
-                                    (grupo.participantes
-                                        |> List.map
-                                            (\participante ->
-                                                option
-                                                    [ value participante.participanteId
-                                                    ]
-                                                    [ text participante.participanteNombre ]
-                                            )
+                                    ([ option [] [ text "" ] ]
+                                        ++ (grupo.participantes
+                                                |> List.map
+                                                    (\participante ->
+                                                        option
+                                                            [ value participante.participanteId
+                                                            ]
+                                                            [ text participante.participanteNombre ]
+                                                    )
+                                           )
                                     )
                                 ]
 
