@@ -82,17 +82,26 @@ jsonEncParticipante  val =
 
 
 
-type Transaccion  =
-    Transaccion ParticipanteId ParticipanteId Monto
+type alias Transaccion  =
+   { transaccionFrom: ParticipanteId
+   , transaccionTo: ParticipanteId
+   , transaccionMonto: Monto
+   }
 
 jsonDecTransaccion : Json.Decode.Decoder ( Transaccion )
 jsonDecTransaccion =
-    Json.Decode.lazy (\_ -> Json.Decode.map3 Transaccion (Json.Decode.index 0 (jsonDecParticipanteId)) (Json.Decode.index 1 (jsonDecParticipanteId)) (Json.Decode.index 2 (jsonDecMonto)))
-
+   Json.Decode.succeed (\ptransaccionFrom ptransaccionTo ptransaccionMonto -> {transaccionFrom = ptransaccionFrom, transaccionTo = ptransaccionTo, transaccionMonto = ptransaccionMonto})
+   |> required "transaccionFrom" (jsonDecParticipanteId)
+   |> required "transaccionTo" (jsonDecParticipanteId)
+   |> required "transaccionMonto" (jsonDecMonto)
 
 jsonEncTransaccion : Transaccion -> Value
-jsonEncTransaccion (Transaccion v1 v2 v3) =
-    Json.Encode.list identity [jsonEncParticipanteId v1, jsonEncParticipanteId v2, jsonEncMonto v3]
+jsonEncTransaccion  val =
+   Json.Encode.object
+   [ ("transaccionFrom", jsonEncParticipanteId val.transaccionFrom)
+   , ("transaccionTo", jsonEncParticipanteId val.transaccionTo)
+   , ("transaccionMonto", jsonEncMonto val.transaccionMonto)
+   ]
 
 
 

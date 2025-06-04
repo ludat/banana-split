@@ -4,7 +4,7 @@ import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Effect exposing (Effect)
 import FeatherIcons as Icons
-import Generated.Api as Api exposing (Grupo, Netos, Pago, Parte(..), Transaccion(..), ULID)
+import Generated.Api as Api exposing (Grupo, Netos, Pago, Parte(..), Transaccion, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
@@ -94,12 +94,12 @@ update msg model =
 
 
 pagoFromTransaccion : Transaccion -> Pago
-pagoFromTransaccion (Transaccion pagador deudor monto) =
+pagoFromTransaccion transaction =
     { pagoId = emptyUlid
-    , monto = monto
+    , monto = transaction.transaccionMonto
     , nombre = "Pago saldado"
-    , pagadores = [ Ponderado 1 pagador ]
-    , deudores = [ Ponderado 1 deudor ]
+    , pagadores = [ Ponderado 1 transaction.transaccionFrom ]
+    , deudores = [ Ponderado 1 transaction.transaccionTo ]
     }
 
 
@@ -174,25 +174,23 @@ viewTransferencias grupo netos =
         (netos.transaccionesParaSaldar
             |> List.map
                 (\t ->
-                    case t of
-                        Transaccion from to monto ->
-                            div [ class "fixed-grid has-11-cols mb-2" ]
-                                [ div [ class "grid" ]
-                                    [ div [ class "cell is-col-span-5 has-text-right" ]
-                                        [ p [ class "" ]
-                                            [ text <| lookupNombreParticipante grupo from
-                                            , p [ class "has-text-danger is-size-6-5" ]
-                                                [ text "$"
-                                                , text <| Decimal.toString <| montoToDecimal monto
-                                                ]
-                                            ]
-                                        ]
-                                    , div [ class "cell is-col-span-1 is-flex is-justify-content-center is-align-items-center" ]
-                                        [ span [ class "arrow-container" ] [ Icons.toHtml [] Icons.arrowRight ] ]
-                                    , div [ class "cell is-col-span-5 is-flex is-align-items-center" ]
-                                        [ text <| lookupNombreParticipante grupo to
+                    div [ class "fixed-grid has-11-cols mb-2" ]
+                        [ div [ class "grid" ]
+                            [ div [ class "cell is-col-span-5 has-text-right" ]
+                                [ p [ class "" ]
+                                    [ text <| lookupNombreParticipante grupo t.transaccionFrom
+                                    , p [ class "has-text-danger is-size-6-5" ]
+                                        [ text "$"
+                                        , text <| Decimal.toString <| montoToDecimal t.transaccionMonto
                                         ]
                                     ]
                                 ]
+                            , div [ class "cell is-col-span-1 is-flex is-justify-content-center is-align-items-center" ]
+                                [ span [ class "arrow-container" ] [ Icons.toHtml [ onClick <| CrearPago <| pagoFromTransaccion t ] Icons.arrowRight ] ]
+                            , div [ class "cell is-col-span-5 is-flex is-align-items-center" ]
+                                [ text <| lookupNombreParticipante grupo t.transaccionTo
+                                ]
+                            ]
+                        ]
                 )
         )

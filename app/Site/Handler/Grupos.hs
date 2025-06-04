@@ -7,7 +7,7 @@ module Site.Handler.Grupos
     , handleShowGrupo
     ) where
 
-import BananaSplit (Grupo, Participante, calcularDeudasTotales, resolverDeudasNaif)
+import BananaSplit (Grupo, Participante, calcularDeudasTotales, minimizeTransactions)
 import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParticipante, fetchGrupo)
 
 import Data.ULID (ULID)
@@ -32,7 +32,7 @@ handleGetNetos grupoId = do
   let deudas = calcularDeudasTotales grupo
   pure $ Netos
     { netos = deudas
-    , transaccionesParaSaldar = resolverDeudasNaif deudas
+    , transaccionesParaSaldar = minimizeTransactions deudas
     }
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID

@@ -1,4 +1,6 @@
-module BananaSplitSpec where
+module BananaSplitSpec
+    ( spec
+    ) where
 
 import BananaSplit
 

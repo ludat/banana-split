@@ -1,24 +1,24 @@
-module RepartijaSpec where
+module BananaSplit.RepartijaSpec where
 
 import BananaSplit
 
-import Data.Map qualified as Map
 import Data.Text qualified as Text
 import Data.ULID
 
 import Test.Hspec
 
 spec :: Spec
-spec = fdescribe "validar repartija" $ do
+spec = describe "validar repartija" $ do
   it "una repartija vacia genera un pago vacio" $ do
     repartija2Pago (Repartija
         { repartijaNombre = "un nombre"
+        , repartijaGrupoId = nullUlid
         , repartijaId = fakeUlid 1
         , repartijaExtra = 0
         , repartijaClaims = []
         , repartijaItems = []
         })
-      `shouldBe` Right Pago
+      `shouldBe` Pago
           { pagoId = nullUlid
           , monto = 0
           , nombre = "un nombre"
@@ -30,6 +30,7 @@ spec = fdescribe "validar repartija" $ do
     let item1 = fakeUlid 2
     repartija2Pago (Repartija
         { repartijaNombre = "un nombre"
+        , repartijaGrupoId = nullUlid
         , repartijaId = fakeUlid 1
         , repartijaExtra = 0
         , repartijaItems =
@@ -39,7 +40,7 @@ spec = fdescribe "validar repartija" $ do
           [ RepartijaClaim (fakeUlid 100) participante1 item1 (Just 1)
           ]
         })
-      `shouldBe` Right Pago
+      `shouldBe` Pago
           { pagoId = nullUlid
           , monto = 100
           , nombre = "un nombre"
@@ -54,6 +55,7 @@ spec = fdescribe "validar repartija" $ do
     let item1 = fakeUlid 2
     repartija2Pago (Repartija
         { repartijaNombre = "un nombre"
+        , repartijaGrupoId = nullUlid
         , repartijaId = fakeUlid 1
         , repartijaExtra = 0
         , repartijaItems =
@@ -64,7 +66,7 @@ spec = fdescribe "validar repartija" $ do
           , RepartijaClaim (fakeUlid 101) participante2 item1 (Just 1)
           ]
         })
-      `shouldBe` Right Pago
+      `shouldBe` Pago
           { pagoId = nullUlid
           , monto = 200
           , nombre = "un nombre"
@@ -79,8 +81,10 @@ spec = fdescribe "validar repartija" $ do
     let participante2 = participante 33
     let birrita = fakeUlid 2
     let papitas = fakeUlid 3
+
     repartija2Pago (Repartija
         { repartijaNombre = "un nombre"
+        , repartijaGrupoId = nullUlid
         , repartijaId = fakeUlid 1
         , repartijaExtra = 0
         , repartijaItems =
@@ -94,7 +98,7 @@ spec = fdescribe "validar repartija" $ do
           , RepartijaClaim (fakeUlid 103) participante2 papitas Nothing
           ]
         })
-      `shouldBe` Right Pago
+      `shouldBe` Pago
           { pagoId = nullUlid
           , monto = 500
           , nombre = "un nombre"
@@ -113,6 +117,7 @@ spec = fdescribe "validar repartija" $ do
     let papitas = fakeUlid 3
     repartija2Pago (Repartija
         { repartijaNombre = "un nombre"
+        , repartijaGrupoId = nullUlid
         , repartijaId = fakeUlid 1
         , repartijaExtra = 50
         , repartijaItems =
@@ -125,7 +130,7 @@ spec = fdescribe "validar repartija" $ do
           , RepartijaClaim (fakeUlid 102) participante1 papitas Nothing
           ]
         })
-      `shouldBe` Right Pago
+      `shouldBe` Pago
           { pagoId = nullUlid
           , monto = 550
           , nombre = "un nombre"
@@ -145,6 +150,7 @@ spec = fdescribe "validar repartija" $ do
     let papitas = fakeUlid 3
     repartija2Pago (Repartija
         { repartijaNombre = "un nombre"
+        , repartijaGrupoId = nullUlid
         , repartijaId = fakeUlid 1
         , repartijaExtra = 0
         , repartijaItems =
@@ -156,7 +162,7 @@ spec = fdescribe "validar repartija" $ do
           , RepartijaClaim (fakeUlid 101) participante2 birrita (Just 1)
           ]
         })
-      `shouldBe` Right Pago
+      `shouldBe` Pago
           { pagoId = nullUlid
           , monto = 500
           , nombre = "un nombre"

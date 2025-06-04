@@ -1,13 +1,9 @@
 {-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE OverloadedLabels #-}
-{-# LANGUAGE OverloadedRecordDot #-}
-{-# LANGUAGE QuasiQuotes #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE RecordWildCards #-}
 
 module BananaSplit.Persistence
@@ -470,7 +466,7 @@ deleteDeudores unId =
       (\parte -> partePago parte ==. PagoId (val_ unId))
 
 updatePago :: ULID -> ULID -> M.Pago -> Pg M.Pago
-updatePago grupoId unPagoId pagoWithoutId = do
+updatePago _grupoId unPagoId pagoWithoutId = do
   let pago = pagoWithoutId {M.pagoId = unPagoId}
   runUpdate $
     update (_bananasplitPagos db)

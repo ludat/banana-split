@@ -7,8 +7,8 @@ module Site.Handler.Repartijas
     , handleRepartijaClaimPut
     , handleRepartijaGet
     , handleRepartijaPost
-    , handleRepartijasGet
     , handleRepartijaToPago
+    , handleRepartijasGet
     ) where
 
 import BananaSplit (Repartija (..), RepartijaClaim (..), ShallowRepartija (..), repartija2Pago)
