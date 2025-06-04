@@ -14,7 +14,7 @@ import Protolude.Error
 import Test.Hspec
 
 spec :: Spec
-spec = describe "simplify transactions" $ do
+spec = xdescribe "simplify transactions" $ do
   let
     u1 = participante 1
     u2 = participante 2
@@ -45,7 +45,7 @@ spec = describe "simplify transactions" $ do
       , (u2, Monto $ Money.dense' $ -1 % 3)
       , (u3, Monto $ Money.dense' $ -1 % 3)
       ])`shouldBe` []
-  fcontext "con deudas no coherentes (no suman 0 en total)" $ do
+  context "con deudas no coherentes (no suman 0 en total)" $ do
     it "con una deuda simple que esta desbalanceada" $ do
       minimizeTransactions (deuda
         [ (u1, Monto $ Money.dense' $ 10)

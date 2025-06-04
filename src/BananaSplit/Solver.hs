@@ -1,5 +1,4 @@
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE LexicalNegation #-}
 {-# LANGUAGE TemplateHaskell #-}
 module BananaSplit.Solver where
 
@@ -14,6 +13,8 @@ import Money qualified
 
 import Protolude
 
+minimizeTransactions :: Deudas Monto -> [Transaccion]
+minimizeTransactions = resolverDeudasNaif
 
 -- optimizarTransacciones :: [Transaccion] -> [Transaccion]
 -- optimizarTransacciones [] = []
@@ -128,8 +129,8 @@ deleteByPerson :: ParticipanteId -> [(ParticipanteId, Monto)] -> [(ParticipanteI
 deleteByPerson name = filter ((/= name) . fst)
 
 -- Entry point: find the minimal set of transactions to settle debts
-minimizeTransactions :: Deudas Monto -> [Transaccion]
-minimizeTransactions netBalances =
+resolverDeudasRecursivo :: Deudas Monto -> [Transaccion]
+resolverDeudasRecursivo netBalances =
   let allValidSettlements = settleDebts $ deudasToPairs netBalances
   in allValidSettlements
     & \case
@@ -242,6 +243,24 @@ extraerDeudor unId (Deudas deudasMap) =
 removerDeudor :: ParticipanteId -> Deudas m -> Deudas m
 removerDeudor participanteId (Deudas deudasMap) =
   Deudas $ Map.delete participanteId deudasMap
+
+resolverDeudasNaif :: Deudas Monto -> [Transaccion]
+resolverDeudasNaif deudas
+  | deudoresNoNulos deudas == 0 = []
+  | deudoresNoNulos deudas == 1 = [] -- error $ show deudas
+  | otherwise =
+      let
+        (mayorDeudor, mayorDeuda) = extraerMaximoDeudor deudas
+        deudas' = removerDeudor mayorDeudor deudas
+        (mayorPagador, mayorPagado) = extraerMaximoPagador deudas'
+        deudas'' = removerDeudor mayorPagador deudas'
+      in case compare mayorDeuda mayorPagado of
+          LT -> Transaccion mayorDeudor mayorPagador mayorDeuda
+            : resolverDeudasNaif (deudas'' <> mkDeuda mayorPagador (mayorPagado - mayorDeuda))
+          GT -> Transaccion mayorDeudor mayorPagador mayorPagado
+            : resolverDeudasNaif (deudas'' <> mkDeuda mayorDeudor (-mayorDeuda + mayorPagado))
+          EQ -> Transaccion mayorDeudor mayorPagador mayorPagado
+            : resolverDeudasNaif deudas''
 
 Elm.deriveBoth Elm.defaultOptions ''Transaccion
 Elm.deriveBoth Elm.defaultOptions ''Deudas

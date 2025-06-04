@@ -46,10 +46,11 @@ dependencies:
 language: GHC2021
 
 default-extensions:
-  - OverloadedStrings
   - LambdaCase
-  - OverloadedRecordDot
+  - LexicalNegation
   - NoImplicitPrelude
+  - OverloadedRecordDot
+  - OverloadedStrings
 
 ghc-options:
   - -Wall

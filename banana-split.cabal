@@ -20,10 +20,11 @@ library
   hs-source-dirs:
       src
   default-extensions:
-      OverloadedStrings
       LambdaCase
-      OverloadedRecordDot
+      LexicalNegation
       NoImplicitPrelude
+      OverloadedRecordDot
+      OverloadedStrings
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       aeson
@@ -81,10 +82,11 @@ executable banana-split
   hs-source-dirs:
       app
   default-extensions:
-      OverloadedStrings
       LambdaCase
-      OverloadedRecordDot
+      LexicalNegation
       NoImplicitPrelude
+      OverloadedRecordDot
+      OverloadedStrings
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
@@ -139,10 +141,11 @@ test-suite spec
   hs-source-dirs:
       test
   default-extensions:
-      OverloadedStrings
       LambdaCase
-      OverloadedRecordDot
+      LexicalNegation
       NoImplicitPrelude
+      OverloadedRecordDot
+      OverloadedStrings
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
