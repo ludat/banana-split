@@ -104,7 +104,16 @@ update route msg model =
             ( { model | store = store }, cmd )
 
         SetCurrentUser userId ->
-            ( { model | userId = Just userId }, Effect.none )
+            ( { model
+                | userId =
+                    if userId == "" then
+                        Nothing
+
+                    else
+                        Just userId
+              }
+            , Effect.none
+            )
 
 
 
