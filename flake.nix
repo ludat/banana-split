@@ -132,10 +132,18 @@
                 dockerTools.binSh
                 iana-etc
                 cacert
+                busybox
+                (pkgs.writeShellScriptBin "entrypoint" ''
+                  set -euo pipefail
+                  find /opt/banana-split -exec touch -d "@${toString self.lastModified}" {} +;
+                  exec "$@";
+                '')
+
               ];
             };
             config = {
-              Cmd = ["/bin/banana-split"];
+              Cmd = ["banana-split"];
+              Entrypoint = ["entrypoint"];
               WorkingDir = "/opt/banana-split";
             };
           };
