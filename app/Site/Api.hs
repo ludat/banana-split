@@ -11,12 +11,13 @@ module Site.Api where
 import BananaSplit (Deudas, Grupo, Monto, Pago, Participante, Repartija, RepartijaClaim,
                     ShallowRepartija, Transaccion)
 
-import Data.Text (Text)
 import Data.ULID (ULID)
 
 import Elm.Derive qualified as Elm
 
 import GHC.Generics
+
+import Protolude
 
 import Servant
 
@@ -55,9 +56,9 @@ data Api routes
     , _routeRepartijaClaimPut ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> ReqBody '[JSON] RepartijaClaim :> Put '[JSON] RepartijaClaim
     , _routeRepartijaClaimDelete ::
-      routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] String
+      routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] Text
     , _routeRepartijaToPago ::
-      routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] String
+      routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
     -- , _routeRepartijaItemDesdoblar ::
     --   routes :- "repartijas" :> Capture "repartijaId" ULID :> "claim" :> Capture "claimId":> Post '[JSON] String
     }

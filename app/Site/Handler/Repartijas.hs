@@ -14,9 +14,9 @@ module Site.Handler.Repartijas
 import BananaSplit (Repartija (..), RepartijaClaim (..), ShallowRepartija (..), repartija2Pago)
 import BananaSplit.Persistence
 
-import Control.Monad (void)
-
 import Data.ULID (ULID)
+
+import Protolude
 
 import Site.Handler.Utils
 
@@ -38,12 +38,12 @@ handleRepartijaClaimPut :: ULID -> RepartijaClaim -> AppHandler RepartijaClaim
 handleRepartijaClaimPut repartijaId repartijaClaim = do
   runBeam (saveRepartijaClaim repartijaId repartijaClaim)
 
-handleRepartijaClaimDelete :: ULID -> AppHandler String
+handleRepartijaClaimDelete :: ULID -> AppHandler Text
 handleRepartijaClaimDelete claimId = do
   void $ runBeam (deleteRepartijaClaim claimId)
   pure "ok"
 
-handleRepartijaToPago :: ULID -> AppHandler String
+handleRepartijaToPago :: ULID -> AppHandler Text
 handleRepartijaToPago repartijaId = do
   repartija <- runBeam (fetchRepartija repartijaId)
   let newPago = repartija2Pago repartija

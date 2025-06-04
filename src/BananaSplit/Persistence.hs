@@ -23,15 +23,9 @@ module BananaSplit.Persistence
 
 import BananaSplit qualified as M
 
-import Control.Monad (forM)
-
-import Data.Function ((&))
-import Data.Int (Int32)
 import Data.Map.Strict qualified as Map
-import Data.Maybe (fromMaybe, maybeToList)
 import Data.Ratio ((%))
 import Data.Ratio qualified as Ratio
-import Data.Text (Text)
 import Data.Text qualified as Text
 import Data.ULID (ULID)
 import Data.ULID qualified as ULID
@@ -45,7 +39,9 @@ import Database.PostgreSQL.Simple.FromField (FromField (..), returnError)
 
 import Money qualified
 
-import Text.Read (readEither)
+import Protolude
+import Protolude.Error
+import Protolude.Partial as Partial
 
 data BananaSplitDb f = BananaSplitDb
   { _bananasplitGrupos :: f (TableEntity GrupoT)
@@ -349,7 +345,7 @@ fetchPagos aGrupoId = do
               let monto = montoFromDb $ Monto numerador denominador
               in (partePago parteR, [M.MontoFijo monto $ M.ParticipanteId $ participanteId2ULID $ parteParticipante parteR])
             _ -> error "parte monto es un para un monto fijo"
-        _ -> error $ "parte tipo desconocida: " ++ show (parteTipo parteR)
+        _ -> error $ "parte tipo desconocida: " <> show (parteTipo parteR)
 
 montoFromDb :: Monto -> M.Monto
 montoFromDb (Monto numerador denominador) =
@@ -371,7 +367,7 @@ fetchParticipantes grupoId = do
     , M.participanteId = participanteId p
     }) participantes
 
-addParticipante :: ULID -> Text -> Pg (Either String M.Participante)
+addParticipante :: ULID -> Text -> Pg (Either Text M.Participante)
 addParticipante grupoId name = do
   newId <- liftIO ULID.getULID
   runInsert $ insert (_bananasplitParticipantes db) $ insertValues
@@ -564,7 +560,8 @@ fetchRepartija unRepartijaId = do
             )
       })
     & Map.elems
-    & head -- TODO HEAD!
+    & Partial.head
+    -- & (?: (error "repartija no encontrada"))
     & pure
 
 saveRepartijaClaim :: ULID -> M.RepartijaClaim -> Pg M.RepartijaClaim
@@ -601,9 +598,9 @@ instance HasSqlValueSyntax PgValueSyntax ULID where
 instance FromBackendRow Postgres ULID
 instance FromField ULID where
   fromField f bs = do
-    s <- fromField @String f bs
+    s <- fromField @Text f bs
     case readEither @ULID s of
-      Left _ -> returnError ConversionFailed f $ "invalid ulid: " ++ s
+      Left _ -> returnError ConversionFailed f $ "invalid ulid: " <> toS s
       Right ulid -> pure ulid
 
 instance HasSqlEqualityCheck Postgres ULID

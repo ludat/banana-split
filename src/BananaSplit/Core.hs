@@ -4,28 +4,24 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 module BananaSplit.Core where
 
+import Control.Monad.Fail (fail)
+
 import Data.Aeson
 import Data.Aeson.Types (Parser)
-import Data.Function ((&))
-import Data.List qualified as List
-import Data.Maybe qualified as Maybe
-import Data.Proxy (Proxy)
-import Data.Text
 import Data.ULID
 
 import Elm.Derive qualified as Elm
 import Elm.TyRep (EPrimAlias (..), ETCon (..), EType (..), ETypeDef (..), ETypeName (..),
                   IsElmDefinition (..))
 
-import GHC.Generics (Generic)
-
 import Money qualified
 import Money.Aeson ()
 
+import Protolude
+import Protolude.Error
+
 import Servant (FromHttpApiData (..), ToHttpApiData)
 import Servant.API (ToHttpApiData (..))
-
-import Text.Read (readMaybe)
 
 data Grupo = Grupo
   { grupoId :: ULID
@@ -59,12 +55,12 @@ data Participante = Participante
 
 instance ToJSON ULID where
   toJSON :: ULID -> Value
-  toJSON = String . pack . show
+  toJSON = String . show
 
 instance FromJSON ULID where
   parseJSON :: Value -> Parser ULID
   parseJSON = withText "ULID" $ \t ->
-    case readMaybe @ULID $ unpack t of
+    case readMaybe @ULID t of
       Just ulid -> pure ulid
       Nothing -> fail "Invalid ulid"
 
@@ -74,14 +70,14 @@ instance FromJSONKey ULID
 
 instance ToHttpApiData ULID where
   toQueryParam :: ULID -> Text
-  toQueryParam = pack . show
+  toQueryParam = show
 
 instance FromHttpApiData ULID where
   parseUrlPiece :: Text -> Either Text ULID
   parseUrlPiece t = do
-    case readMaybe @ULID $ unpack t of
+    case readMaybe @ULID t of
       Just ulid -> pure ulid
-      Nothing -> Left $ "cant parse a ulid from: " <> pack (show t) <> ""
+      Nothing -> Left $ "cant parse a ulid from: " <> show t <> ""
 
 newtype ParticipanteId = ParticipanteId ULID
   deriving (Generic)
@@ -117,22 +113,22 @@ instance FromHttpApiData Monto where
     rawNumber <- parseUrlPiece @Text t
     case Money.denseFromDecimal Money.defaultDecimalConf rawNumber of
       Just n -> pure $ Monto n
-      Nothing -> Left $ "monto invalido: " <> pack (show t)
+      Nothing -> Left $ "monto invalido: " <> show t
   parseQueryParam :: Text -> Either Text Monto
   parseQueryParam t = do
     rawNumber <- parseQueryParam @Text t
     case Money.denseFromDecimal Money.defaultDecimalConf rawNumber of
       Just n -> pure $ Monto n
-      Nothing -> Left $ "monto invalido: " <> pack (show t)
+      Nothing -> Left $ "monto invalido: " <> show t
 
 buscarParticipante :: Grupo -> ParticipanteId -> Participante
 buscarParticipante grupo (ParticipanteId pId) =
   grupo.participantes
-  & List.find (\p -> p.participanteId == pId)
-  & Maybe.fromMaybe (error $ "participante " <> show pId <> "not found")
+  & find (\p -> p.participanteId == pId)
+  & fromMaybe (error $ "participante " <> show pId <> "not found")
 
 nullUlid :: ULID
-nullUlid = read @ULID "00000000000000000000000000"
+nullUlid = fromRight (error "impossible") $ ulidFromInteger 0
 
 instance IsElmDefinition ULID where
   compileElmDef :: Proxy ULID -> ETypeDef

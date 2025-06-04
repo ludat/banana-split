@@ -4,6 +4,7 @@ version: 0.1.0.0
 
 dependencies:
   - base
+  - protolude
   - aeson
   - bytestring
   - conferer
@@ -48,6 +49,7 @@ default-extensions:
   - OverloadedStrings
   - LambdaCase
   - OverloadedRecordDot
+  - NoImplicitPrelude
 
 ghc-options:
   - -Wall
@@ -79,7 +81,6 @@ tests:
     source-dirs: test
     main: Spec.hs
     dependencies:
-      - base
       - banana-split
       - hspec
       - QuickCheck

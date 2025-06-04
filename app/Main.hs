@@ -7,10 +7,6 @@ import BananaSplit.Elm (generateElmFiles)
 
 import Conferer qualified
 
-import Control.Monad (void)
-import Control.Monad.IO.Class (liftIO)
-
-import Data.Function ((&))
 import Data.Pool qualified as Pool
 import Data.String (fromString)
 import Data.String.Interpolate (i)
@@ -21,6 +17,8 @@ import Database.PostgreSQL.Simple
 import Network.Wai.Handler.Warp (Settings)
 import Network.Wai.Handler.Warp qualified as Warp
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
+
+import Protolude
 
 import Site.Config (createConfig)
 import Site.Server qualified
@@ -64,5 +62,5 @@ runBackend = do
             & Warp.setInstallShutdownHandler shutdownHandler
             & Warp.setPort 8000)
 
-  putStrLn [i|Listening on port #{Warp.getPort settings}...|]
+  putText [i|Listening on port #{Warp.getPort settings}...|]
   Warp.runSettings settings $ logStdoutDev $ Site.Server.app appState

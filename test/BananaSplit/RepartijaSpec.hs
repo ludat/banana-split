@@ -5,6 +5,9 @@ import BananaSplit
 import Data.Text qualified as Text
 import Data.ULID
 
+import Protolude
+import Protolude.Error
+
 import Test.Hspec
 
 spec :: Spec
@@ -182,4 +185,4 @@ fakeUlid :: Integer -> ULID
 fakeUlid integer =
   case ulidFromInteger integer of
     Right ulid -> ulid
-    Left e -> error $ Text.unpack e
+    Left e -> error e

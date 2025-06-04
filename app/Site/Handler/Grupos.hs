@@ -12,6 +12,8 @@ import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParti
 
 import Data.ULID (ULID)
 
+import Protolude
+
 import Servant
 
 import Site.Api
@@ -48,4 +50,4 @@ handleShowGrupo grupoId = do
 handleCreateParticipante :: ULID -> ParticipanteAddParams -> AppHandler Participante
 handleCreateParticipante grupoId ParticipanteAddParams{name} = do
   runBeam (addParticipante grupoId name)
-    `orElse` (\_e -> throwJsonError err400 "falle")
+    `Site.Handler.Utils.orElse` (\_e -> throwJsonError err400 "falle")

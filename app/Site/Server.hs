@@ -13,6 +13,8 @@ import Network.HTTP.Types.Status (ok200)
 import Network.Wai
 import Network.Wai.Application.Static (defaultWebAppSettings)
 
+import Protolude hiding (Handler)
+
 import Servant
 import Servant.Server.Generic
 

@@ -23,6 +23,7 @@ library
       OverloadedStrings
       LambdaCase
       OverloadedRecordDot
+      NoImplicitPrelude
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
   build-depends:
       aeson
@@ -44,6 +45,7 @@ library
     , postgresql-simple
     , pretty-simple
     , process
+    , protolude
     , random
     , resource-pool
     , safe-money
@@ -82,6 +84,7 @@ executable banana-split
       OverloadedStrings
       LambdaCase
       OverloadedRecordDot
+      NoImplicitPrelude
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       aeson
@@ -104,6 +107,7 @@ executable banana-split
     , postgresql-simple
     , pretty-simple
     , process
+    , protolude
     , random
     , resource-pool
     , safe-money
@@ -138,6 +142,7 @@ test-suite spec
       OverloadedStrings
       LambdaCase
       OverloadedRecordDot
+      NoImplicitPrelude
   ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
   build-depends:
       QuickCheck
@@ -162,6 +167,7 @@ test-suite spec
     , postgresql-simple
     , pretty-simple
     , process
+    , protolude
     , random
     , resource-pool
     , safe-money

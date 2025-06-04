@@ -3,22 +3,16 @@
 {-# LANGUAGE TemplateHaskell #-}
 module BananaSplit.Solver where
 
-
 import BananaSplit.Core
 
-import Data.Either (partitionEithers)
-import Data.Function (on, (&))
-import Data.List (sortOn)
 import Data.List qualified as List
-import Data.Map (Map)
 import Data.Map qualified as Map
-import Data.Ord (Down (..), comparing)
 
 import Elm.Derive qualified as Elm
 
-import GHC.Generics (Generic)
-
 import Money qualified
+
+import Protolude
 
 
 -- optimizarTransacciones :: [Transaccion] -> [Transaccion]
@@ -97,6 +91,7 @@ import Money qualified
 
 settleDebts :: [(ParticipanteId, Monto)] -> [[Transaccion]]
 settleDebts [] = [[]]
+settleDebts [_] = [[]]
 settleDebts ((personOwing, balance):others)
   | balance == 0 = settleDebts others
   | otherwise = concatMap attemptSettlement possiblePartners
@@ -136,7 +131,10 @@ deleteByPerson name = filter ((/= name) . fst)
 minimizeTransactions :: Deudas Monto -> [Transaccion]
 minimizeTransactions netBalances =
   let allValidSettlements = settleDebts $ deudasToPairs netBalances
-  in List.minimumBy (comparing length) allValidSettlements
+  in allValidSettlements
+    & \case
+        [] -> []
+        _ -> minimumBy (comparing length) allValidSettlements
 
 data Transaccion =
   Transaccion

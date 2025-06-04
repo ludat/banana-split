@@ -4,9 +4,12 @@ module BananaSplit.SolverSpec
 
 import BananaSplit
 
-import Data.Function ((&))
-import Data.Text qualified as Text
 import Data.ULID
+
+import Money qualified
+
+import Protolude
+import Protolude.Error
 
 import Test.Hspec
 
@@ -36,6 +39,36 @@ spec = describe "simplify transactions" $ do
       , (u5, -3)
       , (u6, -3)
       ])`shouldSatisfy` ((== 4) . length)
+  it "simplifica un caso con numeros con coma" $ do
+    minimizeTransactions (deuda
+      [ (u1, Monto $ Money.dense' $ 2 % 3)
+      , (u2, Monto $ Money.dense' $ -1 % 3)
+      , (u3, Monto $ Money.dense' $ -1 % 3)
+      ])`shouldBe` []
+  fcontext "con deudas no coherentes (no suman 0 en total)" $ do
+    it "con una deuda simple que esta desbalanceada" $ do
+      minimizeTransactions (deuda
+        [ (u1, Monto $ Money.dense' $ 10)
+        , (u2, Monto $ Money.dense' $ -11)
+        ])`shouldBe` [Transaccion
+          { transaccionFrom = u2
+          , transaccionTo = u1
+          , transaccionMonto = 10
+          }
+        ]
+    it "con una deuda compleja no crashea" $ do
+      minimizeTransactions (deuda
+        [ (u1, 10)
+        , (u2, -5)
+        , (u3, -5)
+        , (u4,  6)
+        , (u5, -3)
+        , (u6, -2)
+        ]) `shouldSatisfy` ((== 4) . length)
+    it "cuando una sola persona tiene plata a favor" $ do
+      minimizeTransactions (deuda
+        [ (u1, Monto $ Money.dense' 1)
+        ])`shouldBe` []
 
 deuda :: [(ParticipanteId, Monto)] -> Deudas Monto
 deuda l =
@@ -50,4 +83,4 @@ fakeUlid :: Integer -> ULID
 fakeUlid integer =
   case ulidFromInteger integer of
     Right ulid -> ulid
-    Left e -> error $ Text.unpack e
+    Left e -> error e

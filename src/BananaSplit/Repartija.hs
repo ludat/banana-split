@@ -7,14 +7,13 @@ import BananaSplit.Core
 import BananaSplit.Solver (Deudas, deudasToPairs, distribuirEntrePonderados, extraerDeudor,
                            filterDeudas, mkDeuda, totalDeudas)
 
-import Data.Function ((&))
-import Data.Maybe (fromMaybe, isJust)
-import Data.Text (Text)
 import Data.ULID (ULID)
 
 import Elm.Derive qualified as Elm
 
-import GHC.Generics (Generic)
+import Protolude
+import Protolude.Error
+
 
 data Repartija = Repartija
   { repartijaId :: ULID

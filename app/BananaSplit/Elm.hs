@@ -10,6 +10,9 @@ import Data.ULID (ULID)
 
 import Elm.TyRep
 
+import Protolude
+import Protolude.Error
+
 import Servant
 import Servant.Elm
 
@@ -20,7 +23,7 @@ import Site.Handler.Grupos (CreateGrupoParams)
 
 generateElmFiles :: IO ()
 generateElmFiles = do
-  putStrLn "Generating elm files..."
+  putText "Generating elm files..."
   generateElmModuleWith
     (defElmOptions
       { elmToString = \case
