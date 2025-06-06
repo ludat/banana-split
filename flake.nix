@@ -64,6 +64,7 @@
               ./ui/pnpm-lock.yaml
               ./ui/.npmrc
 
+              ./static
               ./ui/src
 
               ./ui/elm.json
