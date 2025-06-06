@@ -185,7 +185,7 @@ viewTransferencias grupo netos =
                                         ]
                                     ]
                                 ]
-                            , div [ class "cell is-col-span-1 is-flex is-justify-content-center is-align-items-center" ]
+                            , div [ class "cell is-col-span-1 is-flex is-justify-content-center is-align-items-center is-clickable" ]
                                 [ span [ class "arrow-container" ] [ Icons.toHtml [ onClick <| CrearPago <| pagoFromTransaccion t ] Icons.arrowRight ] ]
                             , div [ class "cell is-col-span-5 is-flex is-align-items-center" ]
                                 [ text <| lookupNombreParticipante grupo t.transaccionTo
