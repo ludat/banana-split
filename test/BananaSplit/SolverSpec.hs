@@ -14,7 +14,7 @@ import Protolude.Error
 import Test.Hspec
 
 spec :: Spec
-spec = xdescribe "simplify transactions" $ do
+spec = describe "simplify transactions" $ do
   let
     u1 = participante 1
     u2 = participante 2
@@ -44,12 +44,12 @@ spec = xdescribe "simplify transactions" $ do
       [ (u1, Monto $ Money.dense' $ 2 % 3)
       , (u2, Monto $ Money.dense' $ -1 % 3)
       , (u3, Monto $ Money.dense' $ -1 % 3)
-      ])`shouldBe` []
+      ])`shouldSatisfy` ((== 2) . length)
   context "con deudas no coherentes (no suman 0 en total)" $ do
     it "con una deuda simple que esta desbalanceada" $ do
       minimizeTransactions (deuda
-        [ (u1, Monto $ Money.dense' $ 10)
-        , (u2, Monto $ Money.dense' $ -11)
+        [ (u1, Monto $ Money.dense'  10)
+        , (u2, Monto $ Money.dense' -11)
         ])`shouldBe` [Transaccion
           { transaccionFrom = u2
           , transaccionTo = u1
@@ -64,11 +64,42 @@ spec = xdescribe "simplify transactions" $ do
         , (u4,  6)
         , (u5, -3)
         , (u6, -2)
-        ]) `shouldSatisfy` ((== 4) . length)
+        ]) `shouldBe`
+          [ Transaccion
+          { transaccionFrom = u2
+          , transaccionTo = u4
+          , transaccionMonto = 6
+          }
+          , Transaccion
+          { transaccionFrom = u3
+          , transaccionTo = u1
+          , transaccionMonto = 5
+          }
+          , Transaccion
+          { transaccionFrom = u5
+          , transaccionTo = u1
+          , transaccionMonto = 3
+          }
+          , Transaccion
+          { transaccionFrom = u6
+          , transaccionTo = u1
+          , transaccionMonto = 2
+          }
+          ]
     it "cuando una sola persona tiene plata a favor" $ do
       minimizeTransactions (deuda
         [ (u1, Monto $ Money.dense' 1)
         ])`shouldBe` []
+
+    -- xit "manual testing" $ do
+    --   let
+    --     grupo :: Grupo
+    --     grupo = case fromJSON @Grupo [aesonQQ|
+    --         |] of
+    --           Success x -> x
+    --           Error _ -> error "no json"
+
+    --   minimizeTransactions (calcularDeudasTotales grupo) `shouldBe` []
 
 deuda :: [(ParticipanteId, Monto)] -> Deudas Monto
 deuda l =

@@ -1,11 +1,14 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
+
 module BananaSplit.Solver where
 
 import BananaSplit.Core
 
+import Data.LinearProgram qualified as GLPK
 import Data.List qualified as List
-import Data.Map qualified as Map
+import Data.Map.Strict qualified as Map
 
 import Elm.Derive qualified as Elm
 
@@ -13,112 +16,47 @@ import Money qualified
 
 import Protolude
 
+import System.IO.Unsafe (unsafePerformIO)
+
 minimizeTransactions :: Deudas Monto -> [Transaccion]
-minimizeTransactions = resolverDeudasNaif
+minimizeTransactions = solveOptimalTransactions
 
--- optimizarTransacciones :: [Transaccion] -> [Transaccion]
--- optimizarTransacciones [] = []
--- optimizarTransacciones oldTransacciones =
---   let
---     participantes :: [ParticipanteId]
---     participantes =
---       oldTransacciones
---       & concatMap (\(Transaccion from to _) -> [from, to])
---       & sort
---       & nub
-
---     cantidadDeParticipantes =
---       length participantes
-
---     indexFromParticipante :: HasCallStack => ParticipanteId -> Int
---     indexFromParticipante p =
---       participantes
---       & elemIndex p
---       & fromMaybe (error $ "participante not found: " ++ show p)
-
---     coso =
---       oldTransacciones
---       & fmap (\(Transaccion from to monto) -> (
---         ( indexFromParticipante to
---         , indexFromParticipante from
---         )
---         , fromRational $ toRational $ fst $ Money.discreteFromDense @_ @(Money.UnitScale "ARS" "peso") Money.Floor $ monto2Dense monto))
-
---     deudasMatrix :: Matrix R
---     deudasMatrix =
---       assoc (cantidadDeParticipantes, cantidadDeParticipantes) 0
---         coso
---     constraints =
---       participantes
---       & zip [0..]
---       & fmap (\(index, _) -> dothething (forpersona index cantidadDeParticipantes) :==: sumElements (deudasMatrix * forpersona index cantidadDeParticipantes))
---       & (++ [dothething (ident cantidadDeParticipantes) :==: 0])
-
---     result = exact (Minimize (dothething deudasMatrix)) (Dense constraints) []
-
-
---   in case result of
---     Undefined -> undefined
---     Feasible _ -> undefined
---     Infeasible _ -> undefined
---     NoFeasible -> undefined
---     Unbounded-> undefined
---     Optimal (_, matrizDeDeudasOptima) ->
---       let
---         nuevaMatriz :: Matrix R
---         nuevaMatriz = traceShowId $ reshape cantidadDeParticipantes $ fromList matrizDeDeudasOptima
---         nuevasTransacciones =
---           [(toIndex, fromIndex) | toIndex <- [0..cantidadDeParticipantes - 1], fromIndex <- [0..cantidadDeParticipantes - 1] ]
---           & fmap (\(toIndex, fromIndex) ->
---             Transaccion
---               (participantes !! toIndex)
---               (participantes !! fromIndex)
---               (Monto $ Money.dense' $ toRational $ nuevaMatriz `atIndex` (fromIndex, toIndex))
---               )
---           & filter (\(Transaccion _ _ monto) -> monto /= 0)
---           & sortOn (\(Transaccion _ _ monto) -> Down monto)
-
---       in nuevasTransacciones
-
--- dothething :: Matrix R -> [Double]
--- dothething oldMatrix =
---   toList $ flatten oldMatrix
-
--- forpersona :: Int -> Int -> Matrix R
--- forpersona index n =
---   let queLeDeben = [((index, i), -1) | i <- [0..n - 1]]
---       queMeDeben = [((i, index), 1) | i <- [0..n - 1]]
---   in assoc (n,n) 0 queMeDeben + assoc (n,n) 0 queLeDeben
-
-settleDebts :: [(ParticipanteId, Monto)] -> [[Transaccion]]
-settleDebts [] = [[]]
-settleDebts [_] = [[]]
-settleDebts ((personOwing, balance):others)
-  | balance == 0 = settleDebts others
-  | otherwise = concatMap attemptSettlement possiblePartners
+resolverDeudasRecursivo :: Deudas Monto -> [Transaccion]
+resolverDeudasRecursivo netBalances =
+  let allValidSettlements = settleDebts $ deudasToPairs netBalances
+  in allValidSettlements
+    & \case
+        [] -> []
+        _ -> minimumBy (comparing length) allValidSettlements
   where
-    -- Find people with balances of opposite sign
-    possiblePartners = [(partner, partnerBalance) | (partner, partnerBalance) <- others, balance * partnerBalance < 0]
+    settleDebts :: [(ParticipanteId, Monto)] -> [[Transaccion]]
+    settleDebts [] = [[]]
+    settleDebts [_] = [[]]
+    settleDebts ((personOwing, balance):others)
+      | balance == 0 = settleDebts others
+      | otherwise = concatMap attemptSettlement possiblePartners
+      where
+        possiblePartners = [(partner, partnerBalance) | (partner, partnerBalance) <- others, balance * partnerBalance < 0]
 
-    attemptSettlement :: (ParticipanteId, Monto) -> [[Transaccion]]
-    attemptSettlement (partner, partnerBalance) =
-      let paymentAmount = min (abs balance) (abs partnerBalance)
-          newBalanceOwing = balance + signum partnerBalance * paymentAmount
-          newPartnerBalance = partnerBalance + signum balance * paymentAmount
+        attemptSettlement :: (ParticipanteId, Monto) -> [[Transaccion]]
+        attemptSettlement (partner, partnerBalance) =
+          let paymentAmount = min (abs balance) (abs partnerBalance)
+              newBalanceOwing = balance + signum partnerBalance * paymentAmount
+              newPartnerBalance = partnerBalance + signum balance * paymentAmount
 
-          updatedOthers =
-            insertOrRemove (partner, newPartnerBalance) (List.delete (partner, partnerBalance) others)
+              updatedOthers =
+                insertOrRemove (partner, newPartnerBalance) (List.delete (partner, partnerBalance) others)
 
-          nextBalances =
-            if newBalanceOwing == 0
-              then updatedOthers
-              else (personOwing, newBalanceOwing) : updatedOthers
+              nextBalances =
+                if newBalanceOwing == 0
+                  then updatedOthers
+                  else (personOwing, newBalanceOwing) : updatedOthers
 
-          transaction =
-            if balance > 0
-              then Transaccion partner personOwing paymentAmount
-              else Transaccion personOwing partner paymentAmount
-      in fmap (transaction :) (settleDebts nextBalances)
+              transaction =
+                if balance > 0
+                  then Transaccion partner personOwing paymentAmount
+                  else Transaccion personOwing partner paymentAmount
+          in fmap (transaction :) (settleDebts nextBalances)
 
 -- Helper to insert updated balances (or remove if settled)
 insertOrRemove :: (ParticipanteId, Monto) -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
@@ -128,17 +66,7 @@ insertOrRemove updatedBalance balances = updatedBalance : deleteByPerson (fst up
 deleteByPerson :: ParticipanteId -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
 deleteByPerson name = filter ((/= name) . fst)
 
--- Entry point: find the minimal set of transactions to settle debts
-resolverDeudasRecursivo :: Deudas Monto -> [Transaccion]
-resolverDeudasRecursivo netBalances =
-  let allValidSettlements = settleDebts $ deudasToPairs netBalances
-  in allValidSettlements
-    & \case
-        [] -> []
-        _ -> minimumBy (comparing length) allValidSettlements
-
-data Transaccion =
-  Transaccion
+data Transaccion = Transaccion
   { transaccionFrom :: ParticipanteId
   , transaccionTo :: ParticipanteId
   , transaccionMonto :: Monto
@@ -261,6 +189,122 @@ resolverDeudasNaif deudas
             : resolverDeudasNaif (deudas'' <> mkDeuda mayorDeudor (-mayorDeuda + mayorPagado))
           EQ -> Transaccion mayorDeudor mayorPagador mayorPagado
             : resolverDeudasNaif deudas''
+
+-- Main function to solve the debt problem
+solveOptimalTransactions :: Deudas Monto -> [Transaccion]
+solveOptimalTransactions deudas@(Deudas oldBalances) = unsafePerformIO $ do
+    -- 1. Preprocessing and Validation
+    let
+      balances :: Map ParticipanteId Double
+      balances = fmap realToFrac oldBalances
+    let balanceSum = sum $ Map.elems balances
+    let debtorMap   = Map.filter (< 0) balances
+    let creditorMap = Map.filter (> 0) balances
+    let debtors     = Map.keys debtorMap
+    let creditors   = Map.keys creditorMap
+
+    -- If no debts, no transactions needed
+    if Map.null debtorMap then pure [] else do
+
+        -- A "big M" value, larger than any possible transaction
+        let bigM = sum (abs <$> Map.elems balances)
+
+        -- Create mappings from (debtor, creditor) pairs to column indices
+        let d_c_pairs = [(d, c) | d <- debtors, c <- creditors]
+
+        r <- GLPK.glpSolveVars GLPK.mipDefaults{GLPK.msgLev = GLPK.MsgErr} $ GLPK.execLPM @Text @Double $ do
+          GLPK.setDirection GLPK.Min
+
+          -- Set the objective for the existing keys
+          d_c_pairs
+            & fmap (\(fromP, toP) -> (1, "e_" <> show fromP <> "_" <> show toP))
+            & GLPK.linCombination
+            & GLPK.setObjective
+
+          -- Make e_ variables binary
+          d_c_pairs
+            & fmap (\(fromP, toP) -> "e_" <> show fromP <> "_" <> show toP)
+            & mapM_ (`GLPK.setVarKind` GLPK.BinVar)
+
+          -- All transactions should be positive
+          d_c_pairs
+            & fmap (\(fromP, toP) -> "t_" <> show fromP <> "_" <> show toP)
+            & mapM_ (`GLPK.varGeq` 0)
+
+          forM_ debtors $ \debtor -> do
+            creditors
+            & fmap (\c -> (1, "t_" <> show debtor <> "_" <> show c))
+            & GLPK.linCombination
+            & (\f -> GLPK.constrain' ("Debtor: " <> show debtor) f $ between (negate $ balances Map.! debtor) balanceSum)
+          forM_ creditors $ \creditor -> do
+            debtors
+            & fmap (\d -> (1, "t_" <> show d <> "_" <> show creditor))
+            & GLPK.linCombination
+            & (\f -> GLPK.equalTo' ("Creditor: " <> show creditor) f (balances Map.! creditor))
+            -- & (\f -> GLPK.constrain' ("Creditor: " <> show creditor) f $ between (balances Map.! creditor) balanceSum)
+
+          -- case compare balanceSum 0 of
+          --   EQ -> do
+          --     forM_ debtors $ \debtor -> do
+          --       creditors
+          --       & fmap (\c -> (1, "t_" <> show debtor <> "_" <> show c))
+          --       & GLPK.linCombination
+          --       & (\f -> GLPK.equalTo' ("Debtor: " <> show debtor) f (negate $ balances Map.! debtor))
+          --     forM_ creditors $ \creditor -> do
+          --       debtors
+          --       & fmap (\d -> (1, "t_" <> show d <> "_" <> show creditor))
+          --       & GLPK.linCombination
+          --       & (\f -> GLPK.equalTo' ("Creditor: " <> show creditor) f (balances Map.! creditor))
+          --   LT -> do
+          --     forM_ debtors $ \debtor -> do
+          --       creditors
+          --       & fmap (\c -> (1, "t_" <> show debtor <> "_" <> show c))
+          --       & GLPK.linCombination
+          --       & (\f -> GLPK.equalTo' ("Debtor: " <> show debtor) f (negate $ balances Map.! debtor))
+          --     forM_ creditors $ \creditor -> do
+          --       debtors
+          --       & fmap (\d -> (1, "t_" <> show d <> "_" <> show creditor))
+          --       & GLPK.linCombination
+          --       & (\f -> GLPK.geqTo' ("Creditor: " <> show creditor) f (balances Map.! creditor))
+          --   GT -> do
+          --     forM_ debtors $ \debtor -> do
+          --       creditors
+          --       & fmap (\c -> (1, "t_" <> show debtor <> "_" <> show c))
+          --       & GLPK.linCombination
+          --       & (\f -> GLPK.geqTo' ("Debtor: " <> show debtor) f (negate $ balances Map.! debtor))
+          --     forM_ creditors $ \creditor -> do
+          --       debtors
+          --       & fmap (\d -> (1, "t_" <> show d <> "_" <> show creditor))
+          --       & GLPK.linCombination
+          --       & (\f -> GLPK.equalTo' ("Creditor: " <> show creditor) f (balances Map.! creditor))
+
+          forM_ creditors $ \creditor -> do
+            forM_ debtors $ \debtor -> do
+              GLPK.leq' ("Binary var: " <> show debtor <> " and " <> show creditor)
+                (GLPK.linCombination [(1, "t_" <> show debtor <> "_" <> show creditor)])
+                (GLPK.linCombination [(bigM, "e_" <> show debtor <> "_" <> show creditor)])
+        case r of
+          (GLPK.Success, Just (_, m)) -> do
+            d_c_pairs
+              & mapMaybe (\(d, c) ->
+                m
+                  & Map.lookup ("t_" <> show d <> "_" <> show c)
+                  & mfilter (/= 0)
+                  & fmap (\v -> Transaccion
+                    { transaccionFrom = d
+                    , transaccionTo = c
+                    , transaccionMonto = Monto $ Money.dense' $ realToFrac v
+                    })
+                  )
+              & pure
+          _ -> do
+            pure $ resolverDeudasNaif deudas
+
+between a delta =
+  case compare delta 0 of
+    EQ -> GLPK.Equ a
+    LT -> GLPK.Bound (a + delta) a
+    GT -> GLPK.Bound a (a + delta)
 
 Elm.deriveBoth Elm.defaultOptions ''Transaccion
 Elm.deriveBoth Elm.defaultOptions ''Deudas
