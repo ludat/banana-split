@@ -17,6 +17,7 @@ library
       BananaSplit.Persistence
       BananaSplit.Repartija
       BananaSplit.Solver
+      BananaSplit.TestUtils
   hs-source-dirs:
       src
   default-extensions:

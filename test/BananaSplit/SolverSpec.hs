@@ -3,6 +3,7 @@ module BananaSplit.SolverSpec
     ) where
 
 import BananaSplit
+import BananaSplit.TestUtils
 
 import Data.ULID
 
@@ -14,7 +15,7 @@ import Protolude.Error
 import Test.Hspec
 
 spec :: Spec
-spec = describe "simplify transactions" $ do
+spec = do
   let
     u1 = participante 1
     u2 = participante 2
@@ -22,96 +23,105 @@ spec = describe "simplify transactions" $ do
     u4 = participante 4
     u5 = participante 5
     u6 = participante 6
+  describe "calcularDeudas" $ do
+    it "calcula deudas de un pago con ponderador" $ do
+      calcularDeudasPago (Pago
+        { pagoId = fakeUlid 100
+        , monto = 1000
+        , nombre = "cosa"
+        , pagadores =
+            [ Ponderado 1 u1
+            ]
+        , deudores =
+            [ Ponderado 1 u1
+            , Ponderado 1 u2
+            ]
+        }) `shouldBe` deudas
+          [ (u1, 500)
+          , (u2, -500)
+          ]
 
-  it "simplifica ningun transaccion trivialmente" $ do
-    minimizeTransactions mempty `shouldBe` []
+  describe "simplify transactions" $ do
+    it "simplifica ningun transaccion trivialmente" $ do
+      minimizeTransactions mempty `shouldBe` []
 
-  it "simplifica una sola transaccion trivialmente" $ do
-    let transacciones = deuda [(participante 1, 10), (participante 2, -10)]
+    it "simplifica una sola transaccion trivialmente" $ do
+      let transacciones = deudas [(participante 1, 10), (participante 2, -10)]
 
-    minimizeTransactions transacciones `shouldBe` [Transaccion (participante 2) (participante 1) 10]
-  it "simplifica un caso en el que el algoritmo greedy falla" $ do
-    minimizeTransactions (deuda
-      [ (u1, 10)
-      , (u2, -5)
-      , (u3, -5)
-      , (u4,  6)
-      , (u5, -3)
-      , (u6, -3)
-      ])`shouldSatisfy` ((== 4) . length)
-  it "simplifica un caso con numeros con coma" $ do
-    minimizeTransactions (deuda
-      [ (u1, Monto $ Money.dense' $ 2 % 3)
-      , (u2, Monto $ Money.dense' $ -1 % 3)
-      , (u3, Monto $ Money.dense' $ -1 % 3)
-      ])`shouldSatisfy` ((== 2) . length)
-  context "con deudas no coherentes (no suman 0 en total)" $ do
-    it "con una deuda simple que esta desbalanceada" $ do
-      minimizeTransactions (deuda
-        [ (u1, Monto $ Money.dense'  10)
-        , (u2, Monto $ Money.dense' -11)
-        ])`shouldBe` [Transaccion
-          { transaccionFrom = u2
-          , transaccionTo = u1
-          , transaccionMonto = 10
-          }
-        ]
-    it "con una deuda compleja no crashea" $ do
-      minimizeTransactions (deuda
+      minimizeTransactions transacciones `shouldBe` [Transaccion (participante 2) (participante 1) 10]
+    it "simplifica un caso en el que el algoritmo greedy falla" $ do
+      minimizeTransactions (deudas
         [ (u1, 10)
         , (u2, -5)
         , (u3, -5)
         , (u4,  6)
         , (u5, -3)
-        , (u6, -2)
-        ]) `shouldBe`
-          [ Transaccion
-          { transaccionFrom = u2
-          , transaccionTo = u4
-          , transaccionMonto = 6
-          }
-          , Transaccion
-          { transaccionFrom = u3
-          , transaccionTo = u1
-          , transaccionMonto = 5
-          }
-          , Transaccion
-          { transaccionFrom = u5
-          , transaccionTo = u1
-          , transaccionMonto = 3
-          }
-          , Transaccion
-          { transaccionFrom = u6
-          , transaccionTo = u1
-          , transaccionMonto = 2
-          }
+        , (u6, -3)
+        ])`shouldSatisfy` ((== 4) . length)
+    it "simplifica un caso con numeros con coma" $ do
+      minimizeTransactions (deudas
+        [ (u1, Monto $ Money.dense' $ 2 % 3)
+        , (u2, Monto $ Money.dense' $ -1 % 3)
+        , (u3, Monto $ Money.dense' $ -1 % 3)
+        ])`shouldSatisfy` ((== 2) . length)
+    context "con deudas no coherentes (no suman 0 en total)" $ do
+      it "con una deuda simple que esta desbalanceada" $ do
+        minimizeTransactions (deudas
+          [ (u1, Monto $ Money.dense'  10)
+          , (u2, Monto $ Money.dense' -11)
+          ])`shouldBe` [Transaccion
+            { transaccionFrom = u2
+            , transaccionTo = u1
+            , transaccionMonto = 10
+            }
           ]
-    it "cuando una sola persona tiene plata a favor" $ do
-      minimizeTransactions (deuda
-        [ (u1, Monto $ Money.dense' 1)
-        ])`shouldBe` []
+      it "con una deuda compleja no crashea" $ do
+        minimizeTransactions (deudas
+          [ (u1, 10)
+          , (u2, -5)
+          , (u3, -5)
+          , (u4,  6)
+          , (u5, -3)
+          , (u6, -2)
+          ]) `shouldBe`
+            [ Transaccion
+            { transaccionFrom = u2
+            , transaccionTo = u4
+            , transaccionMonto = 6
+            }
+            , Transaccion
+            { transaccionFrom = u3
+            , transaccionTo = u1
+            , transaccionMonto = 5
+            }
+            , Transaccion
+            { transaccionFrom = u5
+            , transaccionTo = u1
+            , transaccionMonto = 3
+            }
+            , Transaccion
+            { transaccionFrom = u6
+            , transaccionTo = u1
+            , transaccionMonto = 2
+            }
+            ]
+      it "cuando una sola persona tiene plata a favor" $ do
+        minimizeTransactions (deudas
+          [ (u1, Monto $ Money.dense' 1)
+          ])`shouldBe` []
 
-    -- xit "manual testing" $ do
-    --   let
-    --     grupo :: Grupo
-    --     grupo = case fromJSON @Grupo [aesonQQ|
-    --         |] of
-    --           Success x -> x
-    --           Error _ -> error "no json"
+      -- xit "manual testing" $ do
+      --   let
+      --     grupo :: Grupo
+      --     grupo = case fromJSON @Grupo [aesonQQ|
+      --         |] of
+      --           Success x -> x
+      --           Error _ -> error "no json"
 
-    --   minimizeTransactions (calcularDeudasTotales grupo) `shouldBe` []
+      --   minimizeTransactions (calcularDeudasTotales grupo) `shouldBe` []
 
-deuda :: [(ParticipanteId, Monto)] -> Deudas Monto
-deuda l =
+deudas :: [(ParticipanteId, Monto)] -> Deudas Monto
+deudas l =
   l
   & fmap (uncurry mkDeuda)
   & mconcat
-
-participante :: Integer -> ParticipanteId
-participante = ParticipanteId . fakeUlid
-
-fakeUlid :: Integer -> ULID
-fakeUlid integer =
-  case ulidFromInteger integer of
-    Right ulid -> ulid
-    Left e -> error e
