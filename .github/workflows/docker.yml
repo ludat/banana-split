@@ -2,16 +2,24 @@ name: "Build docker image"
 on:
   pull_request:
   push:
+  release:
+    types: [released]
 jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: cachix/install-nix-action@v25
-      with:
-        github_access_token: ${{ secrets.GITHUB_TOKEN }}
+    - uses: DeterminateSystems/nix-installer-action@main
+    - uses: DeterminateSystems/magic-nix-cache-action@main
+    - uses: DeterminateSystems/flake-checker-action@main
 
-    - run: nix build .#docker --option sandbox relaxed -L
+    - name: Build everything
+      run: |
+        nix build
+
+    - name: Build docker image
+      run: nix build .#docker --option sandbox relaxed -L
+      if: github.ref == 'refs/heads/main'
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
@@ -25,10 +33,19 @@ jobs:
       if: github.ref == 'refs/heads/main'
       run: |
         docker load < result
-        docker tag banana-split ghcr.io/ludat/banana-split:latest
-        docker push ghcr.io/ludat/banana-split:latest
+
         docker tag banana-split ghcr.io/ludat/banana-split:${{ github.sha }}
         docker push ghcr.io/ludat/banana-split:${{ github.sha }}
+
+        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+          docker tag banana-split ghcr.io/ludat/banana-split:latest
+          docker push ghcr.io/ludat/banana-split:latest
+        fi
+
+        if [ "${{ github.event_name }}" = "release" ]; then
+          docker tag banana-split ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
+          docker push ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
+        fi
 
     - name: Trigger infra-cluster deploy
       # https://gitlab.com/10Pines/infra/infra-cluster
