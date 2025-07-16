@@ -1,58 +1,81 @@
 {
   description = "my project description";
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-  inputs.flake-utils.url = "github:numtide/flake-utils";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-parts.url = "github:hercules-ci/flake-parts";
+    haskell-flake.url = "github:srid/haskell-flake";
+  };
 
-  outputs = { self, nixpkgs, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
+  outputs = inputs@{ flake-parts, ... }:
+  flake-parts.lib.mkFlake { inherit inputs; } {
+    systems = [ "x86_64-linux" ];
+    imports = [
+      inputs.haskell-flake.flakeModule
+    ];
+    perSystem = { self', system, lib, config, pkgs, ... }:
       let
-        pkgs = import nixpkgs { inherit system; };
+        hsPkgs = pkgs.haskell.packages.ghc984;
 
-        # need to match Stackage LTS version from stack.yaml resolver
-        hPkgs = pkgs.haskell.packages.ghc984;
-
-        bananasplitDeps = with pkgs; [
-          zlib
-          blas
-          lapack
-          glpk
-          libpq
+        bananasplitNativeDeps = with pkgs; [
           nodePackages.pnpm
           nodejs
-          reshape
+          git
+          cacert
         ];
 
-        myDevTools = [
-          hPkgs.ghc # GHC compiler in the desired version (will be available on PATH)
-          hPkgs.ghcid # Continuous terminal Haskell compile checker
-          hPkgs.stylish-haskell # Haskell formatter
-          # hPkgs.hlint # Haskell codestyle checker
-          # hPkgs.hoogle # Lookup Haskell documentation
-          hPkgs.haskell-language-server # LSP server for editor
-          hPkgs.implicit-hie # auto generate LSP hie.yaml file from cabal
-          # hPkgs.retrie # Haskell refactoring tool
-          stack-wrapped
-        ] ++ bananasplitDeps;
+        bananasplitDeps = with pkgs; [
+          reshape
+        ];
+      in {
+      haskellProjects.default = {
+        basePackages = pkgs.haskell.packages.ghc984;
+        projectRoot = 
+          with lib.fileset; toSource {
+            root = ./.;
+            fileset = unions [
+              ./app
+              ./package.yaml
+              ./src
+              ./cabal.project
+              ./banana-split.cabal
+              ./test
+            ];
+          };
 
-        # Wrap Stack to work with our Nix integration. We don't want to modify
-        # stack.yaml so non-Nix users don't notice anything.
-        # - no-nix: We don't want Stack's way of integrating Nix.
-        # --system-ghc    # Use the existing GHC on PATH (will come from this Nix file)
-        # --no-install-ghc  # Don't try to install GHC if no matching GHC found on PATH
-        stack-wrapped = pkgs.symlinkJoin {
-          name = "stack"; # will be available as the usual `stack` in terminal
-          version = pkgs.stack.version;
-          paths = [ pkgs.stack ];
-          buildInputs = [ pkgs.makeWrapper ];
-          postBuild = ''
-            wrapProgram $out/bin/stack \
-              --add-flags "\
-                --no-nix \
-                --system-ghc \
-                --no-install-ghc \
-              "
-          '';
+        settings = {
+          banana-split.check = true;
         };
+
+        # Packages to add on top of `basePackages`, e.g. from Hackage
+        packages = {
+          glpk-hs.source = pkgs.fetchFromGitHub {
+            owner = "jyp";
+            repo = "glpk-hs";
+            rev = "1f276aa19861203ea8367dc27a6ad4c8a31c9062";
+            sha256 = "sha256-AY9wmmqzafpocUspQAvHjDkT4vty5J3GcSOt5qItnlo=";
+          };
+        };
+
+        # my-haskell-package development shell configuration
+        devShell = {
+          hlsCheck.enable = true;
+        };
+
+        # What should haskell-flake add to flake outputs?
+        autoWire = [ "packages" "apps" "checks" ]; # Wire all but the devShell
+      };
+
+      devShells.default = pkgs.mkShell {
+        name = "my-haskell-package custom development shell";
+        inputsFrom = [
+          config.haskellProjects.default.outputs.devShell
+        ];
+        nativeBuildInputs = with pkgs; [
+          # other development tools.
+        ];
+      };
+      packages = {
+        default = self'.packages.banana-split;
 
         elm-ui = pkgs.stdenv.mkDerivation {
           name = "banana-split-elm";
@@ -71,7 +94,7 @@
               ./ui/elm-land.json
             ];
           };
-          nativeBuildInputs = with pkgs; [ nodejs nodePackages.pnpm cacert ];
+          nativeBuildInputs = bananasplitNativeDeps;
 
           buildPhase = ''
             HOME=$PWD
@@ -97,66 +120,35 @@
           '';
         };
 
-        banana-split = pkgs.haskell.lib.buildStackProject {
+        docker = pkgs.dockerTools.buildImage {
           name = "banana-split";
-          src = with pkgs.lib.fileset; toSource {
-            root = ./.;
-            fileset = unions [
-              ./app
-              ./package.yaml
-              ./src
-              ./stack.yaml
-              ./stack.yaml.lock
-              # ./tests
+          tag = "latest";
+          created = "now";
+          copyToRoot = pkgs.buildEnv {
+            name = "image-root";
+            paths = with pkgs; [
+              self'.packages.banana-split
+              self'.packages.elm-ui
+              self'.packages.migrations
+              dockerTools.binSh
+              iana-etc
+              cacert
+              busybox
+              (pkgs.writeShellScriptBin "entrypoint" ''
+                set -euo pipefail
+                find /opt/banana-split -exec touch -d "@${toString inputs.self.lastModified}" {} +;
+                exec "$@";
+              '')
+
             ];
           };
-          nativeBuildInputs = with pkgs; [git];
-          doCheck = false;
-          stack = stack-wrapped;
-          buildInputs = bananasplitDeps;
-        };
-      in {
-        packages = {
-          inherit banana-split;
-          elm-ui = elm-ui;
-          migrations = migrations;
-          docker = pkgs.dockerTools.buildImage {
-            name = "banana-split";
-            tag = "latest";
-            created = "now";
-            copyToRoot = pkgs.buildEnv {
-              name = "image-root";
-              paths = with pkgs; [
-                banana-split
-                elm-ui
-                migrations
-                dockerTools.binSh
-                iana-etc
-                cacert
-                busybox
-                (pkgs.writeShellScriptBin "entrypoint" ''
-                  set -euo pipefail
-                  find /opt/banana-split -exec touch -d "@${toString self.lastModified}" {} +;
-                  exec "$@";
-                '')
-
-              ];
-            };
-            config = {
-              Cmd = ["banana-split"];
-              Entrypoint = ["entrypoint"];
-              WorkingDir = "/opt/banana-split";
-            };
+          config = {
+            Cmd = ["banana-split"];
+            Entrypoint = ["entrypoint"];
+            WorkingDir = "/opt/banana-split";
           };
-          default = banana-split;
         };
-        devShells.default = pkgs.mkShell {
-          buildInputs = myDevTools;
-
-          # Make external Nix c libraries like zlib known to GHC, like
-          # pkgs.haskell.lib.buildStackProject does
-          # https://github.com/NixOS/nixpkgs/blob/d64780ea0e22b5f61cd6012a456869c702a72f20/pkgs/development/haskell-modules/generic-stack-builder.nix#L38
-          LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath myDevTools;
-        };
-      });
+      };
+    };
+  };
 }
