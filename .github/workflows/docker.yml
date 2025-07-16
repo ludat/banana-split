@@ -1,24 +1,39 @@
 name: "Build docker image"
+
 on:
   push:
+    branches:
+      - '**'
+
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
   release:
-    types: [released]
+    types:
+      - released
 jobs:
   tests:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: DeterminateSystems/nix-installer-action@main
-    - uses: DeterminateSystems/magic-nix-cache-action@main
-    - uses: DeterminateSystems/flake-checker-action@main
+    - name: Set up Nix
+      uses: cachix/install-nix-action@v20
+
+    - name: Cache Nix store
+      uses: actions/cache@v3
+      with:
+        path: /nix/store
+        key: ${{ runner.os }}-nix-${{ hashFiles('flake.nix', 'flake.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-nix-${{ hashFiles('flake.nix', 'flake.lock') }}
+          ${{ runner.os }}-nix
 
     - name: Build everything
       run: |
         nix build
-
-    - name: Build docker image
-      run: nix build .#docker --option sandbox relaxed -L
-      if: github.ref == 'refs/heads/main'
 
     - name: Login to GitHub Container Registry
       uses: docker/login-action@v2
@@ -28,23 +43,35 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
-    - name: Push image to ghcr
-      if: github.ref == 'refs/heads/main'
+    - name: Build docker image
       run: |
+        nix build .#docker --option sandbox relaxed -L
         docker load < result
+      if: |
+        github.ref == 'refs/heads/main' ||
+        github.event_name == 'pull_request' ||
+        github.event_name == 'release'
 
+    - name: Push image tag
+      if: |
+        github.ref == 'refs/heads/main' ||
+        github.event_name == 'pull_request' ||
+        github.event_name == 'release'
+      run: |
         docker tag banana-split ghcr.io/ludat/banana-split:${{ github.sha }}
         docker push ghcr.io/ludat/banana-split:${{ github.sha }}
 
-        if [ "${{ github.ref }}" = "refs/heads/main" ]; then
+    - name: Push release tag
+      if: github.event_name == 'release'
+      run: |
+        docker tag banana-split ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
+        docker push ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
+
+    - name: Push latest tag
+      if: github.ref == 'refs/heads/main'
+      run: |
           docker tag banana-split ghcr.io/ludat/banana-split:latest
           docker push ghcr.io/ludat/banana-split:latest
-        fi
-
-        if [ "${{ github.event_name }}" = "release" ]; then
-          docker tag banana-split ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
-          docker push ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
-        fi
 
     - name: Trigger infra-cluster deploy
       # https://gitlab.com/10Pines/infra/infra-cluster
