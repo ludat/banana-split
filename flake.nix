@@ -75,7 +75,7 @@
         ];
       };
       packages = {
-        default = self'.packages.banana-split;
+        default = pkgs.haskell.lib.justStaticExecutables self'.packages.banana-split;
 
         elm-ui = pkgs.stdenv.mkDerivation {
           name = "banana-split-elm";
@@ -127,7 +127,7 @@
           copyToRoot = pkgs.buildEnv {
             name = "image-root";
             paths = with pkgs; [
-              self'.packages.banana-split
+              self'.packages.default
               self'.packages.elm-ui
               self'.packages.migrations
               dockerTools.binSh
