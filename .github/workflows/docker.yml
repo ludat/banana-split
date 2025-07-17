@@ -19,17 +19,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v4
+
     - name: Set up Nix
       uses: cachix/install-nix-action@v20
-
-    - name: Cache Nix store
-      uses: actions/cache@v3
+    - uses: nixbuild/nix-quick-install-action@v30
       with:
-        path: /nix/store
-        key: ${{ runner.os }}-nix-${{ hashFiles('flake.nix', 'flake.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-nix-${{ hashFiles('flake.nix', 'flake.lock') }}
-          ${{ runner.os }}-nix
+        nix_conf: |
+          keep-env-derivations = true
+          keep-outputs = true
+
+    - name: Restore and save Nix store
+      uses: nix-community/cache-nix-action@v6
+      with:
+        # restore and save a cache using this key
+        primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+        # if there's no cache hit, restore a cache by this prefix
+        restore-prefixes-first-match: nix-${{ runner.os }}-
 
     - name: Build everything
       run: |
