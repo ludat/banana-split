@@ -1,6 +1,12 @@
 packages:
     .
--- source-repository-package
---     type: git
---     location: https://github.com/jyp/gasp.git
---     tag: d3f5f7fc13e50d96532e77ad1312d96f26b5457a
+
+source-repository-package
+    type: git
+    location: https://github.com/jyp/glpk-hs.git
+    tag: 1f276aa19861203ea8367dc27a6ad4c8a31c9062
+
+source-repository-package
+    type: git
+    location: https://github.com/jyp/gasp.git
+    tag: d3f5f7fc13e50d96532e77ad1312d96f26b5457a

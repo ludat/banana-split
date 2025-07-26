@@ -1,10 +1,10 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-{-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE RecordWildCards #-}
 
 module BananaSplit.Persistence
     ( addParticipante
@@ -23,9 +23,8 @@ module BananaSplit.Persistence
 
 import BananaSplit qualified as M
 
+import Data.Decimal qualified as Decimal
 import Data.Map.Strict qualified as Map
-import Data.Ratio ((%))
-import Data.Ratio qualified as Ratio
 import Data.Text qualified as Text
 import Data.ULID (ULID)
 import Data.ULID qualified as ULID
@@ -37,15 +36,13 @@ import Database.Beam.Postgres.Full hiding (insert)
 import Database.Beam.Postgres.Syntax
 import Database.PostgreSQL.Simple.FromField (FromField (..), returnError)
 
-import Money qualified
-
 import Protolude
 import Protolude.Error
 import Protolude.Partial as Partial
 
 data BananaSplitDb f = BananaSplitDb
-  { _bananasplitGrupos :: f (TableEntity GrupoT)
-  , _bananasplitParticipantes :: f (TableEntity ParticipanteT)
+  { grupos :: f (TableEntity GrupoT)
+  , participantes :: f (TableEntity ParticipanteT)
   , _bananasplitPagos :: f (TableEntity PagoT)
   , _bananasplitPagadores :: f (TableEntity ParteT)
   , _bananasplitDeudores :: f (TableEntity ParteT)
@@ -57,65 +54,11 @@ data BananaSplitDb f = BananaSplitDb
 db :: DatabaseSettings be BananaSplitDb
 db = defaultDbSettings `withDbModification`
   dbModification
-  { _bananasplitParticipantes =
-      modifyTableFields
-        tableModification {
-          participanteGrupo = GrupoId $ fieldNamed "grupo_id"
-        }
-  , _bananasplitPagos =
-      modifyTableFields
-        tableModification
-          { pagoGrupo = GrupoId $ fieldNamed "grupo_id"
-          , pagoMonto = Monto
-            { montoDenominador = fieldNamed "monto_denominador"
-            , montoNumerador = fieldNamed "monto_numerador"
-            }
-          }
-  , _bananasplitPagadores =
-      setEntityName "partes_pagadores" <> parteModifications
+  { _bananasplitPagadores =
+      setEntityName "partes_pagadores"
   , _bananasplitDeudores =
-      setEntityName "partes_deudores" <> parteModifications
-  , _bananasplitRepartijas =
-      modifyTableFields
-        tableModification
-        { repartijaGrupo = GrupoId $ fieldNamed "grupo_id"
-        , repartijaExtra = Monto
-            { montoDenominador = fieldNamed "extra_denominador"
-            , montoNumerador = fieldNamed "extra_numerador"
-            }
-        }
-  , _bananasplitRepartijaItems =
-      setEntityName "repartijas_items" <> modifyTableFields
-        tableModification
-        { repartijaItemRepartija = RepartijaId $ fieldNamed "repartija_id"
-        , repartijaItemId = fieldNamed "id"
-        , repartijaItemNombre = fieldNamed "nombre"
-        , repartijaItemCantidad = fieldNamed "cantidad"
-        , repartijaItemMonto = Monto
-            { montoDenominador = fieldNamed "monto_denominador"
-            , montoNumerador = fieldNamed "monto_numerador"
-            }
-        }
-  , _bananasplitRepartijaClaims =
-      setEntityName "repartijas_claims" <> modifyTableFields
-        tableModification
-        { repartijaClaimRepartijaItem = RepartijaItemId $ fieldNamed "repartija_item_id"
-        , repartijaClaimParticipante = ParticipanteId $ fieldNamed "participante_id"
-        , repartijaClaimId = fieldNamed "id"
-        , repartijaClaimCantidad = fieldNamed "cantidad"
-        }
+      setEntityName "partes_deudores"
   }
-  where
-    parteModifications =
-      modifyTableFields
-        tableModification
-        { parteParticipante = ParticipanteId $ fieldNamed "participante_id"
-        , partePago = PagoId $ fieldNamed "pago_id"
-        , parteMonto = Monto
-            { montoDenominador = fieldNamed "monto_denominador"
-            , montoNumerador = fieldNamed "monto_numerador"
-            }
-        }
 
 data GrupoT f = Grupo
   { grupoId :: Columnar f ULID
@@ -130,7 +73,7 @@ deriving instance Show Grupo
 
 instance Beam.Table GrupoT where
   data PrimaryKey GrupoT f = GrupoId (Columnar f ULID) deriving (Generic, Beamable)
-  primaryKey = GrupoId . grupoId
+  primaryKey = GrupoId . (.grupoId)
 
 
 data ParticipanteT f = Participante
@@ -147,8 +90,7 @@ deriving instance Show Participante
 
 instance Table ParticipanteT where
   data PrimaryKey ParticipanteT f = ParticipanteId (Columnar f ULID) deriving (Generic, Beamable)
-  primaryKey = ParticipanteId . participanteId
-
+  primaryKey = ParticipanteId . (.participanteId)
 
 data PagoT f = Pago
   { pagoId :: Columnar f ULID
@@ -170,12 +112,12 @@ instance Table PagoT where
     deriving stock (Generic)
     deriving anyclass (Beamable)
 
-  primaryKey = PagoId . pagoId
+  primaryKey = PagoId . (.pagoId)
 
 
 data MontoT f = Monto
-  { montoNumerador :: Columnar f Int32
-  , montoDenominador :: Columnar f Int32
+  { montoLugaresDespuesDeLaComa :: Columnar f Int32
+  , montoValor :: Columnar f Int32
   } deriving (Generic, Beamable)
 
 type Monto = MontoT Identity
@@ -225,14 +167,14 @@ deriving instance Show Repartija
 
 instance Table RepartijaT where
   data PrimaryKey RepartijaT f = RepartijaId (C f ULID) deriving (Generic, Beamable)
-  primaryKey = RepartijaId . repartijaId
+  primaryKey = RepartijaId . (.repartijaId)
 
 data RepartijaItemT f = RepartijaItem
-  { repartijaItemId :: Columnar f ULID
-  , repartijaItemRepartija :: PrimaryKey RepartijaT f
-  , repartijaItemNombre :: C f Text
-  , repartijaItemMonto :: MontoT f
-  , repartijaItemCantidad :: C f Int32
+  { repartijaitemId :: Columnar f ULID
+  , repartijaitemRepartija :: PrimaryKey RepartijaT f
+  , repartijaitemNombre :: C f Text
+  , repartijaitemMonto :: MontoT f
+  , repartijaitemCantidad :: C f Int32
   } deriving (Generic, Beamable)
 
 type RepartijaItem = RepartijaItemT Identity
@@ -243,13 +185,13 @@ deriving instance Show RepartijaItemId
 
 instance Table RepartijaItemT where
   data PrimaryKey RepartijaItemT f = RepartijaItemId (C f ULID) deriving (Generic, Beamable)
-  primaryKey = RepartijaItemId . repartijaItemId
+  primaryKey = RepartijaItemId . (.repartijaitemId)
 
 data RepartijaClaimT f = RepartijaClaim
-  { repartijaClaimId :: Columnar f ULID
-  , repartijaClaimRepartijaItem :: PrimaryKey RepartijaItemT f
-  , repartijaClaimParticipante :: PrimaryKey ParticipanteT f
-  , repartijaClaimCantidad :: C (Nullable f) Int32
+  { repartijaclaimId :: Columnar f ULID
+  , repartijaclaimRepartijaItem :: PrimaryKey RepartijaItemT f
+  , repartijaclaimParticipante :: PrimaryKey ParticipanteT f
+  , repartijaclaimCantidad :: C (Nullable f) Int32
   } deriving (Generic, Beamable)
 
 type RepartijaClaim = RepartijaClaimT Identity
@@ -259,12 +201,12 @@ deriving instance Show RepartijaClaimId
 
 instance Table RepartijaClaimT where
   data PrimaryKey RepartijaClaimT f = RepartijaClaimId (C f ULID) deriving (Generic, Beamable)
-  primaryKey = RepartijaClaimId . repartijaClaimId
+  primaryKey = RepartijaClaimId . (.repartijaclaimId)
 
 createGrupo :: Text -> Pg M.Grupo
 createGrupo nombre = do
   newId <- liftIO ULID.getULID
-  runInsert $ insert (_bananasplitGrupos db) $ insertValues [
+  runInsert $ insert db.grupos  $ insertValues [
     Grupo newId nombre
     ]
   pure $ M.Grupo
@@ -274,14 +216,14 @@ createGrupo nombre = do
     , M.participantes = []
     }
 
-    -- participantes <- oneToMany_ (_bananasplitParticipantes db) participanteGrupo g
-    -- participantes <- leftJoin_ (all_ (_bananasplitParticipantes db))
+    -- participantes <- oneToMany_ (participantes db) participanteGrupo g
+    -- participantes <- leftJoin_ (all_ (participantes db))
     --   (\p -> participanteGrupo p ==. primaryKey g)
 fetchGrupo :: ULID -> Pg (Maybe M.Grupo)
 fetchGrupo aGrupoId = do
   maybeGrupo <- runSelectReturningOne $ select $ do
-    g <- all_ (_bananasplitGrupos db)
-    guard_ (grupoId g ==. val_ aGrupoId)
+    g <- all_ db.grupos
+    guard_ (g.grupoId ==. val_ aGrupoId)
     pure g
 
 
@@ -291,8 +233,8 @@ fetchGrupo aGrupoId = do
       participantes <- fetchParticipantes aGrupoId
       pagos <- fetchPagos aGrupoId
       pure $ Just $ M.Grupo
-        { M.grupoId = grupoId grupo
-        , M.grupoNombre = grupoNombre grupo
+        { M.grupoId = grupo.grupoId
+        , M.grupoNombre = grupo.grupoNombre
         , M.participantes = participantes
         , M.pagos = pagos
         }
@@ -300,21 +242,21 @@ fetchGrupo aGrupoId = do
 fetchPagos :: ULID -> Pg [M.Pago]
 fetchPagos aGrupoId = do
   dbPagos <- runSelectReturningList $ select $ do
-    pago <- all_ (_bananasplitPagos db)
-      & orderBy_ (asc_ . pagoId)
-    guard_ (pagoGrupo pago ==. GrupoId (val_ aGrupoId))
+    pago <- all_ db._bananasplitPagos
+      & orderBy_ (asc_ . (.pagoId))
+    guard_ (pago.pagoGrupo ==. GrupoId (val_ aGrupoId))
     pure pago
 
-  let pagosIds = dbPagos & fmap (val_ . PagoId . pagoId)
+  let pagosIds = dbPagos & fmap (val_ . PagoId . (.pagoId))
 
   partesPagadores <- runSelectReturningList $ select $ do
-    partePagador <- all_ (_bananasplitPagadores db)
-    guard_ (partePago partePagador `in_` pagosIds)
+    partePagador <- all_ db._bananasplitPagadores
+    guard_ (partePagador.partePago `in_` pagosIds)
     pure partePagador
 
   partesDeudores <- runSelectReturningList $ select $ do
-    partePagador <- all_ (_bananasplitDeudores db)
-    guard_ (partePago partePagador `in_` pagosIds)
+    partePagador <- all_ db._bananasplitDeudores
+    guard_ (partePagador.partePago `in_` pagosIds)
     pure partePagador
 
   let deudoresMap = partesDeudores & fmap dbParte2Parte & Map.fromListWith (++)
@@ -322,35 +264,34 @@ fetchPagos aGrupoId = do
   dbPagos
     & fmap (\pago ->
         M.Pago
-        { M.pagoId = pagoId pago
-        , M.monto = montoFromDb $ pagoMonto pago
-        , M.nombre = pagoNombre pago
-        , M.deudores = Map.lookup (PagoId $ pagoId pago) deudoresMap & fromMaybe []
-        , M.pagadores = Map.lookup (PagoId $ pagoId pago) pagadoresMap & fromMaybe []
+        { M.pagoId = pago.pagoId
+        , M.monto = montoFromDb pago.pagoMonto
+        , M.nombre = pago.pagoNombre
+        , M.deudores = Map.lookup (PagoId pago.pagoId) deudoresMap & fromMaybe []
+        , M.pagadores = Map.lookup (PagoId pago.pagoId) pagadoresMap & fromMaybe []
         }
       )
     & pure
   where
     dbParte2Parte :: Parte -> (PagoId, [M.Parte])
     dbParte2Parte parteR =
-      case parteTipo parteR of
+      case parteR.parteTipo of
         "Ponderado" ->
-          case parteCuota parteR of
+          case parteR.parteCuota of
             (Just cuota) ->
-              (partePago parteR, [M.Ponderado (fromIntegral cuota) (M.ParticipanteId $ participanteId2ULID $ parteParticipante parteR)])
-            _ -> undefined
+              (parteR.partePago, [M.Ponderado (fromIntegral cuota) (M.ParticipanteId $ participanteId2ULID $ parteR.parteParticipante)])
+            _ -> error $ "falta cuota para una parte ponderada: " <> show parteR.parteTipo
         "MontoFijo" ->
-          case parteMonto parteR of
+          case parteR.parteMonto of
             (Monto (Just numerador) (Just denominador)) ->
               let monto = montoFromDb $ Monto numerador denominador
-              in (partePago parteR, [M.MontoFijo monto $ M.ParticipanteId $ participanteId2ULID $ parteParticipante parteR])
-            _ -> error "parte monto es un para un monto fijo"
-        _ -> error $ "parte tipo desconocida: " <> show (parteTipo parteR)
+              in (parteR.partePago, [M.MontoFijo monto $ M.ParticipanteId $ participanteId2ULID parteR.parteParticipante])
+            _ -> error "falta monto para una parte ponderada"
+        _ -> error $ "parte tipo desconocida: " <> show parteR.parteTipo
 
 montoFromDb :: Monto -> M.Monto
-montoFromDb (Monto numerador denominador) =
-  M.Monto $ Money.dense' $ fromIntegral numerador % fromIntegral denominador
-
+montoFromDb (Monto lugaresDespuesDeLaComa valor) =
+  M.Monto $ Decimal.Decimal (fromIntegral lugaresDespuesDeLaComa) (fromIntegral valor)
 
 participanteId2ULID :: ParticipanteId -> ULID
 participanteId2ULID (ParticipanteId ulid) = ulid
@@ -358,19 +299,19 @@ participanteId2ULID (ParticipanteId ulid) = ulid
 fetchParticipantes :: ULID -> Pg [M.Participante]
 fetchParticipantes grupoId = do
   participantes <- runSelectReturningList $ select $ do
-    p <- all_ (_bananasplitParticipantes db)
-      & orderBy_ (asc_ . participanteId)
-    guard_ (participanteGrupo p ==. GrupoId (val_ grupoId))
+    p <- all_ db.participantes
+      & orderBy_ (asc_ . (.participanteId))
+    guard_ (p.participanteGrupo ==. GrupoId (val_ grupoId))
     pure p
   pure $ fmap (\p -> M.Participante
-    { M.participanteNombre = participanteNombre p
-    , M.participanteId = participanteId p
+    { M.participanteNombre = p.participanteNombre
+    , M.participanteId = p.participanteId
     }) participantes
 
 addParticipante :: ULID -> Text -> Pg (Either Text M.Participante)
 addParticipante grupoId name = do
   newId <- liftIO ULID.getULID
-  runInsert $ insert (_bananasplitParticipantes db) $ insertValues
+  runInsert $ insert db.participantes $ insertValues
     [ Participante newId (GrupoId grupoId) name
     ]
   pure $ Right $ M.Participante
@@ -380,15 +321,15 @@ addParticipante grupoId name = do
 
 deleteShallowParticipante :: ULID -> ULID -> Pg M.ParticipanteId
 deleteShallowParticipante _grupoId pId = do
-  runDelete $ delete (_bananasplitParticipantes db)
-    (\p -> participanteId p ==. val_ pId)
+  runDelete $ delete db.participantes
+    (\p -> p.participanteId  ==. val_ pId)
   pure $ M.ParticipanteId pId
 
 savePago :: ULID -> M.Pago -> Pg M.Pago
 savePago grupoId pagoWithoutId = do
   newId <- liftIO ULID.getULID
   let pago = pagoWithoutId {M.pagoId = newId}
-  runInsert $ insert (_bananasplitPagos db) $ insertValues
+  runInsert $ insert db._bananasplitPagos $ insertValues
     [ Pago (M.pagoId pago) (GrupoId grupoId) (M.nombre pago) (deconstructMonto $ M.monto pago)
     ]
   savePagadores pago
@@ -398,12 +339,12 @@ savePago grupoId pagoWithoutId = do
 
 savePagadores :: M.Pago -> Pg ()
 savePagadores pago =
-  runInsert . insert (_bananasplitPagadores db) . insertValues
+  runInsert . insert db._bananasplitPagadores . insertValues
     =<< partes2db (PagoId $ M.pagoId pago) (M.pagadores pago)
 
 saveDeudores :: M.Pago -> Pg ()
 saveDeudores pago =
-  runInsert . insert (_bananasplitDeudores db) . insertValues
+  runInsert . insert db._bananasplitDeudores . insertValues
     =<< partes2db (PagoId $ M.pagoId pago) (M.deudores pago)
 
 partes2db :: MonadIO m => PagoId -> [M.Parte] -> m [Parte]
@@ -434,43 +375,36 @@ partes2db pagoId partes =
           xd (Monto n d) = Monto (Just n) (Just d)
 
 deconstructMonto :: M.Monto -> Monto
-deconstructMonto (M.Monto monto) =
-  monto
-  & Money.toSomeDense
-  & Money.someDenseAmount
-  & (\n ->
-      Monto
-        (fromInteger $ Ratio.numerator n)
-        (fromInteger $ Ratio.denominator n)
-    )
+deconstructMonto (M.Monto (Decimal.Decimal l v)) =
+  Monto (fromIntegral l) (fromIntegral v)
 
 deletePago :: ULID -> Pg ()
 deletePago unId = do
   deleteDeudores unId
   deletePagadores unId
-  runDelete $ delete (_bananasplitPagos db)
-      (\p -> pagoId p ==. val_ unId)
+  runDelete $ delete db._bananasplitPagos
+      (\p -> p.pagoId ==. val_ unId)
 
 deletePagadores :: ULID -> Pg ()
 deletePagadores unId =
-  runDelete $ delete (_bananasplitPagadores db)
-      (\parte -> partePago parte ==. PagoId (val_ unId))
+  runDelete $ delete db._bananasplitPagadores
+      (\parte -> parte.partePago ==. PagoId (val_ unId))
 
 deleteDeudores :: ULID -> Pg ()
 deleteDeudores unId =
-  runDelete $ delete (_bananasplitDeudores db)
-      (\parte -> partePago parte ==. PagoId (val_ unId))
+  runDelete $ delete db._bananasplitDeudores
+      (\parte -> parte.partePago ==. PagoId (val_ unId))
 
 updatePago :: ULID -> ULID -> M.Pago -> Pg M.Pago
 updatePago _grupoId unPagoId pagoWithoutId = do
   let pago = pagoWithoutId {M.pagoId = unPagoId}
   runUpdate $
-    update (_bananasplitPagos db)
+    update db._bananasplitPagos
       (\p -> mconcat
-        [ pagoNombre p <-. val_ (M.nombre pago)
-        , pagoMonto p <-. val_ (deconstructMonto $ M.monto pago)
+        [ p.pagoNombre <-. val_ (M.nombre pago)
+        , p.pagoMonto <-. val_ (deconstructMonto $ M.monto pago)
         ])
-      (\p -> pagoId p ==. val_ (M.pagoId pago))
+      (\p -> p.pagoId ==. val_ (M.pagoId pago))
   deletePagadores (M.pagoId pago)
   deleteDeudores (M.pagoId pago)
   savePagadores pago
@@ -481,7 +415,7 @@ saveRepartija :: ULID -> M.Repartija -> Pg M.Repartija
 saveRepartija unGrupoId repartijaSinId = do
   newId <- liftIO ULID.getULID
   let repartija = repartijaSinId {M.repartijaId = newId}
-  runInsert $ insert (_bananasplitRepartijas db) $ insertValues
+  runInsert $ insert db._bananasplitRepartijas $ insertValues
     [ Repartija
         (M.repartijaId repartija)
         (GrupoId unGrupoId)
@@ -498,64 +432,64 @@ saveRepartijaItems repartijaId repartijaItemsWithoutId = do
   repartijaItems <- forM repartijaItemsWithoutId $ \repartijaItem -> do
     itemId <- liftIO ULID.getULID
     pure $ repartijaItem {M.repartijaItemId = itemId}
-  runInsert $ insert (_bananasplitRepartijaItems db) $ insertValues $
+  runInsert $ insert db._bananasplitRepartijaItems $ insertValues $
     fmap (\item -> RepartijaItem
-      { repartijaItemId = M.repartijaItemId item
-      , repartijaItemRepartija = RepartijaId repartijaId
-      , repartijaItemNombre = M.repartijaItemNombre item
-      , repartijaItemMonto = deconstructMonto $ M.repartijaItemMonto item
-      , repartijaItemCantidad = fromIntegral $ M.repartijaItemCantidad item
+      { repartijaitemId = M.repartijaItemId item
+      , repartijaitemRepartija = RepartijaId repartijaId
+      , repartijaitemNombre = M.repartijaItemNombre item
+      , repartijaitemMonto = deconstructMonto $ M.repartijaItemMonto item
+      , repartijaitemCantidad = fromIntegral $ M.repartijaItemCantidad item
       }) repartijaItems
   pure repartijaItems
 
 fetchRepartijas :: ULID -> Pg [M.ShallowRepartija]
 fetchRepartijas unGrupoId = do
   repartijas <- runSelectReturningList $ select $ do
-    repartija <- all_ (_bananasplitRepartijas db)
-    guard_ (repartijaGrupo repartija ==. val_ (GrupoId unGrupoId))
+    repartija <- all_ db._bananasplitRepartijas
+    guard_ (repartija.repartijaGrupo ==. val_ (GrupoId unGrupoId))
     pure repartija
   pure $ repartijas
     & fmap (\repartija -> M.ShallowRepartija
-      { M.repartijaShallowId = repartijaId repartija
-      , M.repartijaShallowNombre = repartijaNombre repartija
+      { M.repartijaShallowId = repartija.repartijaId
+      , M.repartijaShallowNombre = repartija.repartijaNombre
       })
 
 
 fetchRepartija :: ULID -> Pg M.Repartija
 fetchRepartija unRepartijaId = do
   repartijasAndItemsAndClaims :: [(Repartija, Maybe RepartijaItem, Maybe RepartijaClaim)] <- runSelectReturningList $ select $ do
-    repartija <- all_ (_bananasplitRepartijas db)
-    guard_ (repartijaId repartija ==. val_ unRepartijaId)
-    item <- leftJoin_ (all_ $ _bananasplitRepartijaItems db)
-      (\item -> repartijaItemRepartija item `references_` repartija)
+    repartija <- all_ db._bananasplitRepartijas
+    guard_ (repartija.repartijaId ==. val_ unRepartijaId)
+    item <- leftJoin_ (all_ db._bananasplitRepartijaItems)
+      (\item -> item.repartijaitemRepartija  `references_` repartija)
     -- item <- oneToManyOptional_ (_bananasplitRepartijaItems db) (just_ . repartijaItemId) repartija
-    claim <- leftJoin_' (all_ $ _bananasplitRepartijaClaims db)
-      (\claim -> just_ (repartijaClaimRepartijaItem claim) ==?. pk item)
+    claim <- leftJoin_' (all_ db._bananasplitRepartijaClaims)
+      (\claim -> just_ claim.repartijaclaimRepartijaItem ==?. pk item)
     pure (repartija, item, claim)
 
   repartijasAndItemsAndClaims
-    & fmap (\(r, i, c) -> (repartijaId r, (r, Map.fromList $ maybeToList $ fmap (\item -> (repartijaItemId item, item)) i, maybeToList c)))
+    & fmap (\(r, i, c) -> (r.repartijaId, (r, Map.fromList $ maybeToList $ fmap (\item -> (item.repartijaitemId , item)) i, maybeToList c)))
     & Map.fromListWith (\(r1, items1, claims1) (_r2, items2, claims2) ->
         (r1, Map.union items1 items2, claims1 ++ claims2))
     & fmap (\(repartija, items, claims) -> M.Repartija
-      { M.repartijaId = repartijaId repartija
-      , M.repartijaExtra = montoFromDb $ repartijaExtra repartija
-      , M.repartijaNombre = repartijaNombre repartija
-      , M.repartijaGrupoId = case repartijaGrupo repartija of GrupoId ulid -> ulid
+      { M.repartijaId = repartija.repartijaId
+      , M.repartijaExtra = montoFromDb repartija.repartijaExtra
+      , M.repartijaNombre = repartija.repartijaNombre
+      , M.repartijaGrupoId = case repartija.repartijaGrupo of GrupoId ulid -> ulid
       , M.repartijaClaims = claims
-          & fmap (\RepartijaClaim{..} -> M.RepartijaClaim
-            { M.repartijaClaimId = repartijaClaimId
-            , M.repartijaClaimCantidad = fromIntegral <$> repartijaClaimCantidad
-            , M.repartijaClaimParticipante = M.ParticipanteId $ case repartijaClaimParticipante of ParticipanteId ulid -> ulid
-            , M.repartijaClaimItemId = case repartijaClaimRepartijaItem of RepartijaItemId ulid -> ulid
+          & fmap (\r -> M.RepartijaClaim
+            { M.repartijaClaimId = r.repartijaclaimId
+            , M.repartijaClaimCantidad = fromIntegral <$> r.repartijaclaimCantidad
+            , M.repartijaClaimParticipante = M.ParticipanteId $ case r.repartijaclaimParticipante of ParticipanteId ulid -> ulid
+            , M.repartijaClaimItemId = case r.repartijaclaimRepartijaItem of RepartijaItemId ulid -> ulid
             })
       , M.repartijaItems = items
           & Map.elems
           & fmap (\dbItem -> M.RepartijaItem
-            { M.repartijaItemId = repartijaItemId dbItem
-            , M.repartijaItemNombre = repartijaItemNombre dbItem
-            , M.repartijaItemMonto = montoFromDb $ repartijaItemMonto dbItem
-            , M.repartijaItemCantidad = fromIntegral $ repartijaItemCantidad dbItem
+            { M.repartijaItemId = dbItem.repartijaitemId
+            , M.repartijaItemNombre = dbItem.repartijaitemNombre
+            , M.repartijaItemMonto = montoFromDb dbItem.repartijaitemMonto
+            , M.repartijaItemCantidad = fromIntegral dbItem.repartijaitemCantidad
             }
             )
       })
@@ -569,9 +503,9 @@ saveRepartijaClaim unRepartijaId repartijaClaim = do
   claimId <- liftIO ULID.getULID
   let claim' = repartijaClaim { M.repartijaClaimId = claimId } -- Use provided ID
   runInsert $
-    insertOnConflict (_bananasplitRepartijaClaims db)
+    insertOnConflict db._bananasplitRepartijaClaims
       (insertValues [claimToRow claim'])
-      (conflictingFields (\c -> (repartijaClaimParticipante c, repartijaClaimRepartijaItem c)))
+      (conflictingFields (\c -> (c.repartijaclaimParticipante, c.repartijaclaimRepartijaItem)))
       onConflictUpdateAll
       -- (onConflictUpdateSet (\fields _oldValues ->
       --   repartijaClaimCantidad fields <-. val_ (fromIntegral <$> M.repartijaClaimCantidad claim')))
@@ -579,17 +513,17 @@ saveRepartijaClaim unRepartijaId repartijaClaim = do
 
 deleteRepartijaClaim :: ULID -> Pg ()
 deleteRepartijaClaim claimId = do
-  runDelete $ delete (_bananasplitRepartijaClaims db)
-    (\c -> repartijaClaimId c ==. val_ claimId)
+  runDelete $ delete db._bananasplitRepartijaClaims
+    (\c -> c.repartijaclaimId  ==. val_ claimId)
 
 -- Helper function to convert RepartijaClaim to a row for insertion (without ID)
 claimToRow :: M.RepartijaClaim -> RepartijaClaim
 claimToRow claim =
   RepartijaClaim
-    { repartijaClaimId = M.repartijaClaimId claim
-    , repartijaClaimParticipante = ParticipanteId $ M.participanteId2ULID $ M.repartijaClaimParticipante claim
-    , repartijaClaimRepartijaItem = RepartijaItemId $ M.repartijaClaimItemId claim
-    , repartijaClaimCantidad = fromIntegral <$> M.repartijaClaimCantidad claim
+    { repartijaclaimId = M.repartijaClaimId claim
+    , repartijaclaimParticipante = ParticipanteId $ M.participanteId2ULID $ M.repartijaClaimParticipante claim
+    , repartijaclaimRepartijaItem = RepartijaItemId $ M.repartijaClaimItemId claim
+    , repartijaclaimCantidad = fromIntegral <$> M.repartijaClaimCantidad claim
     }
 
 instance HasSqlValueSyntax PgValueSyntax ULID where

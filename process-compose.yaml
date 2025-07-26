@@ -1,0 +1,47 @@
+version: "0.5"
+
+processes:
+  backend:
+    command: |
+      ghcid --command='cabal repl --enable-multi-repl exe:banana-split lib:banana-split' --run=Main.main --warnings
+      # ghcid --command='cabal repl --enable-multi-repl test:spec lib:banana-split' --run=Main.main --warnings
+    availability:
+      restart: "always"
+    depends_on:
+      migrations:
+        condition: process_completed_successfully
+    # readiness_probe:
+    #   http_get:
+    #     host: 127.0.0.1
+    #     scheme: http
+    #     path: "/api/health"
+    #     port: 8000
+  frontend:
+    command: pnpm start
+    # environment:
+    # - LAUNCH_EDITOR=zeditor
+    working_dir: ./ui
+    availability:
+      restart: "always"
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        scheme: http
+        path: "/"
+        port: 1234
+  migrations:
+    command: |
+      cabal run banana-split -- migrations init
+      cabal run banana-split -- migrations migrate ./migrations
+    availability:
+      restart: on_failure
+    depends_on:
+      database:
+        condition: process_healthy
+  database:
+    command: docker-compose up database
+    readiness_probe:
+      exec:
+        command: docker compose exec database pg_isready
+    shutdown:
+      command: docker-compose down

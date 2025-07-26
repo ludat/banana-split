@@ -11,7 +11,7 @@ import Html.Events exposing (onClick)
 import Http
 import Layouts
 import Models.Grupo exposing (lookupNombreParticipante)
-import Models.Monto exposing (montoToDecimal)
+import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types as Store exposing (Store)
 import Numeric.Decimal as Decimal
@@ -181,7 +181,7 @@ viewTransferencias grupo netos =
                                     [ text <| lookupNombreParticipante grupo t.transaccionFrom
                                     , p [ class "has-text-danger is-size-6-5" ]
                                         [ text "$"
-                                        , text <| Decimal.toString <| montoToDecimal t.transaccionMonto
+                                        , text <| Decimal.toString <| Monto.toDecimal t.transaccionMonto
                                         ]
                                     ]
                                 ]

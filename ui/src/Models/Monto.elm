@@ -1,5 +1,6 @@
 module Models.Monto exposing
-    ( montoToDecimal
+    ( abs
+    , toDecimal
     , validateMonto
     )
 
@@ -9,7 +10,6 @@ import Generated.Api exposing (Monto)
 import Numeric.Decimal as Decimal
 import Numeric.Decimal.Rounding as Decimal
 import Numeric.Nat as Nat
-import Numeric.Rational as Rational
 import Utils.Form exposing (CustomFormError(..))
 
 
@@ -22,21 +22,23 @@ validateMonto =
                     Ok n ->
                         let
                             numerator =
-                                Decimal.toNumerator n
+                                Decimal.toInt n
 
-                            denominator =
-                                Decimal.toDenominator n
+                            precision =
+                                Decimal.getPrecision n
                         in
-                        V.succeed ( "ARS", numerator, denominator )
+                        V.succeed (Monto (Nat.toInt precision) numerator)
 
                     Err e ->
                         V.fail <| FormError.value <| FormError.CustomError <| DecimalError e
             )
 
 
-montoToDecimal : Monto -> Decimal.Decimal s Int
-montoToDecimal montoRaw =
-    case montoRaw of
-        ( _, numerador, denominador ) ->
-            Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
+toDecimal : Monto -> Decimal.Decimal s Int
+toDecimal monto =
+    Decimal.succeed Decimal.RoundTowardsZero (Nat.fromIntAbs monto.lugaresDespuesDeLaComa) monto.valor
+
+
+abs : Monto -> Monto
+abs monto =
+    { monto | valor = Basics.abs monto.valor }

@@ -1,4 +1,6 @@
-module Site.Handler.GruposSpec where
+module Site.Handler.GruposSpec
+    ( spec
+    ) where
 
 import Protolude
 

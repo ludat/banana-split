@@ -208,14 +208,23 @@ jsonEncDeudas localEncoder_a val = (Json.Encode.list (\(t1,t2) -> Json.Encode.li
 
 
 
-type alias Monto  = (String, Int, Int)
+type alias Monto  =
+   { lugaresDespuesDeLaComa: Int
+   , valor: Int
+   }
 
 jsonDecMonto : Json.Decode.Decoder ( Monto )
 jsonDecMonto =
-    Json.Decode.map3 tuple3 (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (Json.Decode.int)) (Json.Decode.index 2 (Json.Decode.int))
+   Json.Decode.succeed (\plugaresDespuesDeLaComa pvalor -> {lugaresDespuesDeLaComa = plugaresDespuesDeLaComa, valor = pvalor})
+   |> required "lugaresDespuesDeLaComa" (Json.Decode.int)
+   |> required "valor" (Json.Decode.int)
 
 jsonEncMonto : Monto -> Value
-jsonEncMonto  val = (\(t1,t2,t3) -> Json.Encode.list identity [(Json.Encode.string) t1,(Json.Encode.int) t2,(Json.Encode.int) t3]) val
+jsonEncMonto  val =
+   Json.Encode.object
+   [ ("lugaresDespuesDeLaComa", Json.Encode.int val.lugaresDespuesDeLaComa)
+   , ("valor", Json.Encode.int val.valor)
+   ]
 
 
 
@@ -756,6 +765,34 @@ postRepartijasByRepartijaId capture_repartijaId toMsg =
                 Url.Builder.crossOrigin "/api"
                     [ "repartijas"
                     , (capture_repartijaId)
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg Json.Decode.string
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+getHealth : (Result Http.Error  (String)  -> msg) -> Cmd msg
+getHealth toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "health"
                     ]
                     params
             , body =

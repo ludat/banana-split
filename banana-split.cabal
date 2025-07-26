@@ -1,192 +1,119 @@
-cabal-version: 1.12
+cabal-version: 2.4
+name: banana-split
+version: 0.1.0.0
+license: BSD-3-Clause
+build-type: Simple
 
--- This file has been generated from package.yaml by hpack version 0.38.0.
---
--- see: https://github.com/sol/hpack
+common base-settings
+  default-language: GHC2021
+  default-extensions:
+    LambdaCase
+    LexicalNegation
+    NoImplicitPrelude
+    OverloadedRecordDot
+    OverloadedStrings
 
-name:           banana-split
-version:        0.1.0.0
-license:        BSD3
-build-type:     Simple
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-export-lists
+    -Wmissing-home-modules
+    -Wpartial-fields
+    -Wredundant-constraints
+
+  build-depends:
+    Decimal,
+    aeson,
+    base,
+    beam-core,
+    beam-postgres,
+    bytestring,
+    conferer,
+    containers,
+    directory,
+    elm-bridge,
+    file-embed,
+    filepath,
+    glpk-hs,
+    hmatrix,
+    hmatrix-glpk,
+    http-api-data,
+    http-media,
+    http-types,
+    mtl,
+    postgresql-simple,
+    pretty-simple,
+    process,
+    protolude,
+    random,
+    resource-pool,
+    safe-money,
+    safe-money-aeson,
+    servant,
+    servant-elm,
+    servant-server,
+    string-conversions,
+    string-interpolate,
+    text,
+    time,
+    ulid,
+    unix,
+    unordered-containers,
+    wai,
+    wai-app-static,
+    wai-extra,
+    warp,
+
+common threaded-rts
+  ghc-options:
+    -threaded
+    -rtsopts
+    -with-rtsopts=-N
 
 library
+  import: base-settings
+  hs-source-dirs: src
   exposed-modules:
-      BananaSplit
-      BananaSplit.Core
-      BananaSplit.Persistence
-      BananaSplit.Repartija
-      BananaSplit.Solver
-      BananaSplit.TestUtils
-  hs-source-dirs:
-      src
-  default-extensions:
-      LambdaCase
-      LexicalNegation
-      NoImplicitPrelude
-      OverloadedRecordDot
-      OverloadedStrings
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints
-  build-depends:
-      aeson
-    , base
-    , beam-core
-    , beam-postgres
-    , bytestring
-    , conferer
-    , containers
-    , elm-bridge
-    , file-embed
-    , glpk-hs
-    , hmatrix
-    , hmatrix-glpk
-    , http-api-data
-    , http-media
-    , http-types
-    , mtl
-    , postgresql-simple
-    , pretty-simple
-    , process
-    , protolude
-    , random
-    , resource-pool
-    , safe-money
-    , safe-money-aeson
-    , servant
-    , servant-elm
-    , servant-server
-    , string-conversions
-    , string-interpolate
-    , text
-    , time
-    , ulid
-    , unix
-    , unordered-containers
-    , wai
-    , wai-app-static
-    , wai-extra
-    , warp
-  default-language: GHC2021
+    BananaSplit
+    BananaSplit.Core
+    BananaSplit.Persistence
+    BananaSplit.Repartija
+    BananaSplit.Solver
+    BananaSplit.TestUtils
 
 executable banana-split
+  import: base-settings, threaded-rts
+  hs-source-dirs: app
   main-is: Main.hs
   other-modules:
-      BananaSplit.Elm
-      Site.Api
-      Site.Config
-      Site.Handler.Grupos
-      Site.Handler.Pagos
-      Site.Handler.Repartijas
-      Site.Handler.Utils
-      Site.Server
-      Types
-  hs-source-dirs:
-      app
-  default-extensions:
-      LambdaCase
-      LexicalNegation
-      NoImplicitPrelude
-      OverloadedRecordDot
-      OverloadedStrings
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+    BananaSplit.Elm
+    Site.Api
+    Site.Config
+    Site.Handler.Grupos
+    Site.Handler.Pagos
+    Site.Handler.Repartijas
+    Site.Handler.Utils
+    Site.Server
+    Types
+
   build-depends:
-      aeson
-    , banana-split
-    , base
-    , beam-core
-    , beam-postgres
-    , bytestring
-    , conferer
-    , containers
-    , elm-bridge
-    , file-embed
-    , glpk-hs
-    , hmatrix
-    , hmatrix-glpk
-    , http-api-data
-    , http-media
-    , http-types
-    , mtl
-    , postgresql-simple
-    , pretty-simple
-    , process
-    , protolude
-    , random
-    , resource-pool
-    , safe-money
-    , safe-money-aeson
-    , servant
-    , servant-elm
-    , servant-server
-    , string-conversions
-    , string-interpolate
-    , text
-    , time
-    , ulid
-    , unix
-    , unordered-containers
-    , wai
-    , wai-app-static
-    , wai-extra
-    , warp
-  default-language: GHC2021
+    banana-split
 
 test-suite spec
+  import: base-settings, threaded-rts
   type: exitcode-stdio-1.0
+  hs-source-dirs: test
   main-is: Spec.hs
   other-modules:
-      BananaSplit.RepartijaSpec
-      BananaSplit.SolverSpec
-      BananaSplitSpec
-      Site.Handler.GruposSpec
-  hs-source-dirs:
-      test
-  default-extensions:
-      LambdaCase
-      LexicalNegation
-      NoImplicitPrelude
-      OverloadedRecordDot
-      OverloadedStrings
-  ghc-options: -Wall -Wcompat -Widentities -Wincomplete-record-updates -Wincomplete-uni-patterns -Wmissing-export-lists -Wmissing-home-modules -Wpartial-fields -Wredundant-constraints -threaded -rtsopts -with-rtsopts=-N
+    BananaSplit.RepartijaSpec
+    BananaSplit.SolverSpec
+    BananaSplitSpec
+    Site.Handler.GruposSpec
+
   build-depends:
-      QuickCheck
-    , aeson
-    , banana-split
-    , base
-    , beam-core
-    , beam-postgres
-    , bytestring
-    , conferer
-    , containers
-    , elm-bridge
-    , file-embed
-    , glpk-hs
-    , hmatrix
-    , hmatrix-glpk
-    , hspec
-    , http-api-data
-    , http-media
-    , http-types
-    , mtl
-    , postgresql-simple
-    , pretty-simple
-    , process
-    , protolude
-    , random
-    , resource-pool
-    , safe-money
-    , safe-money-aeson
-    , servant
-    , servant-elm
-    , servant-server
-    , string-conversions
-    , string-interpolate
-    , text
-    , time
-    , ulid
-    , unix
-    , unordered-containers
-    , wai
-    , wai-app-static
-    , wai-extra
-    , warp
-  default-language: GHC2021
+    QuickCheck,
+    banana-split,
+    hspec,

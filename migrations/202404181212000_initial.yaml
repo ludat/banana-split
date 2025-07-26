@@ -1,0 +1,120 @@
+operations:
+  - create_table:
+      name: "grupos"
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "nombre"
+          type: "text"
+          nullable: false
+
+  - create_table:
+      name: "participantes"
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "nombre"
+          type: "text"
+          nullable: false
+        - name: "grupo__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "grupos"
+            column: "id"
+            name: "fk_participantes_grupo__id"
+
+  - create_table:
+      name: "pagos"
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "grupo__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "grupos"
+            column: "id"
+            name: "fk_pagos_grupo__id"
+        - name: "nombre"
+          type: "text"
+          nullable: false
+        - name: "monto__lugares_despues_de_la_coma"
+          type: "int"
+          nullable: false
+        - name: "monto__valor"
+          type: "bigint"
+          nullable: false
+
+  - create_table:
+      name: "partes_deudores"
+      columns:
+        - name: "id"
+          type: "uuid"
+          pk: true
+          # TODO: Generate this in haskell and use text
+          default: "gen_random_uuid()"
+        - name: "pago__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "pagos"
+            column: "id"
+            name: "fk_partes_deudores_pago_id"
+        - name: "participante__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "participantes"
+            column: "id"
+            name: "fk_partes_deudores_participante_id"
+        - name: "tipo"
+          type: "text"
+          nullable: false
+        - name: "monto__lugares_despues_de_la_coma"
+          type: "int"
+          nullable: true
+        - name: "monto__valor"
+          type: "bigint"
+          nullable: true
+        - name: "cuota"
+          type: "bigint"
+          nullable: true
+
+  - create_table:
+      name: "partes_pagadores"
+      columns:
+        - name: "id"
+          type: "uuid"
+          pk: true
+          # TODO: Generate this in haskell and use text
+          default: "gen_random_uuid()"
+        - name: "pago__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "pagos"
+            column: "id"
+            name: "fk_partes_pagadores_pago__id"
+        - name: "participante__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "participantes"
+            column: "id"
+            name: "fk_partes_pagadores_participante__id"
+        - name: "tipo"
+          type: "text"
+          nullable: false
+        - name: "monto__lugares_despues_de_la_coma"
+          type: "int"
+          nullable: true
+        - name: "monto__valor"
+          type: "bigint"
+          nullable: true
+        - name: "cuota"
+          type: "bigint"
+          nullable: true

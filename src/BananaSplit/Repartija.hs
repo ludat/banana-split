@@ -7,6 +7,7 @@ import BananaSplit.Core
 import BananaSplit.Solver (Deudas, deudasToPairs, distribuirEntrePonderados, extraerDeudor,
                            filterDeudas, mkDeuda, totalDeudas)
 
+import Data.Decimal qualified as Decimal
 import Data.ULID (ULID)
 
 import Elm.Derive qualified as Elm
@@ -65,12 +66,13 @@ repartija2Pago repartija =
                       in claimsExplicitos
                             & mconcat
                             & (<> if claimsSobrante /= 0 then mkDeuda (ParticipanteId nullUlid) claimsSobrante else mempty)
+                            & fmap fromIntegral
                             & distribuirEntrePonderados item.repartijaItemMonto
 
                    | (not (any tieneCantidad claims)) ->
                       claims
                         & fmap (\claim ->
-                          mkDeuda claim.repartijaClaimParticipante (fromMaybe 1 claim.repartijaClaimCantidad))
+                          mkDeuda claim.repartijaClaimParticipante (maybe 1 fromIntegral claim.repartijaClaimCantidad))
                         & mconcat
                         & distribuirEntrePonderados item.repartijaItemMonto
                    | otherwise -> undefined
@@ -85,6 +87,7 @@ repartija2Pago repartija =
       deudasDelExtraPonderado =
         deudas
         & mconcat
+        & fmap inMonto
         & distribuirEntrePonderados (repartija.repartijaExtra + sum montoNoRepartido)
         & filterDeudas (/= 0)
         & deudasToPartes

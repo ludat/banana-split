@@ -49,6 +49,7 @@ serverT =
     , _routeRepartijaClaimPut = handleRepartijaClaimPut
     , _routeRepartijaClaimDelete = handleRepartijaClaimDelete
     , _routeRepartijaToPago = handleRepartijaToPago
+    , _routeHealth = pure "ok"
     -- , _routePagoNew = handlePagoNew
     -- , _routePagoNewPatch = handlePagoNewPatch
     -- , _routePagoEdit = handlePagoEdit
