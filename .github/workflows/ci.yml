@@ -135,7 +135,7 @@ jobs:
           kubectl config set-context k3d-split --namespace "$NS"
 
           helm repo add bitnami https://charts.bitnami.com/bitnami
-          helm install --namespace="$NS" --create-namespace --wait --values=./values-ci.yaml banana-split-test . &
+          helm install --namespace="$NS" --create-namespace --wait --values=./ci-values.yaml banana-split-test . &
           HELM_PID=$!
 
           while ps -p "$HELP_PID"; do
