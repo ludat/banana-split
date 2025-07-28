@@ -135,8 +135,8 @@ jobs:
           set -x
           NS=split-$RANDOM
           kubectl create namespace "$NS"
-          kubectl config set-context k3d-split --namespace "$NS"
-          docker tag ghcr.io/ludat/banana-split:${{ github.sha }} banana-split:latest
+          # kubectl config set-context k3d-split --namespace "$NS"
+          # docker tag ghcr.io/ludat/banana-split:${{ github.sha }} banana-split:latest
           # k3d image import banana-split:latest -c split
 
           helm repo add bitnami https://charts.bitnami.com/bitnami
@@ -145,10 +145,10 @@ jobs:
 
           while ps -p "$HELM_PID" > /dev/null; do
             sleep 10
-            kubectl logs -l role=app || true
-            kubectl logs -l role=migration-start || true
-            kubectl logs -l role=migration-complete || true
-            kubectl get pods -o wide
+            kubectl --namespace="$NS" logs -l role=app || true
+            kubectl --namespace="$NS" logs -l role=migration-start || true
+            kubectl --namespace="$NS" logs -l role=migration-complete || true
+            kubectl --namespace="$NS" get pods -o wide
           done;
           echo helm is done
 
