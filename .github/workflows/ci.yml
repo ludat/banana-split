@@ -23,58 +23,57 @@ jobs:
         env:
           GITHUB_CONTEXT: ${{ toJson(github) }}
         run: echo "$GITHUB_CONTEXT"
-  # JUST TO DO THINGS FASTER
-  # tests:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #     - uses: actions/checkout@v4
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
 
-  #     - name: Set up Nix
-  #       uses: nixbuild/nix-quick-install-action@v30
+      - name: Set up Nix
+        uses: nixbuild/nix-quick-install-action@v30
 
-  #     - name: Restore and save Nix store
-  #       uses: nix-community/cache-nix-action@v6
-  #       with:
-  #         # restore and save a cache using this key
-  #         primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
-  #         # if there's no cache hit, restore a cache by this prefix
-  #         restore-prefixes-first-match: nix-${{ runner.os }}-
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          # restore and save a cache using this key
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          # if there's no cache hit, restore a cache by this prefix
+          restore-prefixes-first-match: nix-${{ runner.os }}-
 
-  #     - name: Build everything
-  #       run: |
-  #         nix build
+      - name: Build everything
+        run: |
+          nix build
 
-  #     - name: Login to GitHub Container Registry
-  #       uses: docker/login-action@v2
-  #       if: |
-  #         github.ref == 'refs/heads/main' ||
-  #         github.event_name == 'pull_request'
-  #       with:
-  #         registry: ghcr.io
-  #         username: ${{ github.actor }}
-  #         password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        if: |
+          github.ref == 'refs/heads/main' ||
+          github.event_name == 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-  #     - name: Build docker image
-  #       run: |
-  #         nix build .#docker --option sandbox relaxed -L
-  #         docker load < result
-  #       if: |
-  #         github.ref == 'refs/heads/main' ||
-  #         github.event_name == 'pull_request'
+      - name: Build docker image
+        run: |
+          nix build .#docker --option sandbox relaxed -L
+          docker load < result
+        if: |
+          github.ref == 'refs/heads/main' ||
+          github.event_name == 'pull_request'
 
-  #     - name: Push image tag
-  #       run: |
-  #         docker tag banana-split ghcr.io/ludat/banana-split:${{ github.sha }}
-  #         docker push ghcr.io/ludat/banana-split:${{ github.sha }}
-  #       if: |
-  #         github.ref == 'refs/heads/main' ||
-  #         github.event_name == 'pull_request'
+      - name: Push image tag
+        run: |
+          docker tag banana-split ghcr.io/ludat/banana-split:${{ github.sha }}
+          docker push ghcr.io/ludat/banana-split:${{ github.sha }}
+        if: |
+          github.ref == 'refs/heads/main' ||
+          github.event_name == 'pull_request'
 
-  #     - name: Push latest tag
-  #       if: github.ref == 'refs/heads/main'
-  #       run: |
-  #         docker tag banana-split ghcr.io/ludat/banana-split:latest
-  #         docker push ghcr.io/ludat/banana-split:latest
+      - name: Push latest tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker tag banana-split ghcr.io/ludat/banana-split:latest
+          docker push ghcr.io/ludat/banana-split:latest
 
   # - name: Trigger infra-cluster deploy
   #   # https://gitlab.com/10Pines/infra/infra-cluster
@@ -87,7 +86,7 @@ jobs:
   #       --form "variables[HELM_VALUES]=revision: '${{ github.sha }}'" \
   #       "https://gitlab.com/api/v4/projects/32472203/trigger/pipeline?token=${{ secrets.GITLAB_INFRA_TOKEN }}&ref=main"
   helm-test:
-    # needs: [tests]
+    needs: [tests]
     # permissions:
     #   contents: write
     runs-on: ubuntu-latest
