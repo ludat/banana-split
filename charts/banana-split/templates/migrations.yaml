@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ include "banana-split.fullname" . }}-migration-start
+  name: "{{ include "banana-split.fullname" . }}-migration-start-{{ randNumeric 6 }}"
   labels:
     {{- include "banana-split.labels" . | nindent 4 }}
     role: migration-start
@@ -33,7 +33,7 @@ spec:
             - |
               set -euo pipefail
               set -x
-              banana-split migrations init
+              timeout 10 banana-split migrations init
               banana-split migrations migrate ./migrations
 
           imagePullPolicy: {{ .Values.image.pullPolicy }}
@@ -74,7 +74,7 @@ spec:
     spec:
       restartPolicy: OnFailure
       containers:
-        - name: migration-start
+        - name: migration-complete
           {{- with .Values.securityContext }}
           securityContext:
             {{- toYaml . | nindent 12 }}
