@@ -1,0 +1,142 @@
+name: "Runs whole CI ("
+
+on:
+  push:
+    branches:
+      - "**"
+
+  release:
+    types:
+      - released
+
+  pull_request:
+    types:
+      - opened
+      - synchronize
+      - reopened
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Nix
+        uses: nixbuild/nix-quick-install-action@v30
+
+      - name: Restore and save Nix store
+        uses: nix-community/cache-nix-action@v6
+        with:
+          # restore and save a cache using this key
+          primary-key: nix-${{ runner.os }}-${{ hashFiles('**/*.nix', '**/flake.lock') }}
+          # if there's no cache hit, restore a cache by this prefix
+          restore-prefixes-first-match: nix-${{ runner.os }}-
+
+      - name: Build everything
+        run: |
+          nix build
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        if: |
+          github.ref == 'refs/heads/main' ||
+          github.event_name == 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build docker image
+        run: |
+          nix build .#docker --option sandbox relaxed -L
+          docker load < result
+        if: |
+          github.ref == 'refs/heads/main' ||
+          github.event_name == 'pull_request'
+
+      - name: Push image tag
+        run: |
+          docker tag banana-split ghcr.io/ludat/banana-split:${{ github.sha }}
+          docker push ghcr.io/ludat/banana-split:${{ github.sha }}
+
+      - name: Push latest tag
+        if: github.ref == 'refs/heads/main'
+        run: |
+          docker tag banana-split ghcr.io/ludat/banana-split:latest
+          docker push ghcr.io/ludat/banana-split:latest
+
+    # - name: Trigger infra-cluster deploy
+    #   # https://gitlab.com/10Pines/infra/infra-cluster
+    #   # Infra cluster project id = 32472203
+    #   if: github.ref == 'refs/heads/main'
+    #   run: |
+    #     curl --request POST \
+    #       --form "variables[ENV]=prod" \
+    #       --form "variables[APP]=banana-split" \
+    #       --form "variables[HELM_VALUES]=revision: '${{ github.sha }}'" \
+    #       "https://gitlab.com/api/v4/projects/32472203/trigger/pipeline?token=${{ secrets.GITLAB_INFRA_TOKEN }}&ref=main"
+  helm-test:
+    needs: [tests]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./charts/banana-split/
+    steps:
+      - uses: actions/checkout@v4
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        if: |
+          github.ref == 'refs/heads/main' ||
+          github.event_name == 'pull_request'
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Configure Git
+        run: |
+          git config user.name "$GITHUB_ACTOR"
+          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+
+      - name: Pull image tag
+        run: |
+          docker pull ghcr.io/ludat/banana-split:${{ github.sha }}
+          docker tag ghcr.io/ludat/banana-split:${{ github.sha }} ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
+
+      - uses: AbsaOSS/k3d-action@v2
+        name: "Create Single Cluster"
+        with:
+          cluster-name: "split"
+          args: -p "80:80@loadbalancer"
+
+      - name: Get nodes
+        run: |
+          # kubectl config use-context k3d-split
+          kubectl get nodes -o wide
+
+      - name: Install Helm
+        uses: azure/setup-helm@v4
+
+      - name: Run tests with helm
+        run: |
+          set -x
+          NS=split-$RANDOM
+          helm repo add bitnami https://charts.bitnami.com/bitnami
+
+          helm install --namespace="$NS" --create-namespace --wait --values=./values-ci.yaml banana-split-test .
+          helm test --logs --namespace="$NS" banana-split-test .
+
+      # - name: Push release tag
+      #   if: github.event_name == 'release'
+      #   run: |
+      #     docker tag banana-split ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
+      #     docker push ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}

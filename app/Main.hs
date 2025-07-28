@@ -1,4 +1,5 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE QuasiQuotes #-}
 module Main
     ( main
@@ -69,7 +70,7 @@ runBackend = do
   _ <- Pool.withResource beamPool $ \conn -> do
     actualSchema <- query @_ @(Only Text) conn "SELECT schema_name FROM information_schema.schemata WHERE schema_name = ?;" (Only schema)
     when (length actualSchema /= 1) $
-      throwIO MissingPGRollSchema
+      throwIO $ MissingPGRollSchema schema
 
   let appState = App beamPool
 
@@ -92,6 +93,8 @@ data MissingPGRollMigrations =
   MissingPGRollMigrations
   deriving (Exception, Show)
 
-data MissingPGRollSchema =
-  MissingPGRollSchema
-  deriving (Exception, Show)
+newtype MissingPGRollSchema = MissingPGRollSchema
+  { schemaName :: String
+  }
+  deriving stock (Show)
+  deriving anyclass (Exception)
