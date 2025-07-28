@@ -131,7 +131,7 @@ jobs:
       - name: Run tests with helm
         run: |
           NS=split-$RANDOM
-          kubectl crate namespace "$NS"
+          kubectl create namespace "$NS"
           kubectl config set-context k3d-split --namespace "$NS"
 
           helm repo add bitnami https://charts.bitnami.com/bitnami
