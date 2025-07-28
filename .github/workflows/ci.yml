@@ -135,7 +135,7 @@ jobs:
           NS=split-$RANDOM
           kubectl create namespace "$NS"
           kubectl config set-context k3d-split --namespace "$NS"
-          kubectl tag ghcr.io/ludat/banana-split:${{ github.sha }} banana-split:latest
+          docker tag ghcr.io/ludat/banana-split:${{ github.sha }} banana-split:latest
           k3d image import banana-split:latest -c split
 
           helm repo add bitnami https://charts.bitnami.com/bitnami
