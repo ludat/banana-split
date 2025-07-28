@@ -149,7 +149,7 @@ jobs:
           done;
           echo helm is done
 
-          helm test --logs --namespace="$NS" banana-split-test .
+          helm test --logs --namespace="$NS" banana-split-test
 
       # - name: Push release tag
       #   if: github.event_name == 'release'
