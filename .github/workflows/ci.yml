@@ -126,13 +126,13 @@ jobs:
 
       - name: Get nodes
         run: |
+          kind create cluster
           kubectl get nodes -o wide
 
       - name: Run tests with helm
         run: |
           set -euo pipefail
           set -x
-          kind create cluster
           NS=split-$RANDOM
           kubectl create namespace "$NS"
           kubectl config set-context k3d-split --namespace "$NS"
