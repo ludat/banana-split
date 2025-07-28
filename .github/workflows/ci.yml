@@ -65,6 +65,9 @@ jobs:
         run: |
           docker tag banana-split ghcr.io/ludat/banana-split:${{ github.sha }}
           docker push ghcr.io/ludat/banana-split:${{ github.sha }}
+        if: |
+          github.ref == 'refs/heads/main' ||
+          github.event_name == 'pull_request'
 
       - name: Push latest tag
         if: github.ref == 'refs/heads/main'
@@ -84,12 +87,15 @@ jobs:
     #       "https://gitlab.com/api/v4/projects/32472203/trigger/pipeline?token=${{ secrets.GITLAB_INFRA_TOKEN }}&ref=main"
   helm-test:
     needs: [tests]
-    permissions:
-      contents: write
+    # permissions:
+    #   contents: write
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./charts/banana-split/
+    # defaults:
+    #   run:
+    #     working-directory: ./charts/banana-split/
+    if: |
+      github.ref == 'refs/heads/main' ||
+      github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Login to GitHub Container Registry
@@ -125,14 +131,23 @@ jobs:
       - name: Install Helm
         uses: azure/setup-helm@v4
 
-      - name: Run tests with helm
-        run: |
-          set -x
-          NS=split-$RANDOM
-          helm repo add bitnami https://charts.bitnami.com/bitnami
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2
 
-          helm install --namespace="$NS" --create-namespace --wait --values=./values-ci.yaml banana-split-test .
-          helm test --logs --namespace="$NS" banana-split-test .
+      - name: Run chart-testing (lint)
+        run: ct lint
+
+      - name: Run chart-testing (install)
+        run: ct install --config=./ct.yaml --helm-extra-args '--set=image.tag=ghcr.io/ludat/banana-split:${{ github.sha }}' --all
+
+      # - name: Run tests with helm
+      #   run: |
+      #     set -x
+      #     NS=split-$RANDOM
+      #     helm repo add bitnami https://charts.bitnami.com/bitnami
+
+      #     helm install --namespace="$NS" --create-namespace --wait --values=./values-ci.yaml banana-split-test .
+      #     helm test --logs --namespace="$NS" banana-split-test .
 
       # - name: Push release tag
       #   if: github.event_name == 'release'
