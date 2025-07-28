@@ -90,9 +90,9 @@ jobs:
     # permissions:
     #   contents: write
     runs-on: ubuntu-latest
-    # defaults:
-    #   run:
-    #     working-directory: ./charts/banana-split/
+    defaults:
+      run:
+        working-directory: ./charts/banana-split/
     if: |
       github.ref == 'refs/heads/main' ||
       github.event_name == 'pull_request'
