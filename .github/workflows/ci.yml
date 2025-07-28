@@ -130,6 +130,7 @@ jobs:
 
       - name: Run tests with helm
         run: |
+          set -x
           NS=split-$RANDOM
           kubectl create namespace "$NS"
           kubectl config set-context k3d-split --namespace "$NS"
