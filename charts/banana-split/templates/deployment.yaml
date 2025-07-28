@@ -4,6 +4,7 @@ metadata:
   name: {{ include "banana-split.fullname" . }}
   labels:
     {{- include "banana-split.labels" . | nindent 4 }}
+    role: app
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -11,6 +12,7 @@ spec:
   selector:
     matchLabels:
       {{- include "banana-split.selectorLabels" . | nindent 6 }}
+      role: app
   template:
     metadata:
       {{- with .Values.podAnnotations }}
@@ -22,6 +24,7 @@ spec:
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
+        role: app
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

@@ -5,6 +5,7 @@ metadata:
   name: {{ include "banana-split.fullname" . }}-migration-complete
   labels:
     {{- include "banana-split.labels" . | nindent 4 }}
+    role: migration-complete
   annotations:
     # This is what defines this resource as a hook. Without this line, the
     # job is considered part of the release.
@@ -16,6 +17,7 @@ spec:
       name: {{ include "banana-split.fullname" . }}-migration-complete
       labels:
         {{- include "banana-split.labels" . | nindent 8 }}
+        role: migration-complete
     spec:
       restartPolicy: OnFailure
       containers:
