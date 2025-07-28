@@ -5,10 +5,8 @@ import Generated.Api exposing (Grupo, Netos)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Models.Grupo exposing (lookupParticipante)
+import Models.Monto as Monto
 import Numeric.Decimal as Decimal
-import Numeric.Decimal.Rounding as Decimal
-import Numeric.Nat as Nat
-import Numeric.Rational as Rational
 
 
 viewNetosBarras : Grupo -> Netos -> Html msg
@@ -17,12 +15,10 @@ viewNetosBarras grupo netos =
         maximo =
             netos.netos
                 |> List.map
-                    (\( _, ( _, numerador, denominador ) ) ->
-                        Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                            |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                            |> Decimal.abs
+                    (\( _, m ) ->
+                        Monto.abs m
                     )
-                |> List.map Decimal.toFloat
+                |> List.map (Monto.toDecimal >> Decimal.toFloat)
                 |> List.maximum
                 |> Maybe.withDefault 0
     in
@@ -30,18 +26,13 @@ viewNetosBarras grupo netos =
         [ div [ class "grid", Css.barras_precio ]
             (netos.netos
                 |> List.sortBy
-                    (\( _, ( _, numerador, denominador ) ) ->
-                        Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                            |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                            |> Decimal.toFloat
-                    )
+                    (\( _, m ) -> m.valor)
                 |> List.reverse
                 |> List.concatMap
-                    (\( participanteId, ( _, numerador, denominador ) ) ->
+                    (\( participanteId, m ) ->
                         let
                             monto =
-                                Decimal.fromRational Decimal.RoundTowardsZero Nat.nat2 (Rational.ratio numerador denominador)
-                                    |> Result.withDefault (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
+                                Monto.toDecimal m
 
                             participante =
                                 lookupParticipante grupo participanteId
@@ -76,7 +67,7 @@ viewNetosBarras grupo netos =
                                         []
                                     ]
                         in
-                        case compare numerador 0 of
+                        case compare m.valor 0 of
                             LT ->
                                 [ barraIzquierda
                                 , nombreDerecha

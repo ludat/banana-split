@@ -17,7 +17,7 @@ import Html.Events exposing (onClick, onSubmit)
 import Http
 import Layouts
 import Models.Grupo exposing (lookupNombreParticipante)
-import Models.Monto exposing (montoToDecimal, validateMonto)
+import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Numeric.Decimal as Decimal
@@ -127,7 +127,7 @@ validatePago : Validation CustomFormError Pago
 validatePago =
     V.succeed Pago
         |> V.andMap (V.succeed emptyUlid)
-        |> V.andMap (V.field "monto" validateMonto)
+        |> V.andMap (V.field "monto" Monto.validateMonto)
         |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
         |> V.andMap (V.field "deudores" (V.list validateParte |> V.andThen nonEmptyList))
         |> V.andMap (V.field "pagadores" (V.list validateParte |> V.andThen nonEmptyList))
@@ -155,7 +155,7 @@ validateParte =
 
                     "fijo" ->
                         V.succeed MontoFijo
-                            |> V.andMap (V.field "monto" validateMonto)
+                            |> V.andMap (V.field "monto" Monto.validateMonto)
                             |> V.andMap (V.field "participante" V.string)
 
                     _ ->
@@ -357,7 +357,7 @@ update store userId msg model =
                                         MontoFijo montoRaw participanteId ->
                                             let
                                                 monto =
-                                                    montoToDecimal montoRaw
+                                                    Monto.toDecimal montoRaw
                                             in
                                             FormField.group
                                                 [ Form.setString "tipo" "fijo"
@@ -373,7 +373,7 @@ update store userId msg model =
                                                 ]
 
                                 montoPago =
-                                    montoToDecimal pago.monto
+                                    Monto.toDecimal pago.monto
                             in
                             Form.initial
                                 (List.concat
@@ -501,7 +501,7 @@ view store model =
                                         , div [ class "card-content" ]
                                             [ p [ class "title is-3 m-0" ]
                                                 [ text "$ "
-                                                , text (Decimal.toString <| montoToDecimal pago.monto)
+                                                , text (Decimal.toString <| Monto.toDecimal pago.monto)
                                                 ]
                                             , p []
                                                 [ let

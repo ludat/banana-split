@@ -1,3 +1,4 @@
+{-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE QuasiQuotes #-}
 module Main
     ( main
@@ -8,7 +9,7 @@ import BananaSplit.Elm (generateElmFiles)
 import Conferer qualified
 
 import Data.Pool qualified as Pool
-import Data.String (fromString)
+import Data.String (String)
 import Data.String.Interpolate (i)
 
 import Database.Beam.Postgres
@@ -24,29 +25,51 @@ import Site.Config (createConfig)
 import Site.Server qualified
 
 import System.Posix (Handler (..), installHandler, sigTERM)
-import System.Process (readProcess)
+import System.Process (callProcess, readProcess, showCommandForUser)
 
 import Types
 
 main :: IO ()
 main = do
-  generateElmFiles
-  runBackend
+  args <- getArgs
+  case args of
+    [] -> do
+      generateElmFiles
+      runBackend
+    ["server"] -> do
+      runBackend
+    "migrations":rest -> do
+      runMigrations rest
+    _ -> do
+      putText $ "Unknown command: " <> show args
+      exitFailure
+
+runMigrations :: [String] -> IO ()
+runMigrations args = do
+  config <- createConfig
+  connString <- Conferer.fetchFromConfig "database.url" config
+  let connectionArgs = ["--postgres-url", connString ++ "?sslmode=disable"]
+  callProcess "pgroll" $ connectionArgs ++ args
 
 runBackend :: IO ()
 runBackend = do
   config <- createConfig
 
-  connString <- liftIO $ Conferer.fetchFromConfig "database.url" config
+  connString <- Conferer.fetchFromConfig "database.url" config
 
-
-  setSearchPath <- readProcess "reshape" ["schema-query"] ""
+  schema <- readProcess "pgroll" ["latest", "schema", "--local", "./migrations"] ""
+    <&> filter (not . isControl)
 
   beamPool <- Pool.newPool $ Pool.defaultPoolConfig (do
       conn <- connectPostgreSQL connString
-      _ <- execute_ conn (fromString setSearchPath)
+      _ <- execute conn "SET search_path TO ?" (Only schema)
       pure conn
     ) close 60 60
+
+  _ <- Pool.withResource beamPool $ \conn -> do
+    actualSchema <- query @_ @(Only Text) conn "SELECT schema_name FROM information_schema.schemata WHERE schema_name = ?;" (Only schema)
+    when (length actualSchema /= 1) $
+      throwIO MissingPGRollSchema
 
   let appState = App beamPool
 
@@ -64,3 +87,11 @@ runBackend = do
 
   putText [i|Listening on port #{Warp.getPort settings}...|]
   Warp.runSettings settings $ logStdoutDev $ Site.Server.app appState
+
+data MissingPGRollMigrations =
+  MissingPGRollMigrations
+  deriving (Exception, Show)
+
+data MissingPGRollSchema =
+  MissingPGRollSchema
+  deriving (Exception, Show)

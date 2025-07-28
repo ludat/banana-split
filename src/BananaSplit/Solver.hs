@@ -6,15 +6,16 @@ module BananaSplit.Solver where
 
 import BananaSplit.Core
 
+import Data.Decimal (Decimal)
+import Data.Decimal qualified as Decimal
 import Data.LinearProgram qualified as GLPK
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 
 import Elm.Derive qualified as Elm
 
-import Money qualified
-
 import Protolude
+import Protolude.Error (error)
 
 import System.IO.Unsafe (unsafePerformIO)
 
@@ -139,14 +140,25 @@ calcularDeudasPago pago =
           ponderados
           & fmap (uncurry mkDeuda)
           & mconcat
+          & fmap (fromInteger @Decimal)
       in deudasFijos <> distribuirEntrePonderados (montoOriginal - totalFijo) deudasPonderados
 
-distribuirEntrePonderados :: (Real n) => Monto -> Deudas n -> Deudas Monto
-distribuirEntrePonderados (Monto m) deudas =
+distribuirEntrePonderados :: Monto -> Deudas Decimal -> Deudas Monto
+distribuirEntrePonderados (Monto total) deudas =
   let
-    parteTotal = totalDeudas deudas
-  in deudas
-      & fmap (\p -> Monto $ Money.dense' $ toRational p * toRational m / toRational parteTotal)
+    deudaPairs = deudas & deudasToPairs
+    cuotas = deudaPairs & fmap snd
+    maxPrecision = cuotas
+      & fmap Decimal.decimalPlaces
+      & maximum
+    participantes = deudaPairs & fmap fst
+  in cuotas
+      & fmap (Decimal.decimalMantissa . Decimal.roundTo maxPrecision)
+      & Decimal.allocate total
+      & fmap Monto
+      & zip participantes
+      & Map.fromList
+      & Deudas
 
 extraerMaximoDeudor :: Deudas Monto -> (ParticipanteId, Monto)
 extraerMaximoDeudor (Deudas deudasMap) =
@@ -241,42 +253,6 @@ solveOptimalTransactions deudas@(Deudas oldBalances) = unsafePerformIO $ do
             & fmap (\d -> (1, "t_" <> show d <> "_" <> show creditor))
             & GLPK.linCombination
             & (\f -> GLPK.equalTo' ("Creditor: " <> show creditor) f (balances Map.! creditor))
-            -- & (\f -> GLPK.constrain' ("Creditor: " <> show creditor) f $ between (balances Map.! creditor) balanceSum)
-
-          -- case compare balanceSum 0 of
-          --   EQ -> do
-          --     forM_ debtors $ \debtor -> do
-          --       creditors
-          --       & fmap (\c -> (1, "t_" <> show debtor <> "_" <> show c))
-          --       & GLPK.linCombination
-          --       & (\f -> GLPK.equalTo' ("Debtor: " <> show debtor) f (negate $ balances Map.! debtor))
-          --     forM_ creditors $ \creditor -> do
-          --       debtors
-          --       & fmap (\d -> (1, "t_" <> show d <> "_" <> show creditor))
-          --       & GLPK.linCombination
-          --       & (\f -> GLPK.equalTo' ("Creditor: " <> show creditor) f (balances Map.! creditor))
-          --   LT -> do
-          --     forM_ debtors $ \debtor -> do
-          --       creditors
-          --       & fmap (\c -> (1, "t_" <> show debtor <> "_" <> show c))
-          --       & GLPK.linCombination
-          --       & (\f -> GLPK.equalTo' ("Debtor: " <> show debtor) f (negate $ balances Map.! debtor))
-          --     forM_ creditors $ \creditor -> do
-          --       debtors
-          --       & fmap (\d -> (1, "t_" <> show d <> "_" <> show creditor))
-          --       & GLPK.linCombination
-          --       & (\f -> GLPK.geqTo' ("Creditor: " <> show creditor) f (balances Map.! creditor))
-          --   GT -> do
-          --     forM_ debtors $ \debtor -> do
-          --       creditors
-          --       & fmap (\c -> (1, "t_" <> show debtor <> "_" <> show c))
-          --       & GLPK.linCombination
-          --       & (\f -> GLPK.geqTo' ("Debtor: " <> show debtor) f (negate $ balances Map.! debtor))
-          --     forM_ creditors $ \creditor -> do
-          --       debtors
-          --       & fmap (\d -> (1, "t_" <> show d <> "_" <> show creditor))
-          --       & GLPK.linCombination
-          --       & (\f -> GLPK.equalTo' ("Creditor: " <> show creditor) f (balances Map.! creditor))
 
           forM_ creditors $ \creditor -> do
             forM_ debtors $ \debtor -> do
@@ -293,13 +269,14 @@ solveOptimalTransactions deudas@(Deudas oldBalances) = unsafePerformIO $ do
                   & fmap (\v -> Transaccion
                     { transaccionFrom = d
                     , transaccionTo = c
-                    , transaccionMonto = Monto $ Money.dense' $ realToFrac v
+                    , transaccionMonto = Monto $ Decimal.realFracToDecimal 2 v
                     })
                   )
               & pure
           _ -> do
             pure $ resolverDeudasNaif deudas
 
+between :: (Ord a, Num a) => a -> a -> GLPK.Bounds a
 between a delta =
   case compare delta 0 of
     EQ -> GLPK.Equ a

@@ -1,21 +1,36 @@
 {-# LANGUAGE DataKinds #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
-module BananaSplit.Core where
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE TypeFamilies #-}
+module BananaSplit.Core
+    ( Grupo (..)
+    , Pago (..)
+    , Parte (Ponderado, MontoFijo)
+    , Participante (..)
+    , ParticipanteId (..)
+    , nullUlid
+    , participanteId2ULID
+      -- Monto
+    , Monto (..)
+    , inMonto
+    , monto2Text
+    ) where
 
 import Control.Monad.Fail (fail)
 
 import Data.Aeson
 import Data.Aeson.Types (Parser)
+import Data.Decimal (Decimal)
+import Data.Decimal qualified as Decimal
 import Data.ULID
 
 import Elm.Derive qualified as Elm
-import Elm.TyRep (EPrimAlias (..), ETCon (..), EType (..), ETypeDef (..), ETypeName (..),
-                  IsElmDefinition (..))
+import Elm.TyRep (EAlias (..), EPrimAlias (..), ETCon (..), EType (..), ETypeDef (..),
+                  ETypeName (..), IsElmDefinition (..))
 
-import Money qualified
-import Money.Aeson ()
+import GHC.Generics
 
 import Protolude
 import Protolude.Error
@@ -30,22 +45,39 @@ data Grupo = Grupo
   , participantes :: [Participante]
   } deriving (Show, Eq, Generic)
 
-newtype Monto = Monto (Money.Dense "ARS")
+newtype Monto = Monto Decimal
   deriving stock (Show, Eq, Ord)
-  deriving newtype (Num, Real, ToJSON, FromJSON)
+  deriving newtype (Num, Real, Enum)
+  deriving anyclass (ToJSON, FromJSON)
+
+instance Generic Monto where
+  type Rep Monto =
+    D1 ('MetaData "Monto" "BananaSplit.Core" "banana-split" 'False)
+      (C1 ('MetaCons "Monto" 'PrefixI 'False)
+        ( S1 ('MetaSel ('Just "lugaresDespuesDeLaComa") 'NoSourceUnpackedness 'NoSourceStrictness 'DecidedLazy) (Rec0 Word8)
+         :*: S1 ('MetaSel ('Just "valor") 'NoSourceUnpackedness 'NoSourceStrictness 'DecidedLazy) (Rec0 Integer)
+        )
+      )
+
+  from (Monto m) =
+    let
+      lugaresDespuesDeLaComa = Decimal.decimalPlaces m
+      valor =  Decimal.decimalMantissa m
+    in
+    M1 (M1 (M1 (K1 lugaresDespuesDeLaComa) :*: M1 (K1 valor)))
+
+  to (M1 (M1 (M1 (K1 lugaresDespuesDeLaComa) :*: M1 (K1 valor)))) =
+    Monto $ Decimal.Decimal lugaresDespuesDeLaComa valor
 
 monto2Text :: Monto -> Text
 monto2Text (Monto m) =
-  Money.denseToDecimal Money.defaultDecimalConf Money.Round m
+  show m
 
-text2Monto :: Text -> Maybe Monto
-text2Monto rawNumber =
-  rawNumber
-  & Money.denseFromDecimal Money.defaultDecimalConf
-  & fmap Monto
-
-monto2Dense :: Monto -> Money.Dense "ARS"
-monto2Dense (Monto m) = m
+-- | Conseguir decimal de adentro de un monto.
+--
+-- el patron de unCosa pero en español.
+inMonto :: Monto -> Decimal
+inMonto (Monto m) = m
 
 data Participante = Participante
   { participanteId :: ULID
@@ -103,29 +135,19 @@ data Parte
   | Ponderado Integer ParticipanteId
   deriving (Show, Eq, Generic)
 
-parteParticipante :: Parte -> ParticipanteId
-parteParticipante (Ponderado _ p) = p
-parteParticipante (MontoFijo _ p) = p
-
 instance FromHttpApiData Monto where
   parseUrlPiece :: Text -> Either Text Monto
   parseUrlPiece t = do
     rawNumber <- parseUrlPiece @Text t
-    case Money.denseFromDecimal Money.defaultDecimalConf rawNumber of
+    case readMaybe rawNumber of
       Just n -> pure $ Monto n
       Nothing -> Left $ "monto invalido: " <> show t
   parseQueryParam :: Text -> Either Text Monto
   parseQueryParam t = do
     rawNumber <- parseQueryParam @Text t
-    case Money.denseFromDecimal Money.defaultDecimalConf rawNumber of
+    case readMaybe rawNumber of
       Just n -> pure $ Monto n
       Nothing -> Left $ "monto invalido: " <> show t
-
-buscarParticipante :: Grupo -> ParticipanteId -> Participante
-buscarParticipante grupo (ParticipanteId pId) =
-  grupo.participantes
-  & find (\p -> p.participanteId == pId)
-  & fromMaybe (error $ "participante " <> show pId <> "not found")
 
 nullUlid :: ULID
 nullUlid = fromRight (error "impossible") $ ulidFromInteger 0
@@ -138,17 +160,24 @@ instance IsElmDefinition ULID where
 instance IsElmDefinition Monto where
   compileElmDef :: Proxy Monto -> ETypeDef
   compileElmDef _ =
-    ETypePrimAlias $ EPrimAlias
-      { epa_name = ETypeName
-          { et_name = "Monto"
-          , et_args = []
-          }
-      , epa_type = ETyTuple 3
-          & flip ETyApp (ETyCon (ETCon {tc_name = "String"}))
-          & flip ETyApp (ETyCon (ETCon {tc_name = "Int"}))
-          & flip ETyApp (ETyCon (ETCon {tc_name = "Int"}))
-      }
+    ETypeAlias (EAlias {
+      ea_name = ETypeName {et_name = "Monto", et_args = []},
+      ea_fields =
+        [ ("lugaresDespuesDeLaComa", ETyCon (ETCon {tc_name = "Int"}))
+        , ("valor", ETyCon (ETCon {tc_name = "Int"}))
+        ],
+      ea_omit_null = False
+      , ea_newtype = False
+      , ea_unwrap_unary = True
+      })
 
+-- >>> toJSON (Monto $ Decimal.roundTo 2 1000 :: Monto)
+-- Object (fromList [("lugaresDespuesDeLaComa",Number 2.0),("valor",Number 100000.0)])
+
+-- >>> compileElmDef (Proxy :: Proxy Pago)
+-- ETypeAlias (EAlias {ea_name = ETypeName {et_name = "Pago", et_args = []}, ea_fields = [("pagoId",ETyCon (ETCon {tc_name = "ULID"})),("monto",ETyCon (ETCon {tc_name = "Monto"})),("nombre",ETyCon (ETCon {tc_name = "Text"})),("deudores",ETyApp (ETyCon (ETCon {tc_name = "List"})) (ETyCon (ETCon {tc_name = "Parte"}))),("pagadores",ETyApp (ETyCon (ETCon {tc_name = "List"})) (ETyCon (ETCon {tc_name = "Parte"})))], ea_omit_null = False, ea_newtype = False, ea_unwrap_unary = True})
+
+-- Elm.deriveElmDef Elm.defaultOptions ''Monto
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteId
 Elm.deriveBoth Elm.defaultOptions ''Parte
 Elm.deriveBoth Elm.defaultOptions ''Pago

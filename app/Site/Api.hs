@@ -59,6 +59,8 @@ data Api routes
       routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] Text
     , _routeRepartijaToPago ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
+    , _routeHealth ::
+      routes :- "health" :> Get '[JSON] Text
     -- , _routeRepartijaItemDesdoblar ::
     --   routes :- "repartijas" :> Capture "repartijaId" ULID :> "claim" :> Capture "claimId":> Post '[JSON] String
     }

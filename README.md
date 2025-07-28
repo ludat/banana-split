@@ -42,20 +42,20 @@ sudo apt install libglpk-dev libpq-dev
 stack build
 ```
 
-### Instalar Reshape (para las migraciones)
+### Instalar pgroll (para las migraciones)
 
-Vamos a [la página de releases de reshape](https://github.com/fabianlindfors/reshape/releases) 
+Vamos a [la página de releases de pgroll](https://github.com/xataio/pgroll/releases)
 y nos descargamos el binario correspondiente. 
 Una vez descargado lo movemos a un lugar del PATH, por ejemplo en ubuntu:
 
 ```
-sudo mv reshape-linux_amd64 /usr/local/bin/reshape
+sudo mv pgroll-linux_amd64 /usr/local/bin/pgroll
 ```
 
 Verifiquemos que esté bien instalado con
 
 ```
-reshape --version
+pgroll --version
 ```
 
 ### Correr las migraciones
@@ -63,7 +63,8 @@ reshape --version
 Para correr las migraciones corremos el comando:
 
 ```
-reshape migration start --url postgres://postgres:postgres@127.0.0.1/bananasplit_dev
+cabal run banana-split -- migrations init
+cabal run banana-split -- migrations migrate ./migrations
 ```
 
 ### Correr la base de datos

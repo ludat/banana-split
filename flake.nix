@@ -6,30 +6,17 @@
     haskell-flake.url = "github:srid/haskell-flake";
   };
 
-  outputs = inputs@{ flake-parts, ... }:
+  outputs = inputs@{ flake-parts, self, ... }:
   flake-parts.lib.mkFlake { inherit inputs; } {
     systems = [ "x86_64-linux" ];
     imports = [
       inputs.haskell-flake.flakeModule
     ];
     perSystem = { self', system, lib, config, pkgs, ... }:
-      let
-        hsPkgs = pkgs.haskell.packages.ghc984;
-
-        bananasplitNativeDeps = with pkgs; [
-          nodePackages.pnpm
-          nodejs
-          git
-          cacert
-        ];
-
-        bananasplitDeps = with pkgs; [
-          reshape
-        ];
-      in {
+      {
       haskellProjects.default = {
         basePackages = pkgs.haskell.packages.ghc984;
-        projectRoot = 
+        projectRoot =
           with lib.fileset; toSource {
             root = ./.;
             fileset = unions [
@@ -59,6 +46,19 @@
         # my-haskell-package development shell configuration
         devShell = {
           hlsCheck.enable = true;
+          tools = hp: with hp; with pkgs; {
+            inherit
+              kubernetes-helm
+              kind
+              cabal-gild
+              process-compose
+              zlib
+              blas
+              lapack
+              glpk
+              libpq
+              ;
+          };
         };
 
         # What should haskell-flake add to flake outputs?
@@ -69,9 +69,8 @@
         name = "my-haskell-package custom development shell";
         inputsFrom = [
           config.haskellProjects.default.outputs.devShell
-        ];
-        nativeBuildInputs = with pkgs; [
-          # other development tools.
+          self'.packages.elm-ui
+          self'.packages.migrations
         ];
       };
       packages = {
@@ -94,7 +93,12 @@
               ./ui/elm-land.json
             ];
           };
-          nativeBuildInputs = bananasplitNativeDeps;
+          nativeBuildInputs = with pkgs; [
+            nodePackages.pnpm
+            nodejs
+            git
+            cacert
+          ];
 
           buildPhase = ''
             HOME=$PWD
@@ -110,12 +114,12 @@
         migrations = pkgs.stdenv.mkDerivation {
           name = "banana-split-migrations";
           src = ./migrations;
-          buildInputs = with pkgs; [ reshape ];
+          buildInputs = with pkgs; [ pgroll ];
           postBuild = ''
             mkdir -p $out/opt/banana-split/migrations
             mkdir -p $out/bin/
 
-            cp -v ${pkgs.reshape}/bin/reshape $out/bin/
+            cp -v ${pkgs.pgroll}/bin/pgroll $out/bin/
             cp -vr . $out/opt/banana-split/migrations
           '';
         };
@@ -143,7 +147,7 @@
             ];
           };
           config = {
-            Cmd = ["banana-split"];
+            Cmd = ["banana-split" "server"];
             Entrypoint = ["entrypoint"];
             WorkingDir = "/opt/banana-split";
           };

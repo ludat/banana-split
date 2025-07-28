@@ -15,7 +15,7 @@ import Html.Events exposing (onClick, onSubmit)
 import Layouts
 import List.Extra exposing (find)
 import Models.Grupo exposing (lookupNombreParticipante)
-import Models.Monto exposing (montoToDecimal)
+import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Numeric.Decimal as Decimal
@@ -454,7 +454,7 @@ viewRepartijaItems userId grupo repartija =
                         List.append x
                             [ tr []
                                 [ td [] [ text "Propina" ]
-                                , td [ class "has-text-right" ] [ text "$", text <| Decimal.toString <| montoToDecimal repartija.repartijaExtra ]
+                                , td [ class "has-text-right" ] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.repartijaExtra ]
                                 , td [] []
                                 , td [] []
                                 , td [] []
@@ -464,9 +464,9 @@ viewRepartijaItems userId grupo repartija =
                                 , td [ class "has-text-right" ]
                                     [ text "$"
                                     , repartija.repartijaItems
-                                        |> List.map (\i -> montoToDecimal i.repartijaItemMonto)
+                                        |> List.map (\i -> Monto.toDecimal i.repartijaItemMonto)
                                         |> List.foldl Decimal.add (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                                        |> Decimal.add (montoToDecimal repartija.repartijaExtra)
+                                        |> Decimal.add (Monto.toDecimal repartija.repartijaExtra)
                                         |> Decimal.toString
                                         |> text
                                     ]
@@ -525,7 +525,7 @@ viewClaimsLine userId grupo repartija item =
     tr []
         [ td [ class "is-vcentered" ] [ text <| item.repartijaItemNombre ]
         , td [ class "has-text-right is-vcentered" ]
-            [ text <| "$" ++ Decimal.toString (montoToDecimal item.repartijaItemMonto)
+            [ text <| "$" ++ Decimal.toString (Monto.toDecimal item.repartijaItemMonto)
             ]
         , td [ class "has-text-right is-vcentered" ] [ text <| String.fromInt item.repartijaItemCantidad ]
         , td [] [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed ]
