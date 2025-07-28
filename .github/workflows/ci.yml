@@ -109,10 +109,10 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Configure Git
-        run: |
-          git config user.name "$GITHUB_ACTOR"
-          git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+      # - name: Configure Git
+      #   run: |
+      #     git config user.name "$GITHUB_ACTOR"
+      #     git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
 
       - name: Pull image tag
         run: |
@@ -135,12 +135,15 @@ jobs:
           NS=split-$RANDOM
           kubectl create namespace "$NS"
           kubectl config set-context k3d-split --namespace "$NS"
+          kubectl tag ghcr.io/ludat/banana-split:${{ github.sha }} banana-split:latest
+          k3d image import banana-split:latest -c split
 
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm install --namespace="$NS" --create-namespace --wait --values=./ci-values.yaml banana-split-test . &
           HELM_PID=$!
 
           while ps -p "$HELM_PID"; do
+            sleep 10
             kubectl get pods -o wide
           done;
           echo helm is done
