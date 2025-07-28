@@ -118,11 +118,11 @@ jobs:
         run: |
           docker pull ghcr.io/ludat/banana-split:${{ github.sha }}
 
-      - uses: AbsaOSS/k3d-action@v2
-        name: "Create Single Cluster"
-        with:
-          cluster-name: "split"
-          args: -p "80:80@loadbalancer"
+      # - uses: AbsaOSS/k3d-action@v2
+      #   name: "Create Single Cluster"
+      #   with:
+      #     cluster-name: "split"
+      #     args: -p "80:80@loadbalancer"
 
       - name: Get nodes
         run: |
@@ -132,11 +132,12 @@ jobs:
         run: |
           set -euo pipefail
           set -x
+          kind create cluster
           NS=split-$RANDOM
           kubectl create namespace "$NS"
           kubectl config set-context k3d-split --namespace "$NS"
           docker tag ghcr.io/ludat/banana-split:${{ github.sha }} banana-split:latest
-          k3d image import banana-split:latest -c split
+          # k3d image import banana-split:latest -c split
 
           helm repo add bitnami https://charts.bitnami.com/bitnami
           helm install --namespace="$NS" --create-namespace --wait --values=./ci-values.yaml banana-split-test . &
