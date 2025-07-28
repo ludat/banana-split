@@ -2,7 +2,6 @@ replicaCount: 2
 image:
   image: banana-split
   tag: latest
-  pullPolicy: Never
 
 ingress:
   enabled: true
