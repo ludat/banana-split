@@ -145,6 +145,8 @@ jobs:
           while ps -p "$HELM_PID" > /dev/null; do
             sleep 10
             kubectl logs -l role=app || true
+            kubectl logs -l role=migration-start || true
+            kubectl logs -l role=migration-complete || true
             kubectl get pods -o wide
           done;
           echo helm is done

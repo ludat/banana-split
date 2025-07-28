@@ -86,7 +86,7 @@ spec:
             - |
               set -euo pipefail
               set -x
-              if ! [[ $(banana-split migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/') = "Complete" ]]; then
+              if ! [[ $(timeout 10 banana-split migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/') = "Complete" ]]; then
                 banana-split migrations complete
               fi
 
