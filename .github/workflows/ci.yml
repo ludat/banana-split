@@ -142,8 +142,9 @@ jobs:
           helm install --namespace="$NS" --create-namespace --wait --values=./ci-values.yaml banana-split-test . &
           HELM_PID=$!
 
-          while ps -p "$HELM_PID"; do
+          while ps -p "$HELM_PID" > /dev/null; do
             sleep 10
+            kubectl logs deployments/banana-split-test
             kubectl get pods -o wide
           done;
           echo helm is done
