@@ -1,4 +1,4 @@
-name: "Runs whole CI ("
+name: "Runs whole CI"
 
 on:
   push:
@@ -110,7 +110,6 @@ jobs:
       - name: Pull image tag
         run: |
           docker pull ghcr.io/ludat/banana-split:${{ github.sha }}
-          docker tag ghcr.io/ludat/banana-split:${{ github.sha }} ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
 
       - uses: AbsaOSS/k3d-action@v2
         name: "Create Single Cluster"
