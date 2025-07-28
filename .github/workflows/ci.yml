@@ -144,7 +144,7 @@ jobs:
 
           while ps -p "$HELM_PID" > /dev/null; do
             sleep 10
-            kubectl logs deployments/banana-split-test
+            kubectl logs deployments/banana-split-test || true
             kubectl get pods -o wide
           done;
           echo helm is done
