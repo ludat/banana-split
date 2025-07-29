@@ -38,9 +38,23 @@ jobs:
 
       - name: Push chart
         uses: appany/helm-oci-chart-releaser@v0.5.0
+        continue-on-error: true
         with:
-          name: banana-split
+          name: banana-split/chart
           repository: ludat
+          path: charts/banana-split
+          tag: ${{ steps.chart_version.outputs.version }}
+          registry: ghcr.io
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push chart
+        uses: appany/helm-oci-chart-releaser@v0.5.0
+        continue-on-error: true
+        with:
+          name: banana-split-chart
+          repository: ludat
+          path: charts/banana-split
           tag: ${{ steps.chart_version.outputs.version }}
           registry: ghcr.io
           registry_username: ${{ github.actor }}
