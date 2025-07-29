@@ -1,0 +1,29 @@
+replicaCount: 2
+image:
+  image: banana-split
+  tag: latest
+
+ingress:
+  enabled: true
+  hosts:
+    - host: banana-split.localhost
+      paths:
+        - path: /
+          pathType: ImplementationSpecific
+
+postgresql:
+  enabled: true
+  image:
+    debug: true
+  primary:
+    initdb:
+      scripts:
+        give_permissions.sql: ALTER USER app WITH SUPERUSER;
+      user: postgres
+  audit:
+    pgAuditLog: all
+  auth:
+    postgresPassword: secret
+    username: app
+    password: secret
+    database: bananasplit-prod
