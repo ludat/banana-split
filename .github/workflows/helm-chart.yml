@@ -40,8 +40,8 @@ jobs:
         uses: appany/helm-oci-chart-releaser@v0.5.0
         continue-on-error: true
         with:
-          name: banana-split/chart
-          repository: ludat
+          name: banana-split
+          repository: ludat/charts
           path: charts/banana-split
           tag: ${{ steps.chart_version.outputs.version }}
           registry: ghcr.io
@@ -52,7 +52,7 @@ jobs:
         uses: appany/helm-oci-chart-releaser@v0.5.0
         continue-on-error: true
         with:
-          name: banana-split-chart
+          name: banana-split
           repository: ludat
           path: charts/banana-split
           tag: ${{ steps.chart_version.outputs.version }}
