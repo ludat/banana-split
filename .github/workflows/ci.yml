@@ -1,10 +1,9 @@
 name: "Runs whole CI"
 
 on:
-  # TODO: Uncomment this
-  # push:
-  #   branches:
-  #     - "**"
+  push:
+    branches:
+      - "main"
 
   release:
     types:
