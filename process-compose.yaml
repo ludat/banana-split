@@ -1,21 +1,19 @@
 version: "0.5"
 
 processes:
-  backend:
+  backend: &backend
     command: |
       ghcid --command='cabal repl --enable-multi-repl exe:banana-split lib:banana-split' --run=Main.main --warnings
-      # ghcid --command='cabal repl --enable-multi-repl test:spec lib:banana-split' --run=Main.main --warnings
     availability:
       restart: "always"
     depends_on:
       migrations:
         condition: process_completed_successfully
-    # readiness_probe:
-    #   http_get:
-    #     host: 127.0.0.1
-    #     scheme: http
-    #     path: "/api/health"
-    #     port: 8000
+  tests:
+    <<: *backend
+    disabled: true
+    command: |
+      ghcid --command='cabal repl --enable-multi-repl test:spec lib:banana-split' --run=Main.main --warnings
   frontend:
     command: pnpm start
     # environment:
