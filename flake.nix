@@ -49,7 +49,7 @@
           tools = hp: with hp; with pkgs; {
             inherit
               kubernetes-helm
-              kind
+              k3d
               cabal-gild
               process-compose
               zlib
