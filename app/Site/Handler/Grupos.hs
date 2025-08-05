@@ -7,7 +7,7 @@ module Site.Handler.Grupos
     , handleShowGrupo
     ) where
 
-import BananaSplit (Grupo, Participante, calcularDeudasTotales, minimizeTransactions)
+import BananaSplit
 import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParticipante, fetchGrupo)
 
 import Data.ULID (ULID)
@@ -26,14 +26,15 @@ handleCreateGrupo :: CreateGrupoParams -> AppHandler Grupo
 handleCreateGrupo CreateGrupoParams{grupoName} = do
   runBeam $ createGrupo grupoName
 
-handleGetNetos :: ULID -> AppHandler Netos
+handleGetNetos :: ULID -> AppHandler ResumenGrupo
 handleGetNetos grupoId = do
   grupo <- runBeam (fetchGrupo grupoId)
     `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   let deudas = calcularDeudasTotales grupo
-  pure $ Netos
-    { netos = deudas
+  pure $ ResumenGrupo
+    { netos = Netos deudas
+    , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
     , transaccionesParaSaldar = minimizeTransactions deudas
     }
 

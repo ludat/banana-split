@@ -3,6 +3,7 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingVia #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE TypeFamilies #-}
 module BananaSplit.Core
     ( Grupo (..)
@@ -17,6 +18,7 @@ module BananaSplit.Core
     , monto2Text
       -- Pago
     , Pago (..)
+    , addIsValidPago
     , getPagoErrors
     , isPagoValid
     ) where
@@ -127,6 +129,7 @@ participanteId2ULID (ParticipanteId ulid) = ulid
 
 data Pago = Pago
   { pagoId :: ULID
+  , isValid :: Bool
   , monto :: Monto
   , nombre :: Text
   , deudores :: [Parte]
@@ -146,6 +149,10 @@ getPagoErrors p = mconcat
   -- Pagadores
   , [ "Pagadores invalidos. No puede ser vacío" | True <- [null p.pagadores]]
   ]
+
+addIsValidPago :: Pago -> Pago
+addIsValidPago pago =
+  pago { isValid = isPagoValid pago }
 
 data Parte
   = MontoFijo Monto ParticipanteId

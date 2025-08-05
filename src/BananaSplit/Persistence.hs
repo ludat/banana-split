@@ -94,6 +94,7 @@ instance Table ParticipanteT where
 
 data PagoT f = Pago
   { pagoId :: Columnar f ULID
+  , pagoIsValid :: Columnar f Bool
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMonto :: MontoT f
@@ -265,11 +266,12 @@ fetchPagos aGrupoId = do
     & fmap (\pago ->
         M.Pago
         { M.pagoId = pago.pagoId
+        , M.isValid = False
         , M.monto = montoFromDb pago.pagoMonto
         , M.nombre = pago.pagoNombre
         , M.deudores = Map.lookup (PagoId pago.pagoId) deudoresMap & fromMaybe []
         , M.pagadores = Map.lookup (PagoId pago.pagoId) pagadoresMap & fromMaybe []
-        }
+        } & M.addIsValidPago
       )
     & pure
   where
@@ -328,14 +330,14 @@ deleteShallowParticipante _grupoId pId = do
 savePago :: ULID -> M.Pago -> Pg M.Pago
 savePago grupoId pagoWithoutId = do
   newId <- liftIO ULID.getULID
-  let pago = pagoWithoutId {M.pagoId = newId}
+  let pago = pagoWithoutId {M.pagoId = newId} & M.addIsValidPago
   runInsert $ insert db._bananasplitPagos $ insertValues
-    [ Pago (M.pagoId pago) (GrupoId grupoId) (M.nombre pago) (deconstructMonto $ M.monto pago)
+    [ Pago (M.pagoId pago) (M.isValid pago) (GrupoId grupoId) (M.nombre pago) (deconstructMonto $ M.monto pago)
     ]
   savePagadores pago
   saveDeudores pago
 
-  pure pago { M.pagoId = newId }
+  pure pago
 
 savePagadores :: M.Pago -> Pg ()
 savePagadores pago =

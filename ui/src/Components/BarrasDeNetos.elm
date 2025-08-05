@@ -13,7 +13,7 @@ viewNetosBarras : Grupo -> Netos -> Html msg
 viewNetosBarras grupo netos =
     let
         maximo =
-            netos.netos
+            netos
                 |> List.map
                     (\( _, m ) ->
                         Monto.abs m
@@ -24,7 +24,7 @@ viewNetosBarras grupo netos =
     in
     div [ class "fixed-grid" ]
         [ div [ class "grid", Css.barras_precio ]
-            (netos.netos
+            (netos
                 |> List.sortBy
                     (\( _, m ) -> m.valor)
                 |> List.reverse

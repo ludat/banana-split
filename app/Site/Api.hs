@@ -1,6 +1,8 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -33,7 +35,7 @@ data Api routes
     , _routeGrupoGet ::
       routes :- "grupo" :> Capture "id" ULID :> Get '[JSON] Grupo
     , _routeGrupoGetNetos ::
-      routes :- "grupo" :> Capture "id" ULID :> "netos" :> Get '[JSON] Netos
+      routes :- "grupo" :> Capture "id" ULID :> "resumen" :> Get '[JSON] ResumenGrupo
     , _routeGrupoParticipanteAdd ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
     , _routePagoPost ::
@@ -76,11 +78,16 @@ data CreateGrupoParams = CreateGrupoParams
   { grupoName :: Text
   } deriving (Show, Eq, Generic)
 
-data Netos = Netos
+newtype Netos = Netos (Deudas Monto)
+  deriving (Show, Eq, Generic)
+
+data ResumenGrupo = ResumenGrupo
   { transaccionesParaSaldar :: [Transaccion]
-  , netos :: Deudas Monto
+  , netos :: Netos
+  , cantidadPagosInvalidos :: Int
   } deriving (Show, Eq, Generic)
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''Netos
+Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo

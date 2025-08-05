@@ -16,7 +16,7 @@ import Protolude.Error
 import Servant
 import Servant.Elm
 
-import Site.Api (Api (..), Netos, ParticipanteAddParams (..))
+import Site.Api (Api (..), Netos, ParticipanteAddParams (..), ResumenGrupo)
 import Site.Handler.Grupos (CreateGrupoParams)
 
 
@@ -42,6 +42,7 @@ generateElmFiles = do
     "ui/src/"
     [ DefineElm (Proxy :: Proxy CreateGrupoParams)
     , DefineElm (Proxy :: Proxy ParticipanteAddParams)
+    , DefineElm (Proxy :: Proxy ResumenGrupo)
     , DefineElm (Proxy :: Proxy Grupo)
     , DefineElm (Proxy :: Proxy Participante)
     , DefineElm (Proxy :: Proxy Transaccion)

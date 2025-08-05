@@ -1,4 +1,5 @@
-@import "https://cdn.jsdelivr.net/npm/bulma@1.0.0/css/bulma.min.css";
+@import "https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css";
+@import "https://cdn.jsdelivr.net/npm/bulma-v1-tooltip/dist/bulma-v1-tooltip.min.css";
 
 :root {
     --alto-barra: 11px;

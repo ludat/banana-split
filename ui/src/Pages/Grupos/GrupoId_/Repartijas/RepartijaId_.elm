@@ -247,7 +247,7 @@ update maybeParticipanteId store msg model =
             ( model
             , Effect.batch
                 [ Store.refreshGrupo model.grupoId
-                , Store.refreshNetos model.grupoId
+                , Store.refreshResumen model.grupoId
                 , if RemoteData.isSuccess reponse then
                     Toast.pushToast Toast.ToastSuccess "Pago creado."
 

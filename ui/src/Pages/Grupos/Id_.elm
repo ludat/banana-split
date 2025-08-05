@@ -4,7 +4,7 @@ import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Effect exposing (Effect)
 import FeatherIcons as Icons
-import Generated.Api as Api exposing (Grupo, Netos, Pago, Parte(..), Transaccion, ULID)
+import Generated.Api as Api exposing (Grupo, Netos, Pago, Parte(..), ResumenGrupo, Transaccion, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
@@ -49,7 +49,7 @@ init : ULID -> Store -> ( Model, Effect Msg )
 init grupoId store =
     ( { grupoId = grupoId }
     , Effect.batch
-        [ Store.ensureNetos grupoId store
+        [ Store.ensureResumen grupoId store
         , Store.ensureGrupo grupoId store
         ]
     )
@@ -72,7 +72,7 @@ update msg model =
         AddedPagoResponse (Ok pago) ->
             ( model
             , Effect.batch
-                [ Store.refreshNetos model.grupoId
+                [ Store.refreshResumen model.grupoId
                 , Store.refreshGrupo model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se completó el pago"
                 ]
@@ -96,6 +96,7 @@ update msg model =
 pagoFromTransaccion : Transaccion -> Pago
 pagoFromTransaccion transaction =
     { pagoId = emptyUlid
+    , isValid = False
     , monto = transaction.transaccionMonto
     , nombre = "Pago saldado"
     , pagadores = [ Ponderado 1 transaction.transaccionFrom ]
@@ -148,11 +149,21 @@ view store model =
                         ]
 
                      else
-                        case store |> Store.getNetos model.grupoId of
-                            Success netos ->
-                                [ div [ class "column is-two-thirds mb-6" ]
-                                    [ viewNetosBarras grupo netos ]
-                                , viewTransferencias grupo netos
+                        case store |> Store.getResumen model.grupoId of
+                            Success resumen ->
+                                [ if resumen.cantidadPagosInvalidos > 0 then
+                                    div [ class "notification is-danger" ]
+                                        [ text <|
+                                            "Tenés "
+                                                ++ String.fromInt resumen.cantidadPagosInvalidos
+                                                ++ " pagos invalidos, esos no se cuentan para las deudas."
+                                        ]
+
+                                  else
+                                    text ""
+                                , div [ class "column is-two-thirds mb-6" ]
+                                    [ viewNetosBarras grupo resumen.netos ]
+                                , viewTransferencias grupo resumen
                                 ]
 
                             NotAsked ->
@@ -168,10 +179,10 @@ view store model =
             }
 
 
-viewTransferencias : Grupo -> Netos -> Html Msg
-viewTransferencias grupo netos =
+viewTransferencias : Grupo -> ResumenGrupo -> Html Msg
+viewTransferencias grupo resumen =
     div [ class "column is-two-thirds" ]
-        (netos.transaccionesParaSaldar
+        (resumen.transaccionesParaSaldar
             |> List.map
                 (\t ->
                     div [ class "fixed-grid has-11-cols mb-2" ]

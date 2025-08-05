@@ -16,7 +16,7 @@ import Data.ULID (ULID)
 
 import Protolude
 
-import Site.Api (Netos (Netos, netos, transaccionesParaSaldar))
+import Site.Api
 import Site.Handler.Utils (runBeam)
 
 import Types
@@ -27,7 +27,7 @@ handlePagoPost grupoId pago = do
 
 handlePagoNetosPost :: Pago -> AppHandler Netos
 handlePagoNetosPost pago = do
-  pure $ Netos { transaccionesParaSaldar = [], netos = calcularDeudasPago pago}
+  pure $ Netos $ calcularDeudasPago pago
 
 handleDeletePago :: ULID -> ULID -> AppHandler ULID
 handleDeletePago grupoId pagoId = do

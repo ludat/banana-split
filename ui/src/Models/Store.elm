@@ -2,7 +2,7 @@ module Models.Store exposing (..)
 
 import Dict exposing (Dict)
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Grupo, Netos, Repartija, ShallowRepartija, ULID)
+import Generated.Api as Api exposing (Grupo, Netos, Repartija, ResumenGrupo, ShallowRepartija, ULID)
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
@@ -24,13 +24,13 @@ update msg store =
                 ]
             )
 
-        NetosFetched grupoId netos ->
-            ( store |> saveNetos grupoId netos, Effect.none )
+        ResumenFetched grupoId resumen ->
+            ( store |> saveResumen grupoId resumen, Effect.none )
 
-        FetchNetos grupoId ->
+        FetchResumen grupoId ->
             ( store
             , Effect.batch
-                [ Effect.sendCmd <| Api.getGrupoByIdNetos grupoId (RemoteData.fromResult >> NetosFetched grupoId >> StoreMsg)
+                [ Effect.sendCmd <| Api.getGrupoByIdResumen grupoId (RemoteData.fromResult >> ResumenFetched grupoId >> StoreMsg)
                 ]
             )
 
@@ -59,12 +59,12 @@ update msg store =
             )
 
 
-saveNetos : ULID -> WebData Netos -> Store -> Store
-saveNetos grupoId netos store =
+saveResumen : ULID -> WebData ResumenGrupo -> Store -> Store
+saveResumen grupoId resumen store =
     { store
-        | netos =
-            store.netos
-                |> Dict.insert grupoId netos
+        | resumenes =
+            store.resumenes
+                |> Dict.insert grupoId resumen
     }
 
 
@@ -100,9 +100,9 @@ refreshGrupo grupoId =
     Effect.sendStoreMsg <| FetchGrupo grupoId
 
 
-refreshNetos : ULID -> Effect msg
-refreshNetos grupoId =
-    Effect.sendStoreMsg <| FetchNetos grupoId
+refreshResumen : ULID -> Effect msg
+refreshResumen grupoId =
+    Effect.sendStoreMsg <| FetchResumen grupoId
 
 
 refreshRepartijas : ULID -> Effect msg
@@ -163,11 +163,11 @@ ensureRepartija repartijaId store =
             Effect.none
 
 
-ensureNetos : ULID -> Store -> Effect msg
-ensureNetos grupoId store =
-    case getNetos grupoId store of
+ensureResumen : ULID -> Store -> Effect msg
+ensureResumen grupoId store =
+    case getResumen grupoId store of
         NotAsked ->
-            Effect.sendStoreMsg <| FetchNetos grupoId
+            Effect.sendStoreMsg <| FetchResumen grupoId
 
         Loading ->
             Effect.none
@@ -186,9 +186,9 @@ getGrupo grupoId store =
         |> Maybe.withDefault NotAsked
 
 
-getNetos : ULID -> Store -> WebData Netos
-getNetos grupoId store =
-    store.netos
+getResumen : ULID -> Store -> WebData ResumenGrupo
+getResumen grupoId store =
+    store.resumenes
         |> Dict.get grupoId
         |> Maybe.withDefault NotAsked
 
@@ -211,14 +211,14 @@ evictGroup : ULID -> Store -> Store
 evictGroup grupoId store =
     { store
         | grupos = store.grupos |> Dict.remove grupoId
-        , netos = store.netos |> Dict.remove grupoId
+        , resumenes = store.resumenes |> Dict.remove grupoId
     }
 
 
 empty : Store
 empty =
     { grupos = Dict.empty
-    , netos = Dict.empty
+    , resumenes = Dict.empty
     , repartijasPorGrupo = Dict.empty
     , repartijas = Dict.empty
     }

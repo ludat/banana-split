@@ -94,6 +94,7 @@ repartija2Pago repartija =
 
   in Pago
   { pagoId = nullUlid
+  , isValid = False
   , monto = total
   , nombre = repartija.repartijaNombre
   , deudores =
@@ -102,7 +103,7 @@ repartija2Pago repartija =
     & mconcat
     & (<> deudasDelExtraPonderado)
   , pagadores = []
-  }
+  } & addIsValidPago
   where
     deudasToPartes :: Deudas Monto -> [Parte]
     deudasToPartes =

@@ -127,6 +127,7 @@ validatePago : Validation CustomFormError Pago
 validatePago =
     V.succeed Pago
         |> V.andMap (V.succeed emptyUlid)
+        |> V.andMap (V.succeed False)
         |> V.andMap (V.field "monto" Monto.validateMonto)
         |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
         |> V.andMap (V.field "deudores" (V.list validateParte |> V.andThen nonEmptyList))
@@ -176,7 +177,7 @@ update store userId msg model =
         AddedPagoResponse (Ok pago) ->
             ( { model | pagoPopoverState = Closed }
             , Effect.batch
-                [ Store.refreshNetos model.grupoId
+                [ Store.refreshResumen model.grupoId
                 , Store.refreshGrupo model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el pago"
                 ]
@@ -190,7 +191,7 @@ update store userId msg model =
         UpdatedPagoResponse (Ok pago) ->
             ( { model | pagoPopoverState = Closed }
             , Effect.batch
-                [ Store.refreshNetos model.grupoId
+                [ Store.refreshResumen model.grupoId
                 , Store.refreshGrupo model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el pago"
                 ]
@@ -335,6 +336,7 @@ update store userId msg model =
                     ( model
                     , Effect.batch
                         [ Store.refreshGrupo model.grupoId
+                        , Store.refreshResumen model.grupoId
                         , pushToast ToastSuccess "Pago borrado"
                         ]
                     )
@@ -497,6 +499,22 @@ view store model =
                                         [ header [ class "card-header" ]
                                             [ p [ class "card-header-title py-2 px-4" ]
                                                 [ text pago.nombre ]
+                                            , case pago.isValid of
+                                                True ->
+                                                    text ""
+
+                                                False ->
+                                                    button
+                                                        [ class "card-header-icon"
+                                                        , attribute "aria-label" "more options"
+                                                        ]
+                                                        [ span
+                                                            [ class "icon has-tooltip-danger has-text-danger"
+                                                            , attribute "data-tooltip" "Este pago es invalido. No se cuenta para las deudas."
+                                                            ]
+                                                            [ Icons.toHtml [] Icons.alertCircle
+                                                            ]
+                                                        ]
                                             ]
                                         , div [ class "card-content" ]
                                             [ p [ class "title is-3 m-0" ]

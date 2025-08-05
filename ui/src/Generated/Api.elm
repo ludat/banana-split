@@ -36,6 +36,29 @@ jsonEncParticipanteAddParams  val =
    Json.Encode.string val.name
 
 
+type alias ResumenGrupo  =
+   { transaccionesParaSaldar: (List Transaccion)
+   , netos: Netos
+   , cantidadPagosInvalidos: Int
+   }
+
+jsonDecResumenGrupo : Json.Decode.Decoder ( ResumenGrupo )
+jsonDecResumenGrupo =
+   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos})
+   |> required "transaccionesParaSaldar" (Json.Decode.list (jsonDecTransaccion))
+   |> required "netos" (jsonDecNetos)
+   |> required "cantidadPagosInvalidos" (Json.Decode.int)
+
+jsonEncResumenGrupo : ResumenGrupo -> Value
+jsonEncResumenGrupo  val =
+   Json.Encode.object
+   [ ("transaccionesParaSaldar", (Json.Encode.list jsonEncTransaccion) val.transaccionesParaSaldar)
+   , ("netos", jsonEncNetos val.netos)
+   , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
+   ]
+
+
+
 type alias Grupo  =
    { grupoId: ULID
    , grupoNombre: String
@@ -105,28 +128,20 @@ jsonEncTransaccion  val =
 
 
 
-type alias Netos  =
-   { transaccionesParaSaldar: (List Transaccion)
-   , netos: (Deudas Monto)
-   }
+type alias Netos  = (Deudas Monto)
 
 jsonDecNetos : Json.Decode.Decoder ( Netos )
 jsonDecNetos =
-   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos})
-   |> required "transaccionesParaSaldar" (Json.Decode.list (jsonDecTransaccion))
-   |> required "netos" (jsonDecDeudas (jsonDecMonto))
+    jsonDecDeudas (jsonDecMonto)
 
 jsonEncNetos : Netos -> Value
-jsonEncNetos  val =
-   Json.Encode.object
-   [ ("transaccionesParaSaldar", (Json.Encode.list jsonEncTransaccion) val.transaccionesParaSaldar)
-   , ("netos", (jsonEncDeudas (jsonEncMonto)) val.netos)
-   ]
+jsonEncNetos  val = (jsonEncDeudas (jsonEncMonto)) val
 
 
 
 type alias Pago  =
    { pagoId: ULID
+   , isValid: Bool
    , monto: Monto
    , nombre: String
    , deudores: (List Parte)
@@ -135,8 +150,9 @@ type alias Pago  =
 
 jsonDecPago : Json.Decode.Decoder ( Pago )
 jsonDecPago =
-   Json.Decode.succeed (\ppagoId pmonto pnombre pdeudores ppagadores -> {pagoId = ppagoId, monto = pmonto, nombre = pnombre, deudores = pdeudores, pagadores = ppagadores})
+   Json.Decode.succeed (\ppagoId pisValid pmonto pnombre pdeudores ppagadores -> {pagoId = ppagoId, isValid = pisValid, monto = pmonto, nombre = pnombre, deudores = pdeudores, pagadores = ppagadores})
    |> required "pagoId" (jsonDecULID)
+   |> required "isValid" (Json.Decode.bool)
    |> required "monto" (jsonDecMonto)
    |> required "nombre" (Json.Decode.string)
    |> required "deudores" (Json.Decode.list (jsonDecParte))
@@ -146,6 +162,7 @@ jsonEncPago : Pago -> Value
 jsonEncPago  val =
    Json.Encode.object
    [ ("pagoId", jsonEncULID val.pagoId)
+   , ("isValid", Json.Encode.bool val.isValid)
    , ("monto", jsonEncMonto val.monto)
    , ("nombre", Json.Encode.string val.nombre)
    , ("deudores", (Json.Encode.list jsonEncParte) val.deudores)
@@ -388,8 +405,8 @@ getGrupoById capture_id toMsg =
                 Nothing
             }
 
-getGrupoByIdNetos : ULID -> (Result Http.Error  (Netos)  -> msg) -> Cmd msg
-getGrupoByIdNetos capture_id toMsg =
+getGrupoByIdResumen : ULID -> (Result Http.Error  (ResumenGrupo)  -> msg) -> Cmd msg
+getGrupoByIdResumen capture_id toMsg =
     let
         params =
             List.filterMap identity
@@ -405,13 +422,13 @@ getGrupoByIdNetos capture_id toMsg =
                 Url.Builder.crossOrigin "/api"
                     [ "grupo"
                     , (capture_id)
-                    , "netos"
+                    , "resumen"
                     ]
                     params
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg jsonDecNetos
+                Http.expectJson toMsg jsonDecResumenGrupo
             , timeout =
                 Nothing
             , tracker =
