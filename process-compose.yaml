@@ -18,6 +18,8 @@ processes:
     command: pnpm start
     # environment:
     # - LAUNCH_EDITOR=zeditor
+    environment:
+    - LAUNCH_EDITOR=zed
     working_dir: ./ui
     availability:
       restart: "always"

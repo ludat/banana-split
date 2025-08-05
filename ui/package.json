@@ -17,10 +17,15 @@
   "license": "ISC",
   "dependencies": {
     "@ryannhg/css-in-elm": "^1.0.0",
-    "concurrently": "^9.1.2",
+    "concurrently": "^9.2.0",
     "elm": "0.19.1-6",
-    "elm-format": "^0.8.7",
+    "elm-format": "^0.8.8",
     "elm-json": "^0.2.13",
     "elm-land": "^0.20.1"
+  },
+  "pnpm": {
+  "overrides": {
+    "launch-editor": "2.11.0"
+  }
   }
 }
