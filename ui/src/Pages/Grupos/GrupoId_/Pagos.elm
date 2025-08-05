@@ -509,8 +509,8 @@ view store model =
                                                         , attribute "aria-label" "more options"
                                                         ]
                                                         [ span
-                                                            [ class "icon has-tooltip-danger has-text-danger"
-                                                            , attribute "data-tooltip" "Este pago es invalido. No se cuenta para las deudas."
+                                                            [ class "icon has-tooltip-multiline has-tooltip-danger has-text-danger"
+                                                            , attribute "data-tooltip" "Este pago es invalido asi que no se cuenta para las deudas."
                                                             ]
                                                             [ Icons.toHtml [] Icons.alertCircle
                                                             ]
