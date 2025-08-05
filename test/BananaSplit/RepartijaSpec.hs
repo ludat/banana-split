@@ -20,6 +20,7 @@ spec = describe "validar repartija" $ do
         })
       `shouldBe` Pago
           { pagoId = nullUlid
+          , isValid = False
           , monto = 0
           , nombre = "un nombre"
           , deudores = []
@@ -42,6 +43,7 @@ spec = describe "validar repartija" $ do
         })
       `shouldBe` Pago
           { pagoId = nullUlid
+          , isValid = False
           , monto = 100
           , nombre = "un nombre"
           , deudores =
@@ -68,6 +70,7 @@ spec = describe "validar repartija" $ do
         })
       `shouldBe` Pago
           { pagoId = nullUlid
+          , isValid = False
           , monto = 200
           , nombre = "un nombre"
           , deudores =
@@ -100,6 +103,7 @@ spec = describe "validar repartija" $ do
         })
       `shouldBe` Pago
           { pagoId = nullUlid
+          , isValid = False
           , monto = 500
           , nombre = "un nombre"
           , deudores =
@@ -132,6 +136,7 @@ spec = describe "validar repartija" $ do
         })
       `shouldBe` Pago
           { pagoId = nullUlid
+          , isValid = False
           , monto = 550
           , nombre = "un nombre"
           , deudores =
@@ -164,6 +169,7 @@ spec = describe "validar repartija" $ do
         })
       `shouldBe` Pago
           { pagoId = nullUlid
+          , isValid = False
           , monto = 500
           , nombre = "un nombre"
           , deudores =

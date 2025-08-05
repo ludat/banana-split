@@ -13,6 +13,7 @@ pagoValido :: Pago
 pagoValido =
   Pago
   { pagoId = nullUlid
+  , isValid = True
   , nombre = "Pago"
   , monto = Monto 200.00
   , deudores = [Ponderado 1 (participante 1)]

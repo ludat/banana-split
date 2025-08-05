@@ -24,6 +24,7 @@ spec = do
     it "calcula deudas de un pago con ponderador" $ do
       calcularDeudasPago Pago
         { pagoId = fakeUlid 100
+        , isValid = True
         , monto = 1000
         , nombre = "cosa"
         , pagadores =
@@ -41,6 +42,7 @@ spec = do
     it "devuelve deudas vacias si el pago es invalido" $ do
       calcularDeudasPago Pago
         { pagoId = fakeUlid 100
+        , isValid = False
         , monto = 1000
         , nombre = "cosa"
         , pagadores = []
