@@ -58,14 +58,13 @@ resolverDeudasRecursivo netBalances =
                   then Transaccion partner personOwing paymentAmount
                   else Transaccion personOwing partner paymentAmount
           in fmap (transaction :) (settleDebts nextBalances)
+    -- Helper to insert updated balances (or remove if settled)
+    insertOrRemove :: (ParticipanteId, Monto) -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
+    insertOrRemove (_, 0) balances = balances
+    insertOrRemove updatedBalance balances = updatedBalance : deleteByPerson (fst updatedBalance) balances
 
--- Helper to insert updated balances (or remove if settled)
-insertOrRemove :: (ParticipanteId, Monto) -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
-insertOrRemove (_, 0) balances = balances
-insertOrRemove updatedBalance balances = updatedBalance : deleteByPerson (fst updatedBalance) balances
-
-deleteByPerson :: ParticipanteId -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
-deleteByPerson name = filter ((/= name) . fst)
+    deleteByPerson :: ParticipanteId -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
+    deleteByPerson name = filter ((/= name) . fst)
 
 data Transaccion = Transaccion
   { transaccionFrom :: ParticipanteId
@@ -110,6 +109,7 @@ totalDeudas (Deudas deudasMap) =
 calcularDeudasTotales :: Grupo -> Deudas Monto
 calcularDeudasTotales grupo =
   grupo.pagos
+  & filter isPagoValid
   & fmap calcularDeudasPago
   & mconcat
 
@@ -118,8 +118,9 @@ mkDeuda participanteId monto =
   Deudas $ Map.singleton participanteId monto
 
 calcularDeudasPago :: Pago -> Deudas Monto
-calcularDeudasPago pago =
-  calcularDeudas pago.monto pago.pagadores <> fmap (* -1) (calcularDeudas pago.monto pago.deudores)
+calcularDeudasPago pago
+  | isPagoValid pago =  calcularDeudas pago.monto pago.pagadores <> fmap negate (calcularDeudas pago.monto pago.deudores)
+  | otherwise = mempty
   where
     calcularDeudas montoOriginal partes =
       let
@@ -204,7 +205,7 @@ resolverDeudasNaif deudas
 
 -- Main function to solve the debt problem
 solveOptimalTransactions :: Deudas Monto -> [Transaccion]
-solveOptimalTransactions deudas@(Deudas oldBalances) = unsafePerformIO $ do
+solveOptimalTransactions (Deudas oldBalances) = unsafePerformIO $ do
     -- 1. Preprocessing and Validation
     let
       balances :: Map ParticipanteId Double
@@ -274,7 +275,7 @@ solveOptimalTransactions deudas@(Deudas oldBalances) = unsafePerformIO $ do
                   )
               & pure
           _ -> do
-            pure $ resolverDeudasNaif deudas
+            error $ "Failed resolving deudas: " <> show r
 
 between :: (Ord a, Num a) => a -> a -> GLPK.Bounds a
 between a delta =

@@ -22,7 +22,7 @@ spec = do
     u6 = participante 6
   describe "calcularDeudas" $ do
     it "calcula deudas de un pago con ponderador" $ do
-      calcularDeudasPago (Pago
+      calcularDeudasPago Pago
         { pagoId = fakeUlid 100
         , monto = 1000
         , nombre = "cosa"
@@ -33,10 +33,22 @@ spec = do
             [ Ponderado 1 u1
             , Ponderado 1 u2
             ]
-        }) `shouldBe` deudas
+        } `shouldBe` deudas
           [ (u1, 500)
           , (u2, -500)
           ]
+
+    it "devuelve deudas vacias si el pago es invalido" $ do
+      calcularDeudasPago Pago
+        { pagoId = fakeUlid 100
+        , monto = 1000
+        , nombre = "cosa"
+        , pagadores = []
+        , deudores =
+            [ Ponderado 1 u1
+            , Ponderado 1 u2
+            ]
+        } `shouldBe` mempty
 
   describe "simplify transactions" $ do
     it "simplifica ningun transaccion trivialmente" $ do

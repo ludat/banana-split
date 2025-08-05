@@ -6,7 +6,6 @@
 {-# LANGUAGE TypeFamilies #-}
 module BananaSplit.Core
     ( Grupo (..)
-    , Pago (..)
     , Parte (Ponderado, MontoFijo)
     , Participante (..)
     , ParticipanteId (..)
@@ -16,6 +15,10 @@ module BananaSplit.Core
     , Monto (..)
     , inMonto
     , monto2Text
+      -- Pago
+    , Pago (..)
+    , getPagoErrors
+    , isPagoValid
     ) where
 
 import Control.Monad.Fail (fail)
@@ -129,6 +132,20 @@ data Pago = Pago
   , deudores :: [Parte]
   , pagadores :: [Parte]
   } deriving (Show, Eq, Generic)
+
+
+isPagoValid :: Pago -> Bool
+isPagoValid pago = null (getPagoErrors pago)
+
+getPagoErrors :: Pago -> [Text]
+getPagoErrors p = mconcat
+  [ [ "Monto invalido. No puede ser negativo" | True <- [p.monto < 0]]
+  , [ "Monto invalido. No puede ser 0" | True <- [p.monto == 0]]
+  -- Deudores
+  , [ "Deudores invalidos. No puede ser vacío" | True <- [null p.deudores]]
+  -- Pagadores
+  , [ "Pagadores invalidos. No puede ser vacío" | True <- [null p.pagadores]]
+  ]
 
 data Parte
   = MontoFijo Monto ParticipanteId

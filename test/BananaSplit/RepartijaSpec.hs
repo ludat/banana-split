@@ -1,12 +1,9 @@
 module BananaSplit.RepartijaSpec where
 
 import BananaSplit
-
-import Data.Text qualified as Text
-import Data.ULID
+import BananaSplit.TestUtils
 
 import Protolude
-import Protolude.Error
 
 import Test.Hspec
 
@@ -177,12 +174,3 @@ spec = describe "validar repartija" $ do
             ]
           , pagadores = []
           }
-
-participante :: Integer -> ParticipanteId
-participante = ParticipanteId . fakeUlid
-
-fakeUlid :: Integer -> ULID
-fakeUlid integer =
-  case ulidFromInteger integer of
-    Right ulid -> ulid
-    Left e -> error e
