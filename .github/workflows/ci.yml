@@ -138,7 +138,8 @@ jobs:
           docker push kind-registry:5000/banana-split:latest
 
           kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
-          kubectl wait --for=condition=available deployment ingress-nginx-controller -n ingress-nginx --timeout=30s
+          kubectl wait --for=condition=ready=false pod -l app.kubernetes.io/component=admission-webhook -n ingress-nginx --timeout=20s
+          kubectl wait --for=condition=ready=true pod -l app.kubernetes.io/component=controller -n ingress-nginx --timeout=20s
 
           kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.26.1.yaml
           kubectl wait --for=condition=available deployment/cnpg-controller-manager -n cnpg-system --timeout=30s
