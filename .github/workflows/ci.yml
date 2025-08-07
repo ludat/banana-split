@@ -138,11 +138,13 @@ jobs:
           docker tag ghcr.io/ludat/banana-split:${{ github.sha }} kind-registry:5000/banana-split:latest
           docker push kind-registry:5000/banana-split:latest
 
+          kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
+          kubectl wait --for=condition=available deployment ingress-nginx-controller -n ingress-nginx --timeout=30s
+
           kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.26.1.yaml
           kubectl wait --for=condition=available deployment/cnpg-controller-manager -n cnpg-system --timeout=30s
 
-          kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
-          kubectl wait --for=condition=available deployment ingress-nginx-controller -n ingress-nginx --timeout=30s
+          sleep 10
 
           helm install --wait --values=./ci-values.yaml banana-split-test . &
           HELM_PID=$!
