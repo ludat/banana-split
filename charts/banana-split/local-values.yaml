@@ -10,19 +10,18 @@ ingress:
         - path: /
           pathType: ImplementationSpecific
 
-postgresql:
-  enabled: true
-  image:
-    debug: true
-  primary:
-    initdb:
-      scripts:
-        give_permissions.sql: ALTER USER app WITH SUPERUSER;
-      user: postgres
-  audit:
-    pgAuditLog: all
-  auth:
-    postgresPassword: secret
-    username: app
-    password: secret
-    database: bananasplit-prod
+extraResources:
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: {{ include "banana-split.fullname" . }}-db
+    spec:
+      bootstrap:
+        initdb:
+          database: bananasplit-prod
+          owner: app
+          postInitSQL:
+            - ALTER USER app WITH SUPERUSER;
+      storage:
+        size: 1Gi

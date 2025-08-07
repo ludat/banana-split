@@ -122,5 +122,4 @@ tolerations: []
 
 affinity: {}
 
-postgresql:
-  enabled: true
+extraResources: []

@@ -65,24 +65,9 @@ Create the name of the service account to use
 Env for app
 */}}
 {{- define "banana-split.env" -}}
-- name: BANANASPLIT_DATABASE_HOST
-  value: {{ include "banana-split.fullname" . }}-postgresql
-- name: BANANASPLIT_DATABASE_DATABASE
-  value: {{ .Values.postgresql.auth.database }}
-- name: BANANASPLIT_DATABASE_USERNAME
-  value: {{ .Values.postgresql.auth.username }}
-- name: BANANASPLIT_DATABASE_PASSWORD
-  value: {{ .Values.postgresql.auth.password }}
-  # valueFrom:
-  #   secretKeyRef:
-  #     name: {{ include "banana-split.fullname" . }}-postgresql
-  #     key: postgres-password
-- name: BANANASPLIT_DATABASE_ADMIN_USERNAME
-  value: postgres
-- name: BANANASPLIT_DATABASE_ADMIN_PASSWORD
-  value: {{ .Values.postgresql.auth.postgresPassword }}
 - name: BANANASPLIT_DATABASE_URL
-  value: "postgresql://$(BANANASPLIT_DATABASE_USERNAME):$(BANANASPLIT_DATABASE_PASSWORD)@$(BANANASPLIT_DATABASE_HOST)/$(BANANASPLIT_DATABASE_DATABASE)"
-- name: BANANASPLIT_DATABASE_ADMIN_URL
-  value: "postgresql://$(BANANASPLIT_DATABASE_ADMIN_USERNAME):$(BANANASPLIT_DATABASE_ADMIN_PASSWORD)@$(BANANASPLIT_DATABASE_HOST)/$(BANANASPLIT_DATABASE_DATABASE)"
+  valueFrom:
+    secretKeyRef:
+      name: {{ include "banana-split.fullname" . }}-db-app
+      key: uri
 {{- end }}
