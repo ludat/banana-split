@@ -10,7 +10,19 @@ import Form.Field as FormField
 import Form.Init as Form
 import Form.Input as FormInput
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, ULID)
+import Generated.Api as Api
+    exposing
+        ( Distribucion
+        , Grupo
+        , Monto
+        , Netos
+        , Pago
+        , Parte(..)
+        , Participante
+        , ParticipanteId
+        , ShallowGrupo
+        , ULID
+        )
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
@@ -18,12 +30,14 @@ import Http
 import Layouts
 import Models.Grupo exposing (lookupNombreParticipante)
 import Models.Monto as Monto
+import Models.Pago as Pago
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Numeric.Decimal as Decimal
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
+import Route.Path as Path
 import Shared
 import Utils.Form exposing (CustomFormError(..))
 import Utils.Toasts as Toasts exposing (pushToast)
@@ -59,12 +73,14 @@ type Msg
     | AddedPagoResponse (Result Http.Error Pago)
     | UpdatedPagoResponse (Result Http.Error Pago)
     | DeletePago ULID
+    | IniciarCrearPago
+    | ShowPagoDetails ULID
     | DeletePagoResponse (Result Http.Error ULID)
     | NetosUpdated (WebData Netos)
 
 
 type PagoPopoverState
-    = EditingPago Pago
+    = EditingPago ULID
     | CreatingNewPago
     | Closed
 
@@ -119,6 +135,7 @@ init grupoId store =
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
+        , Store.ensurePagos grupoId store
         ]
     )
 
@@ -127,41 +144,11 @@ validatePago : Validation CustomFormError Pago
 validatePago =
     V.succeed Pago
         |> V.andMap (V.succeed emptyUlid)
-        |> V.andMap (V.succeed False)
         |> V.andMap (V.field "monto" Monto.validateMonto)
+        |> V.andMap (V.succeed False)
         |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
-        |> V.andMap (V.field "deudores" (V.list validateParte |> V.andThen nonEmptyList))
-        |> V.andMap (V.field "pagadores" (V.list validateParte |> V.andThen nonEmptyList))
-
-
-nonEmptyList : List a -> Validation CustomFormError (List a)
-nonEmptyList l =
-    if l == [] then
-        V.fail <| V.customError <| StringError "Tiene que haber algun pagador/deudor"
-
-    else
-        V.succeed l
-
-
-validateParte : Validation CustomFormError Parte
-validateParte =
-    V.field "tipo" V.string
-        |> V.andThen
-            (\t ->
-                case t of
-                    "ponderado" ->
-                        V.succeed Ponderado
-                            |> V.andMap (V.field "cuota" V.int)
-                            |> V.andMap (V.field "participante" V.string)
-
-                    "fijo" ->
-                        V.succeed MontoFijo
-                            |> V.andMap (V.field "monto" Monto.validateMonto)
-                            |> V.andMap (V.field "participante" V.string)
-
-                    _ ->
-                        V.fail <| FormError.value FormError.Empty
-            )
+        |> V.andMap (V.succeed { id = emptyUlid, tipo = Api.TipoDistribucionMontoEquitativo <| { id = emptyUlid, participantes = [] } })
+        |> V.andMap (V.succeed { id = emptyUlid, tipo = Api.TipoDistribucionMontoEquitativo <| { id = emptyUlid, participantes = [] } })
 
 
 
@@ -178,21 +165,24 @@ update store userId msg model =
             ( { model | pagoPopoverState = Closed }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Store.refreshGrupo model.grupoId
+                , Store.refreshPagos model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el pago"
                 ]
             )
 
         AddedPagoResponse (Err error) ->
             ( model
-            , Toasts.pushToast Toasts.ToastDanger "Falló la creación del pago"
+            , Effect.batch
+                [ Toasts.pushToast Toasts.ToastDanger "Falló la creación del pago"
+                , Store.refreshPagos model.grupoId
+                ]
             )
 
         UpdatedPagoResponse (Ok pago) ->
             ( { model | pagoPopoverState = Closed }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Store.refreshGrupo model.grupoId
+                , Store.refreshPagos model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el pago"
                 ]
             )
@@ -204,19 +194,19 @@ update store userId msg model =
 
         PagoForm Form.Submit ->
             case ( Form.getOutput model.pagoForm, store |> Store.getGrupo model.grupoId ) of
-                ( Just pago, Success { grupoId } ) ->
+                ( Just pago, Success { id } ) ->
                     case model.pagoPopoverState of
                         Closed ->
                             ( model, Effect.none )
 
-                        EditingPago oldPago ->
+                        EditingPago pagoId ->
                             ( { model
                                 | pagoForm = Form.update validatePago Form.Submit model.pagoForm
                               }
                             , Effect.sendCmd <|
                                 Api.putGrupoByIdPagosByPagoId
-                                    grupoId
-                                    oldPago.pagoId
+                                    id
+                                    pagoId
                                     pago
                                     UpdatedPagoResponse
                             )
@@ -227,7 +217,7 @@ update store userId msg model =
                               }
                             , Effect.sendCmd <|
                                 Api.postGrupoByIdPagos
-                                    grupoId
+                                    id
                                     pago
                                     AddedPagoResponse
                             )
@@ -326,7 +316,7 @@ update store userId msg model =
                 Success grupo ->
                     ( model
                     , Effect.batch
-                        [ Effect.sendCmd <| Api.deleteGrupoByIdPagosByPagoId grupo.grupoId pagoId DeletePagoResponse
+                        [ Effect.sendCmd <| Api.deleteGrupoByIdPagosByPagoId grupo.id pagoId DeletePagoResponse
                         ]
                     )
 
@@ -375,28 +365,9 @@ update store userId msg model =
                                                 ]
 
                                 montoPago =
-                                    Monto.toDecimal pago.monto
+                                    Monto.zero
                             in
-                            Form.initial
-                                (List.concat
-                                    [ [ Form.setString "monto" (Decimal.toString montoPago)
-                                      , Form.setString "nombre" pago.nombre
-                                      ]
-                                    , [ Form.setList "deudores"
-                                            (List.map
-                                                parteToForm
-                                                pago.deudores
-                                            )
-                                      ]
-                                    , [ Form.setList "pagadores"
-                                            (List.map
-                                                parteToForm
-                                                pago.pagadores
-                                            )
-                                      ]
-                                    ]
-                                )
-                                validatePago
+                            Form.initial [] validatePago
 
                         CreatingNewPago ->
                             case Store.getGrupo model.grupoId store |> RemoteData.toMaybe of
@@ -415,6 +386,20 @@ update store userId msg model =
             , Effect.none
             )
 
+        IniciarCrearPago ->
+            ( model
+            , Effect.batch
+                [ Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos_New { grupoId = model.grupoId }
+                ]
+            )
+
+        ShowPagoDetails ulid ->
+            ( model
+            , Effect.batch
+                [ Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = ulid }
+                ]
+            )
+
 
 andThenUpdateNetosFromForm : Form CustomFormError Pago -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
 andThenUpdateNetosFromForm pagoForm ( model, oldEffects ) =
@@ -425,7 +410,6 @@ andThenUpdateNetosFromForm pagoForm ( model, oldEffects ) =
                 Effect.batch
                     [ oldEffects
                     , Effect.sendMsg <| NetosUpdated Loading
-                    , Effect.sendCmd <| Api.postPagosNetos pago (RemoteData.fromResult >> NetosUpdated)
                     ]
 
             else
@@ -435,7 +419,6 @@ andThenUpdateNetosFromForm pagoForm ( model, oldEffects ) =
             Effect.batch
                 [ oldEffects
                 , Effect.sendMsg <| NetosUpdated Loading
-                , Effect.sendCmd <| Api.postPagosNetos pago (RemoteData.fromResult >> NetosUpdated)
                 ]
 
         ( _, Nothing ) ->
@@ -461,37 +444,16 @@ subscriptions model =
 
 view : Store -> Model -> View Msg
 view store model =
-    case store |> Store.getGrupo model.grupoId of
-        NotAsked ->
-            { title = "Impossible"
-            , body = []
-            }
-
-        Loading ->
-            { title = "Cargando"
-            , body =
-                [ div [ class "container" ]
-                    [ section [ class "section" ]
-                        [ text "Cargando..."
-                        ]
-                    ]
-                ]
-            }
-
-        Failure e ->
-            { title = "Fallo"
-            , body = []
-            }
-
-        Success grupo ->
-            { title = grupo.grupoNombre
+    case ( store |> Store.getGrupo model.grupoId, store |> Store.getPagos model.grupoId ) of
+        ( Success grupo, Success pagos ) ->
+            { title = grupo.nombre
             , body =
                 [ div [ class "container columns is-mobile is-justify-content-end px-4 pt-2 pb-1 m-0" ]
-                    [ button [ class "button mx-3", onClick <| ChangePagoPopoverState CreatingNewPago ] [ text "Agregar pago" ]
+                    [ button [ class "button mx-3", onClick IniciarCrearPago ] [ text "Agregar pago" ]
                     ]
                 , div
                     [ class "container columns is-flex-wrap-wrap px-4 pb-4 pt-1" ]
-                    (grupo.pagos
+                    (pagos
                         |> List.map
                             (\pago ->
                                 div [ class "column is-one-third" ]
@@ -499,36 +461,34 @@ view store model =
                                         [ header [ class "card-header" ]
                                             [ p [ class "card-header-title py-2 px-4" ]
                                                 [ text pago.nombre ]
-                                            , case pago.isValid of
-                                                True ->
-                                                    text ""
+                                            , if pago.isValid then
+                                                text ""
 
-                                                False ->
-                                                    button
-                                                        [ class "card-header-icon"
-                                                        , attribute "aria-label" "more options"
+                                              else
+                                                button
+                                                    [ class "card-header-icon"
+                                                    , attribute "aria-label" "more options"
+                                                    ]
+                                                    [ span
+                                                        [ class "icon has-tooltip-multiline has-tooltip-danger has-text-danger"
+                                                        , attribute "data-tooltip" "Este pago es invalido asi que no se cuenta para las deudas."
                                                         ]
-                                                        [ span
-                                                            [ class "icon has-tooltip-multiline has-tooltip-danger has-text-danger"
-                                                            , attribute "data-tooltip" "Este pago es invalido asi que no se cuenta para las deudas."
-                                                            ]
-                                                            [ Icons.toHtml [] Icons.alertCircle
-                                                            ]
+                                                        [ Icons.toHtml [] Icons.alertCircle
                                                         ]
+                                                    ]
                                             ]
                                         , div [ class "card-content" ]
                                             [ p [ class "title is-3 m-0" ]
                                                 [ text "$ "
-                                                , text (Decimal.toString <| Monto.toDecimal pago.monto)
+                                                , text <| Monto.toString pago.monto
                                                 ]
-                                            , p []
+                                            , p [ style "display" "none" ]
                                                 [ let
                                                     pagador2Text pagador =
                                                         pagador
-                                                            |> extractPagadorFromParte
                                                             |> lookupNombreParticipante grupo
                                                   in
-                                                  case pago.pagadores of
+                                                  case Pago.getPagadores pago of
                                                     [] ->
                                                         text <| "pagado por nadie!"
 
@@ -546,7 +506,7 @@ view store model =
                                                 ]
                                             ]
                                         , footer [ class "card-footer" ]
-                                            [ button [ class "card-footer-item", onClick <| ChangePagoPopoverState <| EditingPago pago ]
+                                            [ button [ class "card-footer-item", onClick <| ShowPagoDetails pago.pagoId ]
                                                 [ Icons.toHtml [] Icons.edit
                                                 ]
                                             , button [ class "card-footer-item", onClick <| DeletePago pago.pagoId ]
@@ -561,6 +521,11 @@ view store model =
                 ]
             }
 
+        ( _, _ ) ->
+            { title = "Impossible"
+            , body = []
+            }
+
 
 extractPagadorFromParte : Parte -> ParticipanteId
 extractPagadorFromParte parte =
@@ -572,12 +537,11 @@ extractPagadorFromParte parte =
             participanteId
 
 
-pagosModal : Grupo -> Model -> Html Msg
+pagosModal : ShallowGrupo -> Model -> Html Msg
 pagosModal grupo model =
     div
-        ([ class "modal"
-         ]
-            ++ (case model.pagoPopoverState of
+        (class "modal"
+            :: (case model.pagoPopoverState of
                     Closed ->
                         []
 
@@ -624,7 +588,7 @@ pagosModal grupo model =
                     Loading ->
                         text "cargando netos"
 
-                    Failure e ->
+                    Failure _ ->
                         text "falle consiguiendo los netos"
                 ]
             , footer

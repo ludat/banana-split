@@ -2,7 +2,7 @@ module Models.Store exposing (..)
 
 import Dict exposing (Dict)
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Grupo, Netos, Repartija, ResumenGrupo, ShallowRepartija, ULID)
+import Generated.Api as Api exposing (Grupo, Netos, Pago, Repartija, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
@@ -34,21 +34,34 @@ update msg store =
                 ]
             )
 
-        RepartijasFetched grupoId repartijas ->
-            ( store |> saveRepartijas grupoId repartijas
-            , Effect.batch []
+        PagosFetched grupoId pagos ->
+            ( store |> savePagos grupoId pagos
+            , Effect.none
             )
 
-        FetchRepartijas grupoId ->
+        FetchPagos grupoId ->
             ( store
             , Effect.batch
-                [ Effect.sendCmd <| Api.getGrupoByIdRepartijas grupoId (RemoteData.fromResult >> RepartijasFetched grupoId >> StoreMsg)
+                [ Effect.sendCmd <| Api.getGrupoByIdPagos grupoId (RemoteData.fromResult >> PagosFetched grupoId >> StoreMsg)
+                ]
+            )
+
+        PagoFetched pagoId pago ->
+            ( store |> savePago pagoId pago
+            , Effect.none
+            )
+
+        FetchPago pagoId ->
+            ( store
+            , Effect.batch
+                -- TODO This should be a grupo id instead of pagoId
+                [ Effect.sendCmd <| Api.getGrupoByIdPagosByPagoId pagoId pagoId (RemoteData.fromResult >> PagoFetched pagoId >> StoreMsg)
                 ]
             )
 
         RepartijaFetched repartijaId repartija ->
             ( store |> saveRepartija repartijaId repartija
-            , Effect.batch []
+            , Effect.none
             )
 
         FetchRepartija repartijaId ->
@@ -68,7 +81,7 @@ saveResumen grupoId resumen store =
     }
 
 
-saveGrupo : ULID -> WebData Grupo -> Store -> Store
+saveGrupo : ULID -> WebData ShallowGrupo -> Store -> Store
 saveGrupo grupoId grupo store =
     { store
         | grupos =
@@ -77,12 +90,21 @@ saveGrupo grupoId grupo store =
     }
 
 
-saveRepartijas : ULID -> WebData (List ShallowRepartija) -> Store -> Store
-saveRepartijas grupoId repartijas store =
+savePagos : ULID -> WebData (List ShallowPago) -> Store -> Store
+savePagos grupoId pagos store =
     { store
-        | repartijasPorGrupo =
-            store.repartijasPorGrupo
-                |> Dict.insert grupoId repartijas
+        | pagosPorGrupo =
+            store.pagosPorGrupo
+                |> Dict.insert grupoId pagos
+    }
+
+
+savePago : ULID -> WebData Pago -> Store -> Store
+savePago pagoId pago store =
+    { store
+        | pagos =
+            store.pagos
+                |> Dict.insert pagoId pago
     }
 
 
@@ -105,9 +127,14 @@ refreshResumen grupoId =
     Effect.sendStoreMsg <| FetchResumen grupoId
 
 
-refreshRepartijas : ULID -> Effect msg
-refreshRepartijas grupoId =
-    Effect.sendStoreMsg <| FetchRepartijas grupoId
+refreshPagos : ULID -> Effect msg
+refreshPagos grupoId =
+    Effect.sendStoreMsg <| FetchPagos grupoId
+
+
+refreshPago : ULID -> Effect msg
+refreshPago pagoId =
+    Effect.sendStoreMsg <| FetchPago pagoId
 
 
 refreshRepartija : ULID -> Effect msg
@@ -131,11 +158,27 @@ ensureGrupo grupoId store =
             Effect.none
 
 
-ensureRepartijas : ULID -> Store -> Effect msg
-ensureRepartijas grupoId store =
-    case getRepartijas grupoId store of
+ensurePagos : ULID -> Store -> Effect msg
+ensurePagos grupoId store =
+    case getPagos grupoId store of
         NotAsked ->
-            Effect.sendStoreMsg <| FetchRepartijas grupoId
+            Effect.sendStoreMsg <| FetchPagos grupoId
+
+        Loading ->
+            Effect.none
+
+        Failure _ ->
+            Effect.none
+
+        Success _ ->
+            Effect.none
+
+
+ensurePago : ULID -> Store -> Effect msg
+ensurePago pagoId store =
+    case getPagos pagoId store of
+        NotAsked ->
+            Effect.sendStoreMsg <| FetchPago pagoId
 
         Loading ->
             Effect.none
@@ -149,7 +192,7 @@ ensureRepartijas grupoId store =
 
 ensureRepartija : ULID -> Store -> Effect msg
 ensureRepartija repartijaId store =
-    case getRepartijas repartijaId store of
+    case getRepartija repartijaId store of
         NotAsked ->
             Effect.sendStoreMsg <| FetchRepartija repartijaId
 
@@ -179,7 +222,7 @@ ensureResumen grupoId store =
             Effect.none
 
 
-getGrupo : ULID -> Store -> WebData Grupo
+getGrupo : ULID -> Store -> WebData ShallowGrupo
 getGrupo grupoId store =
     store.grupos
         |> Dict.get grupoId
@@ -193,10 +236,17 @@ getResumen grupoId store =
         |> Maybe.withDefault NotAsked
 
 
-getRepartijas : ULID -> Store -> WebData (List ShallowRepartija)
-getRepartijas grupoId store =
-    store.repartijasPorGrupo
+getPagos : ULID -> Store -> WebData (List ShallowPago)
+getPagos grupoId store =
+    store.pagosPorGrupo
         |> Dict.get grupoId
+        |> Maybe.withDefault NotAsked
+
+
+getPago : ULID -> Store -> WebData Pago
+getPago pagoId store =
+    store.pagos
+        |> Dict.get pagoId
         |> Maybe.withDefault NotAsked
 
 
@@ -212,13 +262,15 @@ evictGroup grupoId store =
     { store
         | grupos = store.grupos |> Dict.remove grupoId
         , resumenes = store.resumenes |> Dict.remove grupoId
+        , pagosPorGrupo = store.pagosPorGrupo |> Dict.remove grupoId
     }
 
 
 empty : Store
 empty =
     { grupos = Dict.empty
-    , resumenes = Dict.empty
-    , repartijasPorGrupo = Dict.empty
     , repartijas = Dict.empty
+    , resumenes = Dict.empty
+    , pagosPorGrupo = Dict.empty
+    , pagos = Dict.empty
     }

@@ -42,14 +42,12 @@ navBar navBarModel store path navBarOpen =
                         text ""
 
                     Success grupo ->
-                        text <| grupo.grupoNombre
+                        text <| grupo.nombre
                 ]
             , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Pagos { grupoId = navBarModel.grupoId }, attrs = [] }
                 [ text "Pagos" ]
             , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }, attrs = [] }
                 [ text "Participantes" ]
-            , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Repartijas { grupoId = navBarModel.grupoId }, attrs = [] }
-                [ text "Repartijas" ]
             ]
         , div [ class "navbar-end" ]
             [ div [ class "navbar-item" ]

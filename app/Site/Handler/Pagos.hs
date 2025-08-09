@@ -4,33 +4,47 @@
 
 module Site.Handler.Pagos
     ( handleDeletePago
-    , handlePagoNetosPost
+    , handlePagoGet
     , handlePagoPost
+    , handlePagoResumenPost
     , handlePagoUpdate
+    , handlePagosGet
     ) where
 
-import BananaSplit (Pago (..), calcularDeudasPago)
-import BananaSplit.Persistence (deletePago, savePago, updatePago)
-
-import Data.ULID (ULID)
+import BananaSplit
+import BananaSplit.Persistence (deletePago, fetchPago, fetchShallowPagos, savePago, updatePago)
 
 import Protolude
+
+import Servant
 
 import Site.Api
 import Site.Handler.Utils (runBeam)
 
 import Types
 
+handlePagosGet :: ULID -> AppHandler [ShallowPago]
+handlePagosGet grupoId = do
+  runBeam (fetchShallowPagos grupoId)
+
+handlePagoGet :: ULID -> ULID -> AppHandler Pago
+handlePagoGet grupoId pagoId = do
+  runBeam (fetchPago grupoId pagoId)
+
 handlePagoPost :: ULID -> Pago -> AppHandler Pago
 handlePagoPost grupoId pago = do
   runBeam (savePago grupoId pago)
 
-handlePagoNetosPost :: Pago -> AppHandler Netos
-handlePagoNetosPost pago = do
-  pure $ Netos $ calcularDeudasPago pago
+handlePagoResumenPost :: Pago -> AppHandler ResumenPago
+handlePagoResumenPost pago = do
+  pure $ ResumenPago
+    { resumen = getResumenPago pago
+    , resumenPagadores = getResumen pago.monto pago.pagadores
+    , resumenDeudores = getResumen pago.monto pago.deudores
+    }
 
 handleDeletePago :: ULID -> ULID -> AppHandler ULID
-handleDeletePago grupoId pagoId = do
+handleDeletePago _grupoId pagoId = do
   runBeam (deletePago pagoId)
   pure pagoId
 

@@ -2,11 +2,9 @@ module BananaSplit.Elm
     ( generateElmFiles
     ) where
 
-import BananaSplit (Deudas, Grupo, Monto, Pago, Parte, Participante, ParticipanteId, Repartija,
-                    RepartijaClaim, RepartijaItem, ShallowRepartija, Transaccion)
+import BananaSplit
 
 import Data.Data
-import Data.ULID (ULID)
 
 import Elm.TyRep
 
@@ -16,7 +14,7 @@ import Protolude.Error
 import Servant
 import Servant.Elm
 
-import Site.Api (Api (..), Netos, ParticipanteAddParams (..), ResumenGrupo)
+import Site.Api (Api (..), Netos, ParticipanteAddParams (..), ResumenGrupo, ResumenPago)
 import Site.Handler.Grupos (CreateGrupoParams)
 
 
@@ -43,16 +41,25 @@ generateElmFiles = do
     [ DefineElm (Proxy :: Proxy CreateGrupoParams)
     , DefineElm (Proxy :: Proxy ParticipanteAddParams)
     , DefineElm (Proxy :: Proxy ResumenGrupo)
+    , DefineElm (Proxy :: Proxy ResumenPago)
+    , DefineElm (Proxy :: Proxy ResumenDeudas)
+    , DefineElm (Proxy :: Proxy ErrorResumen)
     , DefineElm (Proxy :: Proxy Grupo)
+    , DefineElm (Proxy :: Proxy ShallowGrupo)
     , DefineElm (Proxy :: Proxy Participante)
     , DefineElm (Proxy :: Proxy Transaccion)
     , DefineElm (Proxy :: Proxy Netos)
     , DefineElm (Proxy :: Proxy Pago)
+    , DefineElm (Proxy :: Proxy ShallowPago)
     , DefineElm (Proxy :: Proxy Parte)
     , DefineElm (Proxy :: Proxy ParticipanteId)
     , DefineElm (Proxy :: Proxy ULID)
     , DefineElm (Proxy :: Proxy (Deudas Monto))
     , DefineElm (Proxy :: Proxy Monto)
+    , DefineElm (Proxy :: Proxy Distribucion)
+    , DefineElm (Proxy :: Proxy TipoDistribucion)
+    , DefineElm (Proxy :: Proxy DistribucionMontosEspecificos)
+    , DefineElm (Proxy :: Proxy DistribucionMontoEquitativo)
     , DefineElm (Proxy :: Proxy Repartija)
     , DefineElm (Proxy :: Proxy RepartijaItem)
     , DefineElm (Proxy :: Proxy RepartijaClaim)

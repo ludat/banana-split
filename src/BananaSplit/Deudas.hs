@@ -1,10 +1,15 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE MultiWayIf #-}
+{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 
-module BananaSplit.Solver where
+module BananaSplit.Deudas where
 
-import BananaSplit.Core
+import BananaSplit.Monto
+import BananaSplit.Participante
+import BananaSplit.Repartija
+import BananaSplit.ULID
 
 import Data.Decimal (Decimal)
 import Data.Decimal qualified as Decimal
@@ -18,6 +23,91 @@ import Protolude
 import Protolude.Error (error)
 
 import System.IO.Unsafe (unsafePerformIO)
+
+
+data Distribucion = Distribucion
+  { id :: ULID
+  , tipo :: TipoDistribucion
+  } deriving (Show, Eq, Generic)
+
+data TipoDistribucion
+  = TipoDistribucionMontosEspecificos DistribucionMontosEspecificos
+  | TipoDistribucionMontoEquitativo DistribucionMontoEquitativo
+  | TipoDistribucionRepartija Repartija
+  deriving (Show, Eq, Generic)
+
+data DistribucionMontosEspecificos = DistribucionMontosEspecificos
+  { id :: ULID
+  , montos :: [(ParticipanteId, Monto)]
+  } deriving (Show, Eq, Generic)
+
+data DistribucionMontoEquitativo = DistribucionMontoEquitativo
+  { id :: ULID
+  , participantes :: [ParticipanteId]
+  } deriving (Show, Eq, Generic)
+
+data ResumenDeudas
+  = DeudasIncomputables (Maybe Monto) ErrorResumen
+  | ResumenDeudas (Maybe Monto) (Deudas Monto)
+  deriving (Show, Eq, Generic)
+
+data ErrorResumen
+  = ErrorResumen (Maybe Text) [(Text, ErrorResumen)]
+  deriving (Show, Eq, Generic)
+
+instance Monoid ErrorResumen where
+  mempty = ErrorResumen mempty []
+
+instance Semigroup ErrorResumen where
+  ErrorResumen msg1 errs1 <> ErrorResumen msg2 errs2 =
+    ErrorResumen (msg1 <> msg2) (errs1 <> errs2)
+
+getDeudas :: HasResumen a => Monto -> a -> Maybe (Deudas Monto)
+getDeudas totalPago = getDeudasResumen . getResumen totalPago
+
+getDeudasResumen :: ResumenDeudas -> Maybe (Deudas Monto)
+getDeudasResumen resumen =
+  case resumen of
+    DeudasIncomputables _ _ -> Nothing
+    ResumenDeudas _ deudas -> Just deudas
+
+class HasResumen a where
+  getResumen :: Monto -> a -> ResumenDeudas
+
+instance HasResumen ResumenDeudas where
+  getResumen _ = identity
+
+instance HasResumen Distribucion where
+  getResumen totalPago distribucion =
+    case distribucion.tipo of
+      TipoDistribucionMontoEquitativo d -> getResumen totalPago d
+      TipoDistribucionMontosEspecificos d -> getResumen totalPago d
+      TipoDistribucionRepartija r -> getResumen totalPago r
+
+instance HasResumen DistribucionMontosEspecificos where
+  getResumen totalPago distribucion =
+    if | null distribucion.montos -> DeudasIncomputables (Just 0) $ ErrorResumen (Just "No hay montos especificados") []
+       | total /= totalPago -> DeudasIncomputables (Just total) $ ErrorResumen (Just $ "El total debería ser igual al total del pago pero es: " <> show total <> " en vez de " <> show totalPago) []
+       | otherwise -> ResumenDeudas (Just total) deudas
+    where
+      deudas = distribucion.montos <&> uncurry mkDeuda & mconcat
+      total = totalDeudas deudas
+
+instance HasResumen DistribucionMontoEquitativo where
+  getResumen totalPago d =
+    if | null d.participantes -> DeudasIncomputables (Just totalPago) $ ErrorResumen (Just "No hay participantes especificados") []
+       | otherwise -> ResumenDeudas (Just totalPago) $ calcularDeudasMontoEquitativo totalPago d
+
+instance HasResumen Repartija where
+  getResumen totalPago repartija =
+    if | null repartija.items -> DeudasIncomputables (Just total) $ ErrorResumen (Just "No hay items para repartir.") []
+       | null repartija.claims -> DeudasIncomputables (Just total) $ ErrorResumen (Just "Nadie reclamo ningun item.") []
+       | total /= totalPago -> DeudasIncomputables (Just total) $ ErrorResumen (Just $ "El total debería ser igual al total del pago pero es: " <> show total <> " en vez de " <> show totalPago) []
+       | otherwise ->
+           ResumenDeudas (Just total) deudas
+    where
+      deudas = calcularDeudasRepartija repartija
+      total = totalDeudas deudas
 
 minimizeTransactions :: Deudas Monto -> [Transaccion]
 minimizeTransactions = solveOptimalTransactions
@@ -72,7 +162,6 @@ data Transaccion = Transaccion
   , transaccionMonto :: Monto
   } deriving (Show, Eq, Generic)
 
-
 deudoresNoNulos :: Deudas Monto -> Int
 deudoresNoNulos (Deudas deudasMap) =
   deudasMap
@@ -106,43 +195,16 @@ totalDeudas (Deudas deudasMap) =
   & Map.elems
   & sum
 
-calcularDeudasTotales :: Grupo -> Deudas Monto
-calcularDeudasTotales grupo =
-  grupo.pagos
-  & filter isPagoValid
-  & fmap calcularDeudasPago
-  & mconcat
-
 mkDeuda :: ParticipanteId -> a -> Deudas a
 mkDeuda participanteId monto =
   Deudas $ Map.singleton participanteId monto
 
-calcularDeudasPago :: Pago -> Deudas Monto
-calcularDeudasPago pago
-  | isPagoValid pago =  calcularDeudas pago.monto pago.pagadores <> fmap negate (calcularDeudas pago.monto pago.deudores)
-  | otherwise = mempty
-  where
-    calcularDeudas montoOriginal partes =
-      let
-        (ponderados, fijos) =
-          partes
-          & fmap (\case
-            Ponderado parte participante -> Left (participante, parte)
-            MontoFijo monto participante -> Right (participante, monto)
-          )
-          & partitionEithers
-        deudasFijos =
-          fijos
-          & fmap (uncurry mkDeuda)
-          & mconcat
-        totalFijo =
-          totalDeudas deudasFijos
-        deudasPonderados =
-          ponderados
-          & fmap (uncurry mkDeuda)
-          & mconcat
-          & fmap (fromInteger @Decimal)
-      in deudasFijos <> distribuirEntrePonderados (montoOriginal - totalFijo) deudasPonderados
+calcularDeudasMontoEquitativo :: Monto -> DistribucionMontoEquitativo -> Deudas Monto
+calcularDeudasMontoEquitativo total distribucion =
+  distribucion.participantes
+  & fmap (`mkDeuda` 1)
+  & mconcat
+  & distribuirEntrePonderados total
 
 distribuirEntrePonderados :: Monto -> Deudas Decimal -> Deudas Monto
 distribuirEntrePonderados (Monto total) deudas =
@@ -284,5 +346,59 @@ between a delta =
     LT -> GLPK.Bound (a + delta) a
     GT -> GLPK.Bound a (a + delta)
 
+
+
+calcularDeudasRepartija :: Repartija -> Deudas Monto
+calcularDeudasRepartija repartija =
+  let deudasIncluyendoNoRepartido =
+        repartija.items
+        & fmap (\item ->
+              let claims =
+                    repartija.claims
+                      & filter ((== item.id) . (.itemId))
+              in
+                if | all tieneCantidad claims ->
+                      let claimsExplicitos = claims
+                            & fmap (\claim ->
+                              mkDeuda claim.participante (fromMaybe (error "tieneCantidad") claim.cantidad))
+                          claimsSobrante = item.cantidad - totalDeudas (mconcat claimsExplicitos)
+                      in claimsExplicitos
+                            & mconcat
+                            & (<> if claimsSobrante /= 0 then mkDeuda (ParticipanteId nullUlid) claimsSobrante else mempty)
+                            & fmap fromIntegral
+                            & distribuirEntrePonderados item.monto
+
+                   | (not (any tieneCantidad claims)) ->
+                      claims
+                        & fmap (\claim ->
+                          mkDeuda claim.participante (maybe 1 fromIntegral claim.cantidad))
+                        & mconcat
+                        & distribuirEntrePonderados item.monto
+                   | otherwise -> undefined
+                )
+        where
+          tieneCantidad :: RepartijaClaim -> Bool
+          tieneCantidad = isJust . (.cantidad)
+      (montoNoRepartido, deudas) =
+        deudasIncluyendoNoRepartido
+        & fmap (extraerDeudor (ParticipanteId nullUlid))
+        & unzip
+      deudasDelExtraPonderado =
+        deudas
+        & mconcat
+        & fmap inMonto
+        & distribuirEntrePonderados (repartija.extra + sum montoNoRepartido)
+        & filterDeudas (/= 0)
+
+  in deudas
+      & mconcat
+      & (<> deudasDelExtraPonderado)
+
 Elm.deriveBoth Elm.defaultOptions ''Transaccion
 Elm.deriveBoth Elm.defaultOptions ''Deudas
+Elm.deriveBoth Elm.defaultOptions ''DistribucionMontosEspecificos
+Elm.deriveBoth Elm.defaultOptions ''DistribucionMontoEquitativo
+Elm.deriveBoth Elm.defaultOptions ''TipoDistribucion
+Elm.deriveBoth Elm.defaultOptions ''Distribucion
+Elm.deriveBoth Elm.defaultOptions ''ErrorResumen
+Elm.deriveBoth Elm.defaultOptions ''ResumenDeudas

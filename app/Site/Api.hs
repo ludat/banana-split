@@ -10,10 +10,8 @@
 module Site.Api where
 
 
-import BananaSplit (Deudas, Grupo, Monto, Pago, Participante, Repartija, RepartijaClaim,
-                    ShallowRepartija, Transaccion)
-
-import Data.ULID (ULID)
+import BananaSplit
+import BananaSplit.ULID (ULID)
 
 import Elm.Derive qualified as Elm
 
@@ -33,15 +31,19 @@ data Api routes
     { _routeGrupoPost ::
       routes :- "grupo" :> ReqBody '[JSON] CreateGrupoParams :> Post '[JSON] Grupo
     , _routeGrupoGet ::
-      routes :- "grupo" :> Capture "id" ULID :> Get '[JSON] Grupo
+      routes :- "grupo" :> Capture "id" ULID :> Get '[JSON] ShallowGrupo
     , _routeGrupoGetNetos ::
       routes :- "grupo" :> Capture "id" ULID :> "resumen" :> Get '[JSON] ResumenGrupo
     , _routeGrupoParticipanteAdd ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
     , _routePagoPost ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
-    , _routePagoNetosPost ::
-      routes :- "pagos" :> "netos" :> ReqBody '[JSON] Pago :> Post '[JSON] Netos
+    , _routePagosGet ::
+      routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Get '[JSON] [ShallowPago]
+    , _routePagoGet ::
+      routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> Get '[JSON] Pago
+    , _routePagoResumenPost ::
+      routes :- "pagos" :> "resumen" :> ReqBody '[JSON] Pago :> Post '[JSON] ResumenPago
     , _routeGrupoParticipanteDelete ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> Delete '[JSON] ULID
     , _routeGrupoPagoDelete ::
@@ -49,18 +51,16 @@ data Api routes
     , _routePagoUpdate ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> ReqBody '[JSON] Pago :> Put '[JSON] Pago
     -- Repartija
-    , _routeRepartijasGet ::
-      routes :- "grupo" :> Capture "id" ULID :> "repartijas" :> Get '[JSON] [ShallowRepartija]
-    , _routeRepartijaPost ::
-      routes :- "grupo" :> Capture "id" ULID :> "repartijas" :> ReqBody '[JSON] Repartija :> Post '[JSON] Repartija
+    -- , _routeRepartijaPost ::
+    --   routes :- "grupo" :> Capture "id" ULID :> "repartijas" :> ReqBody '[JSON] Repartija :> Post '[JSON] Repartija
     , _routeRepartijaGet ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> Get '[JSON] Repartija
     , _routeRepartijaClaimPut ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> ReqBody '[JSON] RepartijaClaim :> Put '[JSON] RepartijaClaim
     , _routeRepartijaClaimDelete ::
       routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] Text
-    , _routeRepartijaToPago ::
-      routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
+    -- , _routeRepartijaToPago ::
+    --   routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
     , _routeHealth ::
       routes :- "health" :> Get '[JSON] Text
     -- , _routeRepartijaItemDesdoblar ::
@@ -87,7 +87,14 @@ data ResumenGrupo = ResumenGrupo
   , cantidadPagosInvalidos :: Int
   } deriving (Show, Eq, Generic)
 
+data ResumenPago = ResumenPago
+  { resumen :: ResumenDeudas
+  , resumenPagadores :: ResumenDeudas
+  , resumenDeudores :: ResumenDeudas
+  } deriving (Show, Eq, Generic)
+
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''Netos
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
+Elm.deriveBoth Elm.defaultOptions ''ResumenPago
