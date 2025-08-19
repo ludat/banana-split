@@ -9,7 +9,7 @@ module Site.Handler.Grupos
 
 import BananaSplit
 import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParticipante, fetchGrupo,
-                                fetchPago, fetchPagos, fetchShallowPagos)
+                                fetchPago, fetchShallowPagos)
 
 import Protolude
 

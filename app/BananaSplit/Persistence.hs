@@ -13,11 +13,9 @@ module BananaSplit.Persistence
     , deleteRepartijaClaim
     , deleteShallowParticipante
     , fetchGrupo
+    , fetchPago
     , fetchRepartija
     , fetchShallowPagos
-      -- , fetchRepartijas
-    , fetchPago
-    , fetchPagos
     , savePago
     , saveRepartija
     , saveRepartijaClaim
@@ -404,57 +402,6 @@ fetchShallowPagos grupoId = do
         })
     & pure
 
-fetchPagos :: ULID -> Pg [M.Pago]
-fetchPagos = error "sin implementar"
--- fetchPagos aGrupoId = do
---   dbPagos <- runSelectReturningList $ select $ do
---     pago <- all_ db._bananasplitPagos
---       & orderBy_ (asc_ . (.pagoId))
---     guard_ (pago.pagoGrupo ==. GrupoId (val_ aGrupoId))
---     pure pago
-
---   let pagosIds = dbPagos & fmap (val_ . PagoId . (.pagoId))
-
---   partesPagadores <- runSelectReturningList $ select $ do
---     partePagador <- all_ db._bananasplitPagadores
---     guard_ (partePagador.partePago `in_` pagosIds)
---     pure partePagador
-
---   partesDeudores <- runSelectReturningList $ select $ do
---     partePagador <- all_ db._bananasplitDeudores
---     guard_ (partePagador.partePago `in_` pagosIds)
---     pure partePagador
-
---   let deudoresMap = partesDeudores & fmap dbParte2Parte & Map.fromListWith (++)
---   let pagadoresMap = partesPagadores & fmap dbParte2Parte & Map.fromListWith (++)
---   dbPagos
---     & fmap (\pago ->
---         M.Pago
---         { M.pagoId = pago.pagoId
---         , M.isValid = False
---         , M.nombre = pago.pagoNombre
---         , M.deudores = Map.lookup (PagoId pago.pagoId) deudoresMap & fromMaybe []
---         , M.pagadores = Map.lookup (PagoId pago.pagoId) pagadoresMap & fromMaybe []
---         } & M.addIsValidPago
---       )
---     & pure
---   where
---     dbParte2Parte :: Parte -> (PagoId, [M.Parte])
---     dbParte2Parte parteR =
---       case parteR.parteTipo of
---         "Ponderado" ->
---           case parteR.parteCuota of
---             (Just cuota) ->
---               (parteR.partePago, [M.Ponderado (fromIntegral cuota) (M.ParticipanteId $ participanteId2ULID parteR.parteParticipante)])
---             _ -> error $ "falta cuota para una parte ponderada: " <> show parteR.parteTipo
---         "MontoFijo" ->
---           case parteR.parteMonto of
---             (Monto (Just numerador) (Just denominador)) ->
---               let monto = constructMonto $ Monto numerador denominador
---               in (parteR.partePago, [M.MontoFijo monto $ M.ParticipanteId $ participanteId2ULID parteR.parteParticipante])
---             _ -> error "falta monto para una parte ponderada"
---         _ -> error $ "parte tipo desconocida: " <> show parteR.parteTipo
-
 fetchParticipantes :: ULID -> Pg [M.Participante]
 fetchParticipantes grupoId = do
   participantes <- runSelectReturningList $ select $ do
@@ -686,18 +633,6 @@ saveRepartijaItems repartijaId repartijaItemsWithoutId = do
       (conflictingFields (\item -> item.repartijaitemId))
       onConflictUpdateAll
   pure repartijaItems
-
--- fetchRepartijas :: ULID -> Pg [M.ShallowRepartija]
--- fetchRepartijas unGrupoId = do
---   repartijas <- runSelectReturningList $ select $ do
---     repartija <- all_ db._bananasplitRepartijas
---     guard_ (repartija.repartijaGrupo ==. val_ (GrupoId unGrupoId))
---     pure repartija
---   pure $ repartijas
---     & fmap (\repartija -> M.ShallowRepartija
---       { M.shallowId = repartija.repartijaId
---       , M.shallowNombre = repartija.repartijaNombre
---       })
 
 fetchRepartija :: ULID -> Pg M.Repartija
 fetchRepartija unRepartijaId = do
