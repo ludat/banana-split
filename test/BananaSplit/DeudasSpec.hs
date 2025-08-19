@@ -60,7 +60,7 @@ spec = do
       let monto = fromIntegral @_ @Monto m
       let participants =  us <&> participante . getPositive
       (getDeudas monto
-        (distribucionMontoEquitativo [u1, u2, u3])
+        (distribucionMontoEquitativo participants)
             & fmap totalDeudas)
             `shouldBe` Just monto
 
