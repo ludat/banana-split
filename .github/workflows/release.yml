@@ -3,6 +3,7 @@ name: "Release tagged image"
 on:
   release:
     types:
+      - published
       - released
 
 jobs:
