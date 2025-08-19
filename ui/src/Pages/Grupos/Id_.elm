@@ -106,9 +106,10 @@ pagoFromTransaccion transaction =
             Api.TipoDistribucionMontosEspecificos <|
                 { id = emptyUlid
                 , montos =
-                    [ ( transaction.transaccionFrom
-                      , transaction.transaccionMonto
-                      )
+                    [ { id = emptyUlid
+                      , participante = transaction.transaccionFrom
+                      , monto = transaction.transaccionMonto
+                      }
                     ]
                 }
         }
@@ -118,9 +119,10 @@ pagoFromTransaccion transaction =
             Api.TipoDistribucionMontosEspecificos <|
                 { id = emptyUlid
                 , montos =
-                    [ ( transaction.transaccionFrom
-                      , transaction.transaccionMonto
-                      )
+                    [ { id = emptyUlid
+                      , participante = transaction.transaccionTo
+                      , monto = transaction.transaccionMonto
+                      }
                     ]
                 }
         }

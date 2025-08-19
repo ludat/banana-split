@@ -27,7 +27,8 @@ deudas l =
   & mconcat
 
 distribucionMontosEspecificos :: [(ParticipanteId, Monto)] -> Distribucion
-distribucionMontosEspecificos ps = Distribucion (fakeUlid 21) $ TipoDistribucionMontosEspecificos $ DistribucionMontosEspecificos (fakeUlid 12) ps
+distribucionMontosEspecificos ps = Distribucion (fakeUlid 21) $ TipoDistribucionMontosEspecificos $ DistribucionMontosEspecificos (fakeUlid 12)
+  ((\(n, (p, m)) -> MontoEspecifico { id = fakeUlid n, monto = m, participante = p}) <$> zip [0..] ps)
 
 distribucionMontoEquitativo :: [ParticipanteId] -> Distribucion
 distribucionMontoEquitativo ps = Distribucion (fakeUlid 21) $ TipoDistribucionMontoEquitativo $ DistribucionMontoEquitativo (fakeUlid 12) ps

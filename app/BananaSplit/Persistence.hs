@@ -42,10 +42,12 @@ import Protolude.Error
 data BananaSplitDb f = BananaSplitDb
   { grupos :: f (TableEntity GrupoT)
   , participantes :: f (TableEntity ParticipanteT)
-  , _bananasplitPagos :: f (TableEntity PagoT)
+  , pagos :: f (TableEntity PagoT)
   , _bananasplitDistribuciones :: f (TableEntity DistribucionT)
   , distribuciones_monto_equitativo :: f (TableEntity DistribucionMontoEquitativoT)
   , distribuciones_monto_equitativo_items :: f (TableEntity DistribucionMontoEquitativoItemT)
+  , distribuciones_montos_especificos :: f (TableEntity DistribucionMontosEspecificosT)
+  , distribuciones_montos_especificos_items :: f (TableEntity DistribucionMontosEspecificosItemT)
   , _bananasplitRepartijas :: f (TableEntity DistribucionRepartijaT)
   , _bananasplitRepartijaItems :: f (TableEntity RepartijaItemT)
   , _bananasplitRepartijaClaims :: f (TableEntity RepartijaClaimT)
@@ -145,26 +147,45 @@ instance Table DistribucionT where
     deriving (Generic, Beamable)
   primaryKey = DistribucionId . (.id)
 
--- data DistribucionMontoEspecificoT f = DistribucionMontosEspecificos
---   { id :: Columnar f ULID
---   , distribucionId :: PrimaryKey DistribucionT f
---   , participanteId :: PrimaryKey ParticipanteT f
---   , monto :: MontoT f
---   }
---   deriving (Generic, Beamable)
+data DistribucionMontosEspecificosT f = DistribucionMontosEspecificos
+  { id :: Columnar f ULID
+  , distribucion :: PrimaryKey DistribucionT f
+  }
+  deriving (Generic, Beamable)
 
--- type DistribucionMontoEspecifico = DistribucionMontoEspecificoT Identity
--- deriving instance Show DistribucionMontoEspecifico
--- deriving instance Eq DistribucionMontoEspecifico
--- type DistribucionMontoEspecificoId = PrimaryKey DistribucionMontoEspecificoT Identity
--- deriving instance Show DistribucionMontoEspecificoId
--- deriving instance Eq DistribucionMontoEspecificoId
+type DistribucionMontosEspecifico = DistribucionMontosEspecificosT Identity
+deriving instance Show DistribucionMontosEspecifico
+deriving instance Eq DistribucionMontosEspecifico
+type DistribucionMontosEspecificoId = PrimaryKey DistribucionMontosEspecificosT Identity
+deriving instance Show DistribucionMontosEspecificoId
+deriving instance Eq DistribucionMontosEspecificoId
 
--- instance Table DistribucionMontoEspecificoT where
---   data PrimaryKey DistribucionMontoEspecificoT f =
---     DistribucionMontosEspecificosId (Columnar f ULID)
---     deriving (Generic, Beamable)
---   primaryKey distrubucion = DistribucionMontosEspecificosId distrubucion.id
+instance Table DistribucionMontosEspecificosT where
+  data PrimaryKey DistribucionMontosEspecificosT f =
+    DistribucionMontosEspecificosId (Columnar f ULID)
+    deriving (Generic, Beamable)
+  primaryKey distrubucion = DistribucionMontosEspecificosId distrubucion.id
+
+data DistribucionMontosEspecificosItemT f = DistribucionMontosEspecificosItem
+  { id :: Columnar f ULID
+  , distribucion :: PrimaryKey DistribucionMontosEspecificosT f
+  , participante :: PrimaryKey ParticipanteT f
+  , monto :: MontoT f
+  }
+  deriving (Generic, Beamable)
+
+type DistribucionMontosEspecificosItem = DistribucionMontosEspecificosItemT Identity
+deriving instance Show DistribucionMontosEspecificosItem
+deriving instance Eq DistribucionMontosEspecificosItem
+type DistribucionMontosEspecificosItemId = PrimaryKey DistribucionMontosEspecificosItemT Identity
+deriving instance Show DistribucionMontosEspecificosItemId
+deriving instance Eq DistribucionMontosEspecificosItemId
+
+instance Table DistribucionMontosEspecificosItemT where
+  data PrimaryKey DistribucionMontosEspecificosItemT f =
+    DistribucionMontosEspecificosItemId (Columnar f ULID)
+    deriving (Generic, Beamable)
+  primaryKey distrubucion = DistribucionMontosEspecificosItemId distrubucion.id
 
 data DistribucionMontoEquitativoT f = DistribucionMontoEquitativo
   { id :: Columnar f ULID
@@ -290,7 +311,7 @@ fetchGrupo aGrupoId = do
 fetchPago :: ULID -> ULID -> Pg M.Pago
 fetchPago grupoId pagoId = do
   (dbPago :: Pago) <- fromMaybe (error "Pago not found") <$> runSelectReturningOne (select $ do
-    pago <- all_ db._bananasplitPagos
+    pago <- all_ db.pagos
     guard_ (pago.pagoId ==. val_ pagoId)
     pure pago)
 
@@ -342,6 +363,18 @@ fetchDistribucionMontoEquitativoItems distribucionMontoEquitativoId = do
     pure item
   pure $ items & fmap (\item -> M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid)
 
+fetchDistribucionMontosEspecificosItems :: ULID -> Pg [M.MontoEspecifico]
+fetchDistribucionMontosEspecificosItems distribucionMontosEspecificosId = do
+  items <- runSelectReturningList $ select $ do
+    item <- all_ db.distribuciones_montos_especificos_items
+    guard_ (item.distribucion ==. DistribucionMontosEspecificosId (val_ distribucionMontosEspecificosId))
+    pure item
+  pure $ items & fmap (\item -> M.MontoEspecifico
+    { M.id = item.id
+    , M.participante = M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid
+    , M.monto = constructMonto item.monto
+    })
+
 fetchDistribucion :: ULID -> Pg (Maybe M.Distribucion)
 fetchDistribucion distribucionId = do
   dbDistribucion :: Distribucion <- fmap (fromMaybe (error "Pago not found")) $ runSelectReturningOne $ select $ do
@@ -365,7 +398,19 @@ fetchDistribucion distribucionId = do
             , M.participantes = participantes
             }
     "DistribucionMontosEspecificos" -> do
-      pure $ Just $ M.TipoDistribucionMontosEspecificos $ error "not implemented"
+      dbDistribucionMontosEspecificos :: Maybe DistribucionMontosEspecifico <- runSelectReturningOne $ select $ do
+        distribucionMontosEspecificos <- all_ db.distribuciones_montos_especificos
+        guard_ (distribucionMontosEspecificos.distribucion ==. DistribucionId (val_ distribucionId))
+        pure distribucionMontosEspecificos
+
+      case dbDistribucionMontosEspecificos of
+        Nothing -> pure Nothing
+        Just dbDistrib -> do
+          montos <- fetchDistribucionMontosEspecificosItems dbDistrib.id
+          pure $ Just $ M.TipoDistribucionMontosEspecificos $ M.DistribucionMontosEspecificos
+            { M.id = dbDistrib.id
+            , M.montos = montos
+            }
     "Repartija" -> do
       repartijaId <- fmap (fromMaybe (error "Repartija not found")) $ runSelectReturningOne $ select $ do
         r <- all_ db._bananasplitRepartijas
@@ -387,7 +432,7 @@ fetchDistribucion distribucionId = do
 fetchShallowPagos :: ULID -> Pg [M.ShallowPago]
 fetchShallowPagos grupoId = do
   dbPagos <- runSelectReturningList $ select $ do
-    pago <- all_ db._bananasplitPagos
+    pago <- all_ db.pagos
       & orderBy_ (asc_ . (.pagoId))
     guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
     pure pago
@@ -443,7 +488,7 @@ savePago grupoId pagoWithoutId = do
   distribucionPagadores <- saveDistribucion pago.pagadores
   distribucionDeudores <- saveDistribucion pago.deudores
   runInsert $
-    insertOnConflict db._bananasplitPagos
+    insertOnConflict db.pagos
       (insertValues
         [ Pago
             { pagoId = pago.pagoId
@@ -501,13 +546,48 @@ saveDistribucion distribucionWithoutId = do
           onConflictUpdateAll
       pure $ distribucion { M.tipo = M.TipoDistribucionMontoEquitativo tipo }
 
-    M.TipoDistribucionMontosEspecificos _tipoWithoutId -> do
-      error "notImplemented"
-      -- let distribucion = d { M.id = newId } :: M.DistribucionMontosEspecificos
-      -- runInsert $ insert db._bananasplitDistribuciones $ insertValues
-      --   [ Distribucion newId rol (PagoId pagoId)
-      --   ]
-      -- pure $ M.MkDistribucionMontosEspecificos distribucion
+    M.TipoDistribucionMontosEspecificos tipoWithoutId -> do
+      let distribucion = distribucionWithoutId { M.id = distribucionId } :: M.Distribucion
+      runInsert $
+        insertOnConflict db._bananasplitDistribuciones
+          (insertValues
+            [ Distribucion distribucion.id "DistribucionMontosEspecificos"
+            ])
+          (conflictingFields (\d -> d.id))
+          onConflictUpdateAll
+
+      montosEspecificos <- forM tipoWithoutId.montos $ \monto -> do
+        montoId <- if monto.id == nullUlid
+          then liftIO ULID.getULID
+          else pure monto.id
+        pure (monto { M.id = montoId } :: M.MontoEspecifico)
+
+      tipoId <- if tipoWithoutId.id == nullUlid
+        then liftIO ULID.getULID
+        else pure tipoWithoutId.id
+
+      let tipo = tipoWithoutId { M.id = tipoId, M.montos = montosEspecificos } :: M.DistribucionMontosEspecificos
+
+      runInsert $
+        insertOnConflict db.distribuciones_montos_especificos
+          (insertValues
+            [ DistribucionMontosEspecificos tipoId (DistribucionId distribucion.id)
+            ])
+          (conflictingFields (\dme -> (dme.id, dme.distribucion)))
+          onConflictUpdateAll
+
+      runDelete $ delete db.distribuciones_montos_especificos_items
+        (\item ->
+          item.distribucion ==. DistribucionMontosEspecificosId (val_ tipo.id)
+          &&. not_ (item.id `in_` [ val_ m.id | m <- tipo.montos ]))
+
+      runInsert $
+        insertOnConflict db.distribuciones_montos_especificos_items
+          (insertValues
+            [ DistribucionMontosEspecificosItem m.id (DistribucionMontosEspecificosId tipo.id) (participanteId2Persistent m.participante) (deconstructMonto m.monto) | m <- tipo.montos ])
+          (conflictingFields (\item -> item.id))
+          onConflictUpdateAll
+      pure $ distribucion { M.tipo = M.TipoDistribucionMontosEspecificos tipo }
     M.TipoDistribucionRepartija repartijaWithoutId -> do
       let distribucion = distribucionWithoutId { M.id = distribucionId } :: M.Distribucion
       runInsert $
@@ -560,7 +640,7 @@ saveDistribucion distribucionWithoutId = do
 deletePago :: ULID -> Pg ()
 deletePago unId = do
   maybePago <- runSelectReturningOne $ select $ do
-    p <- all_ db._bananasplitPagos
+    p <- all_ db.pagos
     guard_ (p.pagoId ==. val_ unId)
     pure p
 
@@ -570,7 +650,7 @@ deletePago unId = do
       let DistribucionId pagadoresId = pago.distribucion_pagadores
       let DistribucionId deudoresId = pago.distribucion_deudores
 
-      runDelete $ delete db._bananasplitPagos
+      runDelete $ delete db.pagos
         (\p -> p.pagoId ==. val_ unId)
       deleteDistribucion pagadoresId
       deleteDistribucion deudoresId

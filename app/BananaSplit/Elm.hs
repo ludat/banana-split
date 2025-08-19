@@ -59,6 +59,7 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy Distribucion)
     , DefineElm (Proxy :: Proxy TipoDistribucion)
     , DefineElm (Proxy :: Proxy DistribucionMontosEspecificos)
+    , DefineElm (Proxy :: Proxy MontoEspecifico)
     , DefineElm (Proxy :: Proxy DistribucionMontoEquitativo)
     , DefineElm (Proxy :: Proxy Repartija)
     , DefineElm (Proxy :: Proxy RepartijaItem)

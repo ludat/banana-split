@@ -38,7 +38,13 @@ data TipoDistribucion
 
 data DistribucionMontosEspecificos = DistribucionMontosEspecificos
   { id :: ULID
-  , montos :: [(ParticipanteId, Monto)]
+  , montos :: [MontoEspecifico]
+  } deriving (Show, Eq, Generic)
+
+data MontoEspecifico = MontoEspecifico
+  { id :: ULID
+  , participante :: ParticipanteId
+  , monto :: Monto
   } deriving (Show, Eq, Generic)
 
 data DistribucionMontoEquitativo = DistribucionMontoEquitativo
@@ -90,7 +96,7 @@ instance HasResumen DistribucionMontosEspecificos where
        | total /= totalPago -> DeudasIncomputables (Just total) $ ErrorResumen (Just $ "El total debería ser igual al total del pago pero es: " <> show total <> " en vez de " <> show totalPago) []
        | otherwise -> ResumenDeudas (Just total) deudas
     where
-      deudas = distribucion.montos <&> uncurry mkDeuda & mconcat
+      deudas = distribucion.montos <&> (\m -> mkDeuda m.participante m.monto) & mconcat
       total = totalDeudas deudas
 
 instance HasResumen DistribucionMontoEquitativo where
@@ -396,6 +402,7 @@ calcularDeudasRepartija repartija =
 
 Elm.deriveBoth Elm.defaultOptions ''Transaccion
 Elm.deriveBoth Elm.defaultOptions ''Deudas
+Elm.deriveBoth Elm.defaultOptions ''MontoEspecifico
 Elm.deriveBoth Elm.defaultOptions ''DistribucionMontosEspecificos
 Elm.deriveBoth Elm.defaultOptions ''DistribucionMontoEquitativo
 Elm.deriveBoth Elm.defaultOptions ''TipoDistribucion

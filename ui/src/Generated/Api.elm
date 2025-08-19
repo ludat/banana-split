@@ -398,20 +398,43 @@ jsonEncTipoDistribucion  val =
 
 type alias DistribucionMontosEspecificos  =
    { id: ULID
-   , montos: (List (ParticipanteId, Monto))
+   , montos: (List MontoEspecifico)
    }
 
 jsonDecDistribucionMontosEspecificos : Json.Decode.Decoder ( DistribucionMontosEspecificos )
 jsonDecDistribucionMontosEspecificos =
    Json.Decode.succeed (\pid pmontos -> {id = pid, montos = pmontos})
    |> required "id" (jsonDecULID)
-   |> required "montos" (Json.Decode.list (Json.Decode.map2 tuple2 (Json.Decode.index 0 (jsonDecParticipanteId)) (Json.Decode.index 1 (jsonDecMonto))))
+   |> required "montos" (Json.Decode.list (jsonDecMontoEspecifico))
 
 jsonEncDistribucionMontosEspecificos : DistribucionMontosEspecificos -> Value
 jsonEncDistribucionMontosEspecificos  val =
    Json.Encode.object
    [ ("id", jsonEncULID val.id)
-   , ("montos", (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(jsonEncParticipanteId) t1,(jsonEncMonto) t2])) val.montos)
+   , ("montos", (Json.Encode.list jsonEncMontoEspecifico) val.montos)
+   ]
+
+
+
+type alias MontoEspecifico  =
+   { id: ULID
+   , participante: ParticipanteId
+   , monto: Monto
+   }
+
+jsonDecMontoEspecifico : Json.Decode.Decoder ( MontoEspecifico )
+jsonDecMontoEspecifico =
+   Json.Decode.succeed (\pid pparticipante pmonto -> {id = pid, participante = pparticipante, monto = pmonto})
+   |> required "id" (jsonDecULID)
+   |> required "participante" (jsonDecParticipanteId)
+   |> required "monto" (jsonDecMonto)
+
+jsonEncMontoEspecifico : MontoEspecifico -> Value
+jsonEncMontoEspecifico  val =
+   Json.Encode.object
+   [ ("id", jsonEncULID val.id)
+   , ("participante", jsonEncParticipanteId val.participante)
+   , ("monto", jsonEncMonto val.monto)
    ]
 
 

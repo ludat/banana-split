@@ -187,6 +187,21 @@ validateDistribucion participantes =
                                 validateRepartija
                                     |> V.map Api.TipoDistribucionRepartija
 
+                            "montos_especificos" ->
+                                V.succeed Api.DistribucionMontosEspecificos
+                                    |> V.andMap (V.field "montos_especificos_id" validateId)
+                                    |> V.andMap
+                                        (V.field "montos"
+                                            (V.list
+                                                (V.succeed Api.MontoEspecifico
+                                                    |> V.andMap (V.field "id" validateId)
+                                                    |> V.andMap (V.field "participante" V.string |> V.andThen V.nonEmpty)
+                                                    |> V.andMap (V.field "monto" Monto.validateMonto)
+                                                )
+                                            )
+                                        )
+                                    |> V.map Api.TipoDistribucionMontosEspecificos
+
                             "monto_equitativo" ->
                                 V.succeed Api.DistribucionMontoEquitativo
                                     |> V.andMap (V.field "monto_equitativo_id" validateId)
@@ -408,7 +423,20 @@ distribucionToForm distribucion =
                     ]
 
                 TipoDistribucionMontosEspecificos distribucionMontosEspecificos ->
-                    []
+                    [ Form.setString "montos_especificos_id" distribucionMontosEspecificos.id
+                    , Form.setString "tipo" "montos_especificos"
+                    , Form.setList "montos"
+                        (distribucionMontosEspecificos.montos
+                            |> List.map
+                                (\m ->
+                                    FormField.group
+                                        [ Form.setString "id" m.id
+                                        , Form.setString "participante" <| m.participante
+                                        , Form.setString "monto" <| Monto.toString m.monto
+                                        ]
+                                )
+                        )
+                    ]
 
                 TipoDistribucionRepartija repartija ->
                     [ Form.setString "repartija_id" repartija.id
@@ -638,6 +666,7 @@ view store model =
                                     ]
                                 ]
                             ]
+                , pre [] [ text <| Debug.toString model.pagoForm ]
                 ]
             }
 
@@ -705,6 +734,7 @@ distribucionForm participantes prefix form =
                         FormInput.selectInput
                             [ ( "", "Seleccionar distribución" )
                             , ( "monto_equitativo", "Equitativo" )
+                            , ( "montos_especificos", "Especifico" )
                             , ( "repartija", "Repartija" )
                             ]
                             tipoField
@@ -717,6 +747,66 @@ distribucionForm participantes prefix form =
             ++ (case tipoField.value of
                     Just "repartija" ->
                         [ repartijaForm prefix form ]
+
+                    Just "montos_especificos" ->
+                        let
+                            montosIndexes =
+                                Form.getListIndexes (prefix ++ ".montos") form
+                        in
+                        [ div [ class "container mb-2" ] <|
+                            [ label [ class "label" ] [ text "Pagadores" ]
+                            , div [ class "container mb-2" ] <|
+                                (montosIndexes
+                                    |> List.map
+                                        (\i ->
+                                            let
+                                                montoField =
+                                                    Form.getFieldAsString (prefix ++ ".montos." ++ String.fromInt i ++ ".monto") form
+
+                                                participanteField =
+                                                    Form.getFieldAsString (prefix ++ ".montos." ++ String.fromInt i ++ ".participante") form
+                                            in
+                                            div [ class "field has-addons" ]
+                                                [ p [ class "control" ]
+                                                    [ Html.map PagoForm <|
+                                                        FormInput.textInput
+                                                            montoField
+                                                            [ class "input"
+                                                            , type_ "text"
+                                                            , placeholder "200.0"
+                                                            , classList [ ( "is-danger", hasErrorField montoField ) ]
+                                                            ]
+                                                    ]
+                                                , p [ class "control" ]
+                                                    [ span [ class "select" ]
+                                                        [ Html.map PagoForm <|
+                                                            FormInput.selectInput
+                                                                (( "", "" ) :: List.map (\p -> ( p.participanteId, p.participanteNombre )) participantes)
+                                                                participanteField
+                                                                []
+                                                        ]
+                                                    ]
+                                                , button [ class "button is-outlined is-danger", type_ "button", onClick <| PagoForm <| Form.RemoveItem (prefix ++ ".montos") i ]
+                                                    [ Icons.toHtml [] Icons.trash2
+                                                    ]
+                                                ]
+                                        )
+                                )
+                                    ++ [ div [ class "container" ] <|
+                                            [ button
+                                                [ class "button is-outlined is-primary is-flex pr-5"
+                                                , style "gap" ".5rem"
+                                                , onClick <| PagoForm <| Form.Append (prefix ++ ".montos")
+                                                , type_ "button"
+                                                ]
+                                                [ Icons.toHtml [] Icons.plus
+                                                , span []
+                                                    [ text "Agregar" ]
+                                                ]
+                                            ]
+                                       ]
+                            ]
+                        ]
 
                     Just "monto_equitativo" ->
                         [ div [ class "container mb-2" ] <|

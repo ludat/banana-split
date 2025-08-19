@@ -80,6 +80,54 @@ operations:
             table: "participantes"
             column: "id"
             name: "fk_monto_equitativo_item_participante__id"
+  - create_table:
+      name: "distribuciones_montos_especificos"
+      constraints:
+        - name: "distribucion_montos_especificos__id__id__unique"
+          type: unique
+          columns:
+            - id
+            - distribucion__id
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "distribucion__id"
+          type: "text"
+          nullable: false
+          unique: true
+          references:
+            table: "distribuciones"
+            column: "id"
+            name: "fk_distribuciones_montos_especificos_distribuciones__id"
+            on_delete: CASCADE
+  - create_table:
+      name: "distribuciones_montos_especificos_items"
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "distribucion__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "distribuciones_montos_especificos"
+            column: "id"
+            name: "fk_monto_especifico_item_montos_especificos__id"
+            on_delete: CASCADE
+        - name: "participante__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "participantes"
+            column: "id"
+            name: "fk_montos_especificos_item_participante__id"
+        - name: "monto__lugares_despues_de_la_coma"
+          type: "int"
+          nullable: false
+        - name: "monto__valor"
+          type: "bigint"
+          nullable: false
 
   - create_table:
       name: "pagos"
