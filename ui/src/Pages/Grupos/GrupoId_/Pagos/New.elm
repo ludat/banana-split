@@ -666,7 +666,6 @@ view store model =
                                     ]
                                 ]
                             ]
-                , pre [] [ text <| Debug.toString model.pagoForm ]
                 ]
             }
 
