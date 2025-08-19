@@ -39,4 +39,4 @@ jobs:
 
           helm package charts/banana-split
 
-          helm push "banana-split-${{ steps.chart_version.outputs.version }}.tgz" oci://ghcr.io/ludat/charts/banana-split
+          helm push "banana-split-${{ steps.chart_version.outputs.version }}.tgz" oci://ghcr.io/ludat/charts
