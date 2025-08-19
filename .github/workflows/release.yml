@@ -1,0 +1,31 @@
+name: "Release tagged image"
+
+on:
+  release:
+    types:
+      - released
+
+jobs:
+  debug:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Dump GitHub context
+        env:
+          GITHUB_CONTEXT: ${{ toJson(github) }}
+        run: echo "$GITHUB_CONTEXT"
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push image tag
+        run: |
+          docker pull ghcr.io/ludat/banana-split:${{ github.sha }}
+          docker tag ghcr.io/ludat/banana-split:${{ github.sha }} ghcr.io/ludat/banana-split:${{ github.ref_name }}
