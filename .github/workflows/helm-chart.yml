@@ -37,4 +37,6 @@ jobs:
             exit 1
           fi
 
-          helm push charts/banana-split oci://ghcr.io/ludat/charts/banana-split
+          helm package charts/banana-split
+
+          helm push "banana-split-${{ steps.chart_version.outputs.version }}.tgz" oci://ghcr.io/ludat/charts/banana-split
