@@ -7,6 +7,7 @@ build-type: Simple
 common base-settings
   default-language: GHC2021
   default-extensions:
+    DuplicateRecordFields
     LambdaCase
     LexicalNegation
     NoImplicitPrelude
@@ -79,10 +80,12 @@ library
   exposed-modules:
     BananaSplit
     BananaSplit.Core
-    BananaSplit.Persistence
+    BananaSplit.Deudas
+    BananaSplit.Monto
+    BananaSplit.Participante
     BananaSplit.Repartija
-    BananaSplit.Solver
     BananaSplit.TestUtils
+    BananaSplit.ULID
 
 executable banana-split
   import: base-settings, threaded-rts
@@ -90,6 +93,7 @@ executable banana-split
   main-is: Main.hs
   other-modules:
     BananaSplit.Elm
+    BananaSplit.Persistence
     Site.Api
     Site.Config
     Site.Handler.Grupos
@@ -108,8 +112,8 @@ test-suite spec
   hs-source-dirs: test
   main-is: Spec.hs
   other-modules:
+    BananaSplit.DeudasSpec
     BananaSplit.RepartijaSpec
-    BananaSplit.SolverSpec
     BananaSplitSpec
     Site.Handler.GruposSpec
 

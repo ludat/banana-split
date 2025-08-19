@@ -8,9 +8,8 @@ module Site.Handler.Grupos
     ) where
 
 import BananaSplit
-import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParticipante, fetchGrupo)
-
-import Data.ULID (ULID)
+import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParticipante, fetchGrupo,
+                                fetchPago, fetchShallowPagos)
 
 import Protolude
 
@@ -28,9 +27,20 @@ handleCreateGrupo CreateGrupoParams{grupoName} = do
 
 handleGetNetos :: ULID -> AppHandler ResumenGrupo
 handleGetNetos grupoId = do
-  grupo <- runBeam (fetchGrupo grupoId)
+  shallowGrupo <- runBeam (fetchGrupo grupoId)
     `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
+  pagos <- runBeam $ do
+    shallowPagos <- fetchShallowPagos grupoId
+    forM shallowPagos $ \shallowPago -> do
+      fetchPago grupoId shallowPago.pagoId
+
+  let grupo = Grupo
+        { id = shallowGrupo.id
+        , participantes = shallowGrupo.participantes
+        , nombre = shallowGrupo.nombre
+        , pagos = pagos
+        }
   let deudas = calcularDeudasTotales grupo
   pure $ ResumenGrupo
     { netos = Netos deudas
@@ -43,7 +53,7 @@ handleDeleteParticipante grupoId participanteId = do
   _ <- runBeam (deleteShallowParticipante grupoId participanteId)
   pure participanteId
 
-handleShowGrupo :: ULID -> AppHandler Grupo
+handleShowGrupo :: ULID -> AppHandler ShallowGrupo
 handleShowGrupo grupoId = do
   runBeam (fetchGrupo grupoId)
     `orElseMay` throwJsonError err404 "Grupo no encontrado"

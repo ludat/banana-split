@@ -10,8 +10,9 @@ import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Http
 import Layouts
-import Models.Grupo exposing (lookupNombreParticipante)
+import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
+import Models.Pago as Pago
 import Models.Store as Store
 import Models.Store.Types as Store exposing (Store)
 import Numeric.Decimal as Decimal
@@ -97,10 +98,34 @@ pagoFromTransaccion : Transaccion -> Pago
 pagoFromTransaccion transaction =
     { pagoId = emptyUlid
     , isValid = False
-    , monto = transaction.transaccionMonto
     , nombre = "Pago saldado"
-    , pagadores = [ Ponderado 1 transaction.transaccionFrom ]
-    , deudores = [ Ponderado 1 transaction.transaccionTo ]
+    , monto = transaction.transaccionMonto
+    , pagadores =
+        { id = emptyUlid
+        , tipo =
+            Api.TipoDistribucionMontosEspecificos <|
+                { id = emptyUlid
+                , montos =
+                    [ { id = emptyUlid
+                      , participante = transaction.transaccionFrom
+                      , monto = transaction.transaccionMonto
+                      }
+                    ]
+                }
+        }
+    , deudores =
+        { id = emptyUlid
+        , tipo =
+            Api.TipoDistribucionMontosEspecificos <|
+                { id = emptyUlid
+                , montos =
+                    [ { id = emptyUlid
+                      , participante = transaction.transaccionTo
+                      , monto = transaction.transaccionMonto
+                      }
+                    ]
+                }
+        }
     }
 
 
@@ -134,7 +159,7 @@ view store model =
             }
 
         Success grupo ->
-            { title = grupo.grupoNombre
+            { title = grupo.nombre
             , body =
                 [ div [ class "container columns is-flex-direction-column is-align-items-center" ]
                     (if grupo.participantes == [] then
@@ -142,7 +167,7 @@ view store model =
                         , p []
                             [ text "Agregalos "
                             , a
-                                [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.grupoId }
+                                [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.id }
                                 ]
                                 [ text "acá" ]
                             ]
@@ -179,7 +204,7 @@ view store model =
             }
 
 
-viewTransferencias : Grupo -> ResumenGrupo -> Html Msg
+viewTransferencias : GrupoLike g -> ResumenGrupo -> Html Msg
 viewTransferencias grupo resumen =
     div [ class "column is-two-thirds" ]
         (resumen.transaccionesParaSaldar
@@ -192,7 +217,7 @@ viewTransferencias grupo resumen =
                                     [ text <| lookupNombreParticipante grupo t.transaccionFrom
                                     , p [ class "has-text-danger is-size-6-5" ]
                                         [ text "$"
-                                        , text <| Decimal.toString <| Monto.toDecimal t.transaccionMonto
+                                        , text <| Monto.toString t.transaccionMonto
                                         ]
                                     ]
                                 ]

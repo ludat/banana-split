@@ -87,12 +87,12 @@ update store msg model =
 
         ParticipanteForm Form.Submit ->
             case ( Form.getOutput model.participanteForm, store |> Store.getGrupo model.grupoId ) of
-                ( Just participanteParams, Success { grupoId } ) ->
+                ( Just participanteParams, Success { id } ) ->
                     ( { model
                         | participanteForm = Form.update validateParticipante Form.Submit model.participanteForm
                       }
                     , Effect.sendCmd <|
-                        Api.postGrupoByIdParticipantes grupoId
+                        Api.postGrupoByIdParticipantes id
                             participanteParams
                             (\r ->
                                 case r of
@@ -176,7 +176,7 @@ view store model =
             }
 
         Success grupo ->
-            { title = grupo.grupoNombre
+            { title = grupo.nombre
             , body =
                 [ div [ class "container px-4" ]
                     [ Html.form

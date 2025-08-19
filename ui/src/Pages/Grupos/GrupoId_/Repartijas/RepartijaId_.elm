@@ -8,13 +8,13 @@ import Form.Error as FormError
 import Form.Field as Form
 import Form.Input as FormInput
 import Form.Validate as V
-import Generated.Api as Api exposing (Grupo, Participante, ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
+import Generated.Api as Api exposing (Grupo, Pago, Participante, ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
 import Layouts
 import List.Extra exposing (find)
-import Models.Grupo exposing (lookupNombreParticipante)
+import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -56,7 +56,6 @@ page shared route =
 type alias Model =
     { grupoId : ULID
     , repartijaId : ULID
-    , isClaimModalOpen : Maybe RepartijaItem
     , claimForm : Form CustomFormError RepartijaClaim
     , participanteClaimsModal : Maybe ParticipanteId
     }
@@ -66,7 +65,6 @@ init : ULID -> ULID -> Store -> ( Model, Effect Msg )
 init grupoId repartijaId store =
     ( { grupoId = grupoId
       , repartijaId = repartijaId
-      , isClaimModalOpen = Nothing
       , claimForm = Form.initial [] validateClaim
       , participanteClaimsModal = Nothing
       }
@@ -99,18 +97,13 @@ validateClaim =
 
 type Msg
     = NoOp
-    | OpenClaimItemModal RepartijaItem
     | ChangeCurrentClaim RepartijaItem Int
     | JoinCurrentClaim RepartijaItem
     | LeaveCurrentClaim RepartijaClaim
     | OpenDesdoblarItemModal RepartijaItem
-    | CloseClaimModal
-    | ClaimFormMsg Form.Msg
     | DeleteClaim RepartijaClaim
-    | CreateRepartijaResponded (WebData RepartijaClaim)
+    | CreateRepartijaClaimResponded (WebData RepartijaClaim)
     | DeleteRepartijaClaimResponded (WebData String)
-    | CreatePago
-    | CreatePagoResponded (WebData String)
     | OpenParticipanteClaimsPopup ParticipanteId
     | CloseParticipanteClaimsPopup
 
@@ -123,98 +116,7 @@ update maybeParticipanteId store msg model =
             , Effect.none
             )
 
-        OpenClaimItemModal item ->
-            ( { model
-                | isClaimModalOpen = Just item
-                , claimForm = Form.initial [] validateClaim
-              }
-            , Effect.none
-            )
-
-        CloseClaimModal ->
-            ( { model | isClaimModalOpen = Nothing }
-            , Effect.none
-            )
-
-        ClaimFormMsg formMsg ->
-            case formMsg of
-                Form.Submit ->
-                    case ( Form.getOutput model.claimForm, model.isClaimModalOpen ) of
-                        ( Just claim, Just itemId ) ->
-                            ( { model | isClaimModalOpen = Nothing }
-                            , Effect.sendCmd <|
-                                Api.putRepartijasByRepartijaId model.repartijaId
-                                    { claim | repartijaClaimItemId = itemId.repartijaItemId }
-                                    (RemoteData.fromResult >> CreateRepartijaResponded)
-                            )
-
-                        ( _, _ ) ->
-                            ( model
-                            , Effect.none
-                            )
-
-                Form.Input "participante" Form.Select (Form.String participanteId) ->
-                    let
-                        cantidadAnterior =
-                            case ( Store.getRepartija model.repartijaId store, model.isClaimModalOpen ) of
-                                ( NotAsked, _ ) ->
-                                    ""
-
-                                ( Loading, _ ) ->
-                                    ""
-
-                                ( Failure e, _ ) ->
-                                    ""
-
-                                ( Success _, Nothing ) ->
-                                    ""
-
-                                ( Success repartija, Just item ) ->
-                                    repartija.repartijaClaims
-                                        |> List.filter (\claim -> claim.repartijaClaimItemId == item.repartijaItemId)
-                                        |> interpretClaims
-                                        |> (\x ->
-                                                case x of
-                                                    NoClaims ->
-                                                        ""
-
-                                                    MixedClaims repartijaClaims ->
-                                                        "error"
-
-                                                    OnlyExactClaims list ->
-                                                        list
-                                                            |> List.filter (\( n, c ) -> c.repartijaClaimParticipante == participanteId)
-                                                            |> List.map Tuple.first
-                                                            |> List.sum
-                                                            |> String.fromInt
-
-                                                    OnlyParticipationClaims repartijaClaims ->
-                                                        ""
-                                           )
-
-                        newForm =
-                            model.claimForm
-                                |> Form.update validateClaim formMsg
-                                |> Form.update validateClaim (Form.Input "cantidad" Form.Text (Form.String cantidadAnterior))
-                    in
-                    ( { model
-                        | claimForm = newForm
-                      }
-                    , Effect.none
-                    )
-
-                _ ->
-                    let
-                        newForm =
-                            Form.update validateClaim formMsg model.claimForm
-                    in
-                    ( { model
-                        | claimForm = newForm
-                      }
-                    , Effect.none
-                    )
-
-        CreateRepartijaResponded _ ->
+        CreateRepartijaClaimResponded _ ->
             ( model
             , Effect.batch [ Store.refreshRepartija model.repartijaId ]
             )
@@ -224,7 +126,7 @@ update maybeParticipanteId store msg model =
             , Effect.batch
                 [ Effect.sendCmd <|
                     Api.deleteRepartijasClaimsByClaimId
-                        repartijaClaim.repartijaClaimId
+                        repartijaClaim.id
                         (RemoteData.fromResult >> DeleteRepartijaClaimResponded)
                 ]
             )
@@ -233,26 +135,6 @@ update maybeParticipanteId store msg model =
             ( model
             , Effect.batch
                 [ Store.refreshRepartija model.repartijaId
-                ]
-            )
-
-        CreatePago ->
-            ( model
-            , Effect.batch
-                [ Effect.sendCmd <| Api.postRepartijasByRepartijaId model.repartijaId (RemoteData.fromResult >> CreatePagoResponded)
-                ]
-            )
-
-        CreatePagoResponded reponse ->
-            ( model
-            , Effect.batch
-                [ Store.refreshGrupo model.grupoId
-                , Store.refreshResumen model.grupoId
-                , if RemoteData.isSuccess reponse then
-                    Toast.pushToast Toast.ToastSuccess "Pago creado."
-
-                  else
-                    Toast.pushToast Toast.ToastDanger "Fallo la creacion del pago."
                 ]
             )
 
@@ -278,10 +160,10 @@ update maybeParticipanteId store msg model =
                         Just participanteId ->
                             let
                                 oldClaimFound =
-                                    repartija.repartijaClaims
+                                    repartija.claims
                                         |> List.filter
                                             (\claim ->
-                                                claim.repartijaClaimParticipante == participanteId && claim.repartijaClaimItemId == item.repartijaItemId
+                                                claim.participante == participanteId && claim.itemId == item.id
                                             )
                                         |> List.head
                             in
@@ -290,7 +172,7 @@ update maybeParticipanteId store msg model =
                                     let
                                         newCantidad =
                                             oldClaim
-                                                |> .repartijaClaimCantidad
+                                                |> .cantidad
                                                 |> Maybe.withDefault 0
                                                 |> (\x -> x + deltaCantidad)
                                                 |> Basics.max 0
@@ -299,16 +181,16 @@ update maybeParticipanteId store msg model =
                                     , if newCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
-                                                { repartijaClaimId = emptyUlid
-                                                , repartijaClaimParticipante = participanteId
-                                                , repartijaClaimItemId = item.repartijaItemId
-                                                , repartijaClaimCantidad = Just <| newCantidad
+                                                { id = emptyUlid
+                                                , participante = participanteId
+                                                , itemId = item.id
+                                                , cantidad = Just <| newCantidad
                                                 }
-                                                (RemoteData.fromResult >> CreateRepartijaResponded)
+                                                (RemoteData.fromResult >> CreateRepartijaClaimResponded)
 
                                       else
                                         Effect.sendCmd <|
-                                            Api.deleteRepartijasClaimsByClaimId oldClaim.repartijaClaimId
+                                            Api.deleteRepartijasClaimsByClaimId oldClaim.id
                                                 (RemoteData.fromResult >> DeleteRepartijaClaimResponded)
                                     )
 
@@ -317,12 +199,12 @@ update maybeParticipanteId store msg model =
                                     , if deltaCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
-                                                { repartijaClaimId = emptyUlid
-                                                , repartijaClaimParticipante = participanteId
-                                                , repartijaClaimItemId = item.repartijaItemId
-                                                , repartijaClaimCantidad = Just deltaCantidad
+                                                { id = emptyUlid
+                                                , participante = participanteId
+                                                , itemId = item.id
+                                                , cantidad = Just deltaCantidad
                                                 }
-                                                (RemoteData.fromResult >> CreateRepartijaResponded)
+                                                (RemoteData.fromResult >> CreateRepartijaClaimResponded)
 
                                       else
                                         Effect.none
@@ -340,12 +222,12 @@ update maybeParticipanteId store msg model =
                     ( model
                     , Effect.sendCmd <|
                         Api.putRepartijasByRepartijaId model.repartijaId
-                            { repartijaClaimId = emptyUlid
-                            , repartijaClaimParticipante = participanteId
-                            , repartijaClaimItemId = item.repartijaItemId
-                            , repartijaClaimCantidad = Nothing
+                            { id = emptyUlid
+                            , participante = participanteId
+                            , itemId = item.id
+                            , cantidad = Nothing
                             }
-                            (RemoteData.fromResult >> CreateRepartijaResponded)
+                            (RemoteData.fromResult >> CreateRepartijaClaimResponded)
                     )
 
                 Nothing ->
@@ -356,7 +238,7 @@ update maybeParticipanteId store msg model =
                 Just participanteId ->
                     ( model
                     , Effect.sendCmd <|
-                        Api.deleteRepartijasClaimsByClaimId item.repartijaClaimId
+                        Api.deleteRepartijasClaimsByClaimId item.id
                             (RemoteData.fromResult >> DeleteRepartijaClaimResponded)
                     )
 
@@ -383,16 +265,15 @@ view userId store model =
     , body =
         case ( Store.getRepartija model.repartijaId store, Store.getGrupo model.grupoId store ) of
             ( Success repartija, Success grupo ) ->
-                [ div [ class "is-size-2 has-text-weight-bold" ] [ text repartija.repartijaNombre ]
-                , viewParticipantes grupo repartija
+                [ viewParticipantes grupo repartija
                 , viewRepartijaItems userId grupo repartija
-                , viewClaimModal model repartija grupo.participantes
                 , viewParticipanteClaimsModal model grupo repartija
-                , button
-                    [ class "button is-primary"
-                    , onClick CreatePago
-                    ]
-                    [ text "Crear Pago" ]
+
+                -- , button
+                --     [ class "button is-primary"
+                --     , onClick CreatePago
+                --     ]
+                --     [ text "Crear Pago" ]
                 ]
 
             ( Failure e, _ ) ->
@@ -406,12 +287,12 @@ view userId store model =
     }
 
 
-viewParticipantes : Grupo -> Repartija -> Html Msg
+viewParticipantes : GrupoLike g -> Repartija -> Html Msg
 viewParticipantes grupo repartija =
     let
         participantesConClaims =
-            repartija.repartijaClaims
-                |> List.map (\claim -> claim.repartijaClaimParticipante)
+            repartija.claims
+                |> List.map (\claim -> claim.participante)
                 |> Set.fromList
     in
     div []
@@ -435,7 +316,7 @@ viewParticipantes grupo repartija =
         ]
 
 
-viewRepartijaItems : Maybe ULID -> Grupo -> Repartija -> Html Msg
+viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Html Msg
 viewRepartijaItems userId grupo repartija =
     table [ class "table is-fullwidth is-striped is-hoverable" ] <|
         [ thead []
@@ -448,13 +329,13 @@ viewRepartijaItems userId grupo repartija =
                 ]
             ]
         , tbody []
-            (repartija.repartijaItems
+            (repartija.items
                 |> List.map (\item -> viewClaimsLine userId grupo repartija item)
                 |> (\x ->
                         List.append x
                             [ tr []
                                 [ td [] [ text "Propina" ]
-                                , td [ class "has-text-right" ] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.repartijaExtra ]
+                                , td [ class "has-text-right" ] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.extra ]
                                 , td [] []
                                 , td [] []
                                 , td [] []
@@ -463,10 +344,10 @@ viewRepartijaItems userId grupo repartija =
                                 [ td [] [ text "Total" ]
                                 , td [ class "has-text-right" ]
                                     [ text "$"
-                                    , repartija.repartijaItems
-                                        |> List.map (\i -> Monto.toDecimal i.repartijaItemMonto)
+                                    , repartija.items
+                                        |> List.map (\i -> Monto.toDecimal i.monto)
                                         |> List.foldl Decimal.add (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                                        |> Decimal.add (Monto.toDecimal repartija.repartijaExtra)
+                                        |> Decimal.add (Monto.toDecimal repartija.extra)
                                         |> Decimal.toString
                                         |> text
                                     ]
@@ -485,7 +366,7 @@ interpretClaims originalClaims =
     let
         folder : RepartijaClaim -> ItemClaimsState -> ItemClaimsState
         folder claim claimsState =
-            case ( claimsState, claim.repartijaClaimCantidad ) of
+            case ( claimsState, claim.cantidad ) of
                 ( NoClaims, Just n ) ->
                     OnlyExactClaims [ ( n, claim ) ]
 
@@ -510,12 +391,12 @@ interpretClaims originalClaims =
     List.foldl folder NoClaims originalClaims
 
 
-viewClaimsLine : Maybe ULID -> Grupo -> Repartija -> RepartijaItem -> Html Msg
+viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Html Msg
 viewClaimsLine userId grupo repartija item =
     let
         claimsForItem =
-            repartija.repartijaClaims
-                |> List.filter (\claim -> claim.repartijaClaimItemId == item.repartijaItemId)
+            repartija.claims
+                |> List.filter (\claim -> claim.itemId == item.id)
 
         itemsClaimed : ItemClaimsState
         itemsClaimed =
@@ -523,14 +404,14 @@ viewClaimsLine userId grupo repartija item =
                 |> interpretClaims
     in
     tr []
-        [ td [ class "is-vcentered" ] [ text <| item.repartijaItemNombre ]
+        [ td [ class "is-vcentered" ] [ text <| item.nombre ]
         , td [ class "has-text-right is-vcentered" ]
-            [ text <| "$" ++ Decimal.toString (Monto.toDecimal item.repartijaItemMonto)
+            [ text <| "$" ++ Decimal.toString (Monto.toDecimal item.monto)
             ]
-        , td [ class "has-text-right is-vcentered" ] [ text <| String.fromInt item.repartijaItemCantidad ]
+        , td [ class "has-text-right is-vcentered" ] [ text <| String.fromInt item.cantidad ]
         , td [] [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed ]
         , td []
-            [ case ( userId, itemsClaimed, claimsForItem |> find (\c -> Just c.repartijaClaimParticipante == userId) ) of
+            [ case ( userId, itemsClaimed, claimsForItem |> find (\c -> Just c.participante == userId) ) of
                 ( Nothing, _, _ ) ->
                     div [ class "buttons has-addons" ]
                         [ text "Selecciona tu nombre arriba a la derecha"
@@ -592,7 +473,7 @@ type ItemRepartidoState
     | RepartidoDeMas Int
 
 
-viewClaimProgressAndDropdown : Grupo -> Repartija -> RepartijaItem -> List RepartijaClaim -> ItemClaimsState -> Html Msg
+viewClaimProgressAndDropdown : GrupoLike g -> Repartija -> RepartijaItem -> List RepartijaClaim -> ItemClaimsState -> Html Msg
 viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
     let
         itemRepartidoState : ItemRepartidoState
@@ -607,7 +488,7 @@ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
                             exactClaims |> List.map Tuple.first |> List.sum
 
                         cantidadFaltante =
-                            item.repartijaItemCantidad - cantidadClaimeado
+                            item.cantidad - cantidadClaimeado
                     in
                     case compare 0 cantidadFaltante of
                         LT ->
@@ -645,9 +526,9 @@ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
                                 div [ class "dropdown-item" ]
                                     [ let
                                         nombre =
-                                            lookupNombreParticipante grupo claim.repartijaClaimParticipante
+                                            lookupNombreParticipante grupo claim.participante
                                       in
-                                      case claim.repartijaClaimCantidad of
+                                      case claim.cantidad of
                                         Just cantidad ->
                                             text <| String.fromInt cantidad ++ " unidad para " ++ nombre
 
@@ -721,24 +602,24 @@ viewRepartidoState itemRepartidoState =
         ]
 
 
-viewParticipanteClaimsModal : Model -> Grupo -> Repartija -> Html Msg
+viewParticipanteClaimsModal : Model -> GrupoLike g -> Repartija -> Html Msg
 viewParticipanteClaimsModal model grupo repartija =
     case model.participanteClaimsModal of
         Just participanteId ->
             let
                 claims =
-                    repartija.repartijaClaims
-                        |> List.filter (\c -> c.repartijaClaimParticipante == participanteId)
+                    repartija.claims
+                        |> List.filter (\c -> c.participante == participanteId)
 
                 participanteNombre =
                     lookupNombreParticipante grupo participanteId
 
                 lookupItemName : ULID -> String
                 lookupItemName itemId =
-                    repartija.repartijaItems
-                        |> List.filter (\item -> item.repartijaItemId == itemId)
+                    repartija.items
+                        |> List.filter (\item -> item.id == itemId)
                         |> List.head
-                        |> Maybe.map .repartijaItemNombre
+                        |> Maybe.map .nombre
                         |> Maybe.withDefault "Item desconocido"
             in
             div
@@ -777,10 +658,10 @@ viewParticipanteClaimsModal model grupo repartija =
                                         |> List.map
                                             (\claim ->
                                                 tr []
-                                                    [ td [] [ text <| lookupItemName claim.repartijaClaimItemId ]
+                                                    [ td [] [ text <| lookupItemName claim.itemId ]
                                                     , td []
                                                         [ text
-                                                            (claim.repartijaClaimCantidad
+                                                            (claim.cantidad
                                                                 |> Maybe.map String.fromInt
                                                                 |> Maybe.withDefault "Equitativo"
                                                             )
@@ -795,187 +676,3 @@ viewParticipanteClaimsModal model grupo repartija =
 
         Nothing ->
             div [] []
-
-
-viewClaimModal : Model -> Repartija -> List Participante -> Html Msg
-viewClaimModal model repartija participantes =
-    case model.isClaimModalOpen of
-        Just item ->
-            let
-                claims =
-                    repartija.repartijaClaims
-                        |> List.filter (\c -> c.repartijaClaimItemId == item.repartijaItemId)
-                        |> interpretClaims
-            in
-            div
-                [ class "modal is-active" ]
-                [ div
-                    [ class "modal-background"
-                    , onClick <| CloseClaimModal
-                    ]
-                    []
-                , div
-                    [ class "modal-card"
-                    ]
-                    [ header
-                        [ class "modal-card-head"
-                        ]
-                        [ p
-                            [ class "modal-card-title"
-                            ]
-                            [ text "Reclamar un item" ]
-                        , button
-                            [ class "delete"
-                            , attribute "aria-label" "close"
-                            , onClick <| CloseClaimModal
-                            ]
-                            []
-                        ]
-                    , section
-                        [ class "modal-card-body"
-                        ]
-                        [ repartijaClaimForm participantes claims model.claimForm
-                        ]
-                    , footer
-                        [ class "modal-card-foot"
-                        ]
-                        [ div
-                            [ class "buttons"
-                            ]
-                            [ button
-                                [ class "button is-primary"
-                                , onClick <| ClaimFormMsg Form.Submit
-                                ]
-                                [ text "Reclamar item" ]
-                            , button
-                                [ class "button"
-                                , onClick CloseClaimModal
-                                ]
-                                [ text "Cancel" ]
-                            ]
-                        ]
-                    ]
-                ]
-
-        Nothing ->
-            div [] []
-
-
-repartijaClaimForm : List Participante -> ItemClaimsState -> Form CustomFormError RepartijaClaim -> Html Msg
-repartijaClaimForm participantes claims form =
-    let
-        errorFor field =
-            case field.liveError of
-                Just FormError.Empty ->
-                    p [ class "help is-danger" ] [ text "No puede ser vacio" ]
-
-                Just FormError.InvalidString ->
-                    p [ class "help is-danger" ] [ text "String invalido" ]
-
-                Just FormError.InvalidEmail ->
-                    p [ class "help is-danger" ] [ text "Email invalido" ]
-
-                Just FormError.InvalidFormat ->
-                    p [ class "help is-danger" ] [ text "Formato invalido" ]
-
-                Just FormError.InvalidInt ->
-                    p [ class "help is-danger" ] [ text "Entero invalido" ]
-
-                Just FormError.InvalidFloat ->
-                    p [ class "help is-danger" ] [ text "Numero con coma invalido" ]
-
-                Just FormError.InvalidBool ->
-                    p [ class "help is-danger" ] [ text "Booleano invalido" ]
-
-                Just (FormError.SmallerIntThan _) ->
-                    p [ class "help is-danger" ] [ text "Mas chico que" ]
-
-                Just (FormError.GreaterIntThan _) ->
-                    p [ class "help is-danger" ] [ text "Mas grande que" ]
-
-                Just (FormError.SmallerFloatThan _) ->
-                    p [ class "help is-danger" ] [ text "Mas chico que" ]
-
-                Just (FormError.GreaterFloatThan _) ->
-                    p [ class "help is-danger" ] [ text "Mas grande que" ]
-
-                Just (FormError.ShorterStringThan _) ->
-                    p [ class "help is-danger" ] [ text "Mas corto que" ]
-
-                Just (FormError.LongerStringThan _) ->
-                    p [ class "help is-danger" ] [ text "Longer than" ]
-
-                Just FormError.NotIncludedIn ->
-                    p [ class "help is-danger" ] [ text "Not included in" ]
-
-                Just (FormError.CustomError _) ->
-                    p [ class "help is-danger" ] [ text "Jajan't" ]
-
-                Nothing ->
-                    text ""
-
-        shouldShowCantidad =
-            case claims of
-                MixedClaims _ ->
-                    False
-
-                OnlyExactClaims _ ->
-                    True
-
-                OnlyParticipationClaims _ ->
-                    False
-
-                NoClaims ->
-                    True
-
-        hasError field =
-            case field.liveError of
-                Just _ ->
-                    True
-
-                Nothing ->
-                    False
-
-        participanteField =
-            Form.getFieldAsString "participante" form
-
-        cantidadField =
-            Form.getFieldAsString "cantidad" form
-    in
-    Html.form [ onSubmit <| ClaimFormMsg Form.Submit ]
-        [ div [ class "field" ]
-            [ label [ class "label" ]
-                [ text "Participante" ]
-            , div [ class "control" ]
-                [ span [ class "select" ]
-                    [ Html.map ClaimFormMsg <|
-                        FormInput.selectInput
-                            (( "", "Selecciona a un participante" ) :: List.map (\p -> ( p.participanteId, p.participanteNombre )) participantes)
-                            participanteField
-                            []
-                    ]
-                , errorFor participanteField
-                ]
-            ]
-        , div
-            [ class "field"
-            , if shouldShowCantidad then
-                class ""
-
-              else
-                class "is-hidden"
-            ]
-            [ label [ class "label" ]
-                [ text "Cantidad" ]
-            , div [ class "control" ]
-                [ Html.map ClaimFormMsg <|
-                    FormInput.textInput cantidadField
-                        [ class "input"
-                        , type_ "text"
-                        , placeholder "After del viernes"
-                        , classList [ ( "is-danger", hasError cantidadField ) ]
-                        ]
-                , errorFor cantidadField
-                ]
-            ]
-        ]

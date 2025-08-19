@@ -1,8 +1,0 @@
-operations:
-  - add_column:
-      table: pagos
-      column:
-        name: is_valid
-        type: boolean
-        nullable: false
-        default: "false"

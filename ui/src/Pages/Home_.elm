@@ -1,6 +1,5 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
-import Browser.Navigation exposing (pushUrl)
 import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form)
 import Form.Error as Form
@@ -103,7 +102,7 @@ update msg model =
 
         GrupoCreated grupo ->
             ( { model | form = Form.initial [] validate }
-            , pushRoutePath <| Path.Grupos_Id_ { id = grupo.grupoId }
+            , pushRoutePath <| Path.Grupos_Id_ { id = grupo.id }
             )
 
 

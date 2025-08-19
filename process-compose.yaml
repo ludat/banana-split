@@ -10,10 +10,10 @@ processes:
       migrations:
         condition: process_completed_successfully
   tests:
-    <<: *backend
     disabled: true
     command: |
       ghcid --command='cabal repl --enable-multi-repl test:spec lib:banana-split' --run=Main.main --warnings
+    is_tty: true
   frontend:
     command: pnpm start
     # environment:
@@ -32,6 +32,7 @@ processes:
   migrations:
     command: |
       cabal run banana-split -- migrations init
+      cabal run banana-split -- migrations rollback || true
       cabal run banana-split -- migrations migrate ./migrations
     availability:
       restart: on_failure

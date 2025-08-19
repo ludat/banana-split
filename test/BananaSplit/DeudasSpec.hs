@@ -1,4 +1,4 @@
-module BananaSplit.SolverSpec
+module BananaSplit.DeudasSpec
     ( spec
     ) where
 
@@ -10,6 +10,7 @@ import Data.Decimal qualified as Decimal
 import Protolude
 
 import Test.Hspec
+import Test.QuickCheck
 
 spec :: Spec
 spec = do
@@ -20,37 +21,54 @@ spec = do
     u4 = participante 4
     u5 = participante 5
     u6 = participante 6
+    pagoValido :: Pago
+    pagoValido =
+      Pago
+      { pagoId = fakeUlid 100
+      , monto = 1000
+      , isValid = True
+      , nombre = "Pago"
+      , pagadores = distribucionMontosEspecificos []
+      , deudores = distribucionMontosEspecificos []
+      }
+
   describe "calcularDeudas" $ do
-    it "calcula deudas de un pago con ponderador" $ do
-      calcularDeudasPago Pago
-        { pagoId = fakeUlid 100
-        , isValid = True
-        , monto = 1000
-        , nombre = "cosa"
-        , pagadores =
-            [ Ponderado 1 u1
-            ]
-        , deudores =
-            [ Ponderado 1 u1
-            , Ponderado 1 u2
-            ]
+    it "calcula deudas de un pago montos especificos en pagadores y deudores" $ do
+      calcularDeudasPago pagoValido
+        { monto = 500
+        , pagadores = distribucionMontosEspecificos
+          [ (u1, 500)
+          ]
+        , deudores = distribucionMontosEspecificos
+          [ (u2, 500)
+          ]
         } `shouldBe` deudas
           [ (u1, 500)
           , (u2, -500)
           ]
 
-    it "devuelve deudas vacias si el pago es invalido" $ do
-      calcularDeudasPago Pago
-        { pagoId = fakeUlid 100
-        , isValid = False
-        , monto = 1000
-        , nombre = "cosa"
-        , pagadores = []
-        , deudores =
-            [ Ponderado 1 u1
-            , Ponderado 1 u2
-            ]
-        } `shouldBe` mempty
+  describe "calcularDeudasMontoEquitativo" $ do
+    it "entre varias personas devuelve equitativo" $ do
+      getDeudas 300
+        (distribucionMontoEquitativo [u1, u2, u3])
+        `shouldBe` Just (deudas
+          [ (u1, 100)
+          , (u2, 100)
+          , (u3, 100)
+          ])
+    it "calcular deudas de un monto equitativo siempre suma el total de nuevo" $ property $ \(Positive m :: Positive Int) (NonEmpty us :: NonEmptyList (Positive Integer))-> do
+      let monto = fromIntegral @_ @Monto m
+      let participants =  us <&> participante . getPositive
+      (getDeudas monto
+        (distribucionMontoEquitativo participants)
+            & fmap totalDeudas)
+            `shouldBe` Just monto
+
+    it "con monto cero devuelve deudas vacias" $ do
+      pendingWith "Not sure if this is the right default right now"
+      getDeudas 0
+        (distribucionMontoEquitativo [u1, u2, u3])
+        `shouldBe` Just (deudas [])
 
   describe "simplify transactions" $ do
     it "simplifica ningun transaccion trivialmente" $ do
@@ -133,9 +151,3 @@ spec = do
       --           Error _ -> error "no json"
 
       --   minimizeTransactions (calcularDeudasTotales grupo) `shouldBe` []
-
-deudas :: [(ParticipanteId, Monto)] -> Deudas Monto
-deudas l =
-  l
-  & fmap (uncurry mkDeuda)
-  & mconcat
