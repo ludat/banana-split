@@ -24,7 +24,7 @@ import Models.Pago as Pago
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import Pages.Grupos.GrupoId_.Pagos.New as P exposing (Model, Msg(..), Section(..), subscriptions, update, validatePago, view)
+import Pages.Grupos.GrupoId_.Pagos.New as P exposing (Model, Msg(..), Section(..), subscriptions, update, validatePago, view, waitAndCheckNecessaryData)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
@@ -68,18 +68,13 @@ init : ULID -> ULID -> Store -> ( Model, Effect Msg )
 init grupoId pagoId store =
     ( { grupoId = grupoId
       , currentPagoId = Just pagoId
-      , currentPago = Loading
       , currentSection = PagoConfirmation
-      , pagoForm =
-            Form.initial
-                [ Form.setGroup "distribucion_pagadores" <| [ Form.setString "tipo" "" ]
-                , Form.setGroup "distribucion_deudores" <| [ Form.setString "tipo" "" ]
-                ]
-                (validatePago [])
+      , pagoForm = Form.initial [] (validatePago [])
       , resumenPago = Loading
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
-        , Effect.sendCmd <| Api.getGrupoByIdPagosByPagoId pagoId pagoId (RemoteData.fromResult >> FetchedPago)
+        , Store.ensurePago pagoId store
+        , waitAndCheckNecessaryData
         ]
     )

@@ -1,4 +1,4 @@
-module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg(..), Section(..), page, subscriptions, update, validatePago, validatePagoInSection, view)
+module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg(..), Section(..), page, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
@@ -24,10 +24,12 @@ import Models.Pago as Pago
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
+import Process
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
+import Task
 import Utils.Form exposing (..)
 import Utils.Toasts as Toasts exposing (pushToast)
 import Utils.Toasts.Types as Toasts exposing (ToastLevel(..))
@@ -62,8 +64,8 @@ type Msg
     | UpdatedPagoResponse (Result Http.Error Pago)
     | SelectSection Section
     | SubmitCurrentSection
+    | CheckIfPagoAndGrupoArePresent
     | ResumenPagoUpdated (WebData ResumenPago)
-    | FetchedPago (WebData Pago)
 
 
 type Section
@@ -76,7 +78,6 @@ type Section
 type alias Model =
     { grupoId : String
     , currentPagoId : Maybe ULID
-    , currentPago : WebData Pago
     , currentSection : Section
     , pagoForm : Form CustomFormError Pago
     , resumenPago : WebData ResumenPago
@@ -87,7 +88,6 @@ init : ULID -> Store -> ( Model, Effect Msg )
 init grupoId store =
     ( { grupoId = grupoId
       , currentPagoId = Nothing
-      , currentPago = NotAsked
       , currentSection = BasicPagoData
       , pagoForm =
             Form.initial
@@ -383,29 +383,57 @@ update store userId msg model =
                     , Effect.none
                     )
 
-        FetchedPago pagoResponse ->
-            case ( pagoResponse, Store.getGrupo model.grupoId store ) of
-                ( Success pago, Success grupo ) ->
-                    ( { model
-                        | currentPago = Success pago
-                        , pagoForm =
-                            Form.initial
-                                [ Form.setString "id" pago.pagoId
-                                , Form.setString "nombre" pago.nombre
-                                , Form.setString "monto" (Monto.toString pago.monto)
-                                , Form.setGroup "distribucion_pagadores" (distribucionToForm pago.pagadores)
-                                , Form.setGroup "distribucion_deudores" (distribucionToForm pago.deudores)
-                                ]
-                                (validatePago grupo.participantes)
-                      }
-                    , Effect.batch
-                        [ Effect.sendMsg <| ResumenPagoUpdated Loading
-                        , Effect.sendCmd <| Api.postPagosResumen pago (RemoteData.fromResult >> ResumenPagoUpdated)
-                        ]
-                    )
+        CheckIfPagoAndGrupoArePresent ->
+            case model.currentPagoId of
+                Nothing ->
+                    ( model, Effect.none )
 
-                ( _, _ ) ->
-                    ( { model | currentPago = pagoResponse }, Effect.none )
+                Just pagoId ->
+                    case ( Store.getGrupo model.grupoId store, Store.getPago pagoId store ) of
+                        ( NotAsked, _ ) ->
+                            ( model, Effect.none )
+
+                        ( _, NotAsked ) ->
+                            ( model, Effect.none )
+
+                        ( Loading, _ ) ->
+                            ( model, waitAndCheckNecessaryData )
+
+                        ( _, Loading ) ->
+                            ( model, waitAndCheckNecessaryData )
+
+                        ( Failure e, _ ) ->
+                            ( model, Effect.none )
+
+                        ( _, Failure e ) ->
+                            ( model, Effect.none )
+
+                        ( Success grupo, Success pago ) ->
+                            ( { model
+                                | pagoForm =
+                                    Form.initial
+                                        [ Form.setString "id" pagoId
+                                        , Form.setString "nombre" pago.nombre
+                                        , Form.setString "monto" (Monto.toString pago.monto)
+                                        , Form.setGroup "distribucion_pagadores" (distribucionToForm pago.pagadores)
+                                        , Form.setGroup "distribucion_deudores" (distribucionToForm pago.deudores)
+                                        ]
+                                        (validatePago grupo.participantes)
+                                , resumenPago = Loading
+                              }
+                            , Effect.batch
+                                [ Effect.sendCmd <| Api.postPagosResumen pago (RemoteData.fromResult >> ResumenPagoUpdated)
+                                ]
+                            )
+
+
+{-| This is a bit of a hack, we need to wait for the `Grupo` AND possibly the `Pago` (if we are editing) before
+creating the ui and we don't get notified by the store when that happens so we "poll"
+until we see that the store has the values we need
+-}
+waitAndCheckNecessaryData : Effect Msg
+waitAndCheckNecessaryData =
+    Effect.sendCmd <| Task.perform (\_ -> CheckIfPagoAndGrupoArePresent) (Process.sleep 100)
 
 
 distribucionToForm : Distribucion -> List ( String, FormField.Field )
