@@ -19,6 +19,7 @@ module BananaSplit.Persistence
     , savePago
     , saveRepartija
     , saveRepartijaClaim
+    , updateIsValidPago
     , updatePago
     ) where
 
@@ -329,9 +330,12 @@ fetchPago grupoId pagoId = do
         } & M.addIsValidPago)
     & pure
 
--- monto2dbMaybe :: Maybe M.Monto -> MontoT (Nullable Identity)
--- monto2dbMaybe (Just (Monto n d)) = Monto (Just n) (Just d)
--- monto2dbMaybe Nothing = Monto Nothing Nothing
+updateIsValidPago :: M.Pago -> Pg M.Pago
+updateIsValidPago pago = do
+  runUpdate $ update db.pagos
+    (\p -> p.pagoIsValid <-. val_ pago.isValid)
+    (\p -> p.pagoId ==. val_ pago.pagoId)
+  pure pago
 
 deconstructMonto :: M.Monto -> Monto
 deconstructMonto (M.Monto (Decimal.Decimal l v)) =

@@ -9,7 +9,7 @@ module Site.Handler.Grupos
 
 import BananaSplit
 import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParticipante, fetchGrupo,
-                                fetchPago, fetchShallowPagos)
+                                fetchPago, fetchShallowPagos, updateIsValidPago)
 
 import Protolude
 
@@ -33,7 +33,9 @@ handleGetNetos grupoId = do
   pagos <- runBeam $ do
     shallowPagos <- fetchShallowPagos grupoId
     forM shallowPagos $ \shallowPago -> do
-      fetchPago grupoId shallowPago.pagoId
+      pago <- fetchPago grupoId shallowPago.pagoId
+      updateIsValidPago (pago & addIsValidPago)
+
 
   let grupo = Grupo
         { id = shallowGrupo.id
