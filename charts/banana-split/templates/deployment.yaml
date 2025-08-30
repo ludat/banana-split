@@ -41,7 +41,7 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default (printf "%s%s" "v" .Chart.AppVersion) }}"
+          image: "{{ .Values.image.repository }}:{{ include "banana-split.tag" . }}"
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http
