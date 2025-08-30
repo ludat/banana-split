@@ -71,3 +71,10 @@ Env for app
       name: {{ include "banana-split.fullname" . }}-db-app
       key: uri
 {{- end }}
+
+{{/*
+Image tag used in the app
+*/}}
+{{- define "banana-split.tag" -}}
+{{ .Values.image.tag | default (printf "%s%s" "v" .Chart.AppVersion) }}
+{{- end }}

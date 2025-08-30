@@ -2,15 +2,12 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "{{ include "banana-split.fullname" . }}-migration-start-{{ randNumeric 6 }}"
+  name: "{{ include "banana-split.fullname" . }}-migration-start-{{ include "banana-split.tag" . | sha1sum | substr 0 8 }}"
   labels:
     {{- include "banana-split.labels" . | nindent 4 }}
     role: migration-start
-  # annotations:
-    # This is what defines this resource as a hook. Without this line, the
-    # job is considered part of the release.
-    # helm.sh/hook: pre-upgrade,pre-install
-    # helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+  annotations:
+    argocd.argoproj.io/sync-wave: "-10"
 spec:
   template:
     metadata:
@@ -26,7 +23,7 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default (printf "%s%s" "v" .Chart.AppVersion) }}"
+          image: "{{ .Values.image.repository }}:{{ include "banana-split.tag" . }}"
           command:
             - sh
             - -c
@@ -60,8 +57,6 @@ metadata:
     {{- include "banana-split.labels" . | nindent 4 }}
     role: migration-complete
   annotations:
-    # This is what defines this resource as a hook. Without this line, the
-    # job is considered part of the release.
     helm.sh/hook: post-upgrade,post-install
     helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
 spec:
@@ -79,14 +74,14 @@ spec:
           securityContext:
             {{- toYaml . | nindent 12 }}
           {{- end }}
-          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default (printf "%s%s" "v" .Chart.AppVersion) }}"
+          image: "{{ .Values.image.repository }}:{{ include "banana-split.tag" . }}"
           command:
             - sh
             - -c
             - |
               set -euo pipefail
               set -x
-              if ! [[ $(timeout 10 banana-split migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/') = "Complete" ]]; then
+              if ! [[ "$(timeout 10 banana-split migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/')" = "Complete" ]]; then
                 banana-split migrations complete
               fi
 
