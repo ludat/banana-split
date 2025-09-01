@@ -31,7 +31,7 @@ import Route.Path as Path
 import Shared
 import Task
 import Utils.Form exposing (..)
-import Utils.Toasts as Toasts exposing (pushToast)
+import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts exposing (ToastLevel(..))
 import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
@@ -66,6 +66,8 @@ type Msg
     | SubmitCurrentSection
     | CheckIfPagoAndGrupoArePresent
     | ResumenPagoUpdated (WebData ResumenPago)
+    | ResumenDeudoresUpdated (WebData ResumenPago)
+    | ResumenPagadoresUpdated (WebData ResumenPago)
 
 
 type Section
@@ -79,6 +81,11 @@ type alias Model =
     { grupoId : String
     , currentPagoId : Maybe ULID
     , currentSection : Section
+    , pagoBasicoForm : Form CustomFormError Pago
+    , pagadoresForm : Form CustomFormError Pago
+    , resumenPagadores : WebData ResumenPago
+    , deudoresForm : Form CustomFormError Pago
+    , resumenDeudores : WebData ResumenPago
     , pagoForm : Form CustomFormError Pago
     , resumenPago : WebData ResumenPago
     }
@@ -89,12 +96,12 @@ init grupoId store =
     ( { grupoId = grupoId
       , currentPagoId = Nothing
       , currentSection = BasicPagoData
-      , pagoForm =
-            Form.initial
-                [ Form.setGroup "distribucion_pagadores" <| [ Form.setString "tipo" "" ]
-                , Form.setGroup "distribucion_deudores" <| [ Form.setString "tipo" "" ]
-                ]
-                (validatePago [])
+      , pagoBasicoForm = Form.initial [] (validatePagoInSection BasicPagoData [])
+      , deudoresForm = Form.initial [] (validatePagoInSection DeudoresSection [])
+      , resumenDeudores = NotAsked
+      , pagadoresForm = Form.initial [] (validatePagoInSection PagadoresSection [])
+      , resumenPagadores = NotAsked
+      , pagoForm = Form.initial [] (validatePago [])
       , resumenPago = NotAsked
       }
     , Effect.batch
@@ -114,7 +121,8 @@ validatePagoInSection section participantes =
                 V.field "monto" Monto.validateMonto
 
              else
-                V.succeed Monto.zero
+                V.maybe (V.field "monto" Monto.validateMonto) |> V.map (Maybe.withDefault Monto.zero)
+             --V.succeed Monto.zero
             )
         |> V.andMap (V.succeed False)
         |> V.andMap
@@ -257,7 +265,7 @@ update store userId msg model =
             ( model
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Store.refreshPagos model.grupoId
+                , Store.refreshPagos pago.pagoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el pago"
                 , Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = pago.pagoId }
                 ]
@@ -324,69 +332,82 @@ update store userId msg model =
         PagoForm formMsg ->
             case formMsg of
                 _ ->
-                    ( { model | pagoForm = Form.update (validatePagoInSection model.currentSection participantes) formMsg model.pagoForm }
+                    ( { model
+                        | pagoForm = Form.update (validatePago participantes) formMsg model.pagoForm
+                        , pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) formMsg model.pagoBasicoForm
+                        , pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) formMsg model.pagadoresForm
+                        , deudoresForm = Form.update (validatePagoInSection DeudoresSection participantes) formMsg model.deudoresForm
+                      }
                     , Effect.none
                     )
+                        |> andThenUpdateResumenesFromForms model
 
-        ResumenPagoUpdated webData ->
-            ( { model | resumenPago = webData }
+        ResumenPagoUpdated resumen ->
+            ( { model | resumenPago = resumen }
+            , Effect.none
+            )
+
+        ResumenDeudoresUpdated resumen ->
+            ( { model | resumenDeudores = resumen }
+            , Effect.none
+            )
+
+        ResumenPagadoresUpdated resumen ->
+            ( { model | resumenPagadores = resumen }
             , Effect.none
             )
 
         SelectSection section ->
-            let
-                partiallyValidatedForm =
-                    Form.update (validatePagoInSection section participantes) Form.Validate model.pagoForm
-            in
-            ( { model | currentSection = section, pagoForm = partiallyValidatedForm }
+            ( { model | currentSection = section }
             , Effect.none
             )
-                |> andThenUpdateResumenFromForm model.pagoForm
+                |> andThenUpdateResumenesFromForms model
 
         SubmitCurrentSection ->
             let
-                partiallyValidatedForm =
-                    Form.update (validatePagoInSection model.currentSection participantes) Form.Validate model.pagoForm
-
-                nextSection =
+                updateModel =
                     case model.currentSection of
                         BasicPagoData ->
-                            PagadoresSection
+                            \m ->
+                                { m
+                                    | pagoBasicoForm = Form.update (validatePagoInSection model.currentSection participantes) Form.Submit model.pagoBasicoForm
+                                    , currentSection = PagadoresSection
+                                }
 
                         PagadoresSection ->
-                            DeudoresSection
+                            \m ->
+                                { m
+                                    | pagadoresForm =
+                                        Form.update (validatePagoInSection model.currentSection participantes) Form.Submit model.pagadoresForm
+                                    , currentSection = DeudoresSection
+                                }
 
                         DeudoresSection ->
-                            PagoConfirmation
+                            \m ->
+                                { m
+                                    | deudoresForm =
+                                        Form.update (validatePagoInSection model.currentSection participantes) Form.Submit model.deudoresForm
+                                    , currentSection = PagoConfirmation
+                                }
 
                         PagoConfirmation ->
-                            PagoConfirmation
+                            \m ->
+                                { m
+                                    | pagoForm =
+                                        Form.update (validatePagoInSection model.currentSection participantes) Form.Submit model.pagoForm
+                                    , currentSection = PagoConfirmation
+                                }
             in
-            case Form.getOutput partiallyValidatedForm of
-                Just _ ->
-                    ( { model
-                        | pagoForm =
-                            if nextSection == PagoConfirmation then
-                                Form.update (validatePago participantes) Form.Submit model.pagoForm
-
-                            else
-                                Form.update (validatePago participantes) Form.Validate model.pagoForm
-                        , currentSection =
-                            nextSection
-                      }
-                    , Effect.none
-                    )
-                        |> andThenUpdateResumenFromForm model.pagoForm
-
-                Nothing ->
-                    ( { model | pagoForm = partiallyValidatedForm }
-                    , Effect.none
-                    )
+            ( updateModel model
+            , Effect.none
+            )
+                |> andThenUpdateResumenesFromForms model
 
         CheckIfPagoAndGrupoArePresent ->
             case model.currentPagoId of
                 Nothing ->
                     ( model, Effect.none )
+                        |> andThenUpdateResumenesFromForms model
 
                 Just pagoId ->
                     case ( Store.getGrupo model.grupoId store, Store.getPago pagoId store ) of
@@ -409,22 +430,25 @@ update store userId msg model =
                             ( model, Effect.none )
 
                         ( Success grupo, Success pago ) ->
+                            let
+                                initialFormValues =
+                                    [ Form.setString "id" pagoId
+                                    , Form.setString "nombre" pago.nombre
+                                    , Form.setString "monto" (Monto.toString pago.monto)
+                                    , Form.setGroup "distribucion_pagadores" (distribucionToForm pago.pagadores)
+                                    , Form.setGroup "distribucion_deudores" (distribucionToForm pago.deudores)
+                                    ]
+                            in
                             ( { model
-                                | pagoForm =
-                                    Form.initial
-                                        [ Form.setString "id" pagoId
-                                        , Form.setString "nombre" pago.nombre
-                                        , Form.setString "monto" (Monto.toString pago.monto)
-                                        , Form.setGroup "distribucion_pagadores" (distribucionToForm pago.pagadores)
-                                        , Form.setGroup "distribucion_deudores" (distribucionToForm pago.deudores)
-                                        ]
-                                        (validatePago grupo.participantes)
+                                | pagoForm = Form.initial initialFormValues (validatePago grupo.participantes)
+                                , pagadoresForm = Form.initial initialFormValues (validatePagoInSection PagadoresSection grupo.participantes)
+                                , deudoresForm = Form.initial initialFormValues (validatePagoInSection DeudoresSection grupo.participantes)
+                                , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData grupo.participantes)
                                 , resumenPago = Loading
                               }
-                            , Effect.batch
-                                [ Effect.sendCmd <| Api.postPagosResumen pago (RemoteData.fromResult >> ResumenPagoUpdated)
-                                ]
+                            , Effect.none
                             )
+                                |> andThenUpdateResumenesFromForms model
 
 
 {-| This is a bit of a hack, we need to wait for the `Grupo` AND possibly the `Pago` (if we are editing) before
@@ -486,33 +510,31 @@ distribucionToForm distribucion =
            )
 
 
-andThenUpdateResumenFromForm : Form CustomFormError Pago -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
-andThenUpdateResumenFromForm originalPagoForm ( model, oldEffects ) =
+andThenUpdateResumenesFromForms : Model -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
+andThenUpdateResumenesFromForms originalModel ( model, oldEffects ) =
+    let
+        updateResumenFromForm getForm event =
+            case Form.getOutput (getForm model) of
+                Just pago ->
+                    if Form.getOutput (getForm originalModel) == Just pago then
+                        Effect.none
+
+                    else
+                        Effect.batch
+                            [ Effect.sendMsg <| event Loading
+                            , Effect.sendCmd <| Api.postPagosResumen pago (RemoteData.fromResult >> event)
+                            ]
+
+                Nothing ->
+                    Effect.sendMsg <| event NotAsked
+    in
     ( model
-    , case ( model.currentSection, Form.getOutput originalPagoForm, Form.getOutput model.pagoForm ) of
-        ( PagoConfirmation, Just oldPago, Just pago ) ->
-            if oldPago /= pago then
-                Effect.batch
-                    [ oldEffects
-                    , Effect.sendMsg <| ResumenPagoUpdated Loading
-                    , Effect.sendCmd <| Api.postPagosResumen pago (RemoteData.fromResult >> ResumenPagoUpdated)
-                    ]
-
-            else
-                Effect.none
-
-        ( PagoConfirmation, Nothing, Just pago ) ->
-            Effect.batch
-                [ oldEffects
-                , Effect.sendMsg <| ResumenPagoUpdated Loading
-                , Effect.sendCmd <| Api.postPagosResumen pago (RemoteData.fromResult >> ResumenPagoUpdated)
-                ]
-
-        ( _, _, _ ) ->
-            Effect.batch
-                [ oldEffects
-                , Effect.sendMsg <| ResumenPagoUpdated NotAsked
-                ]
+    , Effect.batch
+        [ oldEffects
+        , updateResumenFromForm .pagoForm ResumenPagoUpdated
+        , updateResumenFromForm .pagadoresForm ResumenPagadoresUpdated
+        , updateResumenFromForm .deudoresForm ResumenDeudoresUpdated
+        ]
     )
 
 
@@ -613,18 +635,72 @@ view store model =
                     ]
                 , case model.currentSection of
                     BasicPagoData ->
-                        pagoForm grupo.participantes model.pagoForm
+                        pagoForm grupo.participantes model.pagoBasicoForm
 
                     PagadoresSection ->
                         Html.form [ class "mb-6", onSubmit <| SubmitCurrentSection ]
-                            [ distribucionForm grupo.participantes "distribucion_pagadores" model.pagoForm
-                            , button [ class "button is-primary", disabled (Form.getOutput model.pagoForm == Nothing) ] [ text "Siguiente seccion" ]
+                            [ distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm
+                            , button [ class "button is-primary", disabled (Form.getOutput model.pagadoresForm == Nothing) ] [ text "Siguiente seccion" ]
+                            , case model.resumenPagadores of
+                                Success resumen ->
+                                    div [ class "content" ]
+                                        [ section []
+                                            [ h1 [] [ text "Pagadores" ]
+                                            , p [] [ text <| "total: ", text <| Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenPagadores ]
+                                            , p []
+                                                [ text <| "pagadores: "
+                                                , resumen.resumenPagadores
+                                                    |> getParticipantesFromResumen
+                                                    |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
+                                                    |> Maybe.withDefault "???"
+                                                    |> text
+                                                ]
+                                            , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenPagadores ]
+                                            , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| getDeudasFromResumen <| resumen.resumenPagadores ]
+                                            ]
+                                        ]
+
+                                NotAsked ->
+                                    text ""
+
+                                Loading ->
+                                    text "cargando..."
+
+                                Failure e ->
+                                    text "error"
                             ]
 
                     DeudoresSection ->
                         Html.form [ class "mb-6", onSubmit <| SubmitCurrentSection ]
-                            [ distribucionForm grupo.participantes "distribucion_deudores" model.pagoForm
-                            , button [ class "button is-primary", disabled (Form.getOutput model.pagoForm == Nothing) ] [ text "Siguiente seccion" ]
+                            [ distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm
+                            , p [] [ button [ class "button is-primary", disabled (Form.getOutput model.deudoresForm == Nothing) ] [ text "Siguiente seccion" ] ]
+                            , case model.resumenDeudores of
+                                Success resumen ->
+                                    div [ class "content" ]
+                                        [ section []
+                                            [ h1 [] [ text "Deudores" ]
+                                            , p [] [ text <| "total: ", text <| Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenDeudores ]
+                                            , p []
+                                                [ text <| "deudores: "
+                                                , resumen.resumenDeudores
+                                                    |> getParticipantesFromResumen
+                                                    |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
+                                                    |> Maybe.withDefault "???"
+                                                    |> text
+                                                ]
+                                            , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenDeudores ]
+                                            , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| Maybe.map (List.map (\( p, m ) -> ( p, Monto.negate m ))) <| getDeudasFromResumen <| resumen.resumenDeudores ]
+                                            ]
+                                        ]
+
+                                NotAsked ->
+                                    text ""
+
+                                Loading ->
+                                    text "cargando..."
+
+                                Failure e ->
+                                    text "error"
                             ]
 
                     PagoConfirmation ->
@@ -645,34 +721,43 @@ view store model =
                                                 ]
                                             , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumen ]
                                             , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| getDeudasFromResumen <| resumen.resumen ]
-                                            ]
-                                        , section []
-                                            [ h1 [] [ text "Pagadores" ]
-                                            , p [] [ text <| "total: ", text <| Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenPagadores ]
-                                            , p []
-                                                [ text <| "pagadores: "
-                                                , resumen.resumenPagadores
-                                                    |> getParticipantesFromResumen
-                                                    |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                                    |> Maybe.withDefault "???"
-                                                    |> text
-                                                ]
-                                            , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenPagadores ]
-                                            , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| getDeudasFromResumen <| resumen.resumenPagadores ]
-                                            ]
-                                        , section []
-                                            [ h1 [] [ text "Deudores" ]
-                                            , p [] [ text <| "total: ", text <| Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenDeudores ]
-                                            , p []
-                                                [ text <| "deudores: "
-                                                , resumen.resumenDeudores
-                                                    |> getParticipantesFromResumen
-                                                    |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                                    |> Maybe.withDefault "???"
-                                                    |> text
-                                                ]
-                                            , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenDeudores ]
-                                            , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| Maybe.map (List.map (\( p, m ) -> ( p, Monto.negate m ))) <| getDeudasFromResumen <| resumen.resumenDeudores ]
+                                            , p [] <|
+                                                case Form.getOutput model.pagoForm of
+                                                    Just pago ->
+                                                        [ case pago.pagadores.tipo of
+                                                            TipoDistribucionRepartija repartija ->
+                                                                if repartija.id /= emptyUlid then
+                                                                    a
+                                                                        [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
+                                                                        , target "_blank"
+                                                                        ]
+                                                                        [ text "repartija pagadores"
+                                                                        ]
+
+                                                                else
+                                                                    text ""
+
+                                                            _ ->
+                                                                text ""
+                                                        , case pago.deudores.tipo of
+                                                            TipoDistribucionRepartija repartija ->
+                                                                if repartija.id /= emptyUlid then
+                                                                    a
+                                                                        [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
+                                                                        , target "_blank"
+                                                                        ]
+                                                                        [ text "repartija deudores"
+                                                                        ]
+
+                                                                else
+                                                                    text ""
+
+                                                            _ ->
+                                                                text ""
+                                                        ]
+
+                                                    Nothing ->
+                                                        []
                                             ]
                                         ]
 
@@ -689,8 +774,12 @@ view store model =
                                     [ class "button is-primary"
                                     , type_ "submit"
                                     ]
-                                    [ span []
-                                        [ text "Crear pago" ]
+                                    [ case model.currentPagoId of
+                                        Nothing ->
+                                            text "Crear pago"
+
+                                        Just _ ->
+                                            text "Actualizar pago"
                                     ]
                                 ]
                             ]

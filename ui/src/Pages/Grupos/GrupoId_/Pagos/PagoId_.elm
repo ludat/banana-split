@@ -24,7 +24,7 @@ import Models.Pago as Pago
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import Pages.Grupos.GrupoId_.Pagos.New as P exposing (Model, Msg(..), Section(..), subscriptions, update, validatePago, view, waitAndCheckNecessaryData)
+import Pages.Grupos.GrupoId_.Pagos.New as P exposing (Model, Msg(..), Section(..), subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
@@ -69,8 +69,13 @@ init grupoId pagoId store =
     ( { grupoId = grupoId
       , currentPagoId = Just pagoId
       , currentSection = PagoConfirmation
+      , pagoBasicoForm = Form.initial [] (validatePagoInSection BasicPagoData [])
+      , deudoresForm = Form.initial [] (validatePagoInSection DeudoresSection [])
+      , resumenDeudores = NotAsked
+      , pagadoresForm = Form.initial [] (validatePagoInSection PagadoresSection [])
+      , resumenPagadores = NotAsked
       , pagoForm = Form.initial [] (validatePago [])
-      , resumenPago = Loading
+      , resumenPago = NotAsked
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store

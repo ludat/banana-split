@@ -106,14 +106,16 @@ instance HasResumen DistribucionMontoEquitativo where
 
 instance HasResumen Repartija where
   getResumen totalPago repartija =
-    if | null repartija.items -> DeudasIncomputables (Just total) $ ErrorResumen (Just "No hay items para repartir.") []
-       | null repartija.claims -> DeudasIncomputables (Just total) $ ErrorResumen (Just "Nadie reclamo ningun item.") []
-       | total /= totalPago -> DeudasIncomputables (Just total) $ ErrorResumen (Just $ "El total debería ser igual al total del pago pero es: " <> show total <> " en vez de " <> show totalPago) []
+    if | null repartija.items -> DeudasIncomputables (Just totalPorItems) $ ErrorResumen (Just "No hay items para repartir.") []
+       | totalPorItems /= totalPago -> DeudasIncomputables (Just totalPorItems) $ ErrorResumen (Just $ "El total de items debería ser igual al total del pago pero es: " <> show totalPorItems <> " en vez de " <> show totalPago) []
+       | null repartija.claims -> DeudasIncomputables (Just totalPorItems) $ ErrorResumen (Just "Nadie reclamo ningun item.") []
+       | totalPorDeudas /= totalPago -> DeudasIncomputables (Just totalPorItems) $ ErrorResumen (Just $ "El total de deudas debería ser igual al total del pago pero es: " <> show totalPorDeudas <> " en vez de " <> show totalPago) []
        | otherwise ->
-           ResumenDeudas (Just total) deudas
+           ResumenDeudas (Just totalPorItems) deudas
     where
+      totalPorItems = totalRepartija repartija
       deudas = calcularDeudasRepartija repartija
-      total = totalDeudas deudas
+      totalPorDeudas = totalDeudas deudas
 
 minimizeTransactions :: Deudas Monto -> [Transaccion]
 minimizeTransactions = solveOptimalTransactions
@@ -353,6 +355,12 @@ between a delta =
     GT -> GLPK.Bound a (a + delta)
 
 
+totalRepartija :: Repartija -> Monto
+totalRepartija repartija =
+  repartija.items
+  & fmap (.monto)
+  & sum
+  & (+ repartija.extra)
 
 calcularDeudasRepartija :: Repartija -> Deudas Monto
 calcularDeudasRepartija repartija =

@@ -16,8 +16,6 @@ import BananaSplit.Persistence (deletePago, fetchPago, fetchShallowPagos, savePa
 
 import Protolude
 
-import Servant
-
 import Site.Api
 import Site.Handler.Utils (runBeam)
 
