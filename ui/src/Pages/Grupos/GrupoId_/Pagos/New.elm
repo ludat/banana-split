@@ -412,10 +412,10 @@ update store userId msg model =
                 Just pagoId ->
                     case ( Store.getGrupo model.grupoId store, Store.getPago pagoId store ) of
                         ( NotAsked, _ ) ->
-                            ( model, Effect.none )
+                            ( model, waitAndCheckNecessaryData )
 
                         ( _, NotAsked ) ->
-                            ( model, Effect.none )
+                            ( model, waitAndCheckNecessaryData )
 
                         ( Loading, _ ) ->
                             ( model, waitAndCheckNecessaryData )
