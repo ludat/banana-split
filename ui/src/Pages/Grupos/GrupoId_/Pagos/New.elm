@@ -31,6 +31,7 @@ import Route.Path as Path
 import Shared
 import Task
 import Utils.Form exposing (..)
+import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts exposing (ToastLevel(..))
 import Utils.Ulid exposing (emptyUlid)
@@ -786,9 +787,25 @@ view store model =
                 ]
             }
 
-        _ ->
-            { title = "Impossible"
-            , body = [ text "Algo salio mal" ]
+        NotAsked ->
+            { title = "BananaSplit"
+            , body = [ text "Cargando" ]
+            }
+
+        Loading ->
+            { title = "BananaSplit"
+            , body = [ text "Cargando" ]
+            }
+
+        Failure e ->
+            { title = "BananaSplit"
+            , body =
+                [ details []
+                    [ summary []
+                        [ text "Algo salio mal" ]
+                    , viewHttpError e
+                    ]
+                ]
             }
 
 
