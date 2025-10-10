@@ -1,0 +1,11 @@
+operations:
+  - create_index:
+      name: idx_pagos_distribucion_pagadores
+      table: pagos
+      columns:
+        distribucion_pagadores__id: {}
+  - create_index:
+      name: idx_pagos_distribucion_deudores
+      table: pagos
+      columns:
+        distribucion_deudores__id: {}

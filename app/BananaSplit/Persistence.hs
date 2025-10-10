@@ -44,14 +44,14 @@ data BananaSplitDb f = BananaSplitDb
   { grupos :: f (TableEntity GrupoT)
   , participantes :: f (TableEntity ParticipanteT)
   , pagos :: f (TableEntity PagoT)
-  , _bananasplitDistribuciones :: f (TableEntity DistribucionT)
+  , distribuciones :: f (TableEntity DistribucionT)
   , distribuciones_monto_equitativo :: f (TableEntity DistribucionMontoEquitativoT)
   , distribuciones_monto_equitativo_items :: f (TableEntity DistribucionMontoEquitativoItemT)
   , distribuciones_montos_especificos :: f (TableEntity DistribucionMontosEspecificosT)
   , distribuciones_montos_especificos_items :: f (TableEntity DistribucionMontosEspecificosItemT)
-  , _bananasplitRepartijas :: f (TableEntity DistribucionRepartijaT)
-  , _bananasplitRepartijaItems :: f (TableEntity RepartijaItemT)
-  , _bananasplitRepartijaClaims :: f (TableEntity RepartijaClaimT)
+  , repartijas :: f (TableEntity DistribucionRepartijaT)
+  , repartija_items :: f (TableEntity RepartijaItemT)
+  , repartija_claims :: f (TableEntity RepartijaClaimT)
   } deriving (Generic, Database be)
 
 db :: DatabaseSettings be BananaSplitDb
@@ -382,7 +382,7 @@ fetchDistribucionMontosEspecificosItems distribucionMontosEspecificosId = do
 fetchDistribucion :: ULID -> Pg (Maybe M.Distribucion)
 fetchDistribucion distribucionId = do
   dbDistribucion :: Distribucion <- fmap (fromMaybe (error "Pago not found")) $ runSelectReturningOne $ select $ do
-    distribucion <- all_ db._bananasplitDistribuciones
+    distribucion <- all_ db.distribuciones
     guard_ (distribucion.id ==. val_ distribucionId)
     pure distribucion
 
@@ -417,7 +417,7 @@ fetchDistribucion distribucionId = do
             }
     "Repartija" -> do
       repartijaId <- fmap (fromMaybe (error "Repartija not found")) $ runSelectReturningOne $ select $ do
-        r <- all_ db._bananasplitRepartijas
+        r <- all_ db.repartijas
         guard_ (r.distribucion ==. DistribucionId (val_ dbDistribucion.id))
         pure r.id
       repartija <- fetchRepartija repartijaId
@@ -519,7 +519,7 @@ saveDistribucion distribucionWithoutId = do
       let distribucion = distribucionWithoutId { M.id = distribucionId } :: M.Distribucion
 
       runInsert $
-        insertOnConflict db._bananasplitDistribuciones
+        insertOnConflict db.distribuciones
           (insertValues
             [ Distribucion distribucion.id "DistribucionMontoEquitativo"
             ])
@@ -553,7 +553,7 @@ saveDistribucion distribucionWithoutId = do
     M.TipoDistribucionMontosEspecificos tipoWithoutId -> do
       let distribucion = distribucionWithoutId { M.id = distribucionId } :: M.Distribucion
       runInsert $
-        insertOnConflict db._bananasplitDistribuciones
+        insertOnConflict db.distribuciones
           (insertValues
             [ Distribucion distribucion.id "DistribucionMontosEspecificos"
             ])
@@ -595,7 +595,7 @@ saveDistribucion distribucionWithoutId = do
     M.TipoDistribucionRepartija repartijaWithoutId -> do
       let distribucion = distribucionWithoutId { M.id = distribucionId } :: M.Distribucion
       runInsert $
-        insertOnConflict db._bananasplitDistribuciones
+        insertOnConflict db.distribuciones
           (insertValues
             [ Distribucion distribucion.id "Repartija"
             ])
@@ -663,7 +663,7 @@ deleteDistribucion :: ULID -> Pg ()
 deleteDistribucion distribucionId = do
   -- Most references to distribucion have on delete cascade so
   -- we don't need to delete them manually
-  runDelete $ delete db._bananasplitDistribuciones
+  runDelete $ delete db.distribuciones
     (\d -> d.id ==. val_ distribucionId)
 
 updatePago :: ULID -> ULID -> M.Pago -> Pg M.Pago
@@ -677,7 +677,7 @@ saveRepartija distribucionId repartijaSinId = do
     else pure repartijaSinId.id
   let repartija = repartijaSinId {M.id = repartijaId} :: M.Repartija
   runInsert $
-    insertOnConflict db._bananasplitRepartijas
+    insertOnConflict db.repartijas
       (insertValues
         [ Repartija
             { id = repartija.id
@@ -699,13 +699,13 @@ saveRepartijaItems repartijaId repartijaItemsWithoutId = do
       then liftIO ULID.getULID
       else pure repartijaItem.id
     pure (repartijaItem {M.id = itemId} :: M.RepartijaItem)
-  runDelete $ delete db._bananasplitRepartijaItems
+  runDelete $ delete db.repartija_items
     (\item ->
       item.repartijaitemRepartija ==. DistribucionRepartijaId (val_ repartijaId)
       &&. not_ (item.repartijaitemId `in_` [ val_ i.id | i <- repartijaItems ]))
 
   runInsert $
-    insertOnConflict db._bananasplitRepartijaItems
+    insertOnConflict db.repartija_items
       (insertValues $
         fmap (\item -> RepartijaItem
           { repartijaitemId = item.id
@@ -720,21 +720,28 @@ saveRepartijaItems repartijaId repartijaItemsWithoutId = do
 
 fetchRepartija :: ULID -> Pg M.Repartija
 fetchRepartija unRepartijaId = do
-  repartija :: DistribucionRepartija <- fmap (fromMaybe (error "Repartija not found"))$ runSelectReturningOne $ select $ do
-    repartija <- all_ db._bananasplitRepartijas
+  (repartija, nombre) :: (DistribucionRepartija, Text) <- fmap (fromMaybe (error "Repartija not found"))$ runSelectReturningOne $ select $ do
+    repartija <- all_ db.repartijas
     guard_ (repartija.id ==. val_ unRepartijaId)
-    pure repartija
+
+    distrib <- all_ db.distribuciones
+    guard_ (repartija.distribucion `references_` distrib)
+    pago <- all_ db.pagos
+    guard_ (pago.distribucion_pagadores `references_` distrib ||. pago.distribucion_deudores `references_` distrib)
+
+    pure (repartija, pago.pagoNombre)
   items :: [RepartijaItem] <- runSelectReturningList $ select $ do
-    item <- all_ db._bananasplitRepartijaItems
+    item <- all_ db.repartija_items
     guard_ $ item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartija.id)
     pure item
   claims :: [RepartijaClaim] <- runSelectReturningList $ select $ do
-    claim <- all_ db._bananasplitRepartijaClaims
+    claim <- all_ db.repartija_claims
     guard_ $ claim.repartijaclaimRepartijaItem `in_` fmap (val_ . RepartijaItemId . (.repartijaitemId)) items
     pure claim
 
   pure $ M.Repartija
     { id = repartija.id
+    , nombre = nombre
     , extra = constructMonto repartija.extra
     , claims = claims
               & fmap (\r -> M.RepartijaClaim
@@ -760,7 +767,7 @@ saveRepartijaClaim unRepartijaId repartijaClaim = do
     else pure repartijaClaim.id
   let claim' = repartijaClaim { M.id = claimId } :: M.RepartijaClaim
   runInsert $
-    insertOnConflict db._bananasplitRepartijaClaims
+    insertOnConflict db.repartija_claims
       (insertValues [claimToRow claim'])
       (conflictingFields (\c -> (c.repartijaclaimParticipante, c.repartijaclaimRepartijaItem)))
       onConflictUpdateAll
@@ -770,7 +777,7 @@ saveRepartijaClaim unRepartijaId repartijaClaim = do
 
 deleteRepartijaClaim :: ULID -> Pg ()
 deleteRepartijaClaim claimId = do
-  runDelete $ delete db._bananasplitRepartijaClaims
+  runDelete $ delete db.repartija_claims
     (\c -> c.repartijaclaimId  ==. val_ claimId)
 
 claimToRow :: M.RepartijaClaim -> RepartijaClaim

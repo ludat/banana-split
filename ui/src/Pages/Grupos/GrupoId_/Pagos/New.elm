@@ -169,6 +169,7 @@ validateRepartija : V.Validation CustomFormError Repartija
 validateRepartija =
     V.succeed Repartija
         |> V.andMap (V.field "repartija_id" validateId)
+        |> V.andMap (V.succeed "GENERATED")
         |> V.andMap (V.field "extra" Monto.validateMonto)
         |> V.andMap (V.field "items" (V.list validateRepartijaItem))
         |> V.andMap (V.field "claims" (V.succeed []))

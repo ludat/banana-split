@@ -50,7 +50,25 @@ page shared route =
         { init = \() -> init route.params.grupoId route.params.pagoId shared.store
         , update = update shared.store shared.userId
         , subscriptions = subscriptions
-        , view = view shared.store
+        , view =
+            \m ->
+                let
+                    result =
+                        view shared.store m
+                in
+                { result
+                    | title =
+                        case
+                            ( Store.getGrupo m.grupoId shared.store |> RemoteData.toMaybe
+                            , m.currentPagoId |> Maybe.andThen (\pagoId -> Store.getPago pagoId shared.store |> RemoteData.toMaybe)
+                            )
+                        of
+                            ( Just grupo, Just pago ) ->
+                                grupo.nombre ++ ": " ++ pago.nombre
+
+                            ( _, _ ) ->
+                                "Cargando"
+                }
         }
         |> Page.withLayout
             (\m ->

@@ -107,7 +107,7 @@ view navBarFunction activeUser toasts path { toContentMsg, model, content } =
             "Banana split"
 
         else
-            "Banana Split | " ++ content.title
+            content.title
     , body =
         [ nav
             [ class "navbar"

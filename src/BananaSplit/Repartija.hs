@@ -1,5 +1,6 @@
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE StrictData #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module BananaSplit.Repartija where
@@ -14,6 +15,7 @@ import Protolude
 
 data Repartija = Repartija
   { id :: ULID
+  , nombre :: Text
   , extra :: Monto
   , items :: [RepartijaItem]
   , claims :: [RepartijaClaim]

@@ -27,6 +27,7 @@ import Route exposing (Route)
 import Set
 import Shared
 import Utils.Form exposing (CustomFormError)
+import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toast exposing (..)
 import Utils.Toasts.Types as Toast exposing (..)
 import Utils.Ulid exposing (emptyUlid)
@@ -261,10 +262,10 @@ subscriptions model =
 
 view : Maybe ULID -> Store -> Model -> View Msg
 view userId store model =
-    { title = "Repartija"
-    , body =
-        case ( Store.getRepartija model.repartijaId store, Store.getGrupo model.grupoId store ) of
-            ( Success repartija, Success grupo ) ->
+    case ( Store.getRepartija model.repartijaId store, Store.getGrupo model.grupoId store ) of
+        ( Success repartija, Success grupo ) ->
+            { title = grupo.nombre ++ ": " ++ repartija.nombre
+            , body =
                 [ viewParticipantes grupo repartija
                 , viewRepartijaItems userId grupo repartija
                 , viewParticipanteClaimsModal model grupo repartija
@@ -275,16 +276,38 @@ view userId store model =
                 --     ]
                 --     [ text "Crear Pago" ]
                 ]
+            }
 
-            ( Failure e, _ ) ->
-                [ text "falle" ]
+        ( Failure e1, Failure e2 ) ->
+            { title = ""
+            , body =
+                [ text "falle"
+                , viewHttpError e1
+                , viewHttpError e2
+                ]
+            }
 
-            ( _, Failure _ ) ->
-                [ text "falle" ]
+        ( Failure e, _ ) ->
+            { title = ""
+            , body =
+                [ text "falle"
+                , viewHttpError e
+                ]
+            }
 
-            ( _, _ ) ->
+        ( _, Failure e ) ->
+            { title = ""
+            , body =
+                [ text "falle"
+                , viewHttpError e
+                ]
+            }
+
+        ( _, _ ) ->
+            { title = ""
+            , body =
                 [ text "cargando" ]
-    }
+            }
 
 
 viewParticipantes : GrupoLike g -> Repartija -> Html Msg

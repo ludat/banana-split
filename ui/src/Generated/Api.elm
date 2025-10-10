@@ -461,6 +461,7 @@ jsonEncDistribucionMontoEquitativo  val =
 
 type alias Repartija  =
    { id: ULID
+   , nombre: String
    , extra: Monto
    , items: (List RepartijaItem)
    , claims: (List RepartijaClaim)
@@ -468,8 +469,9 @@ type alias Repartija  =
 
 jsonDecRepartija : Json.Decode.Decoder ( Repartija )
 jsonDecRepartija =
-   Json.Decode.succeed (\pid pextra pitems pclaims -> {id = pid, extra = pextra, items = pitems, claims = pclaims})
+   Json.Decode.succeed (\pid pnombre pextra pitems pclaims -> {id = pid, nombre = pnombre, extra = pextra, items = pitems, claims = pclaims})
    |> required "id" (jsonDecULID)
+   |> required "nombre" (Json.Decode.string)
    |> required "extra" (jsonDecMonto)
    |> required "items" (Json.Decode.list (jsonDecRepartijaItem))
    |> required "claims" (Json.Decode.list (jsonDecRepartijaClaim))
@@ -478,6 +480,7 @@ jsonEncRepartija : Repartija -> Value
 jsonEncRepartija  val =
    Json.Encode.object
    [ ("id", jsonEncULID val.id)
+   , ("nombre", Json.Encode.string val.nombre)
    , ("extra", jsonEncMonto val.extra)
    , ("items", (Json.Encode.list jsonEncRepartijaItem) val.items)
    , ("claims", (Json.Encode.list jsonEncRepartijaClaim) val.claims)
