@@ -1,7 +1,11 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE QuasiQuotes #-}
-module RunServer where
+module RunServer
+    ( runBackend
+    ) where
+
+import BananaSplit.PgRoll qualified as PgRoll
 
 import Conferer qualified
 
@@ -23,7 +27,6 @@ import Site.Server qualified
 import Site.Types
 
 import System.Posix (Handler (..), installHandler, sigTERM)
-import System.Process (callProcess, readProcess)
 
 runBackend :: IO ()
 runBackend = do
@@ -31,8 +34,7 @@ runBackend = do
 
   connString <- Conferer.fetchFromConfig "database.url" config
 
-  schema <- readProcess "pgroll" ["latest", "schema", "--local", "./migrations"] ""
-    <&> filter (not . isControl)
+  schema <- PgRoll.getLatestSchema
 
   beamPool <- Pool.newPool $ Pool.defaultPoolConfig (do
       conn <- connectPostgreSQL connString

@@ -1,5 +1,6 @@
 module BananaSplit.PgRoll
-    ( init
+    ( getLatestSchema
+    , init
     , rawCall
     , rollback
     , start
@@ -11,13 +12,18 @@ import Data.String
 
 import Protolude
 
-import System.Process (callProcess)
+import System.Process (callProcess, readProcess)
 
 rawCall :: Config -> [String] -> IO ()
 rawCall config args = do
   connString <- Conferer.fetchFromConfig "database.url" config
   let connectionArgs = ["--postgres-url", connString ++ "?sslmode=disable"]
   callProcess "pgroll" $ connectionArgs ++ args
+
+getLatestSchema :: IO String
+getLatestSchema =
+  readProcess "pgroll" ["latest", "schema", "--local", "./migrations"] ""
+      <&> filter (not . isControl)
 
 init :: Config -> IO ()
 init config = do
