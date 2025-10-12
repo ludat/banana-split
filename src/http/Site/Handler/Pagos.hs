@@ -18,8 +18,7 @@ import Protolude
 
 import Site.Api
 import Site.Handler.Utils (runBeam)
-
-import Types
+import Site.Types
 
 handlePagosGet :: ULID -> AppHandler [ShallowPago]
 handlePagosGet grupoId = do

@@ -17,8 +17,7 @@ import Servant
 
 import Site.Api
 import Site.Handler.Utils
-
-import Types
+import Site.Types
 
 
 handleCreateGrupo :: CreateGrupoParams -> AppHandler Grupo

@@ -15,8 +15,7 @@ import BananaSplit.ULID (ULID)
 import Protolude
 
 import Site.Handler.Utils
-
-import Types
+import Site.Types
 
 handleRepartijaGet :: ULID -> AppHandler Repartija
 handleRepartijaGet repartijaId = do

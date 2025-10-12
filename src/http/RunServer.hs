@@ -1,11 +1,7 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE QuasiQuotes #-}
-module Main
-    ( main
-    ) where
-
-import BananaSplit.Elm (generateElmFiles)
+module RunServer where
 
 import Conferer qualified
 
@@ -24,37 +20,14 @@ import Protolude
 
 import Site.Config (createConfig)
 import Site.Server qualified
+import Site.Types
 
 import System.Posix (Handler (..), installHandler, sigTERM)
-import System.Process (callProcess, readProcess, showCommandForUser)
-
-import Types
-
-main :: IO ()
-main = do
-  args <- getArgs
-  case args of
-    [] -> do
-      generateElmFiles
-      runBackend
-    ["server"] -> do
-      runBackend
-    "migrations":rest -> do
-      runMigrations rest
-    _ -> do
-      putText $ "Unknown command: " <> show args
-      exitFailure
-
-runMigrations :: [String] -> IO ()
-runMigrations args = do
-  config <- createConfig
-  connString <- Conferer.fetchFromConfig "database.url" config
-  let connectionArgs = ["--postgres-url", connString ++ "?sslmode=disable"]
-  callProcess "pgroll" $ connectionArgs ++ args
+import System.Process (callProcess, readProcess)
 
 runBackend :: IO ()
 runBackend = do
-  config <- createConfig
+  config <- createConfig "dev"
 
   connString <- Conferer.fetchFromConfig "database.url" config
 
@@ -88,10 +61,6 @@ runBackend = do
 
   putText [i|Listening on port #{Warp.getPort settings}...|]
   Warp.runSettings settings $ logStdoutDev $ Site.Server.app appState
-
-data MissingPGRollMigrations =
-  MissingPGRollMigrations
-  deriving (Exception, Show)
 
 newtype MissingPGRollSchema = MissingPGRollSchema
   { schemaName :: String

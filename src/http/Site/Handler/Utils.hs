@@ -23,7 +23,7 @@ import Protolude hiding (orElse)
 
 import Servant
 
-import Types
+import Site.Types
 
 
 orElse :: Monad m => m (Either error a) -> (error -> m a) -> m a
@@ -62,4 +62,3 @@ runBeam dbAction = do
 
   liftIO $ Pool.withResource pool $ \conn -> do
     Simple.withTransaction conn (Beam.runBeamPostgres conn dbAction)
-

@@ -1,4 +1,4 @@
-cabal-version: 2.4
+cabal-version: 3.0
 name: banana-split
 version: 0.1.0.0
 license: BSD-3-Clause
@@ -76,7 +76,7 @@ common threaded-rts
 
 library
   import: base-settings
-  hs-source-dirs: src
+  hs-source-dirs: src/core/
   exposed-modules:
     BananaSplit
     BananaSplit.Core
@@ -87,13 +87,31 @@ library
     BananaSplit.TestUtils
     BananaSplit.ULID
 
-executable banana-split
-  import: base-settings, threaded-rts
-  hs-source-dirs: app
-  main-is: Main.hs
-  other-modules:
-    BananaSplit.Elm
+library database
+  import: base-settings
+  hs-source-dirs: src/database/
+  exposed-modules:
     BananaSplit.Persistence
+    BananaSplit.PgRoll
+
+  build-depends:
+    banana-split
+
+library elm
+  import: base-settings
+  hs-source-dirs: src/elm/
+  exposed-modules:
+    BananaSplit.Elm
+
+  build-depends:
+    banana-split,
+    banana-split:http,
+
+library http
+  import: base-settings
+  hs-source-dirs: src/http/
+  exposed-modules:
+    RunServer
     Site.Api
     Site.Config
     Site.Handler.Grupos
@@ -101,10 +119,20 @@ executable banana-split
     Site.Handler.Repartijas
     Site.Handler.Utils
     Site.Server
-    Types
+    Site.Types
 
   build-depends:
-    banana-split
+    banana-split,
+    banana-split:database,
+
+executable banana-split
+  import: base-settings, threaded-rts
+  hs-source-dirs: src/executable/
+  main-is: Main.hs
+  build-depends:
+    banana-split:database,
+    banana-split:elm,
+    banana-split:http,
 
 test-suite spec
   import: base-settings, threaded-rts
@@ -113,6 +141,8 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
     BananaSplit.DeudasSpec
+    BananaSplit.Persistence.GrupoSpec
+    BananaSplit.Persistence.SpecHook
     BananaSplit.RepartijaSpec
     BananaSplitSpec
     Site.Handler.GruposSpec
@@ -120,4 +150,8 @@ test-suite spec
   build-depends:
     QuickCheck,
     banana-split,
+    banana-split:database,
+    banana-split:http,
     hspec,
+
+  build-tool-depends: hspec-discover:hspec-discover

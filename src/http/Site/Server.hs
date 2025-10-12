@@ -22,8 +22,7 @@ import Site.Api
 import Site.Handler.Grupos
 import Site.Handler.Pagos
 import Site.Handler.Repartijas
-
-import Types
+import Site.Types
 
 import WaiAppStatic.Types (StaticSettings (..))
 

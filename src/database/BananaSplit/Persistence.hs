@@ -7,8 +7,10 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module BananaSplit.Persistence
-    ( addParticipante
+    ( BananaSplitDb (..)
+    , addParticipante
     , createGrupo
+    , db
     , deletePago
     , deleteRepartijaClaim
     , deleteShallowParticipante
