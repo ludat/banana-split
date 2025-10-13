@@ -12,15 +12,22 @@ import Url.Builder
 
 type alias CreateGrupoParams  =
    { grupoName: String
+   , grupoParticipante: String
    }
 
 jsonDecCreateGrupoParams : Json.Decode.Decoder ( CreateGrupoParams )
 jsonDecCreateGrupoParams =
-   Json.Decode.succeed (\pgrupoName -> {grupoName = pgrupoName}) |> custom (Json.Decode.string)
+   Json.Decode.succeed (\pgrupoName pgrupoParticipante -> {grupoName = pgrupoName, grupoParticipante = pgrupoParticipante})
+   |> required "grupoName" (Json.Decode.string)
+   |> required "grupoParticipante" (Json.Decode.string)
 
 jsonEncCreateGrupoParams : CreateGrupoParams -> Value
 jsonEncCreateGrupoParams  val =
-   Json.Encode.string val.grupoName
+   Json.Encode.object
+   [ ("grupoName", Json.Encode.string val.grupoName)
+   , ("grupoParticipante", Json.Encode.string val.grupoParticipante)
+   ]
+
 
 
 type alias ParticipanteAddParams  =

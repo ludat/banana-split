@@ -5,7 +5,6 @@ import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import FeatherIcons as Icons
 import Form exposing (Form)
-import Form.Error as FormError
 import Form.Input as FormInput
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
 import Generated.Api as Api exposing (Grupo, Participante, ParticipanteAddParams, ParticipanteId, ULID)
@@ -22,7 +21,7 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Shared
 import Task
-import Utils.Form exposing (CustomFormError)
+import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import Utils.Toasts exposing (pushToast)
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
@@ -40,6 +39,7 @@ page shared route =
             (\m ->
                 Layouts.Default
                     { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
+                    , grupo = Store.getGrupo m.grupoId shared.store
                     }
             )
 
@@ -53,7 +53,7 @@ type alias Model =
 type Msg
     = NoOp
     | ParticipanteForm Form.Msg
-    | AddedParticipante Participante
+    | GotAddedParticipanteResponse (Result Http.Error Participante)
     | DeleteParticipante ParticipanteId
     | DeleteParticipanteResponse (Result Http.Error ULID)
 
@@ -63,7 +63,10 @@ init store grupoId =
     ( { grupoId = grupoId
       , participanteForm = Form.initial [] validateParticipante
       }
-    , Store.ensureGrupo grupoId store
+    , Effect.batch
+        [ Store.ensureGrupo grupoId store
+        , Effect.getCurrentUser grupoId
+        ]
     )
 
 
@@ -94,14 +97,7 @@ update store msg model =
                     , Effect.sendCmd <|
                         Api.postGrupoByIdParticipantes id
                             participanteParams
-                            (\r ->
-                                case r of
-                                    Ok participante ->
-                                        AddedParticipante participante
-
-                                    Err error ->
-                                        NoOp
-                            )
+                            GotAddedParticipanteResponse
                     )
 
                 ( _, _ ) ->
@@ -116,15 +112,24 @@ update store msg model =
             , Effect.none
             )
 
-        AddedParticipante _ ->
-            ( { model
-                | participanteForm = Form.initial [] validateParticipante
-              }
-            , Effect.batch
-                [ Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "nombre"
-                , Store.refreshGrupo model.grupoId
-                ]
-            )
+        GotAddedParticipanteResponse response ->
+            case response of
+                Ok _ ->
+                    ( { model
+                        | participanteForm = Form.initial [] validateParticipante
+                      }
+                    , Effect.batch
+                        [ Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "nombre"
+                        , Store.refreshGrupo model.grupoId
+                        ]
+                    )
+
+                Err _ ->
+                    ( model
+                    , Effect.batch
+                        [ pushToast ToastDanger "Fallo la creación del usuario"
+                        ]
+                    )
 
         DeleteParticipante participanteId ->
             ( model
@@ -216,25 +221,6 @@ view store model =
 participantesForm : Form CustomFormError ParticipanteAddParams -> Html Msg
 participantesForm form =
     let
-        errorFor field =
-            case field.liveError of
-                Just FormError.Empty ->
-                    p [ class "help is-danger" ] [ text "No puede ser vacio" ]
-
-                Just _ ->
-                    p [ class "help is-danger" ] [ text "Algo esta maloso" ]
-
-                Nothing ->
-                    text ""
-
-        hasError field =
-            case field.liveError of
-                Just _ ->
-                    True
-
-                Nothing ->
-                    False
-
         nombreField =
             Form.getFieldAsString "nombre" form
     in
@@ -247,9 +233,9 @@ participantesForm form =
                         , type_ "text"
                         , placeholder "Juan"
                         , id nombreField.path
-                        , classList [ ( "is-danger", hasError nombreField ) ]
+                        , classList [ ( "is-danger", hasErrorField nombreField ) ]
                         ]
-                , errorFor nombreField
+                , errorForField nombreField
                 ]
             ]
         , td [ class "control" ]

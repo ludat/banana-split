@@ -12,8 +12,9 @@ module Shared exposing
 
 -}
 
-import Effect exposing (Effect)
+import Effect exposing (Effect, incoming)
 import Json.Decode
+import Json.Encode
 import Models.Store as Store
 import Route exposing (Route)
 import Shared.Model
@@ -103,14 +104,26 @@ update route msg model =
             in
             ( { model | store = store }, cmd )
 
-        SetCurrentUser userId ->
-            ( { model
-                | userId =
+        SetCurrentUser { grupoId, userId } ->
+            let
+                newUserId =
                     if userId == "" then
                         Nothing
-
                     else
                         Just userId
+            in
+            ( { model | userId = newUserId }
+            , case newUserId of
+                Just uid ->
+                    Effect.saveCurrentUser grupoId uid
+
+                Nothing ->
+                    Effect.clearCurrentUser grupoId
+            )
+
+        CurrentUserLoaded { grupoId, userId } ->
+            ( { model
+                | userId = userId
               }
             , Effect.none
             )
@@ -122,4 +135,26 @@ update route msg model =
 
 subscriptions : Route () -> Model -> Sub Msg
 subscriptions route model =
-    Sub.none
+    incoming (decodeIncomingPortMessage >> Maybe.withDefault NoOp)
+
+
+decodeIncomingPortMessage : { tag : String, data : Json.Encode.Value } -> Maybe Msg
+decodeIncomingPortMessage { tag, data } =
+    case tag of
+        "CURRENT_USER_LOADED" ->
+            Json.Decode.decodeValue
+                (Json.Decode.map2
+                    (\grupoId userId ->
+                        CurrentUserLoaded
+                            { grupoId = grupoId
+                            , userId = userId
+                            }
+                    )
+                    (Json.Decode.field "grupoId" Json.Decode.string)
+                    (Json.Decode.field "userId" (Json.Decode.nullable Json.Decode.string))
+                )
+                data
+                |> Result.toMaybe
+
+        _ ->
+            Nothing

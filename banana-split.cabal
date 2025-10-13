@@ -86,6 +86,7 @@ library
     BananaSplit.Repartija
     BananaSplit.TestUtils
     BananaSplit.ULID
+    Preludat
 
 library database
   import: base-settings

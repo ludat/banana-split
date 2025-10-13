@@ -39,7 +39,8 @@ import Database.Beam.Postgres.Full hiding (insert)
 import Database.Beam.Postgres.Syntax
 import Database.PostgreSQL.Simple.FromField (FromField (..), returnError)
 
-import Protolude
+import Preludat
+
 import Protolude.Error
 
 data BananaSplitDb f = BananaSplitDb
@@ -281,17 +282,20 @@ instance Table RepartijaClaimT where
   data PrimaryKey RepartijaClaimT f = RepartijaClaimId (C f ULID) deriving (Generic, Beamable)
   primaryKey = RepartijaClaimId . (.repartijaclaimId)
 
-createGrupo :: Text -> Pg M.Grupo
-createGrupo nombre = do
+createGrupo :: Text -> Text -> Pg M.Grupo
+createGrupo nombre participante = do
   newId <- liftIO ULID.getULID
-  runInsert $ insert db.grupos  $ insertValues [
-    Grupo newId nombre
-   ]
+  runInsert $ insert db.grupos $ insertValues [
+      Grupo newId nombre
+    ]
+  p <- addParticipante newId participante
+    `orElse` \e -> fail $ show e
+
   pure $ M.Grupo
     { M.id = newId
     , M.nombre = nombre
     , M.pagos = []
-    , M.participantes = []
+    , M.participantes = [p]
     }
 
 fetchGrupo :: ULID -> Pg (Maybe M.ShallowGrupo)

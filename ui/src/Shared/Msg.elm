@@ -18,4 +18,5 @@ type Msg
     | AddToast Toast
     | ToastMsg ToastMsg
     | StoreMsg StoreMsg
-    | SetCurrentUser ULID
+    | SetCurrentUser { grupoId : ULID, userId : ULID }
+    | CurrentUserLoaded { grupoId : ULID, userId : Maybe ULID }

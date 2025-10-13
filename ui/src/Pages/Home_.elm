@@ -16,6 +16,7 @@ import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
+import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import View exposing (View)
 
 
@@ -27,7 +28,7 @@ page shared route =
         , subscriptions = subscriptions
         , view = view
         }
-        |> Page.withLayout (\m -> Layouts.Default { navBarContent = Just navBar })
+        |> Page.withLayout (\m -> Layouts.Default { navBarContent = Just navBar, grupo = NotAsked })
 
 
 navBar : Bool -> Html msg
@@ -42,7 +43,7 @@ navBar navBarOpen =
 
 
 type alias Model =
-    { form : Form () CreateGrupoParams
+    { form : Form CustomFormError CreateGrupoParams
     }
 
 
@@ -60,10 +61,11 @@ type Msg
     | GrupoCreated Api.Grupo
 
 
-validate : Validation () CreateGrupoParams
+validate : Validation CustomFormError CreateGrupoParams
 validate =
     succeed CreateGrupoParams
         |> andMap (field "nombre" (string |> andThen nonEmpty))
+        |> andMap (field "participante" (string |> andThen nonEmpty))
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -114,27 +116,11 @@ subscriptions model =
 view : Model -> View Msg
 view model =
     let
-        errorFor field =
-            case field.liveError of
-                Just Form.Empty ->
-                    p [ class "help is-danger" ] [ text "No puede ser vacio" ]
-
-                Just _ ->
-                    p [ class "help is-danger" ] [ text "Algo esta maloso" ]
-
-                Nothing ->
-                    text ""
-
-        hasError field =
-            case field.liveError of
-                Just _ ->
-                    True
-
-                Nothing ->
-                    False
-
         nombreField =
             Form.getFieldAsString "nombre" model.form
+
+        participanteField =
+            Form.getFieldAsString "participante" model.form
     in
     { title = ""
     , body =
@@ -150,9 +136,23 @@ view model =
                                     [ class "input"
                                     , type_ "text"
                                     , placeholder "After del viernes"
-                                    , classList [ ( "is-danger", hasError nombreField ) ]
+                                    , classList [ ( "is-danger", hasErrorField nombreField ) ]
                                     ]
-                            , errorFor nombreField
+                            , errorForField nombreField
+                            ]
+                        ]
+                    , div [ class "field" ]
+                        [ label [ class "label" ]
+                            [ text "Participante" ]
+                        , div [ class "control" ]
+                            [ Html.map UpdateForm <|
+                                FormInput.textInput participanteField
+                                    [ class "input"
+                                    , type_ "text"
+                                    , placeholder "Juan"
+                                    , classList [ ( "is-danger", hasErrorField participanteField ) ]
+                                    ]
+                            , errorForField participanteField
                             ]
                         ]
                     , div [ class "control" ]

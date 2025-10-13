@@ -19,26 +19,14 @@ import Data.Pool qualified as Pool
 import Database.Beam.Postgres qualified as Beam
 import Database.PostgreSQL.Simple qualified as Simple
 
-import Protolude hiding (orElse)
+import Preludat
 
 import Servant
 
 import Site.Types
 
-
-orElse :: Monad m => m (Either error a) -> (error -> m a) -> m a
-orElse action recovery = action >>= either recovery pure
-
-orElse_ :: Monad m => m (Either error a) -> m a -> m a
-orElse_ action recovery = orElse action (const recovery)
-
-orElseMay :: Monad m => m (Maybe a) -> m a -> m a
-orElseMay action recovery = action >>= maybe recovery pure
-
 redirect :: ByteString -> AppHandler a
 redirect s = throwError err302 {errHeaders = [("Location", s)]}
--- redirect s = throwError err200 {errHeaders = [("Hx-Location", s)]}
-
 
 err200 :: ServerError
 err200 = ServerError { errHTTPCode = 200

@@ -1,13 +1,15 @@
 module Layouts.Default exposing (Model, Msg, Props, layout)
 
-import Components.NavBar exposing (navBarItem)
+import Components.NavBar exposing (navBarItem, viewGlobalUserSelector)
 import Css
 import Effect exposing (Effect)
-import Generated.Api exposing (ULID)
+import Generated.Api exposing (Grupo, ShallowGrupo, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick)
 import Layout exposing (Layout)
+import Models.Grupo exposing (GrupoLike)
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path exposing (Path)
 import Shared
@@ -18,6 +20,7 @@ import View exposing (View)
 
 type alias Props =
     { navBarContent : Maybe (Bool -> Html Shared.Msg)
+    , grupo : WebData ShallowGrupo
     }
 
 
@@ -26,7 +29,7 @@ layout props shared route =
     Layout.new
         { init = \() -> init props
         , update = update
-        , view = view props.navBarContent shared.userId shared.toasties route.path
+        , view = view props.navBarContent props.grupo shared.userId shared.toasties route.path
         , subscriptions = subscriptions
         }
 
@@ -96,12 +99,13 @@ subscriptions model =
 
 view :
     Maybe (Bool -> Html Shared.Msg)
+    -> WebData ShallowGrupo
     -> Maybe ULID
     -> Toasts
     -> Path
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view navBarFunction activeUser toasts path { toContentMsg, model, content } =
+view navBarFunction remoteGrupo activeUser toasts path { toContentMsg, model, content } =
     { title =
         if content.title == "" then
             "Banana split"
@@ -142,7 +146,16 @@ view navBarFunction activeUser toasts path { toContentMsg, model, content } =
             [ Html.map toContentMsg <|
                 Toasts.view Toasts.config renderToast ToastMsg toasts
             ]
-        , div [ class "container p-4" ] content.body
+        , case ( activeUser, remoteGrupo ) of
+            ( Nothing, Success grupo ) ->
+                Html.map toContentMsg <|
+                    Html.map ForwardSharedMessage <|
+                        div [ class "container p-4" ]
+                            [ viewGlobalUserSelector activeUser grupo
+                            ]
+
+            ( _, _ ) ->
+                div [ class "container p-4" ] content.body
         ]
     }
 

@@ -1,4 +1,4 @@
-module Effect exposing
+port module Effect exposing
     ( Effect
     , none, batch
     , sendCmd, sendMsg
@@ -6,7 +6,7 @@ module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , sendSharedMsg, sendStoreMsg, sendToast, sendToastMsg
+    , clearCurrentUser, getCurrentUser, incoming, outgoing, saveCurrentUser, sendSharedMsg, sendStoreMsg, sendToast, sendToastMsg
     )
 
 {-|
@@ -26,6 +26,7 @@ module Effect exposing
 
 import Browser.Navigation
 import Dict exposing (Dict)
+import Json.Encode
 import Models.Store.Types exposing (StoreMsg)
 import Route exposing (Route)
 import Route.Path
@@ -48,6 +49,26 @@ type Effect msg
     | Back
       -- SHARED
     | SendSharedMsg Shared.Msg.Msg
+
+
+
+-- PORTS
+
+
+port outgoing :
+    { tag : String
+    , data : Json.Encode.Value
+    }
+    -> Cmd msg
+
+
+port incoming :
+    ({ tag : String
+     , data : Json.Encode.Value
+     }
+     -> msg
+    )
+    -> Sub msg
 
 
 
@@ -161,6 +182,47 @@ sendStoreMsg toast =
 sendSharedMsg : Shared.Msg.Msg -> Effect msg
 sendSharedMsg msg =
     SendSharedMsg msg
+
+
+
+-- STORAGE PORTS
+
+
+saveCurrentUser : String -> String -> Effect msg
+saveCurrentUser grupoId userId =
+    SendCmd <|
+        outgoing
+            { tag = "SAVE_CURRENT_USER"
+            , data =
+                Json.Encode.object
+                    [ ( "grupoId", Json.Encode.string grupoId )
+                    , ( "userId", Json.Encode.string userId )
+                    ]
+            }
+
+
+clearCurrentUser : String -> Effect msg
+clearCurrentUser grupoId =
+    SendCmd <|
+        outgoing
+            { tag = "CLEAR_CURRENT_USER"
+            , data =
+                Json.Encode.object
+                    [ ( "grupoId", Json.Encode.string grupoId )
+                    ]
+            }
+
+
+getCurrentUser : String -> Effect msg
+getCurrentUser grupoId =
+    SendCmd <|
+        outgoing
+            { tag = "GET_CURRENT_USER"
+            , data =
+                Json.Encode.object
+                    [ ( "grupoId", Json.Encode.string grupoId )
+                    ]
+            }
 
 
 

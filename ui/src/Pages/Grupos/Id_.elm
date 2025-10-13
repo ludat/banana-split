@@ -37,7 +37,10 @@ page shared route =
         }
         |> Page.withLayout
             (\m ->
-                Layouts.Default { navBarContent = Just <| NavBar.navBar (modelFromShared shared route.params.id) shared.store route.path }
+                Layouts.Default
+                    { navBarContent = Just <| NavBar.navBar (modelFromShared shared route.params.id) shared.store route.path
+                    , grupo = Store.getGrupo m.grupoId shared.store
+                    }
             )
 
 
@@ -52,6 +55,7 @@ init grupoId store =
     , Effect.batch
         [ Store.ensureResumen grupoId store
         , Store.ensureGrupo grupoId store
+        , Effect.getCurrentUser grupoId
         ]
     )
 

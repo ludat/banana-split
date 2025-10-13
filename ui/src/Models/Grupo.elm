@@ -1,10 +1,13 @@
 module Models.Grupo exposing (GrupoLike, lookupNombreParticipante, lookupParticipante, lookupParticipantes)
 
-import Generated.Api exposing (Grupo, Participante, ParticipanteAddParams, ParticipanteId)
+import Generated.Api exposing (Grupo, Participante, ParticipanteAddParams, ParticipanteId, ULID)
 
 
 type alias GrupoLike r =
-    { r | participantes : List Participante }
+    { r
+        | id : ULID
+        , participantes : List Participante
+    }
 
 
 lookupParticipantes : List Participante -> ParticipanteId -> Participante

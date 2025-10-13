@@ -11,7 +11,6 @@ module Site.Api where
 
 
 import BananaSplit
-import BananaSplit.ULID (ULID)
 
 import Elm.Derive qualified as Elm
 
@@ -76,6 +75,7 @@ data ParticipanteAddParams = ParticipanteAddParams
 
 data CreateGrupoParams = CreateGrupoParams
   { grupoName :: Text
+  , grupoParticipante :: Text
   } deriving (Show, Eq, Generic)
 
 newtype Netos = Netos (Deudas Monto)

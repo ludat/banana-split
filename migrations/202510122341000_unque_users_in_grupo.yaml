@@ -1,0 +1,8 @@
+operations:
+  - create_index:
+      name: unique_participantes_in_grupo
+      table: participantes
+      unique: true
+      columns:
+        grupo__id: {}
+        nombre: {}

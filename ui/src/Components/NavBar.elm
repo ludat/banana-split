@@ -4,6 +4,7 @@ import Generated.Api exposing (Grupo, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onInput)
+import Models.Grupo exposing (GrupoLike)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import RemoteData exposing (RemoteData(..), WebData)
@@ -54,25 +55,30 @@ navBar navBarModel store path navBarOpen =
                 [ strong []
                     [ case Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe of
                         Just grupo ->
-                            div [ class "select" ]
-                                [ select
-                                    [ onInput Shared.SetCurrentUser ]
-                                    ([ option [] [ text "" ] ]
-                                        ++ (grupo.participantes
-                                                |> List.map
-                                                    (\participante ->
-                                                        option [ value participante.participanteId ]
-                                                            [ text participante.participanteNombre ]
-                                                    )
-                                           )
-                                    )
-                                ]
+                            viewGlobalUserSelector navBarModel.userId grupo
 
                         Nothing ->
                             text ""
                     ]
                 ]
             ]
+        ]
+
+
+viewGlobalUserSelector : Maybe ULID -> GrupoLike r -> Html Shared.Msg
+viewGlobalUserSelector activeUser grupo =
+    div [ class "select" ]
+        [ select
+            [ onInput (\userId -> Shared.SetCurrentUser { grupoId = grupo.id, userId = userId }) ]
+            ([ option [ selected (activeUser == Nothing) ] [ text "" ] ]
+                ++ (grupo.participantes
+                        |> List.map
+                            (\participante ->
+                                option [ selected (activeUser == Just participante.participanteId), value participante.participanteId ]
+                                    [ text participante.participanteNombre ]
+                            )
+                   )
+            )
         ]
 
 
