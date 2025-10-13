@@ -148,11 +148,23 @@ view navBarFunction remoteGrupo activeUser toasts path { toContentMsg, model, co
             ]
         , case ( activeUser, remoteGrupo ) of
             ( Nothing, Success grupo ) ->
-                Html.map toContentMsg <|
-                    Html.map ForwardSharedMessage <|
-                        div [ class "container p-4" ]
-                            [ viewGlobalUserSelector activeUser grupo
-                            ]
+                if List.isEmpty grupo.participantes then
+                    -- No participantes in grupo, show the UI
+                    div [ class "container p-4" ] content.body
+
+                else
+                    -- There are participantes, show user selection
+                    Html.map toContentMsg <|
+                        Html.map ForwardSharedMessage <|
+                            div [ class "container p-4" ]
+                                [ div [ class "box has-text-centered" ]
+                                    [ h2 [ class "title is-4" ] [ text "Welcome to Banana Split!" ]
+                                    , p [ class "mb-4" ] [ text "Please select who you are to get started:" ]
+                                    , div [ class "is-flex is-justify-content-center" ]
+                                        [ viewGlobalUserSelector activeUser grupo
+                                        ]
+                                    ]
+                                ]
 
             ( _, _ ) ->
                 div [ class "container p-4" ] content.body

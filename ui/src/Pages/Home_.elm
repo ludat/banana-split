@@ -104,7 +104,16 @@ update msg model =
 
         GrupoCreated grupo ->
             ( { model | form = Form.initial [] validate }
-            , pushRoutePath <| Path.Grupos_Id_ { id = grupo.id }
+            , Effect.batch
+                [ -- Automatically select the first participante as current user
+                  case grupo.participantes of
+                    participante :: _ ->
+                        Effect.saveCurrentUser grupo.id participante.participanteId
+
+                    [] ->
+                        Effect.none
+                , pushRoutePath <| Path.Grupos_Id_ { id = grupo.id }
+                ]
             )
 
 
