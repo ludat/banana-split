@@ -12,7 +12,7 @@ export const onReady = ({ app, env }) => {
         case "SAVE_CURRENT_USER":
           // data: { grupoId: string, userId: string }
           if (data.grupoId && data.userId) {
-            sessionStorage.setItem(
+            localStorage.setItem(
               makeStorageKey(data.grupoId),
               data.userId
             );
@@ -22,14 +22,14 @@ export const onReady = ({ app, env }) => {
         case "CLEAR_CURRENT_USER":
           // data: { grupoId: string }
           if (data.grupoId) {
-            sessionStorage.removeItem(makeStorageKey(data.grupoId));
+            localStorage.removeItem(makeStorageKey(data.grupoId));
           }
           break;
 
         case "GET_CURRENT_USER":
           // data: { grupoId: string }
           if (data.grupoId && app.ports.incoming) {
-            const userId = sessionStorage.getItem(makeStorageKey(data.grupoId));
+            const userId = localStorage.getItem(makeStorageKey(data.grupoId));
             app.ports.incoming.send({
               tag: "CURRENT_USER_LOADED",
               data: {
