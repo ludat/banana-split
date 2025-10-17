@@ -1,6 +1,7 @@
 module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg(..), Section(..), page, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
 
 import Base64.Encode
+import Browser.Dom
 import Bytes exposing (Bytes)
 import Bytes.Encode
 import Components.BarrasDeNetos exposing (viewNetosBarras)
@@ -111,15 +112,25 @@ type alias Model =
 
 init : ULID -> Store -> ( Model, Effect Msg )
 init grupoId store =
+    let
+        defaultDistribucionValues =
+            [ Form.setGroup "distribucion_pagadores"
+                [ Form.setString "tipo" "monto_equitativo"
+                ]
+            , Form.setGroup "distribucion_deudores"
+                [ Form.setString "tipo" "monto_equitativo"
+                ]
+            ]
+    in
     ( { grupoId = grupoId
       , currentPagoId = Nothing
       , currentSection = BasicPagoData
-      , pagoBasicoForm = Form.initial [] (validatePagoInSection BasicPagoData [])
-      , deudoresForm = Form.initial [] (validatePagoInSection DeudoresSection [])
+      , pagoBasicoForm = Form.initial defaultDistribucionValues (validatePagoInSection BasicPagoData [])
+      , deudoresForm = Form.initial defaultDistribucionValues (validatePagoInSection DeudoresSection [])
       , resumenDeudores = NotAsked
-      , pagadoresForm = Form.initial [] (validatePagoInSection PagadoresSection [])
+      , pagadoresForm = Form.initial defaultDistribucionValues (validatePagoInSection PagadoresSection [])
       , resumenPagadores = NotAsked
-      , pagoForm = Form.initial [] (validatePago [])
+      , pagoForm = Form.initial defaultDistribucionValues (validatePago [])
       , resumenPago = NotAsked
       , receiptParseState = Nothing
       }
@@ -450,6 +461,7 @@ update store userId msg model =
             ( { model | currentSection = section }
             , Effect.none
             )
+                |> andThenFocusFieldIfSectionChanged model.currentSection
                 |> andThenUpdateResumenesFromForms model
 
         SubmitCurrentSection ->
@@ -490,6 +502,7 @@ update store userId msg model =
             ( updateModel model
             , Effect.none
             )
+                |> andThenFocusFieldIfSectionChanged model.currentSection
                 |> andThenUpdateResumenesFromForms model
 
         CheckIfPagoAndGrupoArePresent ->
@@ -635,6 +648,32 @@ distribucionToForm distribucion =
                         )
                     ]
            )
+
+
+andThenFocusFieldIfSectionChanged : Section -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
+andThenFocusFieldIfSectionChanged oldSection ( model, oldEffects ) =
+    let
+        focusEffect =
+            if oldSection == model.currentSection then
+                Effect.none
+
+            else
+                case model.currentSection of
+                    BasicPagoData ->
+                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "pago-nombre")
+
+                    PagadoresSection ->
+                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "distribucion_pagadores-tipo")
+
+                    DeudoresSection ->
+                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "distribucion_deudores-tipo")
+
+                    PagoConfirmation ->
+                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "pago-submit-button")
+    in
+    ( model
+    , Effect.batch [ oldEffects, focusEffect ]
+    )
 
 
 andThenUpdateResumenesFromForms : Model -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
@@ -900,6 +939,7 @@ view store model =
                                 [ button
                                     [ class "button is-primary"
                                     , type_ "submit"
+                                    , id "pago-submit-button"
                                     ]
                                     [ case model.currentPagoId of
                                         Nothing ->
@@ -956,6 +996,7 @@ pagoForm participantes form =
                             , type_ "text"
                             , placeholder "Pago de deudas"
                             , classList [ ( "is-danger", hasErrorField nombreField ) ]
+                            , id "pago-nombre"
                             ]
                     , errorForField nombreField
                     ]
@@ -987,6 +1028,9 @@ distribucionForm participantes prefix form receiptParseState =
     let
         tipoField =
             Form.getFieldAsString (prefix ++ ".tipo") form
+
+        selectId =
+            prefix ++ "-tipo"
     in
     div [] <|
         [ div [ class "field mb-5" ]
@@ -1002,7 +1046,7 @@ distribucionForm participantes prefix form receiptParseState =
                             , ( "repartija", "Repartija" )
                             ]
                             tipoField
-                            []
+                            [ id selectId ]
                     ]
                 ]
             ]
