@@ -801,11 +801,19 @@ view store model =
                     ]
                 , case model.currentSection of
                     BasicPagoData ->
-                        pagoForm grupo.participantes model.pagoBasicoForm
+                        div []
+                            [ div [ class "content mb-4" ]
+                                [ p [] [ text "Ingresá la información básica del pago: un nombre descriptivo y el monto total." ]
+                                ]
+                            , pagoForm grupo.participantes model.pagoBasicoForm
+                            ]
 
                     PagadoresSection ->
                         Html.form [ class "mb-6", onSubmit <| SubmitCurrentSection ]
-                            [ distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
+                            [ div [ class "content mb-4" ]
+                                [ p [] [ text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
+                                ]
+                            , distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
                             , button [ class "button is-primary", disabled (Form.getOutput model.pagadoresForm == Nothing) ] [ text "Siguiente seccion" ]
                             , case model.resumenPagadores of
                                 Success resumen ->
@@ -838,7 +846,10 @@ view store model =
 
                     DeudoresSection ->
                         Html.form [ class "mb-6", onSubmit <| SubmitCurrentSection ]
-                            [ distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
+                            [ div [ class "content mb-4" ]
+                                [ p [] [ text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
+                                ]
+                            , distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
                             , p [] [ button [ class "button is-primary", disabled (Form.getOutput model.deudoresForm == Nothing) ] [ text "Siguiente seccion" ] ]
                             , case model.resumenDeudores of
                                 Success resumen ->
@@ -871,7 +882,10 @@ view store model =
 
                     PagoConfirmation ->
                         Html.form [ class "mb-6", onSubmit <| PagoForm Form.Submit ]
-                            [ case model.resumenPago of
+                            [ div [ class "content mb-4" ]
+                                [ p [] [ text "Revisá el resumen del pago antes de confirmar. Verificá que los montos y participantes sean correctos." ]
+                                ]
+                            , case model.resumenPago of
                                 Success resumen ->
                                     div [ class "content" ]
                                         [ section []
@@ -1035,7 +1049,7 @@ distribucionForm participantes prefix form receiptParseState =
     div [] <|
         [ div [ class "field mb-5" ]
             [ label [ class "label" ]
-                [ text "Tipo" ]
+                [ text "Tipo de distribución" ]
             , div [ class "control" ]
                 [ span [ class "select" ]
                     [ Html.map PagoForm <|
@@ -1050,18 +1064,22 @@ distribucionForm participantes prefix form receiptParseState =
                     ]
                 ]
             ]
-        , text "Este es un coso re simpatico"
         ]
             ++ (case tipoField.value of
                     Just "repartija" ->
-                        [ repartijaForm prefix form receiptParseState ]
+                        [ p [ class "help mb-4" ]
+                            [ text "División por items del recibo. Podés subir una foto del ticket para que se complete automáticamente." ]
+                        , repartijaForm prefix form receiptParseState
+                        ]
 
                     Just "montos_especificos" ->
                         let
                             montosIndexes =
                                 Form.getListIndexes (prefix ++ ".montos") form
                         in
-                        [ div [ class "container mb-2" ] <|
+                        [ p [ class "help mb-4" ]
+                            [ text "Cada participante pone/debe un monto fijo que vos especificás." ]
+                        , div [ class "container mb-2" ] <|
                             [ label [ class "label" ] [ text "Pagadores" ]
                             , div [ class "container mb-2" ] <|
                                 (montosIndexes
@@ -1117,8 +1135,10 @@ distribucionForm participantes prefix form receiptParseState =
                         ]
 
                     Just "monto_equitativo" ->
-                        [ div [ class "container mb-2" ] <|
-                            [ label [ class "label" ] [ text "Pagadores" ]
+                        [ p [ class "help mb-4" ]
+                            [ text "El monto se divide en partes iguales entre los participantes seleccionados." ]
+                        , div [ class "container mb-2" ] <|
+                            [ label [ class "label" ] [ text "Participantes" ]
                             , text ""
                             , div [ class "checkboxes" ]
                                 (participantes
