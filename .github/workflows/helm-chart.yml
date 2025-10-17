@@ -6,7 +6,7 @@ on:
     branches:
       - main
     paths:
-      - "charts/**"
+      - "charts/banana-split/Chart.yaml"
 
 permissions:
   contents: write
