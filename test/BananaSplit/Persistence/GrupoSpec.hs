@@ -3,6 +3,7 @@ module BananaSplit.Persistence.GrupoSpec
     ) where
 
 import BananaSplit.Core
+import BananaSplit.Participante
 import BananaSplit.Persistence
 import BananaSplit.Persistence.SpecHook
 
@@ -14,7 +15,7 @@ spec :: SpecWith RunDb
 spec =
   describe "createGrupo" $ do
     it "creates a grupo and can fetch it back" $ \(RunDb runDb) -> do
-      grupo <- runDb $ createGrupo "Test Grupo"
+      grupo <- runDb $ createGrupo "Test Grupo" "alguien"
 
       maybeGrupo <- runDb $ fetchGrupo grupo.id
 
@@ -23,4 +24,5 @@ spec =
         Just fetchedGrupo -> do
           fetchedGrupo.nombre `shouldBe` "Test Grupo"
           fetchedGrupo.id `shouldBe` grupo.id
-          fetchedGrupo.participantes `shouldBe` []
+          (fetchedGrupo.participantes & fmap (.participanteNombre))
+            `shouldBe` ["alguien"]

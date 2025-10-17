@@ -91,56 +91,32 @@ spec = do
       minimizeTransactions (deudas []) `shouldBe` []
     it "simplifica un caso con numeros con coma" $ do
       minimizeTransactions (deudas
-        [ (u1, Monto $ Decimal.Decimal 2 66)
-        , (u2, Monto $ Decimal.Decimal 2 -33)
-        , (u3, Monto $ Decimal.Decimal 2 -33)
+        [ (u1, mkMonto 2 66)
+        , (u2, mkMonto 2 -33)
+        , (u3, mkMonto 2 -33)
         ])`shouldSatisfy` ((== 2) . length)
     context "con deudas no coherentes (no suman 0 en total)" $ do
       it "con una deuda simple que esta desbalanceada" $ do
-        minimizeTransactions (deudas
+        evaluate (minimizeTransactions (deudas
           [ (u1, Monto $ Decimal.Decimal 0 10)
           , (u2, Monto $ Decimal.Decimal 0 -11)
-          ])`shouldBe` [Transaccion
-            { transaccionFrom = u2
-            , transaccionTo = u1
-            , transaccionMonto = 10
-            }
-          ]
+          ])) `shouldThrow` errorCall "Balanace is not 0, instead is: -1.0"
+
       it "con una deuda compleja no crashea" $ do
-        minimizeTransactions (deudas
+        evaluate (minimizeTransactions (deudas
           [ (u1, 10)
           , (u2, -5)
           , (u3, -5)
           , (u4,  6)
           , (u5, -3)
           , (u6, -2)
-          ]) `shouldBe`
-            [ Transaccion
-            { transaccionFrom = u2
-            , transaccionTo = u4
-            , transaccionMonto = 6
-            }
-            , Transaccion
-            { transaccionFrom = u3
-            , transaccionTo = u1
-            , transaccionMonto = 5
-            }
-            , Transaccion
-            { transaccionFrom = u5
-            , transaccionTo = u1
-            , transaccionMonto = 3
-            }
-            , Transaccion
-            { transaccionFrom = u6
-            , transaccionTo = u1
-            , transaccionMonto = 2
-            }
-            ]
+          ])) `shouldThrow` errorCall "Balanace is not 0, instead is: 1.0"
+
       it "cuando una sola persona tiene plata a favor" $ do
         pendingWith "this crashes the solver"
-        minimizeTransactions (deudas
+        evaluate (minimizeTransactions (deudas
           [ (u3, Monto $ Decimal.Decimal 2 -3)
-          ])`shouldBe` []
+          ])) `shouldThrow` errorCall "Balanace is not 0, instead is: -1.0"
 
       -- xit "manual testing" $ do
       --   let
@@ -151,3 +127,22 @@ spec = do
       --           Error _ -> error "no json"
 
       --   minimizeTransactions (calcularDeudasTotales grupo) `shouldBe` []
+    context "cuando hay netos con coma y numeros decimales extraños" $ do
+      it "una deuda simple con montos con mas de dos decimales" $ do
+        minimizeTransactions (deudas
+          [ ( u1, mkMonto 10  5)
+          , ( u2, mkMonto 10 -5)
+          ]) `shouldBe`
+            [ Transaccion u2 u1 $ mkMonto 10 5
+            ]
+
+      it "una deuda simple con montos heterogeneos" $ do
+        minimizeTransactions (deudas
+          [ ( u1, mkMonto 10  5)
+          , ( u2, mkMonto 10 -5)
+          , ( u3, mkMonto 0  5)
+          , ( u4, mkMonto 0 -5)
+          ]) `shouldBe`
+            [ Transaccion u2 u1 $ mkMonto 10 5
+            , Transaccion u4 u3 5
+            ]

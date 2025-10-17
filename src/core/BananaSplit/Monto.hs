@@ -5,7 +5,9 @@
 {-# LANGUAGE TypeFamilies #-}
 module BananaSplit.Monto
     ( Monto (..)
+    , getLugaresDespuesDeLaComa
     , inMonto
+    , mkMonto
     , monto2Text
     , times
     ) where
@@ -27,6 +29,14 @@ newtype Monto = Monto Decimal
   deriving stock (Show, Eq, Ord)
   deriving newtype (Num, Real, Enum)
   deriving anyclass (ToJSON, FromJSON)
+
+mkMonto :: Word8 -> Integer -> Monto
+mkMonto lugaresDespuesDeLaComa n =
+  Monto $ Decimal.Decimal lugaresDespuesDeLaComa n
+
+getLugaresDespuesDeLaComa :: Monto -> Word8
+getLugaresDespuesDeLaComa (Monto (Decimal.Decimal lugaresDespuesDeLaComa _)) =
+  lugaresDespuesDeLaComa
 
 times :: Integral n => Monto -> n -> Monto
 (Monto (Decimal.Decimal lugaresDespuesDeLaComa decimal)) `times` n =

@@ -7,6 +7,7 @@
 module BananaSplit.Deudas where
 
 import BananaSplit.Monto
+import BananaSplit.Monto qualified as Monto
 import BananaSplit.Participante
 import BananaSplit.Repartija
 import BananaSplit.ULID
@@ -273,22 +274,29 @@ resolverDeudasNaif deudas
           EQ -> Transaccion mayorDeudor mayorPagador mayorPagado
             : resolverDeudasNaif deudas''
 
--- Main function to solve the debt problem
 solveOptimalTransactions :: Deudas Monto -> [Transaccion]
 solveOptimalTransactions (Deudas oldBalances) = unsafePerformIO $ do
-    -- 1. Preprocessing and Validation
     let
+      maxPrecision =
+        oldBalances
+        & Map.elems
+        & fmap Monto.getLugaresDespuesDeLaComa
+        & \case
+            [] -> 0
+            xs -> maximum xs
       balances :: Map ParticipanteId Double
-      balances = fmap realToFrac oldBalances
-    let balanceSum = sum $ Map.elems balances
-    let debtorMap   = Map.filter (< 0) balances
-    let creditorMap = Map.filter (> 0) balances
-    let debtors     = Map.keys debtorMap
-    let creditors   = Map.keys creditorMap
+      balances = fmap (realToFrac . (* 10 ^ maxPrecision)) oldBalances
+
+      balanceSum = sum $ Map.elems balances
+      debtorMap = Map.filter (< 0) balances
+      creditorMap = Map.filter (> 0) balances
+      debtors = Map.keys debtorMap
+      creditors = Map.keys creditorMap
 
     -- If no debts, no transactions needed
-    if Map.null debtorMap then pure [] else do
-
+    if | balanceSum /= 0 -> error $ "Balanace is not 0, instead is: " <> show balanceSum
+       | Map.null debtorMap -> pure []
+       | otherwise -> do
         -- A "big M" value, larger than any possible transaction
         let bigM = sum (abs <$> Map.elems balances)
 
@@ -340,7 +348,7 @@ solveOptimalTransactions (Deudas oldBalances) = unsafePerformIO $ do
                   & fmap (\v -> Transaccion
                     { transaccionFrom = d
                     , transaccionTo = c
-                    , transaccionMonto = Monto $ Decimal.realFracToDecimal 2 v
+                    , transaccionMonto = Monto $ Decimal.Decimal maxPrecision (round v)
                     })
                   )
               & pure
