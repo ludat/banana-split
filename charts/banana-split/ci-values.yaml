@@ -3,6 +3,9 @@ image:
   image: registry:5000/banana-split
   tag: latest
 
+config:
+  BANANASPLIT_OPENROUTER_APIKEY: ""
+
 ingress:
   enabled: true
   hosts:

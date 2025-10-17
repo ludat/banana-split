@@ -2,6 +2,9 @@ replicaCount: 1
 image:
   tag: latest
 
+config:
+  BANANASPLIT_OPENROUTER_APIKEY: ""
+
 ingress:
   enabled: true
   hosts:

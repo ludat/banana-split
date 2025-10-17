@@ -12,6 +12,10 @@ spec:
   template:
     metadata:
       name: {{ include "banana-split.fullname" . }}-migration-start
+      {{- if .Values.config }}
+      annotations:
+        {{- include "banana-split.configChecksum" . | nindent 8 }}
+      {{- end }}
       labels:
         {{- include "banana-split.labels" . | nindent 8 }}
         role: migration-start
@@ -36,6 +40,16 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             {{- include "banana-split.env" . | nindent 12 }}
+          {{- if or .Values.config .Values.envFrom }}
+          envFrom:
+            {{- if .Values.config }}
+            - secretRef:
+                name: {{ include "banana-split.fullname" . }}-config
+            {{- end }}
+            {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
           {{- with .Values.volumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}
@@ -63,6 +77,10 @@ spec:
   template:
     metadata:
       name: {{ include "banana-split.fullname" . }}-migration-complete
+      {{- if .Values.config }}
+      annotations:
+        {{- include "banana-split.configChecksum" . | nindent 8 }}
+      {{- end }}
       labels:
         {{- include "banana-split.labels" . | nindent 8 }}
         role: migration-complete
@@ -88,6 +106,16 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           env:
             {{- include "banana-split.env" . | nindent 12 }}
+          {{- if or .Values.config .Values.envFrom }}
+          envFrom:
+            {{- if .Values.config }}
+            - secretRef:
+                name: {{ include "banana-split.fullname" . }}-config
+            {{- end }}
+            {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
           {{- with .Values.volumeMounts }}
           volumeMounts:
             {{- toYaml . | nindent 12 }}

@@ -116,6 +116,34 @@ volumeMounts: []
 #   mountPath: "/etc/foo"
 #   readOnly: true
 
+# Additional environment variables to set in the deployment and migration jobs.
+# This can reference secrets, configmaps, or use literal values.
+# Example:
+# env:
+#   - name: MY_SECRET_KEY
+#     valueFrom:
+#       secretKeyRef:
+#         name: my-secret
+#         key: secret-key
+#   - name: MY_LITERAL_VALUE
+#     value: "some-value"
+env: []
+
+# Load entire secrets or configmaps as environment variables.
+# Example:
+# envFrom:
+#   - secretRef:
+#       name: my-app-secrets
+envFrom: []
+
+# Application configuration/secrets. If defined, creates a Secret and automatically loads it.
+# All keys will be available as environment variables.
+# Example:
+# config:
+#   API_KEY: "my-api-key"
+#   SERVICE_TOKEN: "my-token"
+config: {}
+
 nodeSelector: {}
 
 tolerations: []

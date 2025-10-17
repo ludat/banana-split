@@ -15,9 +15,12 @@ spec:
       role: app
   template:
     metadata:
-      {{- with .Values.podAnnotations }}
+      {{- if or .Values.config .Values.podAnnotations }}
       annotations:
+        {{- include "banana-split.configChecksum" . | nindent 8 }}
+        {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
+        {{- end }}
       {{- end }}
       labels:
         {{- include "banana-split.labels" . | nindent 8 }}
@@ -65,6 +68,16 @@ spec:
           {{- end }}
           env:
             {{- include "banana-split.env" . | nindent 12 }}
+          {{- if or .Values.config .Values.envFrom }}
+          envFrom:
+            {{- if .Values.config }}
+            - secretRef:
+                name: {{ include "banana-split.fullname" . }}-config
+            {{- end }}
+            {{- with .Values.envFrom }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- end }}
       {{- with .Values.volumes }}
       volumes:
         {{- toYaml . | nindent 8 }}

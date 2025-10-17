@@ -70,6 +70,9 @@ Env for app
     secretKeyRef:
       name: {{ include "banana-split.fullname" . }}-db-app
       key: uri
+{{- with .Values.env }}
+{{ toYaml . }}
+{{- end }}
 {{- end }}
 
 {{/*
@@ -77,4 +80,13 @@ Image tag used in the app
 */}}
 {{- define "banana-split.tag" -}}
 {{ .Values.image.tag | default (printf "%s%s" "v" .Chart.AppVersion) }}
+{{- end }}
+
+{{/*
+Config checksum annotation for triggering pod restarts on config changes
+*/}}
+{{- define "banana-split.configChecksum" -}}
+{{- if .Values.config -}}
+checksum/config: {{ toYaml .Values.config | sha256sum }}
+{{- end }}
 {{- end }}
