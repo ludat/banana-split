@@ -107,6 +107,7 @@ type alias Model =
     , pagoForm : Form CustomFormError Pago
     , resumenPago : WebData ResumenPago
     , receiptParseState : Maybe ReceiptReadingState
+    , storedClaims : Maybe { pagadores : List Api.RepartijaClaim, deudores : List Api.RepartijaClaim }
     }
 
 
@@ -133,6 +134,7 @@ init grupoId store =
       , pagoForm = Form.initial defaultDistribucionValues (validatePago [])
       , resumenPago = NotAsked
       , receiptParseState = Nothing
+      , storedClaims = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -330,6 +332,10 @@ update store userId msg model =
         PagoForm Form.Submit ->
             case ( Form.getOutput model.pagoForm, store |> Store.getGrupo model.grupoId ) of
                 ( Just pago, Success { id } ) ->
+                    let
+                        pagoWithClaims =
+                            mergeClaimsIntoPago model.storedClaims pago
+                    in
                     case model.currentPagoId of
                         Just pagoId ->
                             ( { model
@@ -339,7 +345,7 @@ update store userId msg model =
                                 Api.putGrupoByIdPagosByPagoId
                                     id
                                     pagoId
-                                    pago
+                                    pagoWithClaims
                                     UpdatedPagoResponse
                             )
 
@@ -350,7 +356,7 @@ update store userId msg model =
                             , Effect.sendCmd <|
                                 Api.postGrupoByIdPagos
                                     id
-                                    pago
+                                    pagoWithClaims
                                     AddedPagoResponse
                             )
 
@@ -540,6 +546,11 @@ update store userId msg model =
                                     , Form.setGroup "distribucion_pagadores" (distribucionToForm pago.pagadores)
                                     , Form.setGroup "distribucion_deudores" (distribucionToForm pago.deudores)
                                     ]
+
+                                claimsToStore =
+                                    { pagadores = extractClaimsFromDistribucion pago.pagadores
+                                    , deudores = extractClaimsFromDistribucion pago.deudores
+                                    }
                             in
                             ( { model
                                 | pagoForm = Form.initial initialFormValues (validatePago grupo.participantes)
@@ -547,6 +558,7 @@ update store userId msg model =
                                 , deudoresForm = Form.initial initialFormValues (validatePagoInSection DeudoresSection grupo.participantes)
                                 , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData grupo.participantes)
                                 , resumenPago = Loading
+                                , storedClaims = Just claimsToStore
                               }
                             , Effect.none
                             )
@@ -598,6 +610,41 @@ addItemsToForm prefix items form validation =
         (\formMsg accForm -> Form.update validation formMsg accForm)
         form
         formUpdates
+
+
+extractClaimsFromDistribucion : Distribucion -> List Api.RepartijaClaim
+extractClaimsFromDistribucion distribucion =
+    case distribucion.tipo of
+        TipoDistribucionRepartija repartija ->
+            repartija.claims
+
+        _ ->
+            []
+
+
+mergeClaimsIntoPago : Maybe { pagadores : List Api.RepartijaClaim, deudores : List Api.RepartijaClaim } -> Pago -> Pago
+mergeClaimsIntoPago maybeClaims pago =
+    case maybeClaims of
+        Nothing ->
+            pago
+
+        Just claims ->
+            { pago
+                | pagadores = mergeClaimsIntoDistribucion claims.pagadores pago.pagadores
+                , deudores = mergeClaimsIntoDistribucion claims.deudores pago.deudores
+            }
+
+
+mergeClaimsIntoDistribucion : List Api.RepartijaClaim -> Distribucion -> Distribucion
+mergeClaimsIntoDistribucion claims distribucion =
+    case distribucion.tipo of
+        TipoDistribucionRepartija repartija ->
+            { distribucion
+                | tipo = TipoDistribucionRepartija { repartija | claims = claims }
+            }
+
+        _ ->
+            distribucion
 
 
 distribucionToForm : Distribucion -> List ( String, FormField.Field )
@@ -682,13 +729,17 @@ andThenUpdateResumenesFromForms originalModel ( model, oldEffects ) =
         updateResumenFromForm getForm event =
             case Form.getOutput (getForm model) of
                 Just pago ->
+                    let
+                        pagoWithClaims =
+                            mergeClaimsIntoPago model.storedClaims pago
+                    in
                     if Form.getOutput (getForm originalModel) == Just pago then
                         Effect.none
 
                     else
                         Effect.batch
                             [ Effect.sendMsg <| event Loading
-                            , Effect.sendCmd <| Api.postPagosResumen pago (RemoteData.fromResult >> event)
+                            , Effect.sendCmd <| Api.postPagosResumen pagoWithClaims (RemoteData.fromResult >> event)
                             ]
 
                 Nothing ->

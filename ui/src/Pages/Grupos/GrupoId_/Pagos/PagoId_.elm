@@ -96,6 +96,7 @@ init grupoId pagoId store =
       , pagoForm = Form.initial [] (validatePago [])
       , resumenPago = NotAsked
       , receiptParseState = Nothing
+      , storedClaims = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
