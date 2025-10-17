@@ -10,19 +10,7 @@ import Form.Field as FormField
 import Form.Init as Form
 import Form.Input as FormInput
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api
-    exposing
-        ( Distribucion
-        , Grupo
-        , Monto
-        , Netos
-        , Pago
-        , Parte(..)
-        , Participante
-        , ParticipanteId
-        , ShallowGrupo
-        , ULID
-        )
+import Generated.Api as Api exposing (Distribucion, Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, ShallowGrupo, ShallowPago, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (onClick, onSubmit)
@@ -74,6 +62,8 @@ type Msg
     | AddedPagoResponse (Result Http.Error Pago)
     | UpdatedPagoResponse (Result Http.Error Pago)
     | DeletePago ULID
+    | ConfirmDeletePago ULID
+    | CancelDeletePago
     | IniciarCrearPago
     | ShowPagoDetails ULID
     | DeletePagoResponse (Result Http.Error ULID)
@@ -91,6 +81,7 @@ type alias Model =
     , pagoPopoverState : PagoPopoverState
     , pagoForm : Form CustomFormError Pago
     , editingPagoNeto : WebData Netos
+    , deletingPagoId : Maybe ULID
     }
 
 
@@ -133,6 +124,7 @@ init grupoId store =
       , pagoPopoverState = Closed
       , pagoForm = Form.initial [] validatePago
       , editingPagoNeto = NotAsked
+      , deletingPagoId = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -305,6 +297,11 @@ update store userId msg model =
                         |> andThenUpdateNetosFromForm model.pagoForm
 
         DeletePago pagoId ->
+            ( { model | deletingPagoId = Just pagoId }
+            , Effect.none
+            )
+
+        ConfirmDeletePago pagoId ->
             case store |> Store.getGrupo model.grupoId of
                 NotAsked ->
                     ( model, Effect.none )
@@ -316,11 +313,16 @@ update store userId msg model =
                     ( model, Effect.none )
 
                 Success grupo ->
-                    ( model
+                    ( { model | deletingPagoId = Nothing }
                     , Effect.batch
                         [ Effect.sendCmd <| Api.deleteGrupoByIdPagosByPagoId grupo.id pagoId DeletePagoResponse
                         ]
                     )
+
+        CancelDeletePago ->
+            ( { model | deletingPagoId = Nothing }
+            , Effect.none
+            )
 
         DeletePagoResponse result ->
             case result of
@@ -329,6 +331,7 @@ update store userId msg model =
                     , Effect.batch
                         [ Store.refreshGrupo model.grupoId
                         , Store.refreshResumen model.grupoId
+                        , Store.refreshPagos model.grupoId
                         , pushToast ToastSuccess "Pago borrado"
                         ]
                     )
@@ -448,6 +451,17 @@ view : Store -> Model -> View Msg
 view store model =
     case ( store |> Store.getGrupo model.grupoId, store |> Store.getPagos model.grupoId ) of
         ( Success grupo, Success pagos ) ->
+            let
+                pagoBeingDeleted =
+                    case model.deletingPagoId of
+                        Just pagoId ->
+                            pagos
+                                |> List.filter (\p -> p.pagoId == pagoId)
+                                |> List.head
+
+                        Nothing ->
+                            Nothing
+            in
             { title = grupo.nombre
             , body =
                 [ div [ class "container columns is-mobile is-justify-content-end px-4 pt-2 pb-1 m-0" ]
@@ -520,6 +534,7 @@ view store model =
                             )
                     )
                 , pagosModal grupo model
+                , deleteConfirmationModal model.deletingPagoId pagoBeingDeleted
                 ]
             }
 
@@ -750,6 +765,84 @@ pagosForm participantes form =
                 [ Icons.toHtml [] Icons.plus
                 , span []
                     [ text "Agregar deudor" ]
+                ]
+            ]
+        ]
+
+
+deleteConfirmationModal : Maybe ULID -> Maybe ShallowPago -> Html Msg
+deleteConfirmationModal deletingPagoId maybePago =
+    div
+        (class "modal"
+            :: (case deletingPagoId of
+                    Nothing ->
+                        []
+
+                    Just _ ->
+                        [ class "is-active" ]
+               )
+        )
+        [ div
+            [ class "modal-background"
+            , onClick CancelDeletePago
+            ]
+            []
+        , div
+            [ class "modal-card"
+            ]
+            [ header
+                [ class "modal-card-head"
+                ]
+                [ p
+                    [ class "modal-card-title"
+                    ]
+                    [ text "Confirmar" ]
+                , button
+                    [ class "delete"
+                    , attribute "aria-label" "close"
+                    , onClick CancelDeletePago
+                    ]
+                    []
+                ]
+            , section
+                [ class "modal-card-body"
+                ]
+                [ p []
+                    [ text "¿Estás seguro que querés eliminar "
+                    , case maybePago of
+                        Just pago ->
+                            strong [] [ text ("\"" ++ pago.nombre ++ "\"") ]
+
+                        Nothing ->
+                            text "este pago"
+                    , text "?"
+                    ]
+                , p [ class "mt-3" ]
+                    [ text "Esta acción no se puede deshacer." ]
+                ]
+            , footer
+                [ class "modal-card-foot"
+                ]
+                [ div
+                    [ class "buttons"
+                    ]
+                    [ button
+                        [ class "button is-danger"
+                        , onClick <|
+                            case deletingPagoId of
+                                Just pagoId ->
+                                    ConfirmDeletePago pagoId
+
+                                Nothing ->
+                                    NoOp
+                        ]
+                        [ text "Eliminar" ]
+                    , button
+                        [ class "button"
+                        , onClick CancelDeletePago
+                        ]
+                        [ text "Cancelar" ]
+                    ]
                 ]
             ]
         ]

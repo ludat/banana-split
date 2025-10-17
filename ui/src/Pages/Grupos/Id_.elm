@@ -79,6 +79,7 @@ update msg model =
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshGrupo model.grupoId
+                , Store.refreshPagos model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se completó el pago"
                 ]
             )

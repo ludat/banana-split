@@ -286,7 +286,7 @@ update store userId msg model =
             ( model
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Store.refreshPagos pago.pagoId
+                , Store.refreshPagos model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el pago"
                 , Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = pago.pagoId }
                 ]
