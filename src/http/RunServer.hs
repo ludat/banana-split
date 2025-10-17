@@ -16,6 +16,8 @@ import Data.String.Interpolate (i)
 import Database.Beam.Postgres
 import Database.PostgreSQL.Simple
 
+import Network.HTTP.Client (newManager)
+import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.Wai.Handler.Warp (Settings)
 import Network.Wai.Handler.Warp qualified as Warp
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
@@ -33,6 +35,7 @@ runBackend = do
   config <- createConfig "dev"
 
   connString <- Conferer.fetchFromConfig "database.url" config
+  openRouterKey <- Conferer.fetchFromConfig "openrouter.apikey" config
 
   schema <- PgRoll.getLatestSchema
 
@@ -47,7 +50,13 @@ runBackend = do
     when (length actualSchema /= 1) $
       throwIO $ MissingPGRollSchema schema
 
-  let appState = App beamPool
+  httpManager <- newManager tlsManagerSettings
+
+  let appState = App
+        { beamConnectionPool = beamPool
+        , openRouterApiKey = openRouterKey
+        , httpManager = httpManager
+        }
 
   let shutdownAction = do
         Pool.destroyAllResources beamPool

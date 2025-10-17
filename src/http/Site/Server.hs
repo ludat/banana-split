@@ -21,6 +21,7 @@ import Servant.Server.Generic
 import Site.Api
 import Site.Handler.Grupos
 import Site.Handler.Pagos
+import Site.Handler.Receipt
 import Site.Handler.Repartijas
 import Site.Types
 
@@ -48,6 +49,7 @@ serverT =
     , _routeRepartijaGet = handleRepartijaGet
     , _routeRepartijaClaimPut = handleRepartijaClaimPut
     , _routeRepartijaClaimDelete = handleRepartijaClaimDelete
+    , _routeReceiptImageParse = handleReceiptImageParse
     , _routeHealth = pure "ok"
     -- , _routePagoNew = handlePagoNew
     -- , _routePagoNewPatch = handlePagoNewPatch

@@ -60,6 +60,8 @@ data Api routes
       routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] Text
     -- , _routeRepartijaToPago ::
     --   routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
+    , _routeReceiptImageParse ::
+      routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
     , _routeHealth ::
       routes :- "health" :> Get '[JSON] Text
     -- , _routeRepartijaItemDesdoblar ::
@@ -93,8 +95,30 @@ data ResumenPago = ResumenPago
   , resumenDeudores :: ResumenDeudas
   } deriving (Show, Eq, Generic)
 
+data ReceiptImageRequest = ReceiptImageRequest
+  { imageBase64 :: Text
+  } deriving (Show, Eq, Generic)
+
+data ParsedReceiptItem = ParsedReceiptItem
+  { nombre :: Text
+  , monto :: Monto
+  , cantidad :: Int
+  } deriving (Show, Eq, Generic)
+
+data ReceiptImageResponse
+  = ReceiptImageSuccess
+      { items :: [ParsedReceiptItem]
+      }
+  | ReceiptImageError
+      { error :: Text
+      }
+  deriving (Show, Eq, Generic)
+
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''Netos
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
 Elm.deriveBoth Elm.defaultOptions ''ResumenPago
+Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest
+Elm.deriveBoth Elm.defaultOptions ''ParsedReceiptItem
+Elm.deriveBoth Elm.defaultOptions ''ReceiptImageResponse

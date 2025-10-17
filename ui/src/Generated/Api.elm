@@ -30,6 +30,63 @@ jsonEncCreateGrupoParams  val =
 
 
 
+type alias ReceiptImageRequest  =
+   { imageBase64: String
+   }
+
+jsonDecReceiptImageRequest : Json.Decode.Decoder ( ReceiptImageRequest )
+jsonDecReceiptImageRequest =
+   Json.Decode.succeed (\pimageBase64 -> {imageBase64 = pimageBase64}) |> custom (Json.Decode.string)
+
+jsonEncReceiptImageRequest : ReceiptImageRequest -> Value
+jsonEncReceiptImageRequest  val =
+   Json.Encode.string val.imageBase64
+
+
+type ReceiptImageResponse  =
+    ReceiptImageSuccess {items: (List ParsedReceiptItem)}
+    | ReceiptImageError {error: String}
+
+jsonDecReceiptImageResponse : Json.Decode.Decoder ( ReceiptImageResponse )
+jsonDecReceiptImageResponse =
+    let jsonDecDictReceiptImageResponse = Dict.fromList
+            [ ("ReceiptImageSuccess", Json.Decode.lazy (\_ -> Json.Decode.map ReceiptImageSuccess (   Json.Decode.succeed (\pitems -> {items = pitems})    |> required "items" (Json.Decode.list (jsonDecParsedReceiptItem)))))
+            , ("ReceiptImageError", Json.Decode.lazy (\_ -> Json.Decode.map ReceiptImageError (   Json.Decode.succeed (\perror -> {error = perror})    |> required "error" (Json.Decode.string))))
+            ]
+    in  decodeSumObjectWithSingleField  "ReceiptImageResponse" jsonDecDictReceiptImageResponse
+
+jsonEncReceiptImageResponse : ReceiptImageResponse -> Value
+jsonEncReceiptImageResponse  val =
+    let keyval v = case v of
+                    ReceiptImageSuccess vs -> ("ReceiptImageSuccess", encodeObject [("items", (Json.Encode.list jsonEncParsedReceiptItem) vs.items)])
+                    ReceiptImageError vs -> ("ReceiptImageError", encodeObject [("error", Json.Encode.string vs.error)])
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type alias ParsedReceiptItem  =
+   { nombre: String
+   , monto: Monto
+   , cantidad: Int
+   }
+
+jsonDecParsedReceiptItem : Json.Decode.Decoder ( ParsedReceiptItem )
+jsonDecParsedReceiptItem =
+   Json.Decode.succeed (\pnombre pmonto pcantidad -> {nombre = pnombre, monto = pmonto, cantidad = pcantidad})
+   |> required "nombre" (Json.Decode.string)
+   |> required "monto" (jsonDecMonto)
+   |> required "cantidad" (Json.Decode.int)
+
+jsonEncParsedReceiptItem : ParsedReceiptItem -> Value
+jsonEncParsedReceiptItem  val =
+   Json.Encode.object
+   [ ("nombre", Json.Encode.string val.nombre)
+   , ("monto", jsonEncMonto val.monto)
+   , ("cantidad", Json.Encode.int val.cantidad)
+   ]
+
+
+
 type alias ParticipanteAddParams  =
    { name: String
    }
@@ -978,6 +1035,35 @@ deleteRepartijasClaimsByClaimId capture_claimId toMsg =
                 Http.emptyBody
             , expect =
                 Http.expectJson toMsg Json.Decode.string
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postReceiptParseimage : ReceiptImageRequest -> (Result Http.Error  (ReceiptImageResponse)  -> msg) -> Cmd msg
+postReceiptParseimage body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "receipt"
+                    , "parse-image"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncReceiptImageRequest body)
+            , expect =
+                Http.expectJson toMsg jsonDecReceiptImageResponse
             , timeout =
                 Nothing
             , tracker =

@@ -1,9 +1,13 @@
 module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg(..), Section(..), page, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
 
+import Base64.Encode
+import Bytes exposing (Bytes)
+import Bytes.Encode
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import FeatherIcons as Icons
+import File exposing (File)
 import Form exposing (Form)
 import Form.Error as FormError
 import Form.Field as FormField
@@ -13,8 +17,9 @@ import Form.Validate as V exposing (Validation, nonEmpty)
 import Generated.Api as Api exposing (Deudas, Distribucion, ErrorResumen(..), Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, Repartija, RepartijaItem, ResumenDeudas(..), ResumenPago, ShallowGrupo, TipoDistribucion(..), ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onSubmit)
+import Html.Events exposing (on, onClick, onSubmit)
 import Http
+import Json.Decode as Decode
 import Json.Encode
 import Layouts
 import List.Extra as List
@@ -70,6 +75,10 @@ type Msg
     | ResumenPagoUpdated (WebData ResumenPago)
     | ResumenDeudoresUpdated (WebData ResumenPago)
     | ResumenPagadoresUpdated (WebData ResumenPago)
+    | ReceiptImageSelected File
+    | ReceiptImageBytes File Bytes
+    | ReceiptParseResponse (Result Http.Error Api.ReceiptImageResponse)
+    | ClearReceiptError
 
 
 type Section
@@ -77,6 +86,12 @@ type Section
     | PagadoresSection
     | DeudoresSection
     | PagoConfirmation
+
+
+type ReceiptReadingState
+    = ReadingFile
+    | ProcessingWithAI
+    | ErrorProcessing String
 
 
 type alias Model =
@@ -90,6 +105,7 @@ type alias Model =
     , resumenDeudores : WebData ResumenPago
     , pagoForm : Form CustomFormError Pago
     , resumenPago : WebData ResumenPago
+    , receiptParseState : Maybe ReceiptReadingState
     }
 
 
@@ -105,6 +121,7 @@ init grupoId store =
       , resumenPagadores = NotAsked
       , pagoForm = Form.initial [] (validatePago [])
       , resumenPago = NotAsked
+      , receiptParseState = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -361,6 +378,74 @@ update store userId msg model =
             , Effect.none
             )
 
+        ClearReceiptError ->
+            ( { model | receiptParseState = Nothing }
+            , Effect.none
+            )
+
+        ReceiptImageSelected file ->
+            if List.member (File.mime file) allowedMimeTypesForReceiptUpload then
+                ( { model | receiptParseState = Just ReadingFile }
+                , Effect.sendCmd <| Task.perform (ReceiptImageBytes file) (File.toBytes file)
+                )
+
+            else
+                ( { model | receiptParseState = Just <| ErrorProcessing <| "Este archivo no es una imagen (" ++ File.mime file ++ ")" }
+                , Effect.none
+                )
+
+        ReceiptImageBytes file bytes ->
+            let
+                base64 =
+                    Base64.Encode.encode (Base64.Encode.bytes bytes)
+            in
+            ( { model | receiptParseState = Just ProcessingWithAI }
+            , Effect.sendCmd <| Api.postReceiptParseimage { imageBase64 = File.mime file ++ ";base64," ++ base64 } ReceiptParseResponse
+            )
+
+        ReceiptParseResponse result ->
+            case result of
+                Ok (Api.ReceiptImageSuccess { items }) ->
+                    let
+                        newModel =
+                            case model.currentSection of
+                                PagadoresSection ->
+                                    { model
+                                        | pagoForm = addItemsToForm "distribucion_pagadores" items model.pagoForm (validatePago participantes)
+                                        , pagoBasicoForm = addItemsToForm "distribucion_pagadores" items model.pagoBasicoForm (validatePagoInSection BasicPagoData participantes)
+                                        , pagadoresForm = addItemsToForm "distribucion_pagadores" items model.pagadoresForm (validatePagoInSection PagadoresSection participantes)
+                                        , deudoresForm = addItemsToForm "distribucion_pagadores" items model.deudoresForm (validatePagoInSection DeudoresSection participantes)
+                                    }
+
+                                DeudoresSection ->
+                                    { model
+                                        | pagoForm = addItemsToForm "distribucion_deudores" items model.pagoForm (validatePago participantes)
+                                        , pagoBasicoForm = addItemsToForm "distribucion_deudores" items model.pagoBasicoForm (validatePagoInSection BasicPagoData participantes)
+                                        , pagadoresForm = addItemsToForm "distribucion_deudores" items model.pagadoresForm (validatePagoInSection PagadoresSection participantes)
+                                        , deudoresForm = addItemsToForm "distribucion_deudores" items model.deudoresForm (validatePagoInSection DeudoresSection participantes)
+                                    }
+
+                                _ ->
+                                    model
+                    in
+                    ( { newModel
+                        | receiptParseState = Nothing
+                      }
+                    , Effect.batch
+                        [ Toasts.pushToast Toasts.ToastSuccess "Recibo parseado correctamente"
+                        ]
+                    )
+
+                Ok (Api.ReceiptImageError { error }) ->
+                    ( { model | receiptParseState = Just (ErrorProcessing error) }
+                    , Effect.none
+                    )
+
+                Err _ ->
+                    ( { model | receiptParseState = Just (ErrorProcessing "Error al enviar la imagen") }
+                    , Effect.none
+                    )
+
         SelectSection section ->
             ( { model | currentSection = section }
             , Effect.none
@@ -462,6 +547,44 @@ until we see that the store has the values we need
 waitAndCheckNecessaryData : Effect Msg
 waitAndCheckNecessaryData =
     Effect.sendCmd <| Task.perform (\_ -> CheckIfPagoAndGrupoArePresent) (Process.sleep 100)
+
+
+addItemsToForm : String -> List Api.ParsedReceiptItem -> Form CustomFormError Pago -> Validation CustomFormError Pago -> Form CustomFormError Pago
+addItemsToForm prefix items form validation =
+    let
+        -- Get the current number of items in the form
+        currentIndexes =
+            Form.getListIndexes (prefix ++ ".items") form
+
+        startingIndex =
+            List.length currentIndexes
+
+        -- Build a list of Form.Msg to add and populate the new items
+        formUpdates =
+            items
+                |> List.indexedMap
+                    (\idx item ->
+                        let
+                            newIndex =
+                                startingIndex + idx
+
+                            itemPrefix =
+                                prefix ++ ".items." ++ String.fromInt newIndex
+                        in
+                        [ Form.Append (prefix ++ ".items")
+                        , Form.Input (itemPrefix ++ ".id") Form.Text (FormField.String emptyUlid)
+                        , Form.Input (itemPrefix ++ ".nombre") Form.Text (FormField.String item.nombre)
+                        , Form.Input (itemPrefix ++ ".monto") Form.Text (FormField.String (Monto.toString item.monto))
+                        , Form.Input (itemPrefix ++ ".cantidad") Form.Text (FormField.String (String.fromInt item.cantidad))
+                        ]
+                    )
+                |> List.concat
+    in
+    -- Apply all form updates using a fold
+    List.foldl
+        (\formMsg accForm -> Form.update validation formMsg accForm)
+        form
+        formUpdates
 
 
 distribucionToForm : Distribucion -> List ( String, FormField.Field )
@@ -643,7 +766,7 @@ view store model =
 
                     PagadoresSection ->
                         Html.form [ class "mb-6", onSubmit <| SubmitCurrentSection ]
-                            [ distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm
+                            [ distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
                             , button [ class "button is-primary", disabled (Form.getOutput model.pagadoresForm == Nothing) ] [ text "Siguiente seccion" ]
                             , case model.resumenPagadores of
                                 Success resumen ->
@@ -676,7 +799,7 @@ view store model =
 
                     DeudoresSection ->
                         Html.form [ class "mb-6", onSubmit <| SubmitCurrentSection ]
-                            [ distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm
+                            [ distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
                             , p [] [ button [ class "button is-primary", disabled (Form.getOutput model.deudoresForm == Nothing) ] [ text "Siguiente seccion" ] ]
                             , case model.resumenDeudores of
                                 Success resumen ->
@@ -854,8 +977,13 @@ pagoForm participantes form =
         ]
 
 
-distribucionForm : List Participante -> String -> Form CustomFormError Pago -> Html Msg
-distribucionForm participantes prefix form =
+fileDecoder : Decode.Decoder File
+fileDecoder =
+    Decode.at [ "target", "files", "0" ] File.decoder
+
+
+distribucionForm : List Participante -> String -> Form CustomFormError Pago -> Maybe ReceiptReadingState -> Html Msg
+distribucionForm participantes prefix form receiptParseState =
     let
         tipoField =
             Form.getFieldAsString (prefix ++ ".tipo") form
@@ -882,7 +1010,7 @@ distribucionForm participantes prefix form =
         ]
             ++ (case tipoField.value of
                     Just "repartija" ->
-                        [ repartijaForm prefix form ]
+                        [ repartijaForm prefix form receiptParseState ]
 
                     Just "montos_especificos" ->
                         let
@@ -973,8 +1101,8 @@ distribucionForm participantes prefix form =
                )
 
 
-repartijaForm : String -> Form CustomFormError Pago -> Html Msg
-repartijaForm prefix form =
+repartijaForm : String -> Form CustomFormError Pago -> Maybe ReceiptReadingState -> Html Msg
+repartijaForm prefix form receiptParseState =
     let
         montoField =
             Form.getFieldAsString (prefix ++ ".extra") form
@@ -983,7 +1111,49 @@ repartijaForm prefix form =
             Form.getListIndexes (prefix ++ ".items") form
     in
     div []
-        [ div [ class "container" ]
+        [ div [ class "field mb-5" ]
+            [ label [ class "label" ]
+                [ text "Imagen del recibo (opcional)" ]
+            , div [ class "control" ]
+                [ div [ class "file" ]
+                    [ label [ class "file-label" ]
+                        [ input
+                            [ class "file-input"
+                            , type_ "file"
+                            , accept "image/*"
+                            , on "change" (Decode.map ReceiptImageSelected fileDecoder)
+                            ]
+                            []
+                        , span [ class "file-cta" ]
+                            [ span [ class "file-icon" ]
+                                [ Icons.toHtml [] Icons.upload ]
+                            , span [ class "file-label" ]
+                                [ text "Subir imagen para parsear..." ]
+                            ]
+                        ]
+                    ]
+                ]
+            ]
+        , case receiptParseState of
+            Just ReadingFile ->
+                div [ class "notification is-info is-light mb-4" ]
+                    [ text "📄 Leyendo la imagen..."
+                    ]
+
+            Just ProcessingWithAI ->
+                div [ class "notification is-info is-light mb-4" ]
+                    [ text "🤖 Analizando el recibo con inteligencia artificial... ✨"
+                    ]
+
+            Just (ErrorProcessing errorMsg) ->
+                div [ class "notification is-danger is-light mb-4" ]
+                    [ button [ class "delete", type_ "button", onClick ClearReceiptError ] []
+                    , text ("❌ " ++ errorMsg)
+                    ]
+
+            Nothing ->
+                text ""
+        , div [ class "container" ]
             [ table [ class "table is-fullwidth" ]
                 [ thead []
                     [ tr []
@@ -1074,3 +1244,12 @@ repartijaItemForm i prefix form =
                 ]
             ]
         ]
+
+
+allowedMimeTypesForReceiptUpload : List String
+allowedMimeTypesForReceiptUpload =
+    [ "image/png"
+    , "image/jpeg"
+    , "image/webp"
+    , "image/gif"
+    ]
