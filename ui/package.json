@@ -7,10 +7,11 @@
     "test": "test"
   },
   "scripts": {
+    "build": "elm-land build",
+    "format": "elm-format src/ --yes",
     "start": "concurrently pnpm:start:elm pnpm:start:css",
     "start:elm": "elm-land server",
     "start:css": "css-in-elm watch src/styles.css src/Css.elm",
-    "build": "elm-land build",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "author": "",
