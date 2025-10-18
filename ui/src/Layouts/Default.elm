@@ -158,8 +158,7 @@ view navBarFunction remoteGrupo activeUser toasts path { toContentMsg, model, co
                         Html.map ForwardSharedMessage <|
                             div [ class "container p-4" ]
                                 [ div [ class "box has-text-centered" ]
-                                    [ h2 [ class "title is-4" ] [ text "Welcome to Banana Split!" ]
-                                    , p [ class "mb-4" ] [ text "Please select who you are to get started:" ]
+                                    [ p [ class "mb-4" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
                                     , div [ class "is-flex is-justify-content-center" ]
                                         [ viewGlobalUserSelector activeUser grupo
                                         ]

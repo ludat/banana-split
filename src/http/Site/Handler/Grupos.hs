@@ -46,6 +46,7 @@ handleGetNetos grupoId = do
   pure $ ResumenGrupo
     { netos = Netos deudas
     , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
+    , cantidadPagos = length grupo.pagos
     , transaccionesParaSaldar = minimizeTransactions deudas
     }
 

@@ -104,14 +104,16 @@ type alias ResumenGrupo  =
    { transaccionesParaSaldar: (List Transaccion)
    , netos: Netos
    , cantidadPagosInvalidos: Int
+   , cantidadPagos: Int
    }
 
 jsonDecResumenGrupo : Json.Decode.Decoder ( ResumenGrupo )
 jsonDecResumenGrupo =
-   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos})
+   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos pcantidadPagos -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos, cantidadPagos = pcantidadPagos})
    |> required "transaccionesParaSaldar" (Json.Decode.list (jsonDecTransaccion))
    |> required "netos" (jsonDecNetos)
    |> required "cantidadPagosInvalidos" (Json.Decode.int)
+   |> required "cantidadPagos" (Json.Decode.int)
 
 jsonEncResumenGrupo : ResumenGrupo -> Value
 jsonEncResumenGrupo  val =
@@ -119,6 +121,7 @@ jsonEncResumenGrupo  val =
    [ ("transaccionesParaSaldar", (Json.Encode.list jsonEncTransaccion) val.transaccionesParaSaldar)
    , ("netos", jsonEncNetos val.netos)
    , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
+   , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
    ]
 
 

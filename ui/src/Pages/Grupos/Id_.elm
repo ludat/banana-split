@@ -181,20 +181,35 @@ view store model =
                      else
                         case store |> Store.getResumen model.grupoId of
                             Success resumen ->
-                                [ if resumen.cantidadPagosInvalidos > 0 then
-                                    div [ class "notification is-danger" ]
-                                        [ text <|
-                                            "Tenés "
-                                                ++ String.fromInt resumen.cantidadPagosInvalidos
-                                                ++ " pagos invalidos, esos no se cuentan para las deudas."
+                                if resumen.cantidadPagos == 0 then
+                                    [ div [ class "column is-two-thirds" ]
+                                        [ div [ class "notification is-info has-text-centered" ]
+                                            [ text "Todavía no hay pagos registrados. "
+                                            , a [ Path.href <| Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id } ]
+                                                [ text "¡Agregá el primer pago para empezar a dividir gastos!" ]
+                                            ]
                                         ]
+                                    ]
 
-                                  else
-                                    text ""
-                                , div [ class "column is-two-thirds mb-6" ]
-                                    [ viewNetosBarras grupo resumen.netos ]
-                                , viewTransferencias grupo resumen
-                                ]
+                                else
+                                    [ if resumen.cantidadPagosInvalidos > 0 then
+                                        div [ class "notification is-danger" ]
+                                            [ text <|
+                                                if resumen.cantidadPagosInvalidos == 1 then
+                                                    "Tenés 1 pago inválido, ese no se cuenta para las deudas."
+
+                                                else
+                                                    "Tenés "
+                                                        ++ String.fromInt resumen.cantidadPagosInvalidos
+                                                        ++ " pagos inválidos, esos no se cuentan para las deudas."
+                                            ]
+
+                                      else
+                                        text ""
+                                    , div [ class "column is-two-thirds mb-6" ]
+                                        [ viewNetosBarras grupo resumen.netos ]
+                                    , viewTransferencias grupo resumen
+                                    ]
 
                             NotAsked ->
                                 [ text "Carganding" ]
@@ -212,26 +227,32 @@ view store model =
 viewTransferencias : GrupoLike g -> ResumenGrupo -> Html Msg
 viewTransferencias grupo resumen =
     div [ class "column is-two-thirds" ]
-        (resumen.transaccionesParaSaldar
-            |> List.map
-                (\t ->
-                    div [ class "fixed-grid has-11-cols mb-2" ]
-                        [ div [ class "grid" ]
-                            [ div [ class "cell is-col-span-5 has-text-right" ]
-                                [ p [ class "" ]
-                                    [ text <| lookupNombreParticipante grupo t.transaccionFrom
-                                    , p [ class "has-text-danger is-size-6-5" ]
-                                        [ text "$"
-                                        , text <| Monto.toString t.transaccionMonto
+        (if List.isEmpty resumen.transaccionesParaSaldar then
+            [ div [ class "notification is-success has-text-centered" ]
+                [ text "¡No hay deudas pendientes! Todos están al día." ]
+            ]
+
+         else
+            resumen.transaccionesParaSaldar
+                |> List.map
+                    (\t ->
+                        div [ class "fixed-grid has-11-cols mb-2" ]
+                            [ div [ class "grid" ]
+                                [ div [ class "cell is-col-span-5 has-text-right" ]
+                                    [ p [ class "" ]
+                                        [ text <| lookupNombreParticipante grupo t.transaccionFrom
+                                        , p [ class "has-text-danger is-size-6-5" ]
+                                            [ text "$"
+                                            , text <| Monto.toString t.transaccionMonto
+                                            ]
                                         ]
                                     ]
-                                ]
-                            , div [ class "cell is-col-span-1 is-flex is-justify-content-center is-align-items-center is-clickable" ]
-                                [ span [ class "arrow-container" ] [ Icons.toHtml [ onClick <| CrearPago <| pagoFromTransaccion t ] Icons.arrowRight ] ]
-                            , div [ class "cell is-col-span-5 is-flex is-align-items-center" ]
-                                [ text <| lookupNombreParticipante grupo t.transaccionTo
+                                , div [ class "cell is-col-span-1 is-flex is-justify-content-center is-align-items-center is-clickable" ]
+                                    [ span [ class "arrow-container" ] [ Icons.toHtml [ onClick <| CrearPago <| pagoFromTransaccion t ] Icons.arrowRight ] ]
+                                , div [ class "cell is-col-span-5 is-flex is-align-items-center" ]
+                                    [ text <| lookupNombreParticipante grupo t.transaccionTo
+                                    ]
                                 ]
                             ]
-                        ]
-                )
+                    )
         )

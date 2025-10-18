@@ -87,6 +87,7 @@ data ResumenGrupo = ResumenGrupo
   { transaccionesParaSaldar :: [Transaccion]
   , netos :: Netos
   , cantidadPagosInvalidos :: Int
+  , cantidadPagos :: Int
   } deriving (Show, Eq, Generic)
 
 data ResumenPago = ResumenPago
