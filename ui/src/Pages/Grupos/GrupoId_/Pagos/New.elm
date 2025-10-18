@@ -1,4 +1,4 @@
-module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg(..), Section(..), page, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
+module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg(..), Section(..), andThenSendWarningOnExit, page, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
 
 import Base64.Encode
 import Browser.Dom
@@ -108,6 +108,7 @@ type alias Model =
     , resumenPago : WebData ResumenPago
     , receiptParseState : Maybe ReceiptReadingState
     , storedClaims : Maybe { pagadores : List Api.RepartijaClaim, deudores : List Api.RepartijaClaim }
+    , hasUnsavedChanges : Bool
     }
 
 
@@ -135,14 +136,14 @@ init grupoId store =
       , resumenPago = NotAsked
       , receiptParseState = Nothing
       , storedClaims = Nothing
+      , hasUnsavedChanges = False
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
         , Effect.getCurrentUser grupoId
-
-        -- , Store.ensurePago grupoId store
         ]
     )
+        |> andThenSendWarningOnExit
 
 
 validatePagoInSection : Section -> List Participante -> Validation CustomFormError Pago
@@ -296,7 +297,7 @@ update store userId msg model =
             ( model, Effect.none )
 
         AddedPagoResponse (Ok pago) ->
-            ( model
+            ( { model | hasUnsavedChanges = False }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
@@ -304,6 +305,7 @@ update store userId msg model =
                 , Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = pago.pagoId }
                 ]
             )
+                |> andThenSendWarningOnExit
 
         AddedPagoResponse (Err error) ->
             ( model
@@ -314,7 +316,7 @@ update store userId msg model =
             )
 
         UpdatedPagoResponse (Ok pago) ->
-            ( model
+            ( { model | hasUnsavedChanges = False }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
@@ -323,6 +325,7 @@ update store userId msg model =
                 , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el pago"
                 ]
             )
+                |> andThenSendWarningOnExit
 
         UpdatedPagoResponse (Err error) ->
             ( model
@@ -368,17 +371,52 @@ update store userId msg model =
                     )
 
         PagoForm formMsg ->
-            case formMsg of
-                _ ->
-                    ( { model
-                        | pagoForm = Form.update (validatePago participantes) formMsg model.pagoForm
-                        , pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) formMsg model.pagoBasicoForm
-                        , pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) formMsg model.pagadoresForm
-                        , deudoresForm = Form.update (validatePagoInSection DeudoresSection participantes) formMsg model.deudoresForm
-                      }
-                    , Effect.none
-                    )
-                        |> andThenUpdateResumenesFromForms model
+            let
+                isDataModifyingEvent =
+                    case formMsg of
+                        Form.Input _ _ _ ->
+                            True
+
+                        Form.Append _ ->
+                            True
+
+                        Form.RemoveItem _ _ ->
+                            True
+
+                        Form.Reset _ ->
+                            True
+
+                        Form.NoOp ->
+                            False
+
+                        Form.Focus _ ->
+                            False
+
+                        Form.Blur _ ->
+                            False
+
+                        Form.Submit ->
+                            False
+
+                        Form.Validate ->
+                            False
+            in
+            ( { model
+                | pagoForm = Form.update (validatePago participantes) formMsg model.pagoForm
+                , pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) formMsg model.pagoBasicoForm
+                , pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) formMsg model.pagadoresForm
+                , deudoresForm = Form.update (validatePagoInSection DeudoresSection participantes) formMsg model.deudoresForm
+                , hasUnsavedChanges =
+                    if isDataModifyingEvent then
+                        True
+
+                    else
+                        model.hasUnsavedChanges
+              }
+            , Effect.none
+            )
+                |> andThenUpdateResumenesFromForms model
+                |> andThenSendWarningOnExit
 
         ResumenPagoUpdated resumen ->
             ( { model | resumenPago = resumen }
@@ -432,6 +470,7 @@ update store userId msg model =
                                         , pagoBasicoForm = addItemsToForm "distribucion_pagadores" items model.pagoBasicoForm (validatePagoInSection BasicPagoData participantes)
                                         , pagadoresForm = addItemsToForm "distribucion_pagadores" items model.pagadoresForm (validatePagoInSection PagadoresSection participantes)
                                         , deudoresForm = addItemsToForm "distribucion_pagadores" items model.deudoresForm (validatePagoInSection DeudoresSection participantes)
+                                        , hasUnsavedChanges = True
                                     }
 
                                 DeudoresSection ->
@@ -440,6 +479,7 @@ update store userId msg model =
                                         , pagoBasicoForm = addItemsToForm "distribucion_deudores" items model.pagoBasicoForm (validatePagoInSection BasicPagoData participantes)
                                         , pagadoresForm = addItemsToForm "distribucion_deudores" items model.pagadoresForm (validatePagoInSection PagadoresSection participantes)
                                         , deudoresForm = addItemsToForm "distribucion_deudores" items model.deudoresForm (validatePagoInSection DeudoresSection participantes)
+                                        , hasUnsavedChanges = True
                                     }
 
                                 _ ->
@@ -452,6 +492,7 @@ update store userId msg model =
                         [ Toasts.pushToast Toasts.ToastSuccess "Recibo parseado correctamente"
                         ]
                     )
+                        |> andThenSendWarningOnExit
 
                 Ok (Api.ReceiptImageError { error }) ->
                     ( { model | receiptParseState = Just (ErrorProcessing error) }
@@ -510,6 +551,7 @@ update store userId msg model =
             )
                 |> andThenFocusFieldIfSectionChanged model.currentSection
                 |> andThenUpdateResumenesFromForms model
+                |> andThenSendWarningOnExit
 
         CheckIfPagoAndGrupoArePresent ->
             case model.currentPagoId of
@@ -559,10 +601,22 @@ update store userId msg model =
                                 , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData grupo.participantes)
                                 , resumenPago = Loading
                                 , storedClaims = Just claimsToStore
+                                , hasUnsavedChanges = False
                               }
                             , Effect.none
                             )
                                 |> andThenUpdateResumenesFromForms model
+                                |> andThenSendWarningOnExit
+
+
+andThenSendWarningOnExit : ( Model, Effect Msg ) -> ( Model, Effect Msg )
+andThenSendWarningOnExit ( model, oldEffects ) =
+    ( model
+    , Effect.batch
+        [ oldEffects
+        , Effect.setUnsavedChangesWarning model.hasUnsavedChanges
+        ]
+    )
 
 
 {-| This is a bit of a hack, we need to wait for the `Grupo` AND possibly the `Pago` (if we are editing) before
@@ -810,6 +864,30 @@ getDeudasFromResumen resumen =
             Just deudas
 
 
+viewUnsavedChangesBanner : Html Msg
+viewUnsavedChangesBanner =
+    div
+        [ class "notification is-warning is-light"
+        , style "margin-bottom" "1rem"
+        ]
+        [ div
+            [ class "level is-mobile" ]
+            [ div
+                [ class "level-left" ]
+                [ div
+                    [ class "level-item" ]
+                    [ Icons.alertCircle
+                        |> Icons.withSize 20
+                        |> Icons.toHtml []
+                    ]
+                , div
+                    [ class "level-item" ]
+                    [ text "Hay cambios sin guardar" ]
+                ]
+            ]
+        ]
+
+
 view : Store -> Model -> View Msg
 view store model =
     case store |> Store.getGrupo model.grupoId of
@@ -850,6 +928,11 @@ view store model =
                         , mkHeader PagoConfirmation
                         ]
                     ]
+                , if model.hasUnsavedChanges then
+                    viewUnsavedChangesBanner
+
+                  else
+                    text ""
                 , case model.currentSection of
                     BasicPagoData ->
                         div []

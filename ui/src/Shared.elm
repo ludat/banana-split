@@ -109,6 +109,7 @@ update route msg model =
                 newUserId =
                     if userId == "" then
                         Nothing
+
                     else
                         Just userId
             in

@@ -56,6 +56,7 @@ init grupoId store =
         [ Store.ensureResumen grupoId store
         , Store.ensureGrupo grupoId store
         , Effect.getCurrentUser grupoId
+        , Effect.setUnsavedChangesWarning False
         ]
     )
 

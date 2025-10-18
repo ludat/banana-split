@@ -74,6 +74,7 @@ init grupoId repartijaId store =
         [ Store.ensureGrupo grupoId store
         , Store.ensureRepartija repartijaId store
         , Effect.getCurrentUser grupoId
+        , Effect.setUnsavedChangesWarning False
         ]
     )
 

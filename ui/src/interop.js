@@ -3,6 +3,10 @@ import "./styles.css";
 // Storage key format: "banana-split:grupo:{grupoId}:currentUser"
 const makeStorageKey = (grupoId) => `banana-split:grupo:${grupoId}:currentUser`;
 
+const beforeUnloadHandler = (event) => {
+  event.preventDefault();
+};
+
 export const onReady = ({ app, env }) => {
   if (app.ports && app.ports.outgoing) {
     app.ports.outgoing.subscribe(({ tag, data }) => {
@@ -28,7 +32,7 @@ export const onReady = ({ app, env }) => {
 
         case "GET_CURRENT_USER":
           // data: { grupoId: string }
-          if (data.grupoId && app.ports.incoming) {
+          if (data.grupoId) {
             const userId = localStorage.getItem(makeStorageKey(data.grupoId));
             app.ports.incoming.send({
               tag: "CURRENT_USER_LOADED",
@@ -37,6 +41,14 @@ export const onReady = ({ app, env }) => {
                 userId: userId
               }
             });
+          }
+          break;
+        case "SET_UNSAVED_CHANGES_WARNING":
+          // data: { enabled: bool }
+          if (data.enabled) {
+            window.addEventListener('beforeunload', beforeUnloadHandler);
+          } else {
+            window.removeEventListener('beforeunload', beforeUnloadHandler);
           }
           break;
 

@@ -6,7 +6,7 @@ port module Effect exposing
     , pushRoutePath, replaceRoutePath
     , loadExternalUrl, back
     , map, toCmd
-    , clearCurrentUser, getCurrentUser, incoming, outgoing, saveCurrentUser, sendSharedMsg, sendStoreMsg, sendToast, sendToastMsg
+    , clearCurrentUser, getCurrentUser, incoming, outgoing, saveCurrentUser, sendSharedMsg, sendStoreMsg, sendToast, sendToastMsg, setUnsavedChangesWarning
     )
 
 {-|
@@ -221,6 +221,18 @@ getCurrentUser grupoId =
             , data =
                 Json.Encode.object
                     [ ( "grupoId", Json.Encode.string grupoId )
+                    ]
+            }
+
+
+setUnsavedChangesWarning : Bool -> Effect msg
+setUnsavedChangesWarning enabled =
+    SendCmd <|
+        outgoing
+            { tag = "SET_UNSAVED_CHANGES_WARNING"
+            , data =
+                Json.Encode.object
+                    [ ( "enabled", Json.Encode.bool enabled )
                     ]
             }
 

@@ -51,7 +51,7 @@ init : () -> ( Model, Effect Msg )
 init () =
     ( { form = Form.initial [] validate
       }
-    , Effect.none
+    , Effect.setUnsavedChangesWarning False
     )
 
 

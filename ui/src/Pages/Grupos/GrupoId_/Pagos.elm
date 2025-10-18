@@ -130,6 +130,7 @@ init grupoId store =
         [ Store.ensureGrupo grupoId store
         , Store.ensurePagos grupoId store
         , Effect.getCurrentUser grupoId
+        , Effect.setUnsavedChangesWarning False
         ]
     )
 
