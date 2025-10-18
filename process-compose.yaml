@@ -19,7 +19,7 @@ processes:
     # environment:
     # - LAUNCH_EDITOR=zeditor
     environment:
-    - LAUNCH_EDITOR=zed
+    - LAUNCH_EDITOR=idea
     working_dir: ./ui
     availability:
       restart: "always"
