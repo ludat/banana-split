@@ -2,5 +2,5 @@ apiVersion: v2
 name: banana-split
 description: An app to keep track of expenses
 type: application
-version: 0.1.5
-appVersion: 0.1.3
+version: 0.2.0
+appVersion: 0.1.4
