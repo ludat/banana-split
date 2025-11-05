@@ -31,6 +31,8 @@ import BananaSplit.Monto (Monto)
 import BananaSplit.Participante (Participante, ParticipanteId)
 import BananaSplit.ULID
 
+import Data.Time (LocalTime)
+
 import Elm.Derive qualified as Elm
 
 import GHC.Generics
@@ -41,6 +43,7 @@ import Protolude
 data Grupo = Grupo
   { id :: ULID
   , nombre :: Text
+  , fecha :: LocalTime
   , pagos :: [Pago]
   , participantes :: [Participante]
   } deriving (Show, Eq, Generic)
@@ -48,6 +51,7 @@ data Grupo = Grupo
 data ShallowGrupo = ShallowGrupo
   { id :: ULID
   , nombre :: Text
+  , fecha :: LocalTime
   , participantes :: [Participante]
   } deriving (Show, Eq, Generic)
 
@@ -56,6 +60,7 @@ data Pago = Pago
   , monto :: Monto
   , isValid :: Bool
   , nombre :: Text
+  , fecha :: LocalTime
   , pagadores :: Distribucion
   , deudores :: Distribucion
   } deriving (Show, Eq, Generic)
@@ -65,6 +70,7 @@ data ShallowPago = ShallowPago
   , isValid :: Bool
   , nombre :: Text
   , monto :: Monto
+  , fecha :: LocalTime
     -- ^ this is total amount of money involved but its a bit of a cache
     -- from the Distribuciones to be able to show it on the UI.
   } deriving (Show, Eq, Generic)
