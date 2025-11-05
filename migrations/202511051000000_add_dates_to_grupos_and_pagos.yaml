@@ -3,13 +3,13 @@ operations:
       table: grupos
       column:
         name: fecha
-        type: timestamp
+        type: timestamptz
         nullable: false
         default: NOW()
   - add_column:
       table: pagos
       column:
         name: fecha
-        type: timestamp
+        type: timestamptz
         nullable: false
         default: NOW()

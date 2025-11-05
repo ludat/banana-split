@@ -32,8 +32,8 @@ import BananaSplit.ULID qualified as ULID
 import Data.Decimal qualified as Decimal
 import Data.Text qualified as Text
 
-import Data.Time (LocalTime, getCurrentTime)
-import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
+import Data.Time (ZonedTime, getCurrentTime, getCurrentTimeZone)
+import Data.Time.LocalTime (utcToZonedTime)
 
 import Database.Beam as Beam
 import Database.Beam.Backend
@@ -66,7 +66,7 @@ db = defaultDbSettings
 data GrupoT f = Grupo
   { id :: Columnar f ULID
   , nombre :: Columnar f Text
-  , fecha :: Columnar f LocalTime
+  , fecha :: Columnar f ZonedTime
   } deriving (Generic, Beamable )
 
 type GrupoId = PrimaryKey GrupoT Identity
@@ -106,7 +106,7 @@ data PagoT f = Pago
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMonto :: MontoT f
-  , pagoFecha :: Columnar f LocalTime
+  , pagoFecha :: Columnar f ZonedTime
   , distribucion_pagadores :: PrimaryKey DistribucionT f
   , distribucion_deudores :: PrimaryKey DistribucionT f
   } deriving (Generic, Beamable)
@@ -293,7 +293,7 @@ createGrupo nombre participante = do
   now <- liftIO $ do
     utcTime <- getCurrentTime
     tz <- getCurrentTimeZone
-    pure $ utcToLocalTime tz utcTime
+    pure $ utcToZonedTime tz utcTime
   runInsert $ insert db.grupos $ insertValues [
       Grupo newId nombre now
     ]
