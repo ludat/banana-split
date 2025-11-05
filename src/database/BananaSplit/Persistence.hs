@@ -32,6 +32,9 @@ import BananaSplit.ULID qualified as ULID
 import Data.Decimal qualified as Decimal
 import Data.Text qualified as Text
 
+import Data.Time (LocalTime, getCurrentTime)
+import Data.Time.LocalTime (utcToLocalTime, getCurrentTimeZone)
+
 import Database.Beam as Beam
 import Database.Beam.Backend
 import Database.Beam.Postgres
@@ -63,6 +66,7 @@ db = defaultDbSettings
 data GrupoT f = Grupo
   { id :: Columnar f ULID
   , nombre :: Columnar f Text
+  , fecha :: Columnar f LocalTime
   } deriving (Generic, Beamable )
 
 type GrupoId = PrimaryKey GrupoT Identity
@@ -102,6 +106,7 @@ data PagoT f = Pago
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMonto :: MontoT f
+  , pagoFecha :: Columnar f LocalTime
   , distribucion_pagadores :: PrimaryKey DistribucionT f
   , distribucion_deudores :: PrimaryKey DistribucionT f
   } deriving (Generic, Beamable)
@@ -285,8 +290,12 @@ instance Table RepartijaClaimT where
 createGrupo :: Text -> Text -> Pg M.Grupo
 createGrupo nombre participante = do
   newId <- liftIO ULID.getULID
+  now <- liftIO $ do
+    utcTime <- getCurrentTime
+    tz <- getCurrentTimeZone
+    pure $ utcToLocalTime tz utcTime
   runInsert $ insert db.grupos $ insertValues [
-      Grupo newId nombre
+      Grupo newId nombre now
     ]
   p <- addParticipante newId participante
     `orElse` \e -> fail $ show e
@@ -294,6 +303,7 @@ createGrupo nombre participante = do
   pure $ M.Grupo
     { M.id = newId
     , M.nombre = nombre
+    , M.fecha = now
     , M.pagos = []
     , M.participantes = [p]
     }
@@ -312,6 +322,7 @@ fetchGrupo aGrupoId = do
       pure $ Just $ M.ShallowGrupo
         { M.id = grupo.id
         , M.nombre = grupo.nombre
+        , M.fecha = grupo.fecha
         , M.participantes = participantes
         }
 
@@ -330,6 +341,7 @@ fetchPago grupoId pagoId = do
         { M.pagoId = p.pagoId
         , M.monto = constructMonto p.pagoMonto
         , M.nombre = p.pagoNombre
+        , M.fecha = p.pagoFecha
         , M.isValid = p.pagoIsValid
         , M.pagadores = pagadores
         , M.deudores = deudores
@@ -454,6 +466,7 @@ fetchShallowPagos grupoId = do
         , M.isValid = pago.pagoIsValid
         , M.nombre = pago.pagoNombre
         , M.monto = constructMonto pago.pagoMonto
+        , M.fecha = pago.pagoFecha
         })
     & pure
 
@@ -506,6 +519,7 @@ savePago grupoId pagoWithoutId = do
             , pagoGrupo = GrupoId grupoId
             , pagoNombre = pago.nombre
             , pagoMonto = deconstructMonto pago.monto
+            , pagoFecha = pago.fecha
             , distribucion_pagadores = DistribucionId distribucionPagadores.id
             , distribucion_deudores = DistribucionId distribucionDeudores.id
             }
