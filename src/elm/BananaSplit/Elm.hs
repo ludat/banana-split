@@ -5,7 +5,7 @@ module BananaSplit.Elm
 import BananaSplit
 
 import Data.Data
-import Data.Time (LocalTime)
+import Data.Time (ZonedTime)
 
 import Elm.TyRep
 
@@ -31,7 +31,7 @@ generateElmFiles = do
         ETyCon (ETCon "Char")             -> "String.fromChar"
         ETyApp (ETyCon (ETCon "Maybe")) v -> "(Maybe.map " <> defaultElmToString v <> " >> Maybe.withDefault \"\")"
         ETyCon (ETCon "ULID") -> ""
-        ETyCon (ETCon "LocalTime") -> "(Iso8601.fromTime >> Iso8601.encode)"
+        ETyCon (ETCon "ZonedTime") -> "(Iso8601.fromTime >> Iso8601.encode)"
         e -> error $ show e
        , urlPrefix = Static "/api"
       })
@@ -40,7 +40,7 @@ generateElmFiles = do
     ]
     defElmImports
     "ui/src/"
-    [ DefineElm (Proxy :: Proxy LocalTime)
+    [ DefineElm (Proxy :: Proxy ZonedTime)
     , DefineElm (Proxy :: Proxy CreateGrupoParams)
     , DefineElm (Proxy :: Proxy ReceiptImageRequest)
     , DefineElm (Proxy :: Proxy ReceiptImageResponse)
