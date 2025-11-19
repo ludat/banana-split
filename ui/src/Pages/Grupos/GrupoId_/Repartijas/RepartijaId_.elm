@@ -428,6 +428,46 @@ viewClaimsLine userId grupo repartija item =
         itemsClaimed =
             claimsForItem
                 |> interpretClaims
+
+        itemRepartidoState : ItemRepartidoState
+        itemRepartidoState =
+            calculateItemRepartidoState item itemsClaimed
+
+        plusOneButtonClass : String
+        plusOneButtonClass =
+            case itemRepartidoState of
+                RepartidoExactamente ->
+                    "button is-warning"
+
+                RepartidoDeMas _ ->
+                    "button is-warning"
+
+                _ ->
+                    "button is-link"
+
+        minusOneButtonClass : String
+        minusOneButtonClass =
+            case itemRepartidoState of
+                RepartidoExactamente ->
+                    "button is-warning"
+
+                FaltaRepartir _ ->
+                    "button is-warning"
+
+                _ ->
+                    "button is-link"
+
+        participarButtonClass : String
+        participarButtonClass =
+            case itemsClaimed of
+                OnlyExactClaims _ ->
+                    "button is-warning"
+
+                MixedClaims _ ->
+                    "button is-warning"
+
+                _ ->
+                    "button is-link"
     in
     tr []
         [ td [ class "is-vcentered" ] [ text <| item.nombre ]
@@ -445,45 +485,55 @@ viewClaimsLine userId grupo repartija item =
 
                 ( Just _, MixedClaims _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link is-outlined" ] [ text "-1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
-                        , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link is-outlined" ] [ text "Salirse" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
+                        , button
+                            [ onClick <| ChangeCurrentClaim item -1
+                            , class minusOneButtonClass
+                            , disabled (userClaim.cantidad == Nothing)
+                            ]
+                            [ text "-1" ]
+                        , button
+                            [ onClick <| JoinCurrentClaim item
+                            , class participarButtonClass
+                            , disabled (userClaim.cantidad == Nothing)
+                            ]
+                            [ text "Participé" ]
+                        , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link" ] [ text "Salirse" ]
                         ]
 
                 ( Just _, MixedClaims _, Nothing ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
+                        , button [ onClick <| JoinCurrentClaim item, class participarButtonClass ] [ text "Participé" ]
                         ]
 
-                ( Just _, OnlyExactClaims _, Just _ ) ->
+                ( Just _, OnlyExactClaims _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link is-outlined" ] [ text "-1" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class minusOneButtonClass ] [ text "-1" ]
                         ]
 
                 ( Just _, OnlyExactClaims _, Nothing ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link is-outlined", disabled True ] [ text "-1" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass, disabled True ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link", disabled True ] [ text "-1" ]
                         ]
 
                 ( Just _, OnlyParticipationClaims _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link is-outlined" ] [ text "Salirse" ]
+                        [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link" ] [ text "Salirse" ]
                         ]
 
                 ( Just _, OnlyParticipationClaims _, Nothing ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        [ button [ onClick <| JoinCurrentClaim item, class participarButtonClass ] [ text "Participé" ]
                         ]
 
                 ( Just _, NoClaims, _ ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link is-outlined", disabled True ] [ text "-1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "-1" ]
+                        , button [ onClick <| JoinCurrentClaim item, class participarButtonClass ] [ text "Participé" ]
                         ]
             ]
         ]
@@ -505,38 +555,43 @@ type ItemRepartidoState
     | RepartidoDeMas Int
 
 
+calculateItemRepartidoState : RepartijaItem -> ItemClaimsState -> ItemRepartidoState
+calculateItemRepartidoState item itemsClaimed =
+    case itemsClaimed of
+        MixedClaims _ ->
+            RepartidoIncorrectamente
+
+        OnlyExactClaims exactClaims ->
+            let
+                cantidadClaimeado =
+                    exactClaims |> List.map Tuple.first |> List.sum
+
+                cantidadFaltante =
+                    item.cantidad - cantidadClaimeado
+            in
+            case compare 0 cantidadFaltante of
+                LT ->
+                    FaltaRepartir cantidadFaltante
+
+                EQ ->
+                    RepartidoExactamente
+
+                GT ->
+                    RepartidoDeMas (cantidadFaltante * -1)
+
+        OnlyParticipationClaims repartijaClaims ->
+            RepartidoEquitativamenteEntre <| List.length repartijaClaims
+
+        NoClaims ->
+            SinRepartir
+
+
 viewClaimProgressAndDropdown : GrupoLike g -> Repartija -> RepartijaItem -> List RepartijaClaim -> ItemClaimsState -> Html Msg
 viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
     let
         itemRepartidoState : ItemRepartidoState
         itemRepartidoState =
-            case itemsClaimed of
-                MixedClaims _ ->
-                    RepartidoIncorrectamente
-
-                OnlyExactClaims exactClaims ->
-                    let
-                        cantidadClaimeado =
-                            exactClaims |> List.map Tuple.first |> List.sum
-
-                        cantidadFaltante =
-                            item.cantidad - cantidadClaimeado
-                    in
-                    case compare 0 cantidadFaltante of
-                        LT ->
-                            FaltaRepartir cantidadFaltante
-
-                        EQ ->
-                            RepartidoExactamente
-
-                        GT ->
-                            RepartidoDeMas (cantidadFaltante * -1)
-
-                OnlyParticipationClaims repartijaClaims ->
-                    RepartidoEquitativamenteEntre <| List.length repartijaClaims
-
-                NoClaims ->
-                    SinRepartir
+            calculateItemRepartidoState item itemsClaimed
     in
     div [ class "is-flex" ]
         [ div
