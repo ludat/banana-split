@@ -1,8 +1,10 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
+import DatePicker.SingleDatePicker as SingleDatePicker
 import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form)
 import Form.Error as Form
+import Form.Field as FormField
 import Form.Input as FormInput
 import Form.Validate as Validate exposing (..)
 import Generated.Api as Api exposing (CreateGrupoParams)
@@ -10,12 +12,16 @@ import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (onClick, onSubmit)
 import Http
+import Iso8601
 import Layouts
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
+import Task
+import Time
+import Utils.DatePicker as DatePicker
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import View exposing (View)
 
@@ -44,14 +50,19 @@ navBar navBarOpen =
 
 type alias Model =
     { form : Form CustomFormError CreateGrupoParams
+    , datePicker : DatePicker.DatePicker
     }
 
 
 init : () -> ( Model, Effect Msg )
 init () =
     ( { form = Form.initial [] validate
+      , datePicker = DatePicker.init Nothing
       }
-    , Effect.setUnsavedChangesWarning False
+    , Effect.batch
+        [ Effect.setUnsavedChangesWarning False
+        , Effect.sendCmd <| Task.perform CurrentTimeReceived Time.now
+        ]
     )
 
 
@@ -59,6 +70,8 @@ type Msg
     = NoOp
     | UpdateForm Form.Msg
     | GrupoCreated Api.Grupo
+    | DatePickerMsg DatePicker.Msg
+    | CurrentTimeReceived Time.Posix
 
 
 validate : Validation CustomFormError CreateGrupoParams
@@ -66,6 +79,20 @@ validate =
     succeed CreateGrupoParams
         |> andMap (field "nombre" (string |> andThen nonEmpty))
         |> andMap (field "participante" (string |> andThen nonEmpty))
+        |> andMap (field "fecha" validateFecha)
+
+
+validateFecha : Validation CustomFormError Time.Posix
+validateFecha =
+    customValidation string
+        (\str ->
+            case Iso8601.toTime str of
+                Ok posix ->
+                    Ok posix
+
+                Err _ ->
+                    Err (Form.value Form.InvalidString)
+        )
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -74,6 +101,48 @@ update msg model =
         NoOp ->
             ( model
             , Effect.none
+            )
+
+        CurrentTimeReceived time ->
+            let
+                isoString =
+                    Iso8601.fromTime time
+
+                formMsg =
+                    Form.Input "fecha" Form.Text (FormField.String isoString)
+            in
+            ( { model
+                | datePicker = DatePicker.setSelectedDate (Just time) model.datePicker
+                , form = Form.update validate formMsg model.form
+              }
+            , Effect.none
+            )
+
+        DatePickerMsg datePickerMsg ->
+            let
+                ( newDatePicker, datePickerCmd ) =
+                    DatePicker.update datePickerMsg model.datePicker
+
+                updatedModel =
+                    case DatePicker.getSelectedDate newDatePicker of
+                        Just posix ->
+                            let
+                                isoString =
+                                    Iso8601.fromTime posix
+
+                                formMsg =
+                                    Form.Input "fecha" Form.Text (FormField.String isoString)
+                            in
+                            { model
+                                | datePicker = newDatePicker
+                                , form = Form.update validate formMsg model.form
+                            }
+
+                        Nothing ->
+                            { model | datePicker = newDatePicker }
+            in
+            ( updatedModel
+            , Effect.sendCmd (Cmd.map DatePickerMsg datePickerCmd)
             )
 
         UpdateForm Form.Submit ->
@@ -130,6 +199,9 @@ view model =
 
         participanteField =
             Form.getFieldAsString "participante" model.form
+
+        fechaField =
+            Form.getFieldAsString "fecha" model.form
     in
     { title = ""
     , body =
@@ -163,6 +235,16 @@ view model =
                                     ]
                             , errorForField participanteField
                             ]
+                        ]
+                    , div [ class "field" ]
+                        [ label [ class "label" ]
+                            [ text "Fecha" ]
+                        , div [ class "control" ]
+                            [ Html.map DatePickerMsg <|
+                                DatePicker.view model.datePicker
+                                    SingleDatePicker.defaultSettings
+                            ]
+                        , errorForField fechaField
                         ]
                     , div [ class "control" ]
                         [ button
