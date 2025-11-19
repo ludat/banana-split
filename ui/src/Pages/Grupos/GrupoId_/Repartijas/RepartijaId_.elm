@@ -469,7 +469,7 @@ viewClaimsLine userId grupo repartija item =
 
                 ( Just _, OnlyExactClaims _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "+1" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
                         , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
                         ]
 
