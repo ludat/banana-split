@@ -32,8 +32,7 @@ import BananaSplit.ULID qualified as ULID
 import Data.Decimal qualified as Decimal
 import Data.Text qualified as Text
 
-import Data.Time (ZonedTime, getCurrentTime, getCurrentTimeZone)
-import Data.Time.LocalTime (utcToZonedTime)
+import Data.Time (ZonedTime)
 
 import Database.Beam as Beam
 import Database.Beam.Backend
@@ -287,15 +286,11 @@ instance Table RepartijaClaimT where
   data PrimaryKey RepartijaClaimT f = RepartijaClaimId (C f ULID) deriving (Generic, Beamable)
   primaryKey = RepartijaClaimId . (.repartijaclaimId)
 
-createGrupo :: Text -> Text -> Pg M.Grupo
-createGrupo nombre participante = do
+createGrupo :: Text -> Text -> ZonedTime -> Pg M.Grupo
+createGrupo nombre participante fecha = do
   newId <- liftIO ULID.getULID
-  now <- liftIO $ do
-    utcTime <- getCurrentTime
-    tz <- getCurrentTimeZone
-    pure $ utcToZonedTime tz utcTime
   runInsert $ insert db.grupos $ insertValues [
-      Grupo newId nombre now
+      Grupo newId nombre fecha
     ]
   p <- addParticipante newId participante
     `orElse` \e -> fail $ show e
@@ -303,7 +298,7 @@ createGrupo nombre participante = do
   pure $ M.Grupo
     { M.id = newId
     , M.nombre = nombre
-    , M.fecha = now
+    , M.fecha = fecha
     , M.pagos = []
     , M.participantes = [p]
     }

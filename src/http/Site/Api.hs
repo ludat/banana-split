@@ -12,6 +12,8 @@ module Site.Api where
 
 import BananaSplit
 
+import Data.Time (ZonedTime)
+
 import Elm.Derive qualified as Elm
 
 import GHC.Generics
@@ -78,6 +80,7 @@ data ParticipanteAddParams = ParticipanteAddParams
 data CreateGrupoParams = CreateGrupoParams
   { grupoName :: Text
   , grupoParticipante :: Text
+  , grupoFecha :: ZonedTime
   } deriving (Show, Eq, Generic)
 
 newtype Netos = Netos (Deudas Monto)

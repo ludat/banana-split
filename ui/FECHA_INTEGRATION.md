@@ -16,6 +16,7 @@ The backend has been updated to include `fecha :: ZonedTime` fields in:
 - `Pago` (src/core/BananaSplit/Core.hs:63)
 - `ShallowPago` (src/core/BananaSplit/Core.hs:73)
 - `Grupo` (src/core/BananaSplit/Core.hs:46)
+- `CreateGrupoParams` (src/http/Site/Api.hs:83) - accepts fecha from UI
 - `ShallowGrupo` (src/core/BananaSplit/Core.hs:54)
 
 The database migration adds `timestamptz` columns with `NOW()` defaults.
@@ -320,6 +321,125 @@ After making these changes:
 ## Notes
 
 - The `fecha` field will be automatically set to `NOW()` by the database for existing pagos and grupos
+- **The UI controls the date** - The fecha is sent from the frontend to the backend (not generated server-side)
 - The date picker uses `Time.Posix` which represents timestamps
 - The backend expects ISO8601 formatted strings for date fields
 - The `ZonedTime` type in Haskell preserves timezone information
+
+## Step 7: Update Grupo Creation Form
+
+In `src/Pages/Home_.elm`, add the date picker to the grupo creation form.
+
+**Important**: The backend now requires `grupoFecha` in `CreateGrupoParams`, so you must send the date from the UI.
+
+Add these changes to `Home_.elm`:
+
+```elm
+-- Add to imports at the top
+import Utils.DatePicker as DatePicker
+import DatePicker.SingleDatePicker as SingleDatePicker
+import Iso8601
+import Task
+import Time
+
+-- Update Model
+type alias Model =
+    { form : Form CustomFormError CreateGrupoParams
+    , datePicker : DatePicker.DatePicker
+    }
+
+-- Update init
+init : () -> ( Model, Effect Msg )
+init () =
+    ( { form = Form.initial [] validate
+      , datePicker = DatePicker.init Nothing
+      }
+    , Effect.batch
+        [ Effect.setUnsavedChangesWarning False
+        , Effect.sendCmd <| Task.perform CurrentTimeReceived Time.now
+        ]
+    )
+
+-- Update Msg type
+type Msg
+    = NoOp
+    | UpdateForm Form.Msg
+    | GrupoCreated Api.Grupo
+    | DatePickerMsg DatePicker.Msg
+    | CurrentTimeReceived Time.Posix
+
+-- Update validate function to include fecha
+validate : Validation CustomFormError CreateGrupoParams
+validate =
+    succeed CreateGrupoParams
+        |> andMap (field "nombre" (string |> andThen nonEmpty))
+        |> andMap (field "participante" (string |> andThen nonEmpty))
+        |> andMap (field "fecha" validateFecha)
+
+validateFecha : Validation CustomFormError Time.Posix
+validateFecha =
+    customValidation string
+        (\str ->
+            case Iso8601.toTime str of
+                Ok posix -> Ok posix
+                Err _ -> Err (Form.Error.value Form.Error.InvalidString)
+        )
+```
+
+Add to the update function:
+
+```elm
+        CurrentTimeReceived time ->
+            let
+                isoString = Iso8601.fromTime time
+                formMsg = Form.Input "fecha" Form.Text (FormField.String isoString)
+            in
+            ( { model
+                | datePicker = DatePicker.setSelectedDate (Just time) model.datePicker
+                , form = Form.update validate formMsg model.form
+              }
+            , Effect.none
+            )
+
+        DatePickerMsg datePickerMsg ->
+            let
+                ( newDatePicker, datePickerCmd ) =
+                    DatePicker.update datePickerMsg model.datePicker
+
+                updatedModel =
+                    case DatePicker.getSelectedDate newDatePicker of
+                        Just posix ->
+                            let
+                                isoString = Iso8601.fromTime posix
+                                formMsg = Form.Input "fecha" Form.Text (FormField.String isoString)
+                            in
+                            { model
+                                | datePicker = newDatePicker
+                                , form = Form.update validate formMsg model.form
+                            }
+
+                        Nothing ->
+                            { model | datePicker = newDatePicker }
+            in
+            ( updatedModel
+            , Effect.sendCmd (Cmd.map DatePickerMsg datePickerCmd)
+            )
+```
+
+Update the view to add the date picker field:
+
+```elm
+                    -- After the participante field, add:
+                    , div [ class "field" ]
+                        [ label [ class "label" ]
+                            [ text "Fecha" ]
+                        , div [ class "control" ]
+                            [ Html.map DatePickerMsg <|
+                                DatePicker.view model.datePicker
+                                    SingleDatePicker.defaultSettings
+                            ]
+                        , errorForField fechaField
+                        ]
+```
+
+**Note**: The date defaults to the current time when the page loads via the `CurrentTimeReceived` message.
