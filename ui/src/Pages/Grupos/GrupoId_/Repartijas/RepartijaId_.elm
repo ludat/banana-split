@@ -446,8 +446,18 @@ viewClaimsLine userId grupo repartija item =
                 ( Just _, MixedClaims _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        , button
+                            [ onClick <| ChangeCurrentClaim item -1
+                            , class "button is-link"
+                            , disabled (userClaim.cantidad == Nothing)
+                            ]
+                            [ text "-1" ]
+                        , button
+                            [ onClick <| JoinCurrentClaim item
+                            , class "button is-link"
+                            , disabled (userClaim.cantidad == Nothing)
+                            ]
+                            [ text "Participé" ]
                         , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link" ] [ text "Salirse" ]
                         ]
 
@@ -457,10 +467,16 @@ viewClaimsLine userId grupo repartija item =
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
                         ]
 
-                ( Just _, OnlyExactClaims _, _ ) ->
+                ( Just _, OnlyExactClaims _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link is-disabled" ] [ text "+1" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "+1" ]
                         , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
+                        ]
+
+                ( Just _, OnlyExactClaims _, Nothing ) ->
+                    div [ class "buttons has-addons" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link", disabled True ] [ text "-1" ]
                         ]
 
                 ( Just _, OnlyParticipationClaims _, Just userClaim ) ->
