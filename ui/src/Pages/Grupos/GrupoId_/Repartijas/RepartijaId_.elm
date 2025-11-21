@@ -446,9 +446,9 @@ viewClaimsLine userId grupo repartija item =
                 ( Just _, MixedClaims _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link is-outlined" ] [ text "-1" ]
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
-                        , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link" ] [ text "Salirse" ]
+                        , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link is-outlined" ] [ text "Salirse" ]
                         ]
 
                 ( Just _, MixedClaims _, Nothing ) ->
@@ -457,15 +457,21 @@ viewClaimsLine userId grupo repartija item =
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
                         ]
 
-                ( Just _, OnlyExactClaims _, _ ) ->
+                ( Just _, OnlyExactClaims _, Just _ ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link is-disabled" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link is-outlined" ] [ text "-1" ]
+                        ]
+
+                ( Just _, OnlyExactClaims _, Nothing ) ->
+                    div [ class "buttons has-addons" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link is-outlined", disabled True ] [ text "-1" ]
                         ]
 
                 ( Just _, OnlyParticipationClaims _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link" ] [ text "Salirse" ]
+                        [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link is-outlined" ] [ text "Salirse" ]
                         ]
 
                 ( Just _, OnlyParticipationClaims _, Nothing ) ->
@@ -476,7 +482,7 @@ viewClaimsLine userId grupo repartija item =
                 ( Just _, NoClaims, _ ) ->
                     div [ class "buttons has-addons" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "-1" ]
+                        , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link is-outlined", disabled True ] [ text "-1" ]
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
                         ]
             ]
