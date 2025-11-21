@@ -444,6 +444,30 @@ viewClaimsLine userId grupo repartija item =
 
                 _ ->
                     "button is-link"
+
+        minusOneButtonClass : String
+        minusOneButtonClass =
+            case itemRepartidoState of
+                RepartidoExactamente ->
+                    "button is-warning"
+
+                FaltaRepartir _ ->
+                    "button is-warning"
+
+                _ ->
+                    "button is-link"
+
+        participarButtonClass : String
+        participarButtonClass =
+            case itemsClaimed of
+                OnlyExactClaims _ ->
+                    "button is-warning"
+
+                MixedClaims _ ->
+                    "button is-warning"
+
+                _ ->
+                    "button is-link"
     in
     tr []
         [ td [ class "is-vcentered" ] [ text <| item.nombre ]
@@ -464,13 +488,13 @@ viewClaimsLine userId grupo repartija item =
                         [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
                         , button
                             [ onClick <| ChangeCurrentClaim item -1
-                            , class "button is-link"
+                            , class minusOneButtonClass
                             , disabled (userClaim.cantidad == Nothing)
                             ]
                             [ text "-1" ]
                         , button
                             [ onClick <| JoinCurrentClaim item
-                            , class "button is-link"
+                            , class participarButtonClass
                             , disabled (userClaim.cantidad == Nothing)
                             ]
                             [ text "Participé" ]
@@ -480,13 +504,13 @@ viewClaimsLine userId grupo repartija item =
                 ( Just _, MixedClaims _, Nothing ) ->
                     div [ class "buttons has-addons" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        , button [ onClick <| JoinCurrentClaim item, class participarButtonClass ] [ text "Participé" ]
                         ]
 
                 ( Just _, OnlyExactClaims _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class minusOneButtonClass ] [ text "-1" ]
                         ]
 
                 ( Just _, OnlyExactClaims _, Nothing ) ->
@@ -502,14 +526,14 @@ viewClaimsLine userId grupo repartija item =
 
                 ( Just _, OnlyParticipationClaims _, Nothing ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        [ button [ onClick <| JoinCurrentClaim item, class participarButtonClass ] [ text "Participé" ]
                         ]
 
                 ( Just _, NoClaims, _ ) ->
                     div [ class "buttons has-addons" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
                         , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "-1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        , button [ onClick <| JoinCurrentClaim item, class participarButtonClass ] [ text "Participé" ]
                         ]
             ]
         ]
