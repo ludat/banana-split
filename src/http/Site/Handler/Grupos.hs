@@ -40,6 +40,7 @@ handleGetNetos grupoId = do
         { id = shallowGrupo.id
         , participantes = shallowGrupo.participantes
         , nombre = shallowGrupo.nombre
+        , fecha = shallowGrupo.fecha
         , pagos = pagos
         }
   let deudas = calcularDeudasTotales grupo
