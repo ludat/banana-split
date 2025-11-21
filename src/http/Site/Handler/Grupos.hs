@@ -21,8 +21,8 @@ import Site.Types
 
 
 handleCreateGrupo :: CreateGrupoParams -> AppHandler Grupo
-handleCreateGrupo CreateGrupoParams{grupoName, grupoParticipante, grupoFecha} = do
-  runBeam $ createGrupo grupoName grupoParticipante grupoFecha
+handleCreateGrupo params = do
+  runBeam $ createGrupo params
 
 handleGetNetos :: ULID -> AppHandler ResumenGrupo
 handleGetNetos grupoId = do

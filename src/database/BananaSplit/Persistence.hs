@@ -45,6 +45,9 @@ import Preludat
 
 import Protolude.Error
 
+import Site.Api (CreateGrupoParams(..))
+
+
 data BananaSplitDb f = BananaSplitDb
   { grupos :: f (TableEntity GrupoT)
   , participantes :: f (TableEntity ParticipanteT)
@@ -286,19 +289,19 @@ instance Table RepartijaClaimT where
   data PrimaryKey RepartijaClaimT f = RepartijaClaimId (C f ULID) deriving (Generic, Beamable)
   primaryKey = RepartijaClaimId . (.repartijaclaimId)
 
-createGrupo :: Text -> Text -> ZonedTime -> Pg M.Grupo
-createGrupo nombre participante fecha = do
+createGrupo :: CreateGrupoParams -> Pg M.Grupo
+createGrupo params = do
   newId <- liftIO ULID.getULID
   runInsert $ insert db.grupos $ insertValues [
-      Grupo newId nombre fecha
+      Grupo newId params.grupoName params.grupoFecha
     ]
-  p <- addParticipante newId participante
+  p <- addParticipante newId params.grupoParticipante
     `orElse` \e -> fail $ show e
 
   pure $ M.Grupo
     { M.id = newId
-    , M.nombre = nombre
-    , M.fecha = fecha
+    , M.nombre = params.grupoName
+    , M.fecha = params.grupoFecha
     , M.pagos = []
     , M.participantes = [p]
     }
