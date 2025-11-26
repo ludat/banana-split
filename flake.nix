@@ -4,6 +4,11 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     haskell-flake.url = "github:srid/haskell-flake";
+
+    MIP = {
+      url = "github:msakai/haskell-MIP";
+      flake = false;
+    };
   };
 
   outputs =
@@ -44,12 +49,7 @@
 
             # Packages to add on top of `basePackages`, e.g. from Hackage
             packages = {
-              glpk-hs.source = pkgs.fetchFromGitHub {
-                owner = "jyp";
-                repo = "glpk-hs";
-                rev = "1f276aa19861203ea8367dc27a6ad4c8a31c9062";
-                sha256 = "sha256-AY9wmmqzafpocUspQAvHjDkT4vty5J3GcSOt5qItnlo=";
-              };
+              MIP.source = inputs.MIP + /MIP;
             };
 
             # my-haskell-package development shell configuration
@@ -68,6 +68,7 @@
                     zlib
                     blas
                     lapack
+                    cbc
                     glpk
                     libpq
                     ;

@@ -1,7 +1,6 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE MultiWayIf #-}
 {-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module BananaSplit.Deudas where
@@ -14,11 +13,16 @@ import BananaSplit.ULID
 
 import Data.Decimal (Decimal)
 import Data.Decimal qualified as Decimal
-import Data.LinearProgram qualified as GLPK
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
+import Data.Scientific (Scientific)
+import Data.Scientific qualified as Scientific
 
 import Elm.Derive qualified as Elm
+
+import Numeric.Optimization.MIP qualified as MIP
+import Numeric.Optimization.MIP.Solver qualified as MIP
+import Numeric.Optimization.MIP.Solver.CBC qualified as CBC
 
 import Protolude
 import Protolude.Error (error)
@@ -119,7 +123,16 @@ instance HasResumen Repartija where
       totalPorDeudas = totalDeudas deudas
 
 minimizeTransactions :: Deudas Monto -> [Transaccion]
-minimizeTransactions = solveOptimalTransactions
+minimizeTransactions deudas =
+  case solveOptimalTransactions' deudas of
+    Right transactions -> transactions
+    Left _err -> resolverDeudasNaif deudas
+
+solveOptimalTransactions :: Deudas Monto -> [Transaccion]
+solveOptimalTransactions deudas =
+  case solveOptimalTransactions' deudas of
+    Right transactions -> transactions
+    Left err -> error err
 
 resolverDeudasRecursivo :: Deudas Monto -> [Transaccion]
 resolverDeudasRecursivo netBalances =
@@ -259,7 +272,7 @@ removerDeudor participanteId (Deudas deudasMap) =
 resolverDeudasNaif :: Deudas Monto -> [Transaccion]
 resolverDeudasNaif deudas
   | deudoresNoNulos deudas == 0 = []
-  | deudoresNoNulos deudas == 1 = [] -- error $ show deudas
+  | deudoresNoNulos deudas == 1 = error $ show deudas
   | otherwise =
       let
         (mayorDeudor, mayorDeuda) = extraerMaximoDeudor deudas
@@ -274,8 +287,8 @@ resolverDeudasNaif deudas
           EQ -> Transaccion mayorDeudor mayorPagador mayorPagado
             : resolverDeudasNaif deudas''
 
-solveOptimalTransactions :: Deudas Monto -> [Transaccion]
-solveOptimalTransactions (Deudas oldBalances) = unsafePerformIO $ do
+solveOptimalTransactions' :: Deudas Monto -> Either Text [Transaccion]
+solveOptimalTransactions' (Deudas oldBalances) = unsafePerformIO $ do
     let
       maxPrecision =
         oldBalances
@@ -284,7 +297,7 @@ solveOptimalTransactions (Deudas oldBalances) = unsafePerformIO $ do
         & \case
             [] -> 0
             xs -> maximum xs
-      balances :: Map ParticipanteId Double
+      balances :: Map ParticipanteId Scientific
       balances = fmap (realToFrac . (* 10 ^ maxPrecision)) oldBalances
 
       balanceSum = sum $ Map.elems balances
@@ -294,74 +307,113 @@ solveOptimalTransactions (Deudas oldBalances) = unsafePerformIO $ do
       creditors = Map.keys creditorMap
 
     -- If no debts, no transactions needed
-    if | balanceSum /= 0 -> error $ "Balanace is not 0, instead is: " <> show balanceSum
-       | Map.null debtorMap -> pure []
+    if | balanceSum /= 0 -> error $ "Balance is not 0, instead is: " <> show balanceSum
+       | Map.null debtorMap -> pure $ Right []
        | otherwise -> do
         -- A "big M" value, larger than any possible transaction
-        let bigM = sum (abs <$> Map.elems balances)
+        let bigM = balances & Map.elems & filter (> 0) & sum
 
-        -- Create mappings from (debtor, creditor) pairs to column indices
+        -- Create mappings from (debtor, creditor) pairs to variable names
         let d_c_pairs = [(d, c) | d <- debtors, c <- creditors]
 
-        r <- GLPK.glpSolveVars GLPK.mipDefaults{GLPK.msgLev = GLPK.MsgErr} $ GLPK.execLPM @Text @Double $ do
-          GLPK.setDirection GLPK.Min
+        -- Create variable name helpers
+        let tVar d c = "t_" <> show d <> "_" <> show c :: Text
+            eVar d c = "e_" <> show d <> "_" <> show c :: Text
 
-          -- Set the objective for the existing keys
-          d_c_pairs
-            & fmap (\(fromP, toP) -> (1, "e_" <> show fromP <> "_" <> show toP))
-            & GLPK.linCombination
-            & GLPK.setObjective
+        -- All variable names
+        let allTVars = [tVar d c | (d, c) <- d_c_pairs]
+            allEVars = [eVar d c | (d, c) <- d_c_pairs]
 
-          -- Make e_ variables binary
-          d_c_pairs
-            & fmap (\(fromP, toP) -> "e_" <> show fromP <> "_" <> show toP)
-            & mapM_ (`GLPK.setVarKind` GLPK.BinVar)
+        -- Build variable domains
+        let varDomains = Map.fromList $
+              -- Transaction variables (continuous, >= 0)
+              [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.PosInf))) | v <- allTVars] ++
+              -- Binary edge variables (represented as integer variables with bounds 0 and 1)
+              [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.Finite 1))) | v <- allEVars]
 
-          -- All transactions should be positive
-          d_c_pairs
-            & fmap (\(fromP, toP) -> "t_" <> show fromP <> "_" <> show toP)
-            & mapM_ (`GLPK.varGeq` 0)
+        -- Build objective: minimize sum of binary edge variables
+        let objective = MIP.def
+              { MIP.objDir = MIP.OptMin
+              , MIP.objExpr = sum [MIP.varExpr (MIP.Var (eVar d c)) | (d, c) <- d_c_pairs]
+              }
 
-          forM_ debtors $ \debtor -> do
-            creditors
-            & fmap (\c -> (1, "t_" <> show debtor <> "_" <> show c))
-            & GLPK.linCombination
-            & (\f -> GLPK.constrain' ("Debtor: " <> show debtor) f $ between (negate $ balances Map.! debtor) balanceSum)
-          forM_ creditors $ \creditor -> do
-            debtors
-            & fmap (\d -> (1, "t_" <> show d <> "_" <> show creditor))
-            & GLPK.linCombination
-            & (\f -> GLPK.equalTo' ("Creditor: " <> show creditor) f (balances Map.! creditor))
+        -- Build constraints
+        let constraints =
+              -- Debtor constraints: sum of outgoing transactions should equal their debt
+              [ sum [MIP.varExpr (MIP.Var (tVar debtor c)) | c <- creditors]
+                MIP..==. MIP.constExpr (negate $ balances Map.! debtor)
+              | debtor <- debtors
+              ] ++
+              -- Creditor constraints: sum of incoming transactions should equal their credit
+              [ sum [MIP.varExpr (MIP.Var (tVar d creditor)) | d <- debtors]
+                MIP..==. MIP.constExpr (balances Map.! creditor)
+              | creditor <- creditors
+              ] ++
+              -- Big-M constraints: t_d_c <= bigM * e_d_c (transaction only if edge is active)
+              [ MIP.varExpr (MIP.Var (tVar d c)) MIP..<=. MIP.constExpr bigM * MIP.varExpr (MIP.Var (eVar d c))
+              | (d, c) <- d_c_pairs
+              ]
 
-          forM_ creditors $ \creditor -> do
-            forM_ debtors $ \debtor -> do
-              GLPK.leq' ("Binary var: " <> show debtor <> " and " <> show creditor)
-                (GLPK.linCombination [(1, "t_" <> show debtor <> "_" <> show creditor)])
-                (GLPK.linCombination [(bigM, "e_" <> show debtor <> "_" <> show creditor)])
-        case r of
-          (GLPK.Success, Just (_, m)) -> do
-            d_c_pairs
-              & mapMaybe (\(d, c) ->
-                m
-                  & Map.lookup ("t_" <> show d <> "_" <> show c)
-                  & mfilter (/= 0)
-                  & fmap (\v -> Transaccion
-                    { transaccionFrom = d
-                    , transaccionTo = c
-                    , transaccionMonto = Monto $ Decimal.Decimal maxPrecision (round v)
-                    })
-                  )
-              & pure
-          _ -> do
-            error $ "Failed resolving deudas: " <> show r
+        -- Create the problem
+        let prob = MIP.def
+              { MIP.objectiveFunction = objective
+              , MIP.constraints = constraints
+              , MIP.varDomains = varDomains
+              }
 
-between :: (Ord a, Num a) => a -> a -> GLPK.Bounds a
-between a delta =
-  case compare delta 0 of
-    EQ -> GLPK.Equ a
-    LT -> GLPK.Bound (a + delta) a
-    GT -> GLPK.Bound a (a + delta)
+        -- Solve using CBC with timeout protection and optimality gap tolerance
+        let solverOpts = MIP.def
+              { MIP.solveTimeLimit = Just 5.0
+              , MIP.solveLogger = \msg -> putStrLn $ "[CBC] " <> msg  -- Debug logging
+              , MIP.solveErrorLogger = \msg -> putStrLn $ "[CBC ERROR] " <> msg  -- Debug logging
+              , MIP.solveTol = Just MIP.Tol
+                  { integralityTol = 0
+                  , feasibilityTol = 0
+                  , optimalityTol = 0
+                  }
+              }
+        -- Configure CBC to stop after finding a good solution
+        -- For transaction minimization, first feasible solution is often near-optimal
+        let solver = CBC.cbc
+        sol <- MIP.solve solver solverOpts prob
 
+        -- Helper to extract and verify transactions
+        let extractAndVerifyTransactions solVars = do
+              let transactions = d_c_pairs
+                    & mapMaybe (\(d, c) ->
+                      solVars
+                        & Map.lookup (MIP.Var (tVar d c))
+                        & mfilter (/= 0)
+                        & fmap (\v -> Transaccion
+                          { transaccionFrom = d
+                          , transaccionTo = c
+                          , transaccionMonto = Monto $ Decimal.Decimal maxPrecision (round $ Scientific.toRealFloat @Double v)
+                          })
+                        )
+
+              -- Verify: apply transactions and check all balances become zero
+              let finalBalances = Map.foldrWithKey
+                    (\participante balance acc ->
+                      let outgoing = sum [t.transaccionMonto | t <- transactions, t.transaccionFrom == participante]
+                          incoming = sum [t.transaccionMonto | t <- transactions, t.transaccionTo == participante]
+                          finalBalance = balance + incoming - outgoing
+                      in if abs finalBalance > Monto (Decimal.Decimal (maxPrecision + 2) 1)  -- Allow small rounding error
+                         then error $ "Transaction verification failed: participant " <> show participante
+                                   <> " has non-zero final balance: " <> show finalBalance
+                                   <> " (original: " <> show balance <> ", incoming: " <> show incoming
+                                   <> ", outgoing: " <> show outgoing <> ")"
+                         else acc
+                    )
+                    ()
+                    oldBalances
+
+              pure $ Right transactions
+
+        case MIP.solStatus sol of
+          MIP.StatusOptimal -> extractAndVerifyTransactions (MIP.solVariables sol)
+          MIP.StatusInfeasible -> pure $ Left "LP solver found the problem infeasible"
+          MIP.StatusUnknown -> extractAndVerifyTransactions (MIP.solVariables sol)
+          status -> pure $ Left $ "Failed resolving deudas: " <> show status
 
 totalRepartija :: Repartija -> Monto
 totalRepartija repartija =

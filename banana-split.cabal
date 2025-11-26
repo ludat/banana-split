@@ -27,6 +27,7 @@ common base-settings
 
   build-depends:
     Decimal,
+    MIP,
     aeson,
     base,
     base64-bytestring,
@@ -39,9 +40,6 @@ common base-settings
     elm-bridge,
     file-embed,
     filepath,
-    glpk-hs,
-    hmatrix,
-    hmatrix-glpk,
     http-api-data,
     http-client,
     http-client-tls,
@@ -62,6 +60,7 @@ common base-settings
     servant-server,
     string-conversions,
     string-interpolate,
+    scientific,
     text,
     time,
     ulid,

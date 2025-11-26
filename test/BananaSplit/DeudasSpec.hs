@@ -100,7 +100,7 @@ spec = do
         evaluate (minimizeTransactions (deudas
           [ (u1, Monto $ Decimal.Decimal 0 10)
           , (u2, Monto $ Decimal.Decimal 0 -11)
-          ])) `shouldThrow` errorCall "Balanace is not 0, instead is: -1.0"
+          ])) `shouldThrow` errorCall "Balance is not 0, instead is: -1.0"
 
       it "con una deuda compleja no crashea" $ do
         evaluate (minimizeTransactions (deudas
@@ -110,13 +110,37 @@ spec = do
           , (u4,  6)
           , (u5, -3)
           , (u6, -2)
-          ])) `shouldThrow` errorCall "Balanace is not 0, instead is: 1.0"
+          ])) `shouldThrow` errorCall "Balance is not 0, instead is: 1.0"
 
       it "cuando una sola persona tiene plata a favor" $ do
         pendingWith "this crashes the solver"
         evaluate (minimizeTransactions (deudas
           [ (u3, Monto $ Decimal.Decimal 2 -3)
           ])) `shouldThrow` errorCall "Balanace is not 0, instead is: -1.0"
+    context "cuando hay muchos participantes" $ do
+      it "simplifica en un tiempo razonable algo que mas o menos esta bien" $ do
+        minimizeTransactions (deudas
+          [ (participante 1, mkMonto 2 -3200525)
+          , (participante 2, mkMonto 2  4300475)
+          , (participante 3, mkMonto 2  5235379)
+          , (participante 4, mkMonto 2  1503591)
+          , (participante 5, mkMonto 2 10034014)
+          , (participante 6, mkMonto 2 -2439410)
+          , (participante 7, mkMonto 2 -1597765)
+          , (participante 8, mkMonto 2 -1496410)
+          , (participante 9, mkMonto 2 -3864071)
+          , (participante 10, mkMonto 2 -1171859)
+          , (participante 11, mkMonto 2 -1171860)
+          , (participante 12, mkMonto 2 -405602)
+          , (participante 13, mkMonto 2 -867277)
+          , (participante 14, mkMonto 2 -405601)
+          , (participante 15, mkMonto 2 -1070332)
+          , (participante 16, mkMonto 2 -780407)
+          , (participante 17, mkMonto 2 -765749)
+          , (participante 18, mkMonto 2 -1070334)
+          , (participante 19, mkMonto 2 -766257)
+          ])
+           `shouldSatisfy` ((== 18) . length)
 
       -- xit "manual testing" $ do
       --   let

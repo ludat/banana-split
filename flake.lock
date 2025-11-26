@@ -1,5 +1,21 @@
 {
   "nodes": {
+    "MIP": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1747626489,
+        "narHash": "sha256-1FubzM+tkPWWS7CB7rPn18yHpyHRZ+W/6wS0L2j+s8U=",
+        "owner": "msakai",
+        "repo": "haskell-MIP",
+        "rev": "0c602fc593155b2ebf82f15b0325ac439e2c7bcc",
+        "type": "github"
+      },
+      "original": {
+        "owner": "msakai",
+        "repo": "haskell-MIP",
+        "type": "github"
+      }
+    },
     "flake-parts": {
       "inputs": {
         "nixpkgs-lib": "nixpkgs-lib"
@@ -66,6 +82,7 @@
     },
     "root": {
       "inputs": {
+        "MIP": "MIP",
         "flake-parts": "flake-parts",
         "haskell-flake": "haskell-flake",
         "nixpkgs": "nixpkgs"
