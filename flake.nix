@@ -158,7 +158,8 @@
                   iana-etc
                   cacert
                   busybox
-                  (pkgs.writeShellScriptBin "entrypoint" ''
+                  cbc
+                  (writeShellScriptBin "entrypoint" ''
                     set -euo pipefail
                     find /opt/banana-split -exec touch -d "@${toString inputs.self.lastModified}" {} +;
                     exec "$@";
