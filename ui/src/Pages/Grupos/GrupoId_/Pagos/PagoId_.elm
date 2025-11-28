@@ -1,38 +1,17 @@
 module Pages.Grupos.GrupoId_.Pagos.PagoId_ exposing (Model, Msg, page)
 
-import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
-import FeatherIcons as Icons
 import Form exposing (Form)
-import Form.Error as FormError
-import Form.Field as FormField
-import Form.Init as Form
-import Form.Input as FormInput
-import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Distribucion, Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, Repartija, RepartijaItem, ShallowGrupo, ULID)
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onSubmit)
-import Http
-import Json.Encode
+import Generated.Api exposing (Distribucion, Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, Repartija, RepartijaItem, ShallowGrupo, ULID)
 import Layouts
-import List.Extra as List
-import Models.Grupo exposing (lookupNombreParticipante, lookupParticipantes)
-import Models.Monto as Monto
-import Models.Pago as Pago
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
 import Pages.Grupos.GrupoId_.Pagos.New as P exposing (Model, Msg(..), Section(..), andThenSendWarningOnExit, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
-import Route.Path as Path
 import Shared
-import Utils.Form exposing (..)
-import Utils.Toasts as Toasts exposing (pushToast)
-import Utils.Toasts.Types as Toasts exposing (ToastLevel(..))
-import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
 

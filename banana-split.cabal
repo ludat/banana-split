@@ -55,12 +55,12 @@ common base-settings
     resource-pool,
     safe-money,
     safe-money-aeson,
+    scientific,
     servant,
     servant-elm,
     servant-server,
     string-conversions,
     string-interpolate,
-    scientific,
     text,
     time,
     ulid,
@@ -148,6 +148,7 @@ test-suite spec
   other-modules:
     BananaSplit.DeudasSpec
     BananaSplit.Persistence.GrupoSpec
+    BananaSplit.Persistence.PagosSpec
     BananaSplit.Persistence.SpecHook
     BananaSplit.RepartijaSpec
     BananaSplitSpec

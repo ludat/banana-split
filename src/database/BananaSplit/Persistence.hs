@@ -520,26 +520,29 @@ saveDistribucion distribucionWithoutId = do
   distribucionId <- if distribucionWithoutId.id == nullUlid
     then liftIO ULID.getULID
     else pure distribucionWithoutId.id
+  let distribucion = distribucionWithoutId { M.id = distribucionId } :: M.Distribucion
+
+  runInsert $
+    insertOnConflict db.distribuciones
+      (insertValues
+        [ Distribucion distribucion.id (tipoDistribucionToText distribucion.tipo)
+        ])
+      (conflictingFields (\d -> d.id))
+      onConflictUpdateAll
   case distribucionWithoutId.tipo of
     M.TipoDistribucionMontoEquitativo tipoWithoutId -> do
-      let distribucion = distribucionWithoutId { M.id = distribucionId } :: M.Distribucion
-
-      runInsert $
-        insertOnConflict db.distribuciones
-          (insertValues
-            [ Distribucion distribucion.id "DistribucionMontoEquitativo"
-            ])
-          (conflictingFields (\d -> d.id))
-          onConflictUpdateAll
       tipoId <- if tipoWithoutId.id == nullUlid
         then liftIO ULID.getULID
         else pure tipoWithoutId.id
       let tipo = tipoWithoutId { M.id = tipoId } :: M.DistribucionMontoEquitativo
 
+      runDelete $ delete db.distribuciones_monto_equitativo
+        (\dme -> dme.id /=. val_ tipo.id &&. dme.distribucion ==. val_ (DistribucionId distribucionId))
+
       runInsert $
         insertOnConflict db.distribuciones_monto_equitativo
           (insertValues
-            [ DistribucionMontoEquitativo tipoId (DistribucionId distribucion.id)
+            [ DistribucionMontoEquitativo tipo.id (DistribucionId distribucion.id)
             ])
           (conflictingFields (\dme -> (dme.id, dme.distribucion)))
           onConflictUpdateAll
@@ -557,15 +560,6 @@ saveDistribucion distribucionWithoutId = do
       pure $ distribucion { M.tipo = M.TipoDistribucionMontoEquitativo tipo }
 
     M.TipoDistribucionMontosEspecificos tipoWithoutId -> do
-      let distribucion = distribucionWithoutId { M.id = distribucionId } :: M.Distribucion
-      runInsert $
-        insertOnConflict db.distribuciones
-          (insertValues
-            [ Distribucion distribucion.id "DistribucionMontosEspecificos"
-            ])
-          (conflictingFields (\d -> d.id))
-          onConflictUpdateAll
-
       montosEspecificos <- forM tipoWithoutId.montos $ \monto -> do
         montoId <- if monto.id == nullUlid
           then liftIO ULID.getULID
@@ -578,6 +572,9 @@ saveDistribucion distribucionWithoutId = do
 
       let tipo = tipoWithoutId { M.id = tipoId, M.montos = montosEspecificos } :: M.DistribucionMontosEspecificos
 
+      runDelete $ delete db.distribuciones_montos_especificos
+        (\dme -> dme.id /=. val_ tipo.id &&. dme.distribucion ==. val_ (DistribucionId distribucionId))
+
       runInsert $
         insertOnConflict db.distribuciones_montos_especificos
           (insertValues
@@ -588,7 +585,7 @@ saveDistribucion distribucionWithoutId = do
 
       runDelete $ delete db.distribuciones_montos_especificos_items
         (\item ->
-          item.distribucion ==. DistribucionMontosEspecificosId (val_ tipo.id)
+          item.distribucion ==. val_ (DistribucionMontosEspecificosId tipo.id)
           &&. not_ (item.id `in_` [ val_ m.id | m <- tipo.montos ]))
 
       runInsert $
@@ -599,53 +596,14 @@ saveDistribucion distribucionWithoutId = do
           onConflictUpdateAll
       pure $ distribucion { M.tipo = M.TipoDistribucionMontosEspecificos tipo }
     M.TipoDistribucionRepartija repartijaWithoutId -> do
-      let distribucion = distribucionWithoutId { M.id = distribucionId } :: M.Distribucion
-      runInsert $
-        insertOnConflict db.distribuciones
-          (insertValues
-            [ Distribucion distribucion.id "Repartija"
-            ])
-          (conflictingFields (\d -> d.id))
-          onConflictUpdateAll
       repartija <- saveRepartija distribucion.id repartijaWithoutId
       pure $ distribucion { M.tipo = M.TipoDistribucionRepartija repartija }
 
--- savePagadores :: M.Pago -> Pg ()
--- savePagadores pago =
---   runInsert . insert db._bananasplitPagadores . insertValues
---     =<< partes2db (PagoId pago.id) pago.pagadores
-
--- saveDeudores :: M.Pago -> Pg ()
--- saveDeudores pago =
---   runInsert . insert db._bananasplitDeudores . insertValues
---     =<< partes2db (PagoId $ M.pagoId pago) (M.deudores pago)
-
--- partes2db :: MonadIO m => PagoId -> [M.Parte] -> m [Parte]
--- partes2db pagoId partes =
---   forM partes $ \case
---     M.Ponderado cuota (M.ParticipanteId participanteId) -> do
---       _newId <- liftIO ULID.getULID
---       pure Parte
---         -- { parteId = newId
---         { partePago = pagoId
---         , parteParticipante = ParticipanteId participanteId
---         , parteTipo = "Ponderado"
---         , parteMonto = Monto Nothing Nothing
---         , parteCuota = Just $ fromInteger cuota
---         }
---     M.MontoFijo monto (M.ParticipanteId participanteId) -> do
---       _newId <- liftIO ULID.getULID
---       pure Parte
---         -- { parteId = newId
---         { partePago = pagoId
---         , parteParticipante = ParticipanteId participanteId
---         , parteTipo = "MontoFijo"
---         , parteMonto = xd $ deconstructMonto monto
---         , parteCuota = Nothing
---         }
---         where
---           xd :: Monto -> MontoT (Nullable Identity)
---           xd (Monto n d) = Monto (Just n) (Just d)
+tipoDistribucionToText :: M.TipoDistribucion -> Text
+tipoDistribucionToText tipo = case tipo of
+  M.TipoDistribucionMontosEspecificos _ -> "DistribucionMontosEspecificos"
+  M.TipoDistribucionMontoEquitativo _ -> "DistribucionMontoEquitativo"
+  M.TipoDistribucionRepartija _ -> "Repartija"
 
 deletePago :: ULID -> Pg ()
 deletePago unId = do
@@ -682,6 +640,9 @@ saveRepartija distribucionId repartijaSinId = do
     then liftIO ULID.getULID
     else pure repartijaSinId.id
   let repartija = repartijaSinId {M.id = repartijaId} :: M.Repartija
+
+  runDelete $ delete db.repartijas
+    (\r -> r.id /=. val_ repartija.id &&. r.distribucion ==. val_ (DistribucionId distribucionId))
   runInsert $
     insertOnConflict db.repartijas
       (insertValues
