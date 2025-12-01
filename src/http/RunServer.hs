@@ -36,6 +36,7 @@ runBackend = do
 
   connString <- Conferer.fetchFromConfig "database.url" config
   openRouterKey <- Conferer.fetchFromConfig "openrouter.apikey" config
+  openRouterModels <- Conferer.fetchFromConfig "openrouter.models" config
 
   schema <- PgRoll.getLatestSchema
 
@@ -55,6 +56,7 @@ runBackend = do
   let appState = App
         { beamConnectionPool = beamPool
         , openRouterApiKey = openRouterKey
+        , openRouterModels = openRouterModels
         , httpManager = httpManager
         }
 

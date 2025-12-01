@@ -13,10 +13,13 @@ module Site.OpenRouter
     ) where
 
 
+import Control.Arrow (left)
+import Control.Monad.Error.Class
+
 import Data.Aeson
-import Data.Maybe (fromJust)
-import Data.String.Interpolate (__i, i)
+import Data.String.Interpolate (__i)
 import Data.Text qualified as T
+import Data.Text qualified as Text
 import Data.Text.Encoding qualified as TE
 
 import Network.HTTP.Client (Manager)
@@ -30,6 +33,7 @@ import Site.Api (ParsedReceiptItem)
 data OpenRouterConfig = OpenRouterConfig
   { apiKey :: Text
   , httpManager :: Manager
+  , models :: [Text]
   }
 
 newtype ParsedReceipt = ParsedReceipt
@@ -41,6 +45,7 @@ newtype ParsedReceipt = ParsedReceipt
 data OpenRouterRequest = OpenRouterRequest
   { model :: Text
   , messages :: [OpenRouterMessage]
+  , fallbackModels :: [Text]
   }
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON)
@@ -93,7 +98,11 @@ newtype ResponseMessage = ResponseMessage
   deriving anyclass (FromJSON)
 
 analyzeReceiptImage :: OpenRouterConfig -> Text -> IO (Either Text ParsedReceipt)
-analyzeReceiptImage config base64Image = runReq defaultHttpConfig { httpConfigCheckResponse = \_ _ _ -> Nothing } $ do
+analyzeReceiptImage config base64Image = runExceptT $ do
+  (model, fallbackModels) <- case config.models of
+    [] -> throwError "Reading recepts is not properly configured. Talk to an admin."
+    (model:fallback) -> pure (model, fallback)
+
   let prompt = [__i|
         You are a receipt parser. Analyze this receipt image and extract the items in JSON format.
         Return EXACTLY this JSON structure with the extracted data:"
@@ -123,7 +132,8 @@ analyzeReceiptImage config base64Image = runReq defaultHttpConfig { httpConfigCh
 
   let imageUrl = "data:" <> base64Image
   let requestBody = OpenRouterRequest
-        { model = "meta-llama/llama-4-maverick:free"
+        { model = model
+        , fallbackModels = fallbackModels
         , messages =
             [ OpenRouterMessage
                 { role = "user"
@@ -140,22 +150,22 @@ analyzeReceiptImage config base64Image = runReq defaultHttpConfig { httpConfigCh
     (https "openrouter.ai" /: "api" /: "v1" /: "chat" /: "completions")
     (ReqBodyJson requestBody)
     bsResponse
-    ( header "Authorization" ("Bearer " <> TE.encodeUtf8 config.apiKey)
-      <> header "HTTP-Referer" "https://split.ludat.io"
-      <> header "X-Title" "Banana Split Receipt Parser"
+    (mconcat
+      [ header "Authorization" ("Bearer " <> TE.encodeUtf8 config.apiKey)
+      , header "HTTP-Referer" "https://split.ludat.io"
+      , header "X-Title" "Banana Split Receipt Parser"
+      ]
     )
 
   putByteString $ responseBody response
-  let openRouterResp :: OpenRouterResponse = fromJust $ decodeStrict @OpenRouterResponse $ responseBody response
-  case openRouterResp.choices of
-    [] -> pure $ Left "No response from OpenRouter"
-    (Choice (ResponseMessage contentText):_) -> do
-      let cleanedText = contentText
-            & T.dropWhile (/= '{')
-            & T.dropWhileEnd (/= '}')
+  openRouterResp <- liftEither $ left Text.pack $ eitherDecodeStrict @OpenRouterResponse $ responseBody response
 
-      case eitherDecodeStrict (TE.encodeUtf8 cleanedText) of
-        Left err -> do
-          putText $ toS err
-          pure $ Left contentText
-        Right receipt -> pure $ Right receipt
+  Choice (ResponseMessage contentText) <- case openRouterResp.choices of
+    [] -> throwError "No response from OpenRouter"
+    (c:_) -> pure c
+
+  let cleanedText = contentText
+        & T.dropWhile (/= '{')
+        & T.dropWhileEnd (/= '}')
+
+  liftEither $ left Text.pack $ eitherDecodeStrict $ TE.encodeUtf8 cleanedText

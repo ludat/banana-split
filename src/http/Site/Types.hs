@@ -18,6 +18,7 @@ import Servant
 data App = App
   { beamConnectionPool :: Pool Beam.Connection
   , openRouterApiKey :: Text
+  , openRouterModels :: [Text]
   , httpManager :: Manager
   }
 

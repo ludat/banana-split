@@ -16,11 +16,13 @@ import Site.Types
 handleReceiptImageParse :: ReceiptImageRequest -> AppHandler ReceiptImageResponse
 handleReceiptImageParse req = do
   apiKey <- asks (.openRouterApiKey)
+  models <- asks (.openRouterModels)
   manager <- asks (.httpManager)
 
   let config = OpenRouterConfig
         { apiKey = apiKey
         , httpManager = manager
+        , models = models
         }
 
   result <- liftIO $ analyzeReceiptImage config req.imageBase64
