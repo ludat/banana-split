@@ -6,6 +6,7 @@ import Bytes exposing (Bytes)
 import Bytes.Encode
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
+import DatePicker.SingleDatePicker as SingleDatePicker
 import Effect exposing (Effect)
 import FeatherIcons as Icons
 import File exposing (File)
@@ -20,6 +21,7 @@ import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (on, onClick, onSubmit)
 import Http
+import Iso8601
 import Json.Decode as Decode
 import Json.Encode
 import Layouts
@@ -36,6 +38,8 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Task
+import Time
+import Utils.DatePicker as DatePicker
 import Utils.Form exposing (..)
 import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toasts
@@ -80,6 +84,8 @@ type Msg
     | ReceiptImageBytes File Bytes
     | ReceiptParseResponse (Result Http.Error Api.ReceiptImageResponse)
     | ClearReceiptError
+    | DatePickerMsg DatePicker.Msg
+    | CurrentTimeReceived Time.Posix
 
 
 type Section
@@ -109,6 +115,7 @@ type alias Model =
     , receiptParseState : Maybe ReceiptReadingState
     , storedClaims : Maybe { pagadores : List Api.RepartijaClaim, deudores : List Api.RepartijaClaim }
     , hasUnsavedChanges : Bool
+    , datePicker : DatePicker.DatePicker
     }
 
 
@@ -137,10 +144,12 @@ init grupoId store =
       , receiptParseState = Nothing
       , storedClaims = Nothing
       , hasUnsavedChanges = False
+      , datePicker = DatePicker.init Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
         , Effect.getCurrentUser grupoId
+        , Effect.sendCmd <| Task.perform CurrentTimeReceived Time.now
         ]
     )
         |> andThenSendWarningOnExit
@@ -167,6 +176,13 @@ validatePagoInSection section participantes =
                 V.succeed ""
             )
         |> V.andMap
+            (if section == PagoConfirmation || section == BasicPagoData then
+                V.field "fecha" validateFecha
+
+             else
+                V.succeed (Time.millisToPosix 0)
+            )
+        |> V.andMap
             (if section == PagoConfirmation || section == PagadoresSection then
                 V.field "distribucion_pagadores" <| validateDistribucion participantes
 
@@ -189,8 +205,22 @@ validatePago participantes =
         |> V.andMap (V.field "monto" Monto.validateMonto)
         |> V.andMap (V.succeed False)
         |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
+        |> V.andMap (V.field "fecha" validateFecha)
         |> V.andMap (V.field "distribucion_pagadores" <| validateDistribucion participantes)
         |> V.andMap (V.field "distribucion_deudores" <| validateDistribucion participantes)
+
+
+validateFecha : V.Validation CustomFormError Time.Posix
+validateFecha =
+    V.customValidation V.string
+        (\str ->
+            case Iso8601.toTime str of
+                Ok posix ->
+                    Ok posix
+
+                Err _ ->
+                    Err (FormError.value FormError.InvalidString)
+        )
 
 
 validateId : Validation CustomFormError ULID
@@ -438,6 +468,54 @@ update store userId msg model =
             , Effect.none
             )
 
+        CurrentTimeReceived time ->
+            let
+                isoString =
+                    Iso8601.fromTime time
+
+                formMsg =
+                    Form.Input "fecha" Form.Text (FormField.String isoString)
+            in
+            ( { model
+                | datePicker = DatePicker.setSelectedDate (Just time) model.datePicker
+                , pagoForm = Form.update (validatePago participantes) formMsg model.pagoForm
+                , pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) formMsg model.pagoBasicoForm
+              }
+            , Effect.none
+            )
+
+        DatePickerMsg datePickerMsg ->
+            let
+                ( newDatePicker, datePickerCmd ) =
+                    DatePicker.update datePickerMsg model.datePicker
+
+                updatedModel =
+                    case DatePicker.getSelectedDate newDatePicker of
+                        Just posix ->
+                            let
+                                isoString =
+                                    Iso8601.fromTime posix
+
+                                formMsg =
+                                    Form.Input "fecha" Form.Text (FormField.String isoString)
+                            in
+                            { model
+                                | datePicker = newDatePicker
+                                , pagoForm = Form.update (validatePago participantes) formMsg model.pagoForm
+                                , pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) formMsg model.pagoBasicoForm
+                                , pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) formMsg model.pagadoresForm
+                                , deudoresForm = Form.update (validatePagoInSection DeudoresSection participantes) formMsg model.deudoresForm
+                                , hasUnsavedChanges = True
+                            }
+
+                        Nothing ->
+                            { model | datePicker = newDatePicker }
+            in
+            ( updatedModel
+            , Effect.sendCmd (Cmd.map DatePickerMsg datePickerCmd)
+            )
+                |> andThenSendWarningOnExit
+
         ReceiptImageSelected file ->
             if List.member (File.mime file) allowedMimeTypesForReceiptUpload then
                 ( { model | receiptParseState = Just ReadingFile }
@@ -585,6 +663,7 @@ update store userId msg model =
                                     [ Form.setString "id" pagoId
                                     , Form.setString "nombre" pago.nombre
                                     , Form.setString "monto" (Monto.toString pago.monto)
+                                    , Form.setString "fecha" (Iso8601.fromTime pago.fecha)
                                     , Form.setGroup "distribucion_pagadores" (distribucionToForm pago.pagadores)
                                     , Form.setGroup "distribucion_deudores" (distribucionToForm pago.deudores)
                                     ]
@@ -602,6 +681,7 @@ update store userId msg model =
                                 , resumenPago = Loading
                                 , storedClaims = Just claimsToStore
                                 , hasUnsavedChanges = False
+                                , datePicker = DatePicker.init (Just pago.fecha)
                               }
                             , Effect.none
                             )
@@ -939,7 +1019,7 @@ view store model =
                             [ div [ class "content mb-4" ]
                                 [ p [] [ text "Ingresá la información básica del pago: un nombre descriptivo y el monto total." ]
                                 ]
-                            , pagoForm grupo.participantes model.pagoBasicoForm
+                            , pagoForm grupo.participantes model.pagoBasicoForm model.datePicker
                             ]
 
                     PagadoresSection ->
@@ -1123,14 +1203,17 @@ view store model =
             }
 
 
-pagoForm : List Participante -> Form CustomFormError Pago -> Html Msg
-pagoForm participantes form =
+pagoForm : List Participante -> Form CustomFormError Pago -> DatePicker.DatePicker -> Html Msg
+pagoForm participantes form datePicker =
     let
         nombreField =
             Form.getFieldAsString "nombre" form
 
         montoField =
             Form.getFieldAsString "monto" form
+
+        fechaField =
+            Form.getFieldAsString "fecha" form
     in
     Html.form [ class "mb-6", onSubmit <| SubmitCurrentSection ]
         [ div [ class "field mb-5" ]
@@ -1160,6 +1243,16 @@ pagoForm participantes form =
                         , classList [ ( "is-danger", hasErrorField montoField ) ]
                         ]
                 , errorForField montoField
+                ]
+            , div [ class "field mb-5" ]
+                [ label [ class "label" ]
+                    [ text "Fecha" ]
+                , div [ class "control" ]
+                    [ Html.map DatePickerMsg <|
+                        DatePicker.view datePicker
+                            SingleDatePicker.defaultSettings
+                    ]
+                , errorForField fechaField
                 ]
             ]
         , button [ class "button is-primary", disabled (Form.getOutput form == Nothing) ] [ text "Siguiente seccion" ]
