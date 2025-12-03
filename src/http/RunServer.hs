@@ -6,6 +6,7 @@ module RunServer
     ) where
 
 import BananaSplit.PgRoll qualified as PgRoll
+import BananaSplit.Receipts (ReceiptsReaderConfig(..))
 
 import Conferer qualified
 
@@ -55,9 +56,11 @@ runBackend = do
 
   let appState = App
         { beamConnectionPool = beamPool
-        , openRouterApiKey = openRouterKey
-        , openRouterModels = openRouterModels
-        , httpManager = httpManager
+        , receipts = ReceiptsReaderConfig
+          { apiKey = openRouterKey
+          , models = openRouterModels
+          , manager = httpManager
+          }
         }
 
   let shutdownAction = do

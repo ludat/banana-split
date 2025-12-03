@@ -1,32 +1,31 @@
-{-# LANGUAGE NoFieldSelectors #-}
-{-# LANGUAGE OverloadedStrings #-}
-
 module Site.Handler.Receipt
     ( handleReceiptImageParse
     ) where
 
-import Control.Monad.Reader (asks)
+import BananaSplit.Monto
+import BananaSplit.Receipts (ParsedReceipt (..), ParsedReceiptItem (..), analyzeReceiptImage)
+import BananaSplit.Repartija
+import BananaSplit.ULID
 
 import Protolude
 
-import Site.Api (ParsedReceiptItem (..), ReceiptImageRequest (..), ReceiptImageResponse (..))
-import Site.OpenRouter (OpenRouterConfig (..), ParsedReceipt (..), analyzeReceiptImage)
+import Site.Api (ReceiptImageRequest (..), ReceiptImageResponse (..))
 import Site.Types
 
 handleReceiptImageParse :: ReceiptImageRequest -> AppHandler ReceiptImageResponse
 handleReceiptImageParse req = do
-  apiKey <- asks (.openRouterApiKey)
-  models <- asks (.openRouterModels)
-  manager <- asks (.httpManager)
-
-  let config = OpenRouterConfig
-        { apiKey = apiKey
-        , httpManager = manager
-        , models = models
-        }
+  config <- asks (.receipts)
 
   result <- liftIO $ analyzeReceiptImage config req.imageBase64
 
   case result of
     Left err -> pure $ ReceiptImageError { error = err }
-    Right parsedReceipt -> pure $ ReceiptImageSuccess { items = parsedReceipt.items }
+    Right parsedReceipt -> pure $ ReceiptImageSuccess { items =
+        parsedReceipt.items
+        <&> \i -> RepartijaItem
+                { id = nullUlid
+                , nombre = i.nombre
+                , monto = scientificToMonto i.monto
+                , cantidad = i.cantidad
+                }
+      }

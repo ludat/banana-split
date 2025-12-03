@@ -628,7 +628,7 @@ waitAndCheckNecessaryData =
     Effect.sendCmd <| Task.perform (\_ -> CheckIfPagoAndGrupoArePresent) (Process.sleep 100)
 
 
-addItemsToForm : String -> List Api.ParsedReceiptItem -> Form CustomFormError Pago -> Validation CustomFormError Pago -> Form CustomFormError Pago
+addItemsToForm : String -> List Api.RepartijaItem -> Form CustomFormError Pago -> Validation CustomFormError Pago -> Form CustomFormError Pago
 addItemsToForm prefix items form validation =
     let
         -- Get the current number of items in the form

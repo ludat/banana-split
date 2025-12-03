@@ -61,6 +61,7 @@ common base-settings
     servant-server,
     string-conversions,
     string-interpolate,
+    temporary,
     text,
     time,
     ulid,
@@ -101,6 +102,20 @@ library database
   build-depends:
     banana-split
 
+library receipts
+  import: base-settings
+  hs-source-dirs: src/receipts/
+  other-modules:
+    BananaSplit.Receipts.OpenRouter
+    BananaSplit.Receipts.Tesseract
+    BananaSplit.Receipts.Types
+
+  exposed-modules:
+    BananaSplit.Receipts
+
+  build-depends:
+    banana-split
+
 library elm
   import: base-settings
   hs-source-dirs: src/elm/
@@ -123,13 +138,13 @@ library http
     Site.Handler.Receipt
     Site.Handler.Repartijas
     Site.Handler.Utils
-    Site.OpenRouter
     Site.Server
     Site.Types
 
   build-depends:
     banana-split,
     banana-split:database,
+    banana-split:receipts,
 
 executable banana-split
   import: base-settings, threaded-rts

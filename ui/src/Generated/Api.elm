@@ -44,13 +44,13 @@ jsonEncReceiptImageRequest  val =
 
 
 type ReceiptImageResponse  =
-    ReceiptImageSuccess {items: (List ParsedReceiptItem)}
+    ReceiptImageSuccess {items: (List RepartijaItem)}
     | ReceiptImageError {error: String}
 
 jsonDecReceiptImageResponse : Json.Decode.Decoder ( ReceiptImageResponse )
 jsonDecReceiptImageResponse =
     let jsonDecDictReceiptImageResponse = Dict.fromList
-            [ ("ReceiptImageSuccess", Json.Decode.lazy (\_ -> Json.Decode.map ReceiptImageSuccess (   Json.Decode.succeed (\pitems -> {items = pitems})    |> required "items" (Json.Decode.list (jsonDecParsedReceiptItem)))))
+            [ ("ReceiptImageSuccess", Json.Decode.lazy (\_ -> Json.Decode.map ReceiptImageSuccess (   Json.Decode.succeed (\pitems -> {items = pitems})    |> required "items" (Json.Decode.list (jsonDecRepartijaItem)))))
             , ("ReceiptImageError", Json.Decode.lazy (\_ -> Json.Decode.map ReceiptImageError (   Json.Decode.succeed (\perror -> {error = perror})    |> required "error" (Json.Decode.string))))
             ]
     in  decodeSumObjectWithSingleField  "ReceiptImageResponse" jsonDecDictReceiptImageResponse
@@ -58,32 +58,9 @@ jsonDecReceiptImageResponse =
 jsonEncReceiptImageResponse : ReceiptImageResponse -> Value
 jsonEncReceiptImageResponse  val =
     let keyval v = case v of
-                    ReceiptImageSuccess vs -> ("ReceiptImageSuccess", encodeObject [("items", (Json.Encode.list jsonEncParsedReceiptItem) vs.items)])
+                    ReceiptImageSuccess vs -> ("ReceiptImageSuccess", encodeObject [("items", (Json.Encode.list jsonEncRepartijaItem) vs.items)])
                     ReceiptImageError vs -> ("ReceiptImageError", encodeObject [("error", Json.Encode.string vs.error)])
     in encodeSumObjectWithSingleField keyval val
-
-
-
-type alias ParsedReceiptItem  =
-   { nombre: String
-   , monto: Monto
-   , cantidad: Int
-   }
-
-jsonDecParsedReceiptItem : Json.Decode.Decoder ( ParsedReceiptItem )
-jsonDecParsedReceiptItem =
-   Json.Decode.succeed (\pnombre pmonto pcantidad -> {nombre = pnombre, monto = pmonto, cantidad = pcantidad})
-   |> required "nombre" (Json.Decode.string)
-   |> required "monto" (jsonDecMonto)
-   |> required "cantidad" (Json.Decode.int)
-
-jsonEncParsedReceiptItem : ParsedReceiptItem -> Value
-jsonEncParsedReceiptItem  val =
-   Json.Encode.object
-   [ ("nombre", Json.Encode.string val.nombre)
-   , ("monto", jsonEncMonto val.monto)
-   , ("cantidad", Json.Encode.int val.cantidad)
-   ]
 
 
 

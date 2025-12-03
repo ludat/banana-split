@@ -2,39 +2,33 @@
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
 
-module Site.OpenRouter
-    ( OpenRouterConfig (..)
-    , ParsedReceipt (..)
-    , ParsedReceiptItem
+module BananaSplit.Receipts.OpenRouter
+    ( ParsedReceipt (..)
+    , ParsedReceiptItem (..)
     , analyzeReceiptImage
+    , analyzeReceiptText
     ) where
 
+
+import BananaSplit.Receipts.Tesseract (extractTextFromImage)
+import BananaSplit.Receipts.Types
 
 import Control.Arrow (left)
 import Control.Monad.Error.Class
 
 import Data.Aeson
+import Data.Scientific (Scientific)
 import Data.String.Interpolate (__i)
-import Data.Text qualified as T
 import Data.Text qualified as Text
-import Data.Text.Encoding qualified as TE
+import Data.Text.Encoding qualified as Text
 
-import Network.HTTP.Client (Manager)
 import Network.HTTP.Req
 
 import Protolude
-
-import Site.Api (ParsedReceiptItem)
-
-
-data OpenRouterConfig = OpenRouterConfig
-  { apiKey :: Text
-  , httpManager :: Manager
-  , models :: [Text]
-  }
 
 newtype ParsedReceipt = ParsedReceipt
   { items :: [ParsedReceiptItem]
@@ -42,10 +36,18 @@ newtype ParsedReceipt = ParsedReceipt
   deriving stock (Show, Eq, Generic)
   deriving anyclass (ToJSON, FromJSON)
 
+data ParsedReceiptItem = ParsedReceiptItem
+  { nombre :: Text
+  , monto :: Scientific
+  , cantidad :: Int
+  }
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
 data OpenRouterRequest = OpenRouterRequest
   { model :: Text
   , messages :: [OpenRouterMessage]
-  , fallbackModels :: [Text]
+  , models :: [Text]
   }
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON)
@@ -97,27 +99,29 @@ newtype ResponseMessage = ResponseMessage
   deriving stock (Show, Generic)
   deriving anyclass (FromJSON)
 
-analyzeReceiptImage :: OpenRouterConfig -> Text -> IO (Either Text ParsedReceipt)
-analyzeReceiptImage config base64Image = runExceptT $ do
-  (model, fallbackModels) <- case config.models of
-    [] -> throwError "Reading recepts is not properly configured. Talk to an admin."
-    (model:fallback) -> pure (model, fallback)
+analyzeReceiptImage :: ReceiptsReaderConfig -> Text -> IO (Either Text ParsedReceipt)
+analyzeReceiptImage config base64Image =
+  analyzeReceiptFromMessage config $ ImageContent (ImageUrl $ "data:" <> base64Image)
 
-  let prompt = [__i|
-        You are a receipt parser. Analyze this receipt image and extract the items in JSON format.
-        Return EXACTLY this JSON structure with the extracted data:"
-        {
-          "items": [
-            {
-              "nombre": "item name",
-              "monto": {"lugaresDespuesDeLaComa": 2, "valor": 1050},
-              "cantidad": 1
-            }
-          ]
-        }
+analyzeReceiptText :: ReceiptsReaderConfig -> Text -> IO (Either Text ParsedReceipt)
+analyzeReceiptText config base64Image = runExceptT $ do
+  ocrText <- ExceptT $ liftIO $ extractTextFromImage base64Image
+
+  ExceptT $ analyzeReceiptFromMessage config $ TextContent ocrText
+
+analyzeReceiptFromMessage :: ReceiptsReaderConfig -> MessageContent -> IO (Either Text ParsedReceipt)
+analyzeReceiptFromMessage config msg = runReq defaultHttpConfig {httpConfigCheckResponse = \_ _ _ -> Nothing} $ runExceptT $ do
+  (model, fallbackModels) <- case config.models of
+    [] -> throwError "Reading receipts is not properly configured. Talk to an admin."
+    (model:fallback) -> pure (model, fallback)
+  let systemPrompt = [__i|
+        You are a receipt parser. Analyze receipt text extracted via OCR and extract the items in JSON format.
+        Return EXACTLY this JSON structure with the extracted data:
+
+        #{encode $ ParsedReceipt [ParsedReceiptItem "food" 10.50 1]}
 
         CRITICAL INSTRUCTIONS:
-        - For monto, valor is the amount in CENTS (multiply by 100). Example: $10.50 becomes 1050
+        - Sometimes the reciept mentions both total price and unitary price for an item, make sure to always pick the total
         - lugaresDespuesDeLaComa must always be 2 for currency
         - cantidad is the quantity of each item (default to 1 if not specified)
         - Extract ALL items from the receipt
@@ -130,28 +134,28 @@ analyzeReceiptImage config base64Image = runExceptT $ do
         - The error text MUST be in spanish always
         |]
 
-  let imageUrl = "data:" <> base64Image
   let requestBody = OpenRouterRequest
         { model = model
-        , fallbackModels = fallbackModels
+        , models = fallbackModels
         , messages =
             [ OpenRouterMessage
+                { role = "system"
+                , content = [TextContent systemPrompt]
+                }
+            , OpenRouterMessage
                 { role = "user"
-                , content =
-                    [ TextContent prompt
-                    , ImageContent (ImageUrl imageUrl)
-                    ]
+                , content = [msg]
                 }
             ]
         }
-  putText "starting request"
+  putText $ "starting request with model: " <> show config.models
   response <- req
     POST
     (https "openrouter.ai" /: "api" /: "v1" /: "chat" /: "completions")
     (ReqBodyJson requestBody)
     bsResponse
     (mconcat
-      [ header "Authorization" ("Bearer " <> TE.encodeUtf8 config.apiKey)
+      [ header "Authorization" ("Bearer " <> Text.encodeUtf8 config.apiKey)
       , header "HTTP-Referer" "https://split.ludat.io"
       , header "X-Title" "Banana Split Receipt Parser"
       ]
@@ -165,7 +169,7 @@ analyzeReceiptImage config base64Image = runExceptT $ do
     (c:_) -> pure c
 
   let cleanedText = contentText
-        & T.dropWhile (/= '{')
-        & T.dropWhileEnd (/= '}')
+        & Text.dropWhile (/= '{')
+        & Text.dropWhileEnd (/= '}')
 
-  liftEither $ left Text.pack $ eitherDecodeStrict $ TE.encodeUtf8 cleanedText
+  liftEither $ left Text.pack $ eitherDecodeStrict $ Text.encodeUtf8 cleanedText

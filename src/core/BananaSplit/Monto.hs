@@ -9,12 +9,14 @@ module BananaSplit.Monto
     , inMonto
     , mkMonto
     , monto2Text
+    , scientificToMonto
     , times
     ) where
 
 
 import Data.Aeson
 import Data.Decimal as Decimal
+import Data.Scientific
 
 import Elm.TyRep (EAlias (..), ETCon (..), EType (..), ETypeDef (..), ETypeName (..),
                   IsElmDefinition (..))
@@ -98,3 +100,15 @@ instance IsElmDefinition Monto where
       , ea_newtype = False
       , ea_unwrap_unary = True
       })
+
+scientificToMonto :: Scientific -> Monto
+scientificToMonto = Monto . scientificToDecimal
+
+scientificToDecimal :: Scientific -> Decimal
+scientificToDecimal s =
+    let c = coefficient s
+        e = base10Exponent s
+    in
+        if e >= 0
+           then Decimal 0 (c * 10 ^ e)
+           else Decimal (fromIntegral $ negate e) c

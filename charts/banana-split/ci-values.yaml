@@ -4,7 +4,8 @@ image:
   tag: latest
 
 config:
-  BANANASPLIT_OPENROUTER_APIKEY: ""
+  BANANASPLIT_OPENROUTER_APIKEY: "fakevalue"
+  BANANASPLIT_OPENROUTER_MODELS_0: "fakevalue"
 
 ingress:
   enabled: true

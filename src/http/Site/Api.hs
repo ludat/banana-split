@@ -100,15 +100,9 @@ data ReceiptImageRequest = ReceiptImageRequest
   { imageBase64 :: Text
   } deriving (Show, Eq, Generic)
 
-data ParsedReceiptItem = ParsedReceiptItem
-  { nombre :: Text
-  , monto :: Monto
-  , cantidad :: Int
-  } deriving (Show, Eq, Generic)
-
 data ReceiptImageResponse
   = ReceiptImageSuccess
-      { items :: [ParsedReceiptItem]
+      { items :: [RepartijaItem]
       }
   | ReceiptImageError
       { error :: Text
@@ -121,5 +115,4 @@ Elm.deriveBoth Elm.defaultOptions ''Netos
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
 Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest
-Elm.deriveBoth Elm.defaultOptions ''ParsedReceiptItem
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageResponse

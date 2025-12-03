@@ -3,23 +3,19 @@ module Site.Types
     , AppHandler
     ) where
 
+import BananaSplit.Receipts
+
 import Control.Monad.Reader
 
 import Data.Pool
 
 import Database.Beam.Postgres qualified as Beam
 
-import Network.HTTP.Client (Manager)
-
-import Protolude hiding (Handler)
-
 import Servant
 
 data App = App
   { beamConnectionPool :: Pool Beam.Connection
-  , openRouterApiKey :: Text
-  , openRouterModels :: [Text]
-  , httpManager :: Manager
+  , receipts :: ReceiptsReaderConfig
   }
 
 type AppHandler = ReaderT App Handler

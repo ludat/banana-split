@@ -16,9 +16,6 @@ import Servant.Elm
 
 import Site.Api
 
-import Site.Handler.Grupos (CreateGrupoParams)
-
-
 generateElmFiles :: IO ()
 generateElmFiles = do
   putText "Generating elm files..."
@@ -41,7 +38,6 @@ generateElmFiles = do
     [ DefineElm (Proxy :: Proxy CreateGrupoParams)
     , DefineElm (Proxy :: Proxy ReceiptImageRequest)
     , DefineElm (Proxy :: Proxy ReceiptImageResponse)
-    , DefineElm (Proxy :: Proxy ParsedReceiptItem)
     , DefineElm (Proxy :: Proxy ParticipanteAddParams)
     , DefineElm (Proxy :: Proxy ResumenGrupo)
     , DefineElm (Proxy :: Proxy ResumenPago)
