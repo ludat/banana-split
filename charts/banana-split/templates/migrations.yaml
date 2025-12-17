@@ -2,7 +2,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: "{{ include "banana-split.fullname" . }}-migration-start-{{ include "banana-split.tag" . | sha1sum | substr 0 8 }}"
+  name: "{{ include "banana-split.fullname" . }}-migration-start-{{ printf "%s/%s" (include "banana-split.tag" .) (include "banana-split.configChecksum" .) | sha1sum | substr 0 8 }}"
   labels:
     {{- include "banana-split.labels" . | nindent 4 }}
     role: migration-start
