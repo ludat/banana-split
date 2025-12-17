@@ -12,10 +12,6 @@ spec:
   template:
     metadata:
       name: {{ include "banana-split.fullname" . }}-migration-start
-      {{- if .Values.config }}
-      annotations:
-        {{- include "banana-split.configChecksum" . | nindent 8 }}
-      {{- end }}
       labels:
         {{- include "banana-split.labels" . | nindent 8 }}
         role: migration-start
@@ -77,10 +73,6 @@ spec:
   template:
     metadata:
       name: {{ include "banana-split.fullname" . }}-migration-complete
-      {{- if .Values.config }}
-      annotations:
-        {{- include "banana-split.configChecksum" . | nindent 8 }}
-      {{- end }}
       labels:
         {{- include "banana-split.labels" . | nindent 8 }}
         role: migration-complete
