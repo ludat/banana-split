@@ -1334,19 +1334,30 @@ repartijaForm prefix form receiptParseState =
             ]
         , case receiptParseState of
             Just ReadingFile ->
-                div [ class "notification is-info is-light mb-4" ]
-                    [ text "📄 Leyendo la imagen..."
+                div []
+                    [ progress [ class "progress is-small is-primary" ] []
+                    , div [ class "notification is-info is-light mb-4" ]
+                        [ text "📄 Leyendo la imagen..."
+                        ]
                     ]
 
             Just ProcessingWithAI ->
-                div [ class "notification is-info is-light mb-4" ]
-                    [ text "🤖 Analizando el recibo con inteligencia artificial... ✨"
+                div [] <|
+                    [ progress [ class "progress is-small is-primary" ] []
+                    , div [ class "notification is-info is-light mb-4" ]
+                        [ p [] [ text "🤖 Analizando el recibo con inteligencia artificial... ✨" ] ]
+                    , div [ class "notification is-warning is-light mb-4" ]
+                        [ p [] [ text "⚠️ Esto podría tomar varios minutos, no cierres esta ventana" ]
+                        ]
                     ]
 
             Just (ErrorProcessing errorMsg) ->
-                div [ class "notification is-danger is-light mb-4" ]
-                    [ button [ class "delete", type_ "button", onClick ClearReceiptError ] []
-                    , text ("❌ " ++ errorMsg)
+                div []
+                    [ progress [ class "progress is-small is-danger", value "100" ] []
+                    , div [ class "notification is-danger is-light mb-4" ]
+                        [ button [ class "delete", type_ "button", onClick ClearReceiptError ] []
+                        , text ("❌ Algo salió mal: " ++ errorMsg)
+                        ]
                     ]
 
             Nothing ->
