@@ -1,0 +1,39 @@
+extraResources:
+  - |
+    apiVersion: postgresql.cnpg.io/v1
+    kind: Cluster
+    metadata:
+      name: {{ include "banana-split.fullname" . }}-db
+      annotations:
+        argocd.argoproj.io/sync-wave: '-20'
+    spec:
+      bootstrap:
+        initdb:
+          database: bananasplit
+          owner: app
+          postInitSQL:
+            - ALTER USER app WITH SUPERUSER;
+      storage:
+        size: 5Gi
+helm:
+  chart: banana-split
+  path: ""
+  repoURL: "ghcr.io/ludat/charts"
+  targetRevision: "0.2.0"
+image:
+  tag: "e7e711e59ff8916f6948118a5c74ebdc0752ed0b"
+ingress:
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  className: nginx
+  enabled: true
+  hosts:
+    - host: stg.split.ludat.io
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - hosts:
+        - stg.split.ludat.io
+      secretName: bananasplit-stg-http-tls

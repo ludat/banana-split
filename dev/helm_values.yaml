@@ -1,0 +1,4 @@
+helm:
+  targetRevision: "e7e711e59ff8916f6948118a5c74ebdc0752ed0b"
+image:
+  tag: "e7e711e59ff8916f6948118a5c74ebdc0752ed0b"
