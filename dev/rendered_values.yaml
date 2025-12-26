@@ -17,7 +17,7 @@ postCommand: |
     banana-split migrations complete
   fi
 
-listen:
+expose:
   enabled: true
   host: dev.split.ludat.io
 
