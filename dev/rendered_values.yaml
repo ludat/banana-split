@@ -1,6 +1,6 @@
 helm:
   repoURL: https://github.com/ludat/herokucito.git
-  chart:
+  chart: ""
   path: charts/herokucito-web
   targetRevision: HEAD
 
