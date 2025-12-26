@@ -21,7 +21,8 @@ expose:
   enabled: true
   host: dev.split.ludat.io
 
-secrets: []
+secrets:
+  - config
 
 port: 8000
 
