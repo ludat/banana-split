@@ -1,39 +1,30 @@
-extraResources:
-  - |
-    apiVersion: postgresql.cnpg.io/v1
-    kind: Cluster
-    metadata:
-      name: {{ include "banana-split.fullname" . }}-db
-      annotations:
-        argocd.argoproj.io/sync-wave: '-20'
-    spec:
-      bootstrap:
-        initdb:
-          database: bananasplit
-          owner: app
-          postInitSQL:
-            - ALTER USER app WITH SUPERUSER;
-      storage:
-        size: 5Gi
 helm:
+  repoURL: "https://github.com/ludat/herokucito.git"
   chart: ""
-  path: "charts/banana-split"
-  repoURL: "https://github.com/ludat/banana-split.git"
-  targetRevision: "e7e711e59ff8916f6948118a5c74ebdc0752ed0b"
+  path: "charts/herokucito-web"
+  targetRevision: "HEAD"
+
 image:
+  repository: ghcr.io/ludat/banana-split
   tag: "e7e711e59ff8916f6948118a5c74ebdc0752ed0b"
-ingress:
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
-  className: nginx
+
+preCommand: |
+  timeout 10 banana-split migrations init
+  banana-split migrations migrate ./migrations
+
+postCommand: |
+  if ! [[ "$(timeout 10 banana-split migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/')" = "Complete" ]]; then
+    banana-split migrations complete
+  fi
+
+listen:
   enabled: true
-  hosts:
-    - host: dev.split.ludat.io
-      paths:
-        - path: /
-          pathType: Prefix
-  tls:
-    - hosts:
-        - dev.split.ludat.io
-      secretName: bananasplit-dev-http-tls
+  host: dev.split.ludat.io
+
+secrets: []
+
+port: 8000
+
+postgres:
+  enabled: true
+  uriEnv: BANANASPLIT_DATABASE_URL
