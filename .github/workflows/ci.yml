@@ -59,8 +59,9 @@ jobs:
 
       - name: Push image tag
         run: |
-          docker tag banana-split ghcr.io/ludat/banana-split:${{ github.sha }}
-          docker push ghcr.io/ludat/banana-split:${{ github.sha }}
+          TAG="${{ github.ref_name }}-$(date +%Y%m%d-%H%M%S)"
+          docker tag banana-split "ghcr.io/ludat/banana-split:$TAG"
+          docker push "ghcr.io/ludat/banana-split:$TAG"
         if: |
           github.ref == 'refs/heads/main' ||
           github.event_name == 'pull_request'
