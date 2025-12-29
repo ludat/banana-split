@@ -57,9 +57,15 @@ jobs:
           github.ref == 'refs/heads/main' ||
           github.event_name == 'pull_request'
 
+      - name: Inject enhanced GitHub environment variables
+        uses: rlespinasse/github-slug-action@v5
+        with:
+          slug-maxlength: 50
+
       - name: Push image tag
         run: |
-          TAG="${{ github.ref_name }}-$(date +%Y%m%d-%H%M%S)"
+          TAG="${GITHUB_REF_SLUG}-$(date +%Y%m%d-%H%M%S)"
+
           docker tag banana-split "ghcr.io/ludat/banana-split:$TAG"
           docker push "ghcr.io/ludat/banana-split:$TAG"
         if: |
