@@ -2,23 +2,8 @@ name: "Runs whole CI"
 
 on:
   push:
-    branches:
-      - "main"
-
-  pull_request:
-    types:
-      - opened
-      - synchronize
-      - reopened
 
 jobs:
-  debug:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Dump GitHub context
-        env:
-          GITHUB_CONTEXT: ${{ toJson(github) }}
-        run: echo "$GITHUB_CONTEXT"
   tests:
     runs-on: ubuntu-latest
     steps:
