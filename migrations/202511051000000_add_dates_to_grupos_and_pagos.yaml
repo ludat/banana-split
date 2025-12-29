@@ -1,0 +1,15 @@
+operations:
+  - add_column:
+      table: grupos
+      column:
+        name: fecha
+        type: timestamptz
+        nullable: false
+        default: NOW()
+  - add_column:
+      table: pagos
+      column:
+        name: fecha
+        type: timestamptz
+        nullable: false
+        default: NOW()

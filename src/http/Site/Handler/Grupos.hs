@@ -21,8 +21,8 @@ import Site.Types
 
 
 handleCreateGrupo :: CreateGrupoParams -> AppHandler Grupo
-handleCreateGrupo CreateGrupoParams{grupoName, grupoParticipante} = do
-  runBeam $ createGrupo grupoName grupoParticipante
+handleCreateGrupo params = do
+  runBeam $ createGrupo params
 
 handleGetNetos :: ULID -> AppHandler ResumenGrupo
 handleGetNetos grupoId = do
@@ -40,6 +40,7 @@ handleGetNetos grupoId = do
         { id = shallowGrupo.id
         , participantes = shallowGrupo.participantes
         , nombre = shallowGrupo.nombre
+        , fecha = shallowGrupo.fecha
         , pagos = pagos
         }
   let deudas = calcularDeudasTotales grupo

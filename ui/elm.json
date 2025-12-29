@@ -21,9 +21,13 @@
             "elm/url": "1.0.0",
             "elm-community/list-extra": "8.7.0",
             "etaque/elm-form": "4.0.0",
+            "justinmimbs/date": "4.1.0",
+            "justinmimbs/time-extra": "1.2.0",
             "krisajenkins/remotedata": "6.1.0",
+            "mercurymedia/elm-datetime-picker": "11.0.0",
             "obiloud/numeric-decimal": "3.0.1",
-            "pablen/toasty": "1.2.0"
+            "pablen/toasty": "1.2.0",
+            "rtfeldman/elm-iso8601-date-strings": "1.1.4"
         },
         "indirect": {
             "elm/parser": "1.1.0",
