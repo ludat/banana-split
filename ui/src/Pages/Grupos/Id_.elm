@@ -144,7 +144,7 @@ view : Store -> Model -> View Msg
 view store model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
-            { title = "Impossible"
+            { title = "Loading..."
             , body = []
             }
 
