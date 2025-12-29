@@ -6,7 +6,7 @@ helm:
 
 image:
   repository: ghcr.io/ludat/banana-split
-  tag: main-20251228-002655
+  tag: main-20251229-114205
 
 preCommand: |
   timeout 10 banana-split migrations init
