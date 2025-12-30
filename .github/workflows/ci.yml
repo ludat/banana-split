@@ -81,9 +81,6 @@ jobs:
     defaults:
       run:
         working-directory: ./charts/banana-split/
-    if: |
-      github.ref == 'refs/heads/main' ||
-      github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Login to GitHub Container Registry
