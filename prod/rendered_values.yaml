@@ -1,0 +1,34 @@
+helm:
+  repoURL: https://github.com/ludat/herokucito.git
+  chart: ""
+  path: "charts/herokucito-web"
+  targetRevision: HEAD
+
+image:
+  repository: ghcr.io/ludat/banana-split
+
+preCommand: |
+  timeout 10 banana-split migrations init
+  banana-split migrations migrate ./migrations
+
+postCommand: |
+  if ! [[ "$(timeout 10 banana-split migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/')" = "Complete" ]]; then
+    banana-split migrations complete
+  fi
+
+expose:
+  enabled: true
+  host: split.ludat.io
+
+secrets:
+  - config
+
+port: 8000
+
+postgres:
+  enabled: true
+  uriEnv: BANANASPLIT_DATABASE_URL
+  ha: true
+  backups: true
+  failsafe: true
+
