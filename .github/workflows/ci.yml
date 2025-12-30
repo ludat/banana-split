@@ -6,6 +6,8 @@ on:
 jobs:
   tests:
     runs-on: ubuntu-latest
+    outputs:
+      image_tag: ${{ steps.push_tag.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -42,8 +44,15 @@ jobs:
           slug-maxlength: 50
 
       - name: Push image tag
+        id: push_tag
         run: |
-          TAG="${GITHUB_REF_SLUG}-$(date +%Y%m%d-%H%M%S)"
+          DATE_TAG="$(date +%Y%m%d-%H%M%S)"
+          if [ "$GITHUB_REF_SLUG" = "main" ]; then
+            TAG="$DATE_TAG"
+          else
+            TAG="${GITHUB_REF_SLUG}-$DATE_TAG"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
 
           docker tag banana-split "ghcr.io/ludat/banana-split:$TAG"
           docker push "ghcr.io/ludat/banana-split:$TAG"
@@ -72,9 +81,6 @@ jobs:
     defaults:
       run:
         working-directory: ./charts/banana-split/
-    if: |
-      github.ref == 'refs/heads/main' ||
-      github.event_name == 'pull_request'
     steps:
       - uses: actions/checkout@v4
       - name: Login to GitHub Container Registry
@@ -94,7 +100,7 @@ jobs:
 
       - name: Pull image tag
         run: |
-          docker pull ghcr.io/ludat/banana-split:${{ github.sha }}
+          docker pull ghcr.io/ludat/banana-split:${{ needs.tests.outputs.image_tag }}
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
@@ -113,7 +119,7 @@ jobs:
           NS=split-$RANDOM
           kubectl create namespace "$NS"
           kubectl config set-context kind-chart-testing --namespace "$NS"
-          docker tag ghcr.io/ludat/banana-split:${{ github.sha }} kind-registry:5000/banana-split:latest
+          docker tag ghcr.io/ludat/banana-split:${{ needs.tests.outputs.image_tag }} kind-registry:5000/banana-split:latest
           docker push kind-registry:5000/banana-split:latest
 
           kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
