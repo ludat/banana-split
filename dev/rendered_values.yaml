@@ -1,7 +1,7 @@
 helm:
   repoURL: ghcr.io/ludat/charts
   chart: herokucito-web
-  targetRevision: 0.2.1
+  targetRevision: 0.3.1
   path: 
 
 image:
