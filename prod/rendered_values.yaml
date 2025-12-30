@@ -1,8 +1,8 @@
 helm:
-  repoURL: https://github.com/ludat/herokucito.git
-  chart: ""
-  path: "charts/herokucito-web"
-  targetRevision: HEAD
+  repoURL: ghcr.io/ludat/charts
+  chart: herokucito-web
+  path: 
+  targetRevision: 0.2.0
 
 image:
   repository: ghcr.io/ludat/banana-split
