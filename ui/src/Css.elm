@@ -1,4 +1,4 @@
-module Css exposing (barras_precio, arrow_container, is_size_6_5, eje_vertical, toasts_container, toast)
+module Css exposing (barras_precio, arrow_container, is_size_6_5, eje_vertical, toasts_container, toast, spin)
 
 import Html
 import Html.Attributes
@@ -32,3 +32,8 @@ toasts_container =
 toast : Html.Attribute msg
 toast =
     Html.Attributes.class "toast"
+
+
+spin : Html.Attribute msg
+spin =
+    Html.Attributes.class "spin"

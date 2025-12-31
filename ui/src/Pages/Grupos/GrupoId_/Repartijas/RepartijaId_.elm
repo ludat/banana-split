@@ -1,6 +1,7 @@
 module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
+import Css
 import Effect exposing (Effect)
 import FeatherIcons
 import Form exposing (Form)
@@ -60,6 +61,7 @@ type alias Model =
     , repartijaId : ULID
     , claimForm : Form CustomFormError RepartijaClaim
     , participanteClaimsModal : Maybe ParticipanteId
+    , pendingItemOperation : Maybe ULID
     }
 
 
@@ -69,6 +71,7 @@ init grupoId repartijaId store =
       , repartijaId = repartijaId
       , claimForm = Form.initial [] validateClaim
       , participanteClaimsModal = Nothing
+      , pendingItemOperation = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -121,12 +124,12 @@ update maybeParticipanteId store msg model =
             )
 
         CreateRepartijaClaimResponded _ ->
-            ( model
+            ( { model | pendingItemOperation = Nothing }
             , Effect.batch [ Store.refreshRepartija model.repartijaId ]
             )
 
         DeleteClaim repartijaClaim ->
-            ( model
+            ( { model | pendingItemOperation = Just repartijaClaim.itemId }
             , Effect.batch
                 [ Effect.sendCmd <|
                     Api.deleteRepartijasClaimsByClaimId
@@ -136,7 +139,7 @@ update maybeParticipanteId store msg model =
             )
 
         DeleteRepartijaClaimResponded _ ->
-            ( model
+            ( { model | pendingItemOperation = Nothing }
             , Effect.batch
                 [ Store.refreshRepartija model.repartijaId
                 ]
@@ -181,7 +184,7 @@ update maybeParticipanteId store msg model =
                                                 |> (\x -> x + deltaCantidad)
                                                 |> Basics.max 0
                                     in
-                                    ( model
+                                    ( { model | pendingItemOperation = Just item.id }
                                     , if newCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
@@ -199,7 +202,7 @@ update maybeParticipanteId store msg model =
                                     )
 
                                 Nothing ->
-                                    ( model
+                                    ( { model | pendingItemOperation = Just item.id }
                                     , if deltaCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
@@ -223,7 +226,7 @@ update maybeParticipanteId store msg model =
         JoinCurrentClaim item ->
             case maybeParticipanteId of
                 Just participanteId ->
-                    ( model
+                    ( { model | pendingItemOperation = Just item.id }
                     , Effect.sendCmd <|
                         Api.putRepartijasByRepartijaId model.repartijaId
                             { id = emptyUlid
@@ -240,7 +243,7 @@ update maybeParticipanteId store msg model =
         LeaveCurrentClaim item ->
             case maybeParticipanteId of
                 Just participanteId ->
-                    ( model
+                    ( { model | pendingItemOperation = Just item.itemId }
                     , Effect.sendCmd <|
                         Api.deleteRepartijasClaimsByClaimId item.id
                             (RemoteData.fromResult >> DeleteRepartijaClaimResponded)
@@ -270,7 +273,7 @@ view userId store model =
             { title = grupo.nombre ++ ": " ++ repartija.nombre
             , body =
                 [ viewParticipantes grupo repartija
-                , viewRepartijaItems userId grupo repartija
+                , viewRepartijaItems userId grupo repartija model.pendingItemOperation
                 , viewParticipanteClaimsModal model grupo repartija
 
                 -- , button
@@ -342,8 +345,8 @@ viewParticipantes grupo repartija =
         ]
 
 
-viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Html Msg
-viewRepartijaItems userId grupo repartija =
+viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Maybe ULID -> Html Msg
+viewRepartijaItems userId grupo repartija pendingItemOperation =
     table [ class "table is-fullwidth is-striped is-hoverable" ] <|
         [ thead []
             [ tr []
@@ -356,7 +359,7 @@ viewRepartijaItems userId grupo repartija =
             ]
         , tbody []
             (repartija.items
-                |> List.map (\item -> viewClaimsLine userId grupo repartija item)
+                |> List.map (\item -> viewClaimsLine userId grupo repartija item pendingItemOperation)
                 |> (\x ->
                         List.append x
                             [ tr []
@@ -417,8 +420,8 @@ interpretClaims originalClaims =
     List.foldl folder NoClaims originalClaims
 
 
-viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Html Msg
-viewClaimsLine userId grupo repartija item =
+viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Maybe ULID -> Html Msg
+viewClaimsLine userId grupo repartija item pendingItemOperation =
     let
         claimsForItem =
             repartija.claims
@@ -431,6 +434,36 @@ viewClaimsLine userId grupo repartija item =
         itemRepartidoState : ItemRepartidoState
         itemRepartidoState =
             calculateItemRepartidoState item itemsClaimed
+
+        isPending : Bool
+        isPending =
+            pendingItemOperation == Just item.id
+
+        loadingOverlay : Html Msg
+        loadingOverlay =
+            if isPending then
+                div
+                    [ style "position" "absolute"
+                    , style "top" "0"
+                    , style "left" "0"
+                    , style "right" "0"
+                    , style "bottom" "0"
+                    , style "display" "flex"
+                    , style "align-items" "center"
+                    , style "justify-content" "center"
+                    , style "z-index" "10"
+                    , style "opacity" "0.9"
+                    , class "has-background-dark"
+                    ]
+                    [ span [ class "icon is-large", Css.spin ]
+                        [ FeatherIcons.loader
+                            |> FeatherIcons.withSize 32
+                            |> FeatherIcons.toHtml []
+                        ]
+                    ]
+
+            else
+                text ""
     in
     tr []
         [ td [ class "is-vcentered" ] [ text <| item.nombre ]
@@ -447,74 +480,85 @@ viewClaimsLine userId grupo repartija item =
                         ]
 
                 ( Just _, RepartidoIncorrectamente, Just userClaim ) ->
-                    div [ class "buttons has-addons" ]
+                    div [ class "buttons has-addons", style "position" "relative" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
                         , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger" ] [ text "-1" ]
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
                         , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-danger" ] [ text "Salirse" ]
+                        , loadingOverlay
                         ]
 
                 ( Just _, RepartidoIncorrectamente, Nothing ) ->
-                    div [ class "buttons has-addons" ]
+                    div [ class "buttons has-addons", style "position" "relative" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        , loadingOverlay
                         ]
 
                 ( Just _, RepartidoExactamente { deltaDeCantidad }, Just userClaim ) ->
                     case compararConCero deltaDeCantidad of
                         ExactamenteCero ->
-                            div [ class "buttons has-addons" ]
+                            div [ class "buttons has-addons", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined" ] [ text "-1" ]
+                                , loadingOverlay
                                 ]
 
                         QuedaCortoPor _ ->
-                            div [ class "buttons has-addons" ]
+                            div [ class "buttons has-addons", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link " ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined" ] [ text "-1" ]
+                                , loadingOverlay
                                 ]
 
                         SePasaPor _ ->
-                            div [ class "buttons has-addons" ]
+                            div [ class "buttons has-addons", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger" ] [ text "-1" ]
+                                , loadingOverlay
                                 ]
 
                 ( Just _, RepartidoExactamente { deltaDeCantidad }, Nothing ) ->
                     case compararConCero deltaDeCantidad of
                         ExactamenteCero ->
-                            div [ class "buttons has-addons" ]
+                            div [ class "buttons has-addons", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined", disabled True ] [ text "-1" ]
+                                , loadingOverlay
                                 ]
 
                         QuedaCortoPor _ ->
-                            div [ class "buttons has-addons" ]
+                            div [ class "buttons has-addons", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link " ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined", disabled True ] [ text "-1" ]
+                                , loadingOverlay
                                 ]
 
                         SePasaPor _ ->
-                            div [ class "buttons has-addons" ]
+                            div [ class "buttons has-addons", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger", disabled True ] [ text "-1" ]
+                                , loadingOverlay
                                 ]
 
                 ( Just _, RepartidoEquitativamenteEntre _, Nothing ) ->
-                    div [ class "buttons has-addons" ]
+                    div [ class "buttons has-addons", style "position" "relative" ]
                         [ button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        , loadingOverlay
                         ]
 
                 ( Just _, RepartidoEquitativamenteEntre _, Just userClaim ) ->
-                    div [ class "buttons has-addons" ]
+                    div [ class "buttons has-addons", style "position" "relative" ]
                         [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-danger is-outlined" ] [ text "Salirse" ]
+                        , loadingOverlay
                         ]
 
                 ( Just _, SinRepartir, _ ) ->
-                    div [ class "buttons has-addons" ]
+                    div [ class "buttons has-addons", style "position" "relative" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
                         , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "-1" ]
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        , loadingOverlay
                         ]
             ]
         ]
