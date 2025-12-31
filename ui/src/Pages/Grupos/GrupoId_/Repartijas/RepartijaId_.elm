@@ -484,20 +484,20 @@ viewClaimsLine userId grupo repartija item =
                     case compararConCero deltaDeCantidad of
                         ExactamenteCero ->
                             div [ class "buttons has-addons" ]
-                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link", disabled True ] [ text "-1" ]
+                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
+                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined", disabled True ] [ text "-1" ]
                                 ]
 
                         QuedaCortoPor _ ->
                             div [ class "buttons has-addons" ]
-                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
+                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link " ] [ text "+1" ]
+                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined", disabled True ] [ text "-1" ]
                                 ]
 
                         SePasaPor _ ->
                             div [ class "buttons has-addons" ]
-                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-warning" ] [ text "-1" ]
+                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
+                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger", disabled True ] [ text "-1" ]
                                 ]
 
                 ( Just _, RepartidoEquitativamenteEntre _, Nothing ) ->
