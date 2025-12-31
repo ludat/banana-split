@@ -110,7 +110,7 @@ type Msg
     | OpenDesdoblarItemModal RepartijaItem
     | DeleteClaim RepartijaClaim
     | CreateRepartijaClaimResponded (WebData RepartijaClaim)
-    | DeleteRepartijaClaimResponded (WebData String)
+    | DeleteRepartijaClaimResponded ULID (WebData String)
     | OpenParticipanteClaimsPopup ParticipanteId
     | CloseParticipanteClaimsPopup
 
@@ -123,10 +123,26 @@ update maybeParticipanteId store msg model =
             , Effect.none
             )
 
-        CreateRepartijaClaimResponded _ ->
-            ( { model | pendingItemOperation = Nothing }
-            , Effect.batch [ Store.refreshRepartija model.repartijaId ]
-            )
+        CreateRepartijaClaimResponded webDataClaim ->
+            case ( webDataClaim, Store.getRepartija model.repartijaId store ) of
+                ( Success newClaim, Success repartija ) ->
+                    let
+                        updatedRepartija =
+                            { repartija
+                                | claims =
+                                    repartija.claims
+                                        |> List.filter (\c -> not (c.itemId == newClaim.itemId && c.participante == newClaim.participante))
+                                        |> (::) newClaim
+                            }
+                    in
+                    ( { model | pendingItemOperation = Nothing }
+                    , Store.updateRepartija model.repartijaId updatedRepartija
+                    )
+
+                _ ->
+                    ( { model | pendingItemOperation = Nothing }
+                    , Effect.batch [ Store.refreshRepartija model.repartijaId ]
+                    )
 
         DeleteClaim repartijaClaim ->
             ( { model | pendingItemOperation = Just repartijaClaim.itemId }
@@ -134,16 +150,27 @@ update maybeParticipanteId store msg model =
                 [ Effect.sendCmd <|
                     Api.deleteRepartijasClaimsByClaimId
                         repartijaClaim.id
-                        (RemoteData.fromResult >> DeleteRepartijaClaimResponded)
+                        (RemoteData.fromResult >> DeleteRepartijaClaimResponded repartijaClaim.id)
                 ]
             )
 
-        DeleteRepartijaClaimResponded _ ->
-            ( { model | pendingItemOperation = Nothing }
-            , Effect.batch
-                [ Store.refreshRepartija model.repartijaId
-                ]
-            )
+        DeleteRepartijaClaimResponded claimId webDataResponse ->
+            case ( webDataResponse, Store.getRepartija model.repartijaId store ) of
+                ( Success _, Success repartija ) ->
+                    let
+                        updatedRepartija =
+                            { repartija
+                                | claims = repartija.claims |> List.filter (\c -> c.id /= claimId)
+                            }
+                    in
+                    ( { model | pendingItemOperation = Nothing }
+                    , Store.updateRepartija model.repartijaId updatedRepartija
+                    )
+
+                _ ->
+                    ( { model | pendingItemOperation = Nothing }
+                    , Effect.batch [ Store.refreshRepartija model.repartijaId ]
+                    )
 
         OpenDesdoblarItemModal repartijaItem ->
             ( model
@@ -198,7 +225,7 @@ update maybeParticipanteId store msg model =
                                       else
                                         Effect.sendCmd <|
                                             Api.deleteRepartijasClaimsByClaimId oldClaim.id
-                                                (RemoteData.fromResult >> DeleteRepartijaClaimResponded)
+                                                (RemoteData.fromResult >> DeleteRepartijaClaimResponded oldClaim.id)
                                     )
 
                                 Nothing ->
@@ -246,7 +273,7 @@ update maybeParticipanteId store msg model =
                     ( { model | pendingItemOperation = Just item.itemId }
                     , Effect.sendCmd <|
                         Api.deleteRepartijasClaimsByClaimId item.id
-                            (RemoteData.fromResult >> DeleteRepartijaClaimResponded)
+                            (RemoteData.fromResult >> DeleteRepartijaClaimResponded item.id)
                     )
 
                 Nothing ->
