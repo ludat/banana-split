@@ -426,48 +426,11 @@ viewClaimsLine userId grupo repartija item =
 
         itemsClaimed : ItemClaimsState
         itemsClaimed =
-            claimsForItem
-                |> interpretClaims
+            interpretClaims claimsForItem
 
         itemRepartidoState : ItemRepartidoState
         itemRepartidoState =
             calculateItemRepartidoState item itemsClaimed
-
-        plusOneButtonClass : String
-        plusOneButtonClass =
-            case itemRepartidoState of
-                RepartidoExactamente ->
-                    "button is-warning"
-
-                RepartidoDeMas _ ->
-                    "button is-warning"
-
-                _ ->
-                    "button is-link"
-
-        minusOneButtonClass : String
-        minusOneButtonClass =
-            case itemRepartidoState of
-                RepartidoExactamente ->
-                    "button is-warning"
-
-                FaltaRepartir _ ->
-                    "button is-warning"
-
-                _ ->
-                    "button is-link"
-
-        participarButtonClass : String
-        participarButtonClass =
-            case itemsClaimed of
-                OnlyExactClaims _ ->
-                    "button is-warning"
-
-                MixedClaims _ ->
-                    "button is-warning"
-
-                _ ->
-                    "button is-link"
     in
     tr []
         [ td [ class "is-vcentered" ] [ text <| item.nombre ]
@@ -475,68 +438,105 @@ viewClaimsLine userId grupo repartija item =
             [ text <| "$" ++ Decimal.toString (Monto.toDecimal item.monto)
             ]
         , td [ class "has-text-right is-vcentered" ] [ text <| String.fromInt item.cantidad ]
-        , td [] [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed ]
+        , td [] [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemRepartidoState ]
         , td []
-            [ case ( userId, itemsClaimed, claimsForItem |> find (\c -> Just c.participante == userId) ) of
+            [ case ( userId, itemRepartidoState, claimsForItem |> find (\c -> Just c.participante == userId) ) of
                 ( Nothing, _, _ ) ->
                     div [ class "buttons has-addons" ]
                         [ text "Selecciona tu nombre arriba a la derecha"
                         ]
 
-                ( Just _, MixedClaims _, Just userClaim ) ->
+                ( Just _, RepartidoIncorrectamente, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
-                        , button
-                            [ onClick <| ChangeCurrentClaim item -1
-                            , class minusOneButtonClass
-                            , disabled (userClaim.cantidad == Nothing)
-                            ]
-                            [ text "-1" ]
-                        , button
-                            [ onClick <| JoinCurrentClaim item
-                            , class participarButtonClass
-                            , disabled (userClaim.cantidad == Nothing)
-                            ]
-                            [ text "Participé" ]
-                        , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link" ] [ text "Salirse" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger" ] [ text "-1" ]
+                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
+                        , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-danger" ] [ text "Salirse" ]
                         ]
 
-                ( Just _, MixedClaims _, Nothing ) ->
+                ( Just _, RepartidoIncorrectamente, Nothing ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class participarButtonClass ] [ text "Participé" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
                         ]
 
-                ( Just _, OnlyExactClaims _, Just userClaim ) ->
+                ( Just _, RepartidoExactamente { deltaDeCantidad }, Just userClaim ) ->
+                    case compararConCero deltaDeCantidad of
+                        ExactamenteCero ->
+                            div [ class "buttons has-addons" ]
+                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
+                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined" ] [ text "-1" ]
+                                ]
+
+                        QuedaCortoPor _ ->
+                            div [ class "buttons has-addons" ]
+                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link " ] [ text "+1" ]
+                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined" ] [ text "-1" ]
+                                ]
+
+                        SePasaPor _ ->
+                            div [ class "buttons has-addons" ]
+                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
+                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger" ] [ text "-1" ]
+                                ]
+
+                ( Just _, RepartidoExactamente { deltaDeCantidad }, Nothing ) ->
+                    case compararConCero deltaDeCantidad of
+                        ExactamenteCero ->
+                            div [ class "buttons has-addons" ]
+                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link", disabled True ] [ text "-1" ]
+                                ]
+
+                        QuedaCortoPor _ ->
+                            div [ class "buttons has-addons" ]
+                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link" ] [ text "-1" ]
+                                ]
+
+                        SePasaPor _ ->
+                            div [ class "buttons has-addons" ]
+                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
+                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-warning" ] [ text "-1" ]
+                                ]
+
+                ( Just _, RepartidoEquitativamenteEntre _, Nothing ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class minusOneButtonClass ] [ text "-1" ]
+                        [ button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
                         ]
 
-                ( Just _, OnlyExactClaims _, Nothing ) ->
+                ( Just _, RepartidoEquitativamenteEntre _, Just userClaim ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass, disabled True ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-link", disabled True ] [ text "-1" ]
+                        [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-danger is-outlined" ] [ text "Salirse" ]
                         ]
 
-                ( Just _, OnlyParticipationClaims _, Just userClaim ) ->
+                ( Just _, SinRepartir, _ ) ->
                     div [ class "buttons has-addons" ]
-                        [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-link" ] [ text "Salirse" ]
-                        ]
-
-                ( Just _, OnlyParticipationClaims _, Nothing ) ->
-                    div [ class "buttons has-addons" ]
-                        [ button [ onClick <| JoinCurrentClaim item, class participarButtonClass ] [ text "Participé" ]
-                        ]
-
-                ( Just _, NoClaims, _ ) ->
-                    div [ class "buttons has-addons" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class plusOneButtonClass ] [ text "+1" ]
+                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
                         , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "-1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class participarButtonClass ] [ text "Participé" ]
+                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
                         ]
             ]
         ]
+
+
+type Delta
+    = SePasaPor Int
+    | QuedaCortoPor Int
+    | ExactamenteCero
+
+
+compararConCero : Int -> Delta
+compararConCero n =
+    case compare n 0 of
+        GT ->
+            SePasaPor n
+
+        EQ ->
+            ExactamenteCero
+
+        LT ->
+            QuedaCortoPor <| negate n
 
 
 type ItemClaimsState
@@ -549,10 +549,8 @@ type ItemClaimsState
 type ItemRepartidoState
     = SinRepartir
     | RepartidoIncorrectamente
-    | RepartidoExactamente
-    | RepartidoEquitativamenteEntre Int
-    | FaltaRepartir Int
-    | RepartidoDeMas Int
+    | RepartidoExactamente { deltaDeCantidad : Int }
+    | RepartidoEquitativamenteEntre { cantidadDeParticipantes : Int }
 
 
 calculateItemRepartidoState : RepartijaItem -> ItemClaimsState -> ItemRepartidoState
@@ -567,32 +565,19 @@ calculateItemRepartidoState item itemsClaimed =
                     exactClaims |> List.map Tuple.first |> List.sum
 
                 cantidadFaltante =
-                    item.cantidad - cantidadClaimeado
+                    cantidadClaimeado - item.cantidad
             in
-            case compare 0 cantidadFaltante of
-                LT ->
-                    FaltaRepartir cantidadFaltante
-
-                EQ ->
-                    RepartidoExactamente
-
-                GT ->
-                    RepartidoDeMas (cantidadFaltante * -1)
+            RepartidoExactamente { deltaDeCantidad = cantidadFaltante }
 
         OnlyParticipationClaims repartijaClaims ->
-            RepartidoEquitativamenteEntre <| List.length repartijaClaims
+            RepartidoEquitativamenteEntre { cantidadDeParticipantes = List.length repartijaClaims }
 
         NoClaims ->
             SinRepartir
 
 
-viewClaimProgressAndDropdown : GrupoLike g -> Repartija -> RepartijaItem -> List RepartijaClaim -> ItemClaimsState -> Html Msg
-viewClaimProgressAndDropdown grupo repartija item claimsForItem itemsClaimed =
-    let
-        itemRepartidoState : ItemRepartidoState
-        itemRepartidoState =
-            calculateItemRepartidoState item itemsClaimed
-    in
+viewClaimProgressAndDropdown : GrupoLike g -> Repartija -> RepartijaItem -> List RepartijaClaim -> ItemRepartidoState -> Html Msg
+viewClaimProgressAndDropdown grupo repartija item claimsForItem itemRepartidoState =
     div [ class "is-flex" ]
         [ div
             [ class "dropdown is-hoverable"
@@ -647,17 +632,15 @@ viewRepartidoState itemRepartidoState =
                 RepartidoIncorrectamente ->
                     class "is-danger"
 
-                RepartidoExactamente ->
-                    class "is-success"
+                RepartidoExactamente { deltaDeCantidad } ->
+                    if deltaDeCantidad == 0 then
+                        class "is-success"
+
+                    else
+                        class "is-warning"
 
                 RepartidoEquitativamenteEntre _ ->
                     class "is-success"
-
-                FaltaRepartir _ ->
-                    class "is-warning"
-
-                RepartidoDeMas _ ->
-                    class "is-warning"
     in
     button
         [ class "button"
@@ -673,17 +656,19 @@ viewRepartidoState itemRepartidoState =
             RepartidoIncorrectamente ->
                 text "Mal repartido"
 
-            RepartidoExactamente ->
-                i [ class "icon" ] <| [ FeatherIcons.toHtml [] FeatherIcons.check ]
+            RepartidoExactamente { deltaDeCantidad } ->
+                case compararConCero deltaDeCantidad of
+                    ExactamenteCero ->
+                        i [ class "icon" ] <| [ FeatherIcons.toHtml [] FeatherIcons.check ]
 
-            RepartidoEquitativamenteEntre cantidadDeParticipantes ->
+                    QuedaCortoPor n ->
+                        text <| "Falta repartir " ++ String.fromInt n
+
+                    SePasaPor n ->
+                        text <| "Sobran " ++ String.fromInt n
+
+            RepartidoEquitativamenteEntre { cantidadDeParticipantes } ->
                 text <| "Equitativo entre " ++ String.fromInt cantidadDeParticipantes
-
-            FaltaRepartir restoARepartir ->
-                text <| "Falta repartir " ++ String.fromInt restoARepartir
-
-            RepartidoDeMas sobras ->
-                text <| "Sobran " ++ String.fromInt sobras
         , FeatherIcons.chevronDown
             |> FeatherIcons.toHtml []
         ]
