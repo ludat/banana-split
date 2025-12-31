@@ -502,12 +502,12 @@ viewClaimsLine userId grupo repartija item pendingItemOperation =
         , td []
             [ case ( userId, itemRepartidoState, claimsForItem |> find (\c -> Just c.participante == userId) ) of
                 ( Nothing, _, _ ) ->
-                    div [ class "buttons has-addons" ]
+                    div [ class "buttons has-addons is-centered" ]
                         [ text "Selecciona tu nombre arriba a la derecha"
                         ]
 
                 ( Just _, RepartidoIncorrectamente, Just userClaim ) ->
-                    div [ class "buttons has-addons", style "position" "relative" ]
+                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
                         , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger" ] [ text "-1" ]
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
@@ -516,7 +516,7 @@ viewClaimsLine userId grupo repartija item pendingItemOperation =
                         ]
 
                 ( Just _, RepartidoIncorrectamente, Nothing ) ->
-                    div [ class "buttons has-addons", style "position" "relative" ]
+                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
                         , loadingOverlay
@@ -525,21 +525,21 @@ viewClaimsLine userId grupo repartija item pendingItemOperation =
                 ( Just _, RepartidoExactamente { deltaDeCantidad }, Just userClaim ) ->
                     case compararConCero deltaDeCantidad of
                         ExactamenteCero ->
-                            div [ class "buttons has-addons", style "position" "relative" ]
+                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined" ] [ text "-1" ]
                                 , loadingOverlay
                                 ]
 
                         QuedaCortoPor _ ->
-                            div [ class "buttons has-addons", style "position" "relative" ]
+                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link " ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined" ] [ text "-1" ]
                                 , loadingOverlay
                                 ]
 
                         SePasaPor _ ->
-                            div [ class "buttons has-addons", style "position" "relative" ]
+                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger" ] [ text "-1" ]
                                 , loadingOverlay
@@ -548,40 +548,40 @@ viewClaimsLine userId grupo repartija item pendingItemOperation =
                 ( Just _, RepartidoExactamente { deltaDeCantidad }, Nothing ) ->
                     case compararConCero deltaDeCantidad of
                         ExactamenteCero ->
-                            div [ class "buttons has-addons", style "position" "relative" ]
+                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined", disabled True ] [ text "-1" ]
                                 , loadingOverlay
                                 ]
 
                         QuedaCortoPor _ ->
-                            div [ class "buttons has-addons", style "position" "relative" ]
+                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link " ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined", disabled True ] [ text "-1" ]
                                 , loadingOverlay
                                 ]
 
                         SePasaPor _ ->
-                            div [ class "buttons has-addons", style "position" "relative" ]
+                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
                                 [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
                                 , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger", disabled True ] [ text "-1" ]
                                 , loadingOverlay
                                 ]
 
                 ( Just _, RepartidoEquitativamenteEntre _, Nothing ) ->
-                    div [ class "buttons has-addons", style "position" "relative" ]
+                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
                         [ button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
                         , loadingOverlay
                         ]
 
                 ( Just _, RepartidoEquitativamenteEntre _, Just userClaim ) ->
-                    div [ class "buttons has-addons", style "position" "relative" ]
+                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
                         [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-danger is-outlined" ] [ text "Salirse" ]
                         , loadingOverlay
                         ]
 
                 ( Just _, SinRepartir, _ ) ->
-                    div [ class "buttons has-addons", style "position" "relative" ]
+                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
                         [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
                         , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "-1" ]
                         , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
