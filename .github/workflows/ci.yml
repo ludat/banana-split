@@ -41,7 +41,7 @@ jobs:
       - name: Inject enhanced GitHub environment variables
         uses: rlespinasse/github-slug-action@v5
         with:
-          slug-maxlength: 50
+          slug-maxlength: 40
 
       - name: Push image tag
         id: push_tag

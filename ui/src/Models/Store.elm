@@ -127,6 +127,11 @@ refreshResumen grupoId =
     Effect.sendStoreMsg <| FetchResumen grupoId
 
 
+updateRepartija : ULID -> Repartija -> Effect msg
+updateRepartija repartijaId repartija =
+    Effect.sendStoreMsg <| RepartijaFetched repartijaId (Success repartija)
+
+
 refreshPagos : ULID -> Effect msg
 refreshPagos grupoId =
     Effect.sendStoreMsg <| FetchPagos grupoId
