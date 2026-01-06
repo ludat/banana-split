@@ -1,8 +1,8 @@
 module BananaSplit.TestUtils
-    ( deudas
-    , distribucionMontoEquitativo
+    ( distribucionMontoEquitativo
     , distribucionMontosEspecificos
     , fakeUlid
+    , netos
     , participante
     ) where
 
@@ -20,8 +20,8 @@ fakeUlid integer =
     Right ulid -> ulid
     Left e -> error e
 
-deudas :: [(ParticipanteId, Monto)] -> Deudas Monto
-deudas l =
+netos :: [(ParticipanteId, Monto)] -> Netos Monto
+netos l =
   l
   & fmap (uncurry mkDeuda)
   & mconcat

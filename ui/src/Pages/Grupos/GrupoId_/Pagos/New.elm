@@ -3,7 +3,6 @@ module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg(..), Section(..), an
 import Base64.Encode
 import Browser.Dom
 import Bytes exposing (Bytes)
-import Bytes.Encode
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
@@ -15,18 +14,15 @@ import Form.Field as FormField
 import Form.Init as Form
 import Form.Input as FormInput
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Deudas, Distribucion, ErrorResumen(..), Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, Repartija, RepartijaItem, ResumenDeudas(..), ResumenPago, ShallowGrupo, TipoDistribucion(..), ULID)
+import Generated.Api as Api exposing (Distribucion, ErrorResumen(..), Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos(..), ResumenPago, ShallowGrupo, TipoDistribucion(..), ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
 import Html.Events exposing (on, onClick, onSubmit)
 import Http
 import Json.Decode as Decode
-import Json.Encode
 import Layouts
-import List.Extra as List
-import Models.Grupo exposing (lookupNombreParticipante, lookupParticipantes)
+import Models.Grupo exposing (lookupNombreParticipante)
 import Models.Monto as Monto
-import Models.Pago as Pago
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
@@ -822,45 +818,45 @@ subscriptions model =
 -- VIEW
 
 
-getTotalFromResumen : ResumenDeudas -> Maybe Monto
+getTotalFromResumen : ResumenNetos -> Maybe Monto
 getTotalFromResumen resumen =
     case resumen of
-        DeudasIncomputables total _ ->
+        NetosIncomputables total _ ->
             total
 
-        ResumenDeudas total _ ->
+        ResumenNetos total _ ->
             total
 
 
-getParticipantesFromResumen : ResumenDeudas -> Maybe (List ParticipanteId)
+getParticipantesFromResumen : ResumenNetos -> Maybe (List ParticipanteId)
 getParticipantesFromResumen resumen =
     case resumen of
-        DeudasIncomputables _ _ ->
+        NetosIncomputables _ _ ->
             Nothing
 
-        ResumenDeudas _ deudas ->
+        ResumenNetos _ deudas ->
             deudas
                 |> List.map (\( p, _ ) -> p)
                 |> Just
 
 
-getErrorFromResumen : ResumenDeudas -> Maybe String
+getErrorFromResumen : ResumenNetos -> Maybe String
 getErrorFromResumen resumen =
     case resumen of
-        DeudasIncomputables _ (ErrorResumen error _) ->
+        NetosIncomputables _ (ErrorResumen error _) ->
             error
 
-        ResumenDeudas _ _ ->
+        ResumenNetos _ _ ->
             Nothing
 
 
-getDeudasFromResumen : ResumenDeudas -> Maybe (Deudas Monto)
+getDeudasFromResumen : ResumenNetos -> Maybe (Netos Monto)
 getDeudasFromResumen resumen =
     case resumen of
-        DeudasIncomputables _ _ ->
+        NetosIncomputables _ _ ->
             Nothing
 
-        ResumenDeudas _ deudas ->
+        ResumenNetos _ deudas ->
             Just deudas
 
 

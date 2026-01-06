@@ -1,7 +1,7 @@
 module Components.BarrasDeNetos exposing (..)
 
 import Css
-import Generated.Api exposing (Grupo, Netos)
+import Generated.Api exposing (Grupo, Monto, Netos)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Models.Grupo exposing (GrupoLike, lookupParticipante)
@@ -9,7 +9,7 @@ import Models.Monto as Monto
 import Numeric.Decimal as Decimal
 
 
-viewNetosBarras : GrupoLike g -> Netos -> Html msg
+viewNetosBarras : GrupoLike g -> Netos Monto -> Html msg
 viewNetosBarras grupo netos =
     let
         maximo =

@@ -42,12 +42,12 @@ handleGetNetos grupoId = do
         , nombre = shallowGrupo.nombre
         , pagos = pagos
         }
-  let deudas = calcularDeudasTotales grupo
+  let netos = calcularNetosTotales grupo
   pure $ ResumenGrupo
-    { netos = Netos deudas
+    { netos = netos
     , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
     , cantidadPagos = length grupo.pagos
-    , transaccionesParaSaldar = minimizeTransactions deudas
+    , transaccionesParaSaldar = minimizeTransactions netos
     }
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
