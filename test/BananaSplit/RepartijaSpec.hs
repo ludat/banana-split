@@ -20,12 +20,12 @@ fakeRepartija =
 spec :: Spec
 spec = describe "validar repartija" $ do
   it "una repartija vacia genera un pago vacio" $ do
-    calcularDeudasRepartija fakeRepartija
-      `shouldBe` deudas []
+    calcularNetosRepartija fakeRepartija
+      `shouldBe` netos []
   it "con un items repartidos generamos un pago acorde" $ do
     let participante1 = participante 32
     let item1 = fakeUlid 2
-    calcularDeudasRepartija (fakeRepartija
+    calcularNetosRepartija (fakeRepartija
         { extra = 0
         , items =
           [ RepartijaItem item1 "Birrita" 100 1
@@ -34,14 +34,14 @@ spec = describe "validar repartija" $ do
           [ RepartijaClaim (fakeUlid 100) participante1 item1 (Just 1)
           ]
         })
-      `shouldBe` deudas [
+      `shouldBe` netos [
         (participante1, 100)
       ]
   it "con un item repartido entre varios participantes generamos un pago acorde" $ do
     let participante1 = participante 32
     let participante2 = participante 33
     let item1 = fakeUlid 2
-    calcularDeudasRepartija (fakeRepartija
+    calcularNetosRepartija (fakeRepartija
         { extra = 0
         , items =
           [ RepartijaItem item1 "Birrita" 200 2
@@ -51,7 +51,7 @@ spec = describe "validar repartija" $ do
           , RepartijaClaim (fakeUlid 101) participante2 item1 (Just 1)
           ]
         })
-      `shouldBe` deudas
+      `shouldBe` netos
         [ (participante1, 100)
         , (participante2, 100)
         ]
@@ -61,7 +61,7 @@ spec = describe "validar repartija" $ do
     let birrita = fakeUlid 2
     let papitas = fakeUlid 3
 
-    calcularDeudasRepartija (fakeRepartija
+    calcularNetosRepartija (fakeRepartija
         { extra = 0
         , items =
           [ RepartijaItem birrita "Birrita" 200 2
@@ -74,7 +74,7 @@ spec = describe "validar repartija" $ do
           , RepartijaClaim (fakeUlid 103) participante2 papitas Nothing
           ]
         })
-      `shouldBe`  deudas
+      `shouldBe`  netos
             [ (participante1, 100)
             , (participante2, 100)
             , (participante1, 150)
@@ -85,7 +85,7 @@ spec = describe "validar repartija" $ do
     let participante2 = participante 33
     let birrita = fakeUlid 2
     let papitas = fakeUlid 3
-    calcularDeudasRepartija (fakeRepartija
+    calcularNetosRepartija (fakeRepartija
         { extra = 50
         , items =
           [ RepartijaItem birrita "Birrita" 200 2
@@ -97,7 +97,7 @@ spec = describe "validar repartija" $ do
           , RepartijaClaim (fakeUlid 102) participante1 papitas Nothing
           ]
         })
-      `shouldBe` deudas
+      `shouldBe` netos
             [ (participante1, 100)
             , (participante2, 100)
             , (participante1, 300)
@@ -109,7 +109,7 @@ spec = describe "validar repartija" $ do
     let participante2 = participante 33
     let birrita = fakeUlid 2
     let papitas = fakeUlid 3
-    calcularDeudasRepartija (fakeRepartija
+    calcularNetosRepartija (fakeRepartija
         { extra = 0
         , items =
           [ RepartijaItem birrita "Birrita" 200 2
@@ -120,7 +120,7 @@ spec = describe "validar repartija" $ do
           , RepartijaClaim (fakeUlid 101) participante2 birrita (Just 1)
           ]
         })
-      `shouldBe` deudas
+      `shouldBe` netos
         [ (participante1, 100)
         , (participante2, 100)
         , (participante1, 150)

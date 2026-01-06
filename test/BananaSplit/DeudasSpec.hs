@@ -32,9 +32,9 @@ spec = do
       , deudores = distribucionMontosEspecificos []
       }
 
-  describe "calcularDeudas" $ do
-    it "calcula deudas de un pago montos especificos en pagadores y deudores" $ do
-      calcularDeudasPago pagoValido
+  describe "calcularNetos" $ do
+    it "calcula netos de un pago montos especificos en pagadores y deudores" $ do
+      calcularNetosPago pagoValido
         { monto = 500
         , pagadores = distribucionMontosEspecificos
           [ (u1, 500)
@@ -42,44 +42,44 @@ spec = do
         , deudores = distribucionMontosEspecificos
           [ (u2, 500)
           ]
-        } `shouldBe` deudas
+        } `shouldBe` netos
           [ (u1, 500)
           , (u2, -500)
           ]
 
-  describe "calcularDeudasMontoEquitativo" $ do
+  describe "calcularNetosMontoEquitativo" $ do
     it "entre varias personas devuelve equitativo" $ do
-      getDeudas 300
+      getNetos 300
         (distribucionMontoEquitativo [u1, u2, u3])
-        `shouldBe` Just (deudas
+        `shouldBe` Just (netos
           [ (u1, 100)
           , (u2, 100)
           , (u3, 100)
           ])
-    it "calcular deudas de un monto equitativo siempre suma el total de nuevo" $ property $ \(Positive m :: Positive Int) (NonEmpty us :: NonEmptyList (Positive Integer))-> do
+    it "calcular netos de un monto equitativo siempre suma el total de nuevo" $ property $ \(Positive m :: Positive Int) (NonEmpty us :: NonEmptyList (Positive Integer))-> do
       let monto = fromIntegral @_ @Monto m
       let participants =  us <&> participante . getPositive
-      (getDeudas monto
+      (getNetos monto
         (distribucionMontoEquitativo participants)
-            & fmap totalDeudas)
+            & fmap totalNetos)
             `shouldBe` Just monto
 
-    it "con monto cero devuelve deudas vacias" $ do
+    it "con monto cero devuelve netos vacias" $ do
       pendingWith "Not sure if this is the right default right now"
-      getDeudas 0
+      getNetos 0
         (distribucionMontoEquitativo [u1, u2, u3])
-        `shouldBe` Just (deudas [])
+        `shouldBe` Just (netos [])
 
   describe "simplify transactions" $ do
     it "simplifica ningun transaccion trivialmente" $ do
       minimizeTransactions mempty `shouldBe` []
 
     it "simplifica una sola transaccion trivialmente" $ do
-      let transacciones = deudas [(participante 1, 10), (participante 2, -10)]
+      let transacciones = netos [(participante 1, 10), (participante 2, -10)]
 
       minimizeTransactions transacciones `shouldBe` [Transaccion (participante 2) (participante 1) 10]
     it "simplifica un caso en el que el algoritmo greedy falla" $ do
-      minimizeTransactions (deudas
+      minimizeTransactions (netos
         [ (u1, 10)
         , (u2, -5)
         , (u3, -5)
@@ -88,22 +88,22 @@ spec = do
         , (u6, -3)
         ])`shouldSatisfy` ((== 4) . length)
     it "devuelve vacio si se le pasa vacio" $ do
-      minimizeTransactions (deudas []) `shouldBe` []
+      minimizeTransactions (netos []) `shouldBe` []
     it "simplifica un caso con numeros con coma" $ do
-      minimizeTransactions (deudas
+      minimizeTransactions (netos
         [ (u1, mkMonto 2 66)
         , (u2, mkMonto 2 -33)
         , (u3, mkMonto 2 -33)
         ])`shouldSatisfy` ((== 2) . length)
-    context "con deudas no coherentes (no suman 0 en total)" $ do
+    context "con netos no coherentes (no suman 0 en total)" $ do
       it "con una deuda simple que esta desbalanceada" $ do
-        evaluate (minimizeTransactions (deudas
+        evaluate (minimizeTransactions (netos
           [ (u1, Monto $ Decimal.Decimal 0 10)
           , (u2, Monto $ Decimal.Decimal 0 -11)
           ])) `shouldThrow` errorCall "Balance is not 0, instead is: -1.0"
 
       it "con una deuda compleja no crashea" $ do
-        evaluate (minimizeTransactions (deudas
+        evaluate (minimizeTransactions (netos
           [ (u1, 10)
           , (u2, -5)
           , (u3, -5)
@@ -114,12 +114,12 @@ spec = do
 
       it "cuando una sola persona tiene plata a favor" $ do
         pendingWith "this crashes the solver"
-        evaluate (minimizeTransactions (deudas
+        evaluate (minimizeTransactions (netos
           [ (u3, Monto $ Decimal.Decimal 2 -3)
           ])) `shouldThrow` errorCall "Balanace is not 0, instead is: -1.0"
     context "cuando hay muchos participantes" $ do
       it "simplifica en un tiempo razonable algo que mas o menos esta bien" $ do
-        minimizeTransactions (deudas
+        minimizeTransactions (netos
           [ (participante 1, mkMonto 2 -3200525)
           , (participante 2, mkMonto 2  4300475)
           , (participante 3, mkMonto 2  5235379)
@@ -150,10 +150,10 @@ spec = do
       --           Success x -> x
       --           Error _ -> error "no json"
 
-      --   minimizeTransactions (calcularDeudasTotales grupo) `shouldBe` []
+      --   minimizeTransactions (calcularNetosTotales grupo) `shouldBe` []
     context "cuando hay netos con coma y numeros decimales extraños" $ do
       it "una deuda simple con montos con mas de dos decimales" $ do
-        minimizeTransactions (deudas
+        minimizeTransactions (netos
           [ ( u1, mkMonto 10  5)
           , ( u2, mkMonto 10 -5)
           ]) `shouldBe`
@@ -161,7 +161,7 @@ spec = do
             ]
 
       it "una deuda simple con montos heterogeneos" $ do
-        minimizeTransactions (deudas
+        minimizeTransactions (netos
           [ ( u1, mkMonto 10  5)
           , ( u2, mkMonto 10 -5)
           , ( u3, mkMonto 0  5)

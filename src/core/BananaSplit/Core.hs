@@ -20,8 +20,8 @@ module BananaSplit.Core
     , ShallowPago (..)
     , TipoDistribucion (..)
     , addIsValidPago
-    , calcularDeudasPago
-    , calcularDeudasTotales
+    , calcularNetosPago
+    , calcularNetosTotales
     , getResumenPago
     , isValid
     ) where
@@ -69,41 +69,41 @@ data ShallowPago = ShallowPago
     -- from the Distribuciones to be able to show it on the UI.
   } deriving (Show, Eq, Generic)
 
-calcularDeudasTotales :: Grupo -> Deudas Monto
-calcularDeudasTotales grupo =
+calcularNetosTotales :: Grupo -> Netos Monto
+calcularNetosTotales grupo =
   grupo.pagos
   & filter isValid
-  & fmap calcularDeudasPago
+  & fmap calcularNetosPago
   & mconcat
 
-calcularDeudasPago :: Pago -> Deudas Monto
-calcularDeudasPago pago =
-  fromMaybe mempty $ getDeudasResumen $ getResumenPago pago
+calcularNetosPago :: Pago -> Netos Monto
+calcularNetosPago pago =
+  fromMaybe mempty $ getNetosResumen $ getResumenPago pago
 
-getResumenPago :: Pago -> ResumenDeudas
+getResumenPago :: Pago -> ResumenNetos
 getResumenPago pago =
     case (resumenPagadores, resumenDeudores) of
-      (DeudasIncomputables _ errorPagadores, DeudasIncomputables _ errorDeudores) ->
-        DeudasIncomputables (Just pago.monto) $ ErrorResumen Nothing [("pagadores", errorPagadores), ("deudores", errorDeudores)]
-      (DeudasIncomputables _ errorPagadores, ResumenDeudas _ _deudasDeudores) ->
-        DeudasIncomputables (Just pago.monto) $ ErrorResumen Nothing [("pagadores", errorPagadores)]
+      (NetosIncomputables _ errorPagadores, NetosIncomputables _ errorDeudores) ->
+        NetosIncomputables (Just pago.monto) $ ErrorResumen Nothing [("pagadores", errorPagadores), ("deudores", errorDeudores)]
+      (NetosIncomputables _ errorPagadores, ResumenNetos _ _netosDeudores) ->
+        NetosIncomputables (Just pago.monto) $ ErrorResumen Nothing [("pagadores", errorPagadores)]
 
-      (ResumenDeudas _ _deudasPagadores, DeudasIncomputables _ errorDeudores) ->
-        DeudasIncomputables (Just pago.monto) $ ErrorResumen Nothing [("deudores", errorDeudores)]
-      (ResumenDeudas _ deudasPagadores, ResumenDeudas _ deudasDeudores) ->
+      (ResumenNetos _ _netosPagadores, NetosIncomputables _ errorDeudores) ->
+        NetosIncomputables (Just pago.monto) $ ErrorResumen Nothing [("deudores", errorDeudores)]
+      (ResumenNetos _ netosPagadores, ResumenNetos _ netosDeudores) ->
         let
-          deudas = deudasPagadores <> fmap negate deudasDeudores
-          total = totalDeudas deudas
-          totalPagadores = totalDeudas deudasPagadores
-          totalDeudores = totalDeudas $ fmap negate deudasDeudores
+          netos = netosPagadores <> fmap negate netosDeudores
+          total = totalNetos netos
+          totalPagadores = totalNetos netosPagadores
+          totalDeudores = totalNetos $ fmap negate netosDeudores
         in
-        if | totalPagadores /= negate totalDeudores -> DeudasIncomputables (Just pago.monto) $
-                ErrorResumen (Just $ "Las deudas no estan balanceadas, el total de pagadores (" <> show totalPagadores <> ") y el total de deudores (" <> show totalDeudores <> ") deberían ser iguales") []
-           | total /= 0 -> DeudasIncomputables (Just pago.monto) $
-                ErrorResumen (Just $ "Las deudas no estan balanceadas, la suma debería dar 0 pero da: " <> show total) []
-           | pago.monto /= totalPagadores -> DeudasIncomputables (Just pago.monto) $
-                     ErrorResumen (Just $ "Las deudas no estan balanceadas, la suma debería dar 0 pero da: " <> show total) []
-           | otherwise -> ResumenDeudas (Just pago.monto) deudas
+        if | totalPagadores /= negate totalDeudores -> NetosIncomputables (Just pago.monto) $
+                ErrorResumen (Just $ "Las netos no estan balanceadas, el total de pagadores (" <> show totalPagadores <> ") y el total de deudores (" <> show totalDeudores <> ") deberían ser iguales") []
+           | total /= 0 -> NetosIncomputables (Just pago.monto) $
+                ErrorResumen (Just $ "Las netos no estan balanceadas, la suma debería dar 0 pero da: " <> show total) []
+           | pago.monto /= totalPagadores -> NetosIncomputables (Just pago.monto) $
+                     ErrorResumen (Just $ "Las netos no estan balanceadas, la suma debería dar 0 pero da: " <> show total) []
+           | otherwise -> ResumenNetos (Just pago.monto) netos
     where
       resumenPagadores = getResumen pago.monto pago.pagadores
       resumenDeudores = getResumen pago.monto pago.deudores
@@ -112,7 +112,7 @@ isValid :: Pago -> Bool
 isValid pago =
   pago
   & getResumenPago
-  & getDeudasResumen
+  & getNetosResumen
   & isJust
 
 addIsValidPago :: Pago -> Pago

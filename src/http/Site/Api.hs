@@ -80,20 +80,17 @@ data CreateGrupoParams = CreateGrupoParams
   , grupoParticipante :: Text
   } deriving (Show, Eq, Generic)
 
-newtype Netos = Netos (Deudas Monto)
-  deriving (Show, Eq, Generic)
-
 data ResumenGrupo = ResumenGrupo
   { transaccionesParaSaldar :: [Transaccion]
-  , netos :: Netos
+  , netos :: Netos Monto
   , cantidadPagosInvalidos :: Int
   , cantidadPagos :: Int
   } deriving (Show, Eq, Generic)
 
 data ResumenPago = ResumenPago
-  { resumen :: ResumenDeudas
-  , resumenPagadores :: ResumenDeudas
-  , resumenDeudores :: ResumenDeudas
+  { resumen :: ResumenNetos
+  , resumenPagadores :: ResumenNetos
+  , resumenDeudores :: ResumenNetos
   } deriving (Show, Eq, Generic)
 
 data ReceiptImageRequest = ReceiptImageRequest
@@ -111,7 +108,6 @@ data ReceiptImageResponse
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
-Elm.deriveBoth Elm.defaultOptions ''Netos
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
 Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest

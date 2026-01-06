@@ -57,9 +57,9 @@ data DistribucionMontoEquitativo = DistribucionMontoEquitativo
   , participantes :: [ParticipanteId]
   } deriving (Show, Eq, Generic)
 
-data ResumenDeudas
-  = DeudasIncomputables (Maybe Monto) ErrorResumen
-  | ResumenDeudas (Maybe Monto) (Deudas Monto)
+data ResumenNetos
+  = NetosIncomputables (Maybe Monto) ErrorResumen
+  | ResumenNetos (Maybe Monto) (Netos Monto)
   deriving (Show, Eq, Generic)
 
 data ErrorResumen
@@ -73,19 +73,19 @@ instance Semigroup ErrorResumen where
   ErrorResumen msg1 errs1 <> ErrorResumen msg2 errs2 =
     ErrorResumen (msg1 <> msg2) (errs1 <> errs2)
 
-getDeudas :: HasResumen a => Monto -> a -> Maybe (Deudas Monto)
-getDeudas totalPago = getDeudasResumen . getResumen totalPago
+getNetos :: HasResumen a => Monto -> a -> Maybe (Netos Monto)
+getNetos totalPago = getNetosResumen . getResumen totalPago
 
-getDeudasResumen :: ResumenDeudas -> Maybe (Deudas Monto)
-getDeudasResumen resumen =
+getNetosResumen :: ResumenNetos -> Maybe (Netos Monto)
+getNetosResumen resumen =
   case resumen of
-    DeudasIncomputables _ _ -> Nothing
-    ResumenDeudas _ deudas -> Just deudas
+    NetosIncomputables _ _ -> Nothing
+    ResumenNetos _ deudas -> Just deudas
 
 class HasResumen a where
-  getResumen :: Monto -> a -> ResumenDeudas
+  getResumen :: Monto -> a -> ResumenNetos
 
-instance HasResumen ResumenDeudas where
+instance HasResumen ResumenNetos where
   getResumen _ = identity
 
 instance HasResumen Distribucion where
@@ -97,45 +97,45 @@ instance HasResumen Distribucion where
 
 instance HasResumen DistribucionMontosEspecificos where
   getResumen totalPago distribucion =
-    if | null distribucion.montos -> DeudasIncomputables (Just 0) $ ErrorResumen (Just "No hay montos especificados") []
-       | total /= totalPago -> DeudasIncomputables (Just total) $ ErrorResumen (Just $ "El total debería ser igual al total del pago pero es: " <> show total <> " en vez de " <> show totalPago) []
-       | otherwise -> ResumenDeudas (Just total) deudas
+    if | null distribucion.montos -> NetosIncomputables (Just 0) $ ErrorResumen (Just "No hay montos especificados") []
+       | total /= totalPago -> NetosIncomputables (Just total) $ ErrorResumen (Just $ "El total debería ser igual al total del pago pero es: " <> show total <> " en vez de " <> show totalPago) []
+       | otherwise -> ResumenNetos (Just total) deudas
     where
       deudas = distribucion.montos <&> (\m -> mkDeuda m.participante m.monto) & mconcat
-      total = totalDeudas deudas
+      total = totalNetos deudas
 
 instance HasResumen DistribucionMontoEquitativo where
   getResumen totalPago d =
-    if | null d.participantes -> DeudasIncomputables (Just totalPago) $ ErrorResumen (Just "No hay participantes especificados") []
-       | otherwise -> ResumenDeudas (Just totalPago) $ calcularDeudasMontoEquitativo totalPago d
+    if | null d.participantes -> NetosIncomputables (Just totalPago) $ ErrorResumen (Just "No hay participantes especificados") []
+       | otherwise -> ResumenNetos (Just totalPago) $ calcularNetosMontoEquitativo totalPago d
 
 instance HasResumen Repartija where
   getResumen totalPago repartija =
-    if | null repartija.items -> DeudasIncomputables (Just totalPorItems) $ ErrorResumen (Just "No hay items para repartir.") []
-       | totalPorItems /= totalPago -> DeudasIncomputables (Just totalPorItems) $ ErrorResumen (Just $ "El total de items debería ser igual al total del pago pero es: " <> show totalPorItems <> " en vez de " <> show totalPago) []
-       | null repartija.claims -> DeudasIncomputables (Just totalPorItems) $ ErrorResumen (Just "Nadie reclamo ningun item.") []
-       | totalPorDeudas /= totalPago -> DeudasIncomputables (Just totalPorItems) $ ErrorResumen (Just $ "El total de deudas debería ser igual al total del pago pero es: " <> show totalPorDeudas <> " en vez de " <> show totalPago) []
+    if | null repartija.items -> NetosIncomputables (Just totalPorItems) $ ErrorResumen (Just "No hay items para repartir.") []
+       | totalPorItems /= totalPago -> NetosIncomputables (Just totalPorItems) $ ErrorResumen (Just $ "El total de items debería ser igual al total del pago pero es: " <> show totalPorItems <> " en vez de " <> show totalPago) []
+       | null repartija.claims -> NetosIncomputables (Just totalPorItems) $ ErrorResumen (Just "Nadie reclamo ningun item.") []
+       | totalPorNetos /= totalPago -> NetosIncomputables (Just totalPorItems) $ ErrorResumen (Just $ "El total de deudas debería ser igual al total del pago pero es: " <> show totalPorNetos <> " en vez de " <> show totalPago) []
        | otherwise ->
-           ResumenDeudas (Just totalPorItems) deudas
+           ResumenNetos (Just totalPorItems) deudas
     where
       totalPorItems = totalRepartija repartija
-      deudas = calcularDeudasRepartija repartija
-      totalPorDeudas = totalDeudas deudas
+      deudas = calcularNetosRepartija repartija
+      totalPorNetos = totalNetos deudas
 
-minimizeTransactions :: Deudas Monto -> [Transaccion]
+minimizeTransactions :: Netos Monto -> [Transaccion]
 minimizeTransactions deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
-    Left _err -> resolverDeudasNaif deudas
+    Left _err -> resolverNetosNaif deudas
 
-solveOptimalTransactions :: Deudas Monto -> [Transaccion]
+solveOptimalTransactions :: Netos Monto -> [Transaccion]
 solveOptimalTransactions deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
     Left err -> error err
 
-resolverDeudasRecursivo :: Deudas Monto -> [Transaccion]
-resolverDeudasRecursivo netBalances =
+resolverNetosRecursivo :: Netos Monto -> [Transaccion]
+resolverNetosRecursivo netBalances =
   let allValidSettlements = settleDebts $ deudasToPairs netBalances
   in allValidSettlements
     & \case
@@ -184,51 +184,51 @@ data Transaccion = Transaccion
   , transaccionMonto :: Monto
   } deriving (Show, Eq, Generic)
 
-deudoresNoNulos :: Deudas Monto -> Int
-deudoresNoNulos (Deudas deudasMap) =
+deudoresNoNulos :: Netos Monto -> Int
+deudoresNoNulos (Netos deudasMap) =
   deudasMap
   & Map.filter (/= 0)
   & length
 
-filterDeudas :: (a -> Bool) -> Deudas a -> Deudas a
-filterDeudas f (Deudas deudasMap) =
+filterNetos :: (a -> Bool) -> Netos a -> Netos a
+filterNetos f (Netos deudasMap) =
   deudasMap
   & Map.filter f
-  & Deudas
+  & Netos
 
-newtype Deudas a = Deudas (Map ParticipanteId a)
+newtype Netos a = Netos (Map ParticipanteId a)
   deriving newtype (Show, Eq, Functor)
 
-deudasToPairs :: Ord a => Deudas a -> [(ParticipanteId, a)]
-deudasToPairs (Deudas deudasMap) =
+deudasToPairs :: Ord a => Netos a -> [(ParticipanteId, a)]
+deudasToPairs (Netos deudasMap) =
   deudasMap
   & Map.toAscList
   & sortOn (\(p, m) -> (Down m, p))
 
-instance Num a => Monoid (Deudas a) where
-  mempty = Deudas Map.empty
+instance Num a => Monoid (Netos a) where
+  mempty = Netos Map.empty
 
-instance Num a => Semigroup (Deudas a) where
-  Deudas d1 <> Deudas d2 = Deudas $ Map.unionWith (+) d1 d2
+instance Num a => Semigroup (Netos a) where
+  Netos d1 <> Netos d2 = Netos $ Map.unionWith (+) d1 d2
 
-totalDeudas :: Num a => Deudas a -> a
-totalDeudas (Deudas deudasMap) =
+totalNetos :: Num a => Netos a -> a
+totalNetos (Netos deudasMap) =
   deudasMap
   & Map.elems
   & sum
 
-mkDeuda :: ParticipanteId -> a -> Deudas a
+mkDeuda :: ParticipanteId -> a -> Netos a
 mkDeuda participanteId monto =
-  Deudas $ Map.singleton participanteId monto
+  Netos $ Map.singleton participanteId monto
 
-calcularDeudasMontoEquitativo :: Monto -> DistribucionMontoEquitativo -> Deudas Monto
-calcularDeudasMontoEquitativo total distribucion =
+calcularNetosMontoEquitativo :: Monto -> DistribucionMontoEquitativo -> Netos Monto
+calcularNetosMontoEquitativo total distribucion =
   distribucion.participantes
   & fmap (`mkDeuda` 1)
   & mconcat
   & distribuirEntrePonderados total
 
-distribuirEntrePonderados :: Monto -> Deudas Decimal -> Deudas Monto
+distribuirEntrePonderados :: Monto -> Netos Decimal -> Netos Monto
 distribuirEntrePonderados (Monto total) deudas =
   let
     deudaPairs = deudas & deudasToPairs
@@ -243,34 +243,34 @@ distribuirEntrePonderados (Monto total) deudas =
       & fmap Monto
       & zip participantes
       & Map.fromList
-      & Deudas
+      & Netos
 
-extraerMaximoDeudor :: Deudas Monto -> (ParticipanteId, Monto)
-extraerMaximoDeudor (Deudas deudasMap) =
+extraerMaximoDeudor :: Netos Monto -> (ParticipanteId, Monto)
+extraerMaximoDeudor (Netos deudasMap) =
   deudasMap
   & Map.filter (< 0)
   & fmap (* -1)
   & Map.toList
   & List.maximumBy (compare `on` snd)
 
-extraerMaximoPagador :: Deudas Monto -> (ParticipanteId, Monto)
-extraerMaximoPagador (Deudas deudasMap) =
+extraerMaximoPagador :: Netos Monto -> (ParticipanteId, Monto)
+extraerMaximoPagador (Netos deudasMap) =
   deudasMap
   & Map.filter (> 0)
   & Map.toList
   & List.maximumBy (compare `on` snd)
 
-extraerDeudor :: Num a => ParticipanteId -> Deudas a -> (a, Deudas a)
-extraerDeudor unId (Deudas deudasMap) =
+extraerDeudor :: Num a => ParticipanteId -> Netos a -> (a, Netos a)
+extraerDeudor unId (Netos deudasMap) =
   ( deudasMap & Map.findWithDefault 0 unId
-  , Deudas $ deudasMap & Map.delete unId)
+  , Netos $ deudasMap & Map.delete unId)
 
-removerDeudor :: ParticipanteId -> Deudas m -> Deudas m
-removerDeudor participanteId (Deudas deudasMap) =
-  Deudas $ Map.delete participanteId deudasMap
+removerDeudor :: ParticipanteId -> Netos m -> Netos m
+removerDeudor participanteId (Netos deudasMap) =
+  Netos $ Map.delete participanteId deudasMap
 
-resolverDeudasNaif :: Deudas Monto -> [Transaccion]
-resolverDeudasNaif deudas
+resolverNetosNaif :: Netos Monto -> [Transaccion]
+resolverNetosNaif deudas
   | deudoresNoNulos deudas == 0 = []
   | deudoresNoNulos deudas == 1 = error $ show deudas
   | otherwise =
@@ -281,14 +281,14 @@ resolverDeudasNaif deudas
         deudas'' = removerDeudor mayorPagador deudas'
       in case compare mayorDeuda mayorPagado of
           LT -> Transaccion mayorDeudor mayorPagador mayorDeuda
-            : resolverDeudasNaif (deudas'' <> mkDeuda mayorPagador (mayorPagado - mayorDeuda))
+            : resolverNetosNaif (deudas'' <> mkDeuda mayorPagador (mayorPagado - mayorDeuda))
           GT -> Transaccion mayorDeudor mayorPagador mayorPagado
-            : resolverDeudasNaif (deudas'' <> mkDeuda mayorDeudor (-mayorDeuda + mayorPagado))
+            : resolverNetosNaif (deudas'' <> mkDeuda mayorDeudor (-mayorDeuda + mayorPagado))
           EQ -> Transaccion mayorDeudor mayorPagador mayorPagado
-            : resolverDeudasNaif deudas''
+            : resolverNetosNaif deudas''
 
-solveOptimalTransactions' :: Deudas Monto -> Either Text [Transaccion]
-solveOptimalTransactions' (Deudas oldBalances) = unsafePerformIO $ do
+solveOptimalTransactions' :: Netos Monto -> Either Text [Transaccion]
+solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
     let
       maxPrecision =
         oldBalances
@@ -396,7 +396,7 @@ solveOptimalTransactions' (Deudas oldBalances) = unsafePerformIO $ do
                     transactions
                     & fmap (\t -> mkDeuda t.transaccionFrom -t.transaccionMonto <> mkDeuda t.transaccionTo t.transaccionMonto)
                     & mconcat
-                    & totalDeudas
+                    & totalNetos
 
               if neto /= 0
                 then do
@@ -419,8 +419,8 @@ totalRepartija repartija =
   & sum
   & (+ repartija.extra)
 
-calcularDeudasRepartija :: Repartija -> Deudas Monto
-calcularDeudasRepartija repartija =
+calcularNetosRepartija :: Repartija -> Netos Monto
+calcularNetosRepartija repartija =
   let deudasIncluyendoNoRepartido =
         repartija.items
         & fmap (\item ->
@@ -432,7 +432,7 @@ calcularDeudasRepartija repartija =
                       let claimsExplicitos = claims
                             & fmap (\claim ->
                               mkDeuda claim.participante (fromMaybe (error "tieneCantidad") claim.cantidad))
-                          claimsSobrante = item.cantidad - totalDeudas (mconcat claimsExplicitos)
+                          claimsSobrante = item.cantidad - totalNetos (mconcat claimsExplicitos)
                       in claimsExplicitos
                             & mconcat
                             & (<> if claimsSobrante /= 0 then mkDeuda (ParticipanteId nullUlid) claimsSobrante else mempty)
@@ -459,18 +459,18 @@ calcularDeudasRepartija repartija =
         & mconcat
         & fmap inMonto
         & distribuirEntrePonderados (repartija.extra + sum montoNoRepartido)
-        & filterDeudas (/= 0)
+        & filterNetos (/= 0)
 
   in deudas
       & mconcat
       & (<> deudasDelExtraPonderado)
 
 Elm.deriveBoth Elm.defaultOptions ''Transaccion
-Elm.deriveBoth Elm.defaultOptions ''Deudas
+Elm.deriveBoth Elm.defaultOptions ''Netos
 Elm.deriveBoth Elm.defaultOptions ''MontoEspecifico
 Elm.deriveBoth Elm.defaultOptions ''DistribucionMontosEspecificos
 Elm.deriveBoth Elm.defaultOptions ''DistribucionMontoEquitativo
 Elm.deriveBoth Elm.defaultOptions ''TipoDistribucion
 Elm.deriveBoth Elm.defaultOptions ''Distribucion
 Elm.deriveBoth Elm.defaultOptions ''ErrorResumen
-Elm.deriveBoth Elm.defaultOptions ''ResumenDeudas
+Elm.deriveBoth Elm.defaultOptions ''ResumenNetos

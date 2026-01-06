@@ -67,7 +67,7 @@ type Msg
     | IniciarCrearPago
     | ShowPagoDetails ULID
     | DeletePagoResponse (Result Http.Error ULID)
-    | NetosUpdated (WebData Netos)
+    | NetosUpdated (WebData (Netos Monto))
 
 
 type PagoPopoverState
@@ -80,7 +80,7 @@ type alias Model =
     { grupoId : String
     , pagoPopoverState : PagoPopoverState
     , pagoForm : Form CustomFormError Pago
-    , editingPagoNeto : WebData Netos
+    , editingPagoNeto : WebData (Netos Monto)
     , deletingPagoId : Maybe ULID
     }
 

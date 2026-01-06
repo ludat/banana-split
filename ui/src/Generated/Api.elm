@@ -79,7 +79,7 @@ jsonEncParticipanteAddParams  val =
 
 type alias ResumenGrupo  =
    { transaccionesParaSaldar: (List Transaccion)
-   , netos: Netos
+   , netos: (Netos Monto)
    , cantidadPagosInvalidos: Int
    , cantidadPagos: Int
    }
@@ -88,7 +88,7 @@ jsonDecResumenGrupo : Json.Decode.Decoder ( ResumenGrupo )
 jsonDecResumenGrupo =
    Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos pcantidadPagos -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos, cantidadPagos = pcantidadPagos})
    |> required "transaccionesParaSaldar" (Json.Decode.list (jsonDecTransaccion))
-   |> required "netos" (jsonDecNetos)
+   |> required "netos" (jsonDecNetos (jsonDecMonto))
    |> required "cantidadPagosInvalidos" (Json.Decode.int)
    |> required "cantidadPagos" (Json.Decode.int)
 
@@ -96,53 +96,64 @@ jsonEncResumenGrupo : ResumenGrupo -> Value
 jsonEncResumenGrupo  val =
    Json.Encode.object
    [ ("transaccionesParaSaldar", (Json.Encode.list jsonEncTransaccion) val.transaccionesParaSaldar)
-   , ("netos", jsonEncNetos val.netos)
+   , ("netos", (jsonEncNetos (jsonEncMonto)) val.netos)
    , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
    , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
    ]
 
 
 
+type alias Netos a = (List (ParticipanteId, a))
+
+jsonDecNetos : Json.Decode.Decoder a -> Json.Decode.Decoder ( Netos a )
+jsonDecNetos localDecoder_a =
+    Json.Decode.list (Json.Decode.map2 tuple2 (Json.Decode.index 0 (jsonDecParticipanteId)) (Json.Decode.index 1 (localDecoder_a)))
+
+jsonEncNetos : (a -> Value) -> Netos a -> Value
+jsonEncNetos localEncoder_a val = (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(jsonEncParticipanteId) t1,(localEncoder_a) t2])) val
+
+
+
 type alias ResumenPago  =
-   { resumen: ResumenDeudas
-   , resumenPagadores: ResumenDeudas
-   , resumenDeudores: ResumenDeudas
+   { resumen: ResumenNetos
+   , resumenPagadores: ResumenNetos
+   , resumenDeudores: ResumenNetos
    }
 
 jsonDecResumenPago : Json.Decode.Decoder ( ResumenPago )
 jsonDecResumenPago =
    Json.Decode.succeed (\presumen presumenPagadores presumenDeudores -> {resumen = presumen, resumenPagadores = presumenPagadores, resumenDeudores = presumenDeudores})
-   |> required "resumen" (jsonDecResumenDeudas)
-   |> required "resumenPagadores" (jsonDecResumenDeudas)
-   |> required "resumenDeudores" (jsonDecResumenDeudas)
+   |> required "resumen" (jsonDecResumenNetos)
+   |> required "resumenPagadores" (jsonDecResumenNetos)
+   |> required "resumenDeudores" (jsonDecResumenNetos)
 
 jsonEncResumenPago : ResumenPago -> Value
 jsonEncResumenPago  val =
    Json.Encode.object
-   [ ("resumen", jsonEncResumenDeudas val.resumen)
-   , ("resumenPagadores", jsonEncResumenDeudas val.resumenPagadores)
-   , ("resumenDeudores", jsonEncResumenDeudas val.resumenDeudores)
+   [ ("resumen", jsonEncResumenNetos val.resumen)
+   , ("resumenPagadores", jsonEncResumenNetos val.resumenPagadores)
+   , ("resumenDeudores", jsonEncResumenNetos val.resumenDeudores)
    ]
 
 
 
-type ResumenDeudas  =
-    DeudasIncomputables (Maybe Monto) ErrorResumen
-    | ResumenDeudas (Maybe Monto) (Deudas Monto)
+type ResumenNetos  =
+    NetosIncomputables (Maybe Monto) ErrorResumen
+    | ResumenNetos (Maybe Monto) (Netos Monto)
 
-jsonDecResumenDeudas : Json.Decode.Decoder ( ResumenDeudas )
-jsonDecResumenDeudas =
-    let jsonDecDictResumenDeudas = Dict.fromList
-            [ ("DeudasIncomputables", Json.Decode.lazy (\_ -> Json.Decode.map2 DeudasIncomputables (Json.Decode.index 0 (Json.Decode.maybe (jsonDecMonto))) (Json.Decode.index 1 (jsonDecErrorResumen))))
-            , ("ResumenDeudas", Json.Decode.lazy (\_ -> Json.Decode.map2 ResumenDeudas (Json.Decode.index 0 (Json.Decode.maybe (jsonDecMonto))) (Json.Decode.index 1 (jsonDecDeudas (jsonDecMonto)))))
+jsonDecResumenNetos : Json.Decode.Decoder ( ResumenNetos )
+jsonDecResumenNetos =
+    let jsonDecDictResumenNetos = Dict.fromList
+            [ ("NetosIncomputables", Json.Decode.lazy (\_ -> Json.Decode.map2 NetosIncomputables (Json.Decode.index 0 (Json.Decode.maybe (jsonDecMonto))) (Json.Decode.index 1 (jsonDecErrorResumen))))
+            , ("ResumenNetos", Json.Decode.lazy (\_ -> Json.Decode.map2 ResumenNetos (Json.Decode.index 0 (Json.Decode.maybe (jsonDecMonto))) (Json.Decode.index 1 (jsonDecNetos (jsonDecMonto)))))
             ]
-    in  decodeSumObjectWithSingleField  "ResumenDeudas" jsonDecDictResumenDeudas
+    in  decodeSumObjectWithSingleField  "ResumenNetos" jsonDecDictResumenNetos
 
-jsonEncResumenDeudas : ResumenDeudas -> Value
-jsonEncResumenDeudas  val =
+jsonEncResumenNetos : ResumenNetos -> Value
+jsonEncResumenNetos  val =
     let keyval v = case v of
-                    DeudasIncomputables v1 v2 -> ("DeudasIncomputables", encodeValue (Json.Encode.list identity [(maybeEncode (jsonEncMonto)) v1, jsonEncErrorResumen v2]))
-                    ResumenDeudas v1 v2 -> ("ResumenDeudas", encodeValue (Json.Encode.list identity [(maybeEncode (jsonEncMonto)) v1, (jsonEncDeudas (jsonEncMonto)) v2]))
+                    NetosIncomputables v1 v2 -> ("NetosIncomputables", encodeValue (Json.Encode.list identity [(maybeEncode (jsonEncMonto)) v1, jsonEncErrorResumen v2]))
+                    ResumenNetos v1 v2 -> ("ResumenNetos", encodeValue (Json.Encode.list identity [(maybeEncode (jsonEncMonto)) v1, (jsonEncNetos (jsonEncMonto)) v2]))
     in encodeSumObjectWithSingleField keyval val
 
 
@@ -253,17 +264,6 @@ jsonEncTransaccion  val =
 
 
 
-type alias Netos  = (Deudas Monto)
-
-jsonDecNetos : Json.Decode.Decoder ( Netos )
-jsonDecNetos =
-    jsonDecDeudas (jsonDecMonto)
-
-jsonEncNetos : Netos -> Value
-jsonEncNetos  val = (jsonEncDeudas (jsonEncMonto)) val
-
-
-
 type alias Pago  =
    { pagoId: ULID
    , monto: Monto
@@ -362,17 +362,6 @@ jsonDecULID =
 
 jsonEncULID : ULID -> Value
 jsonEncULID  val = Json.Encode.string val
-
-
-
-type alias Deudas a = (List (ParticipanteId, a))
-
-jsonDecDeudas : Json.Decode.Decoder a -> Json.Decode.Decoder ( Deudas a )
-jsonDecDeudas localDecoder_a =
-    Json.Decode.list (Json.Decode.map2 tuple2 (Json.Decode.index 0 (jsonDecParticipanteId)) (Json.Decode.index 1 (localDecoder_a)))
-
-jsonEncDeudas : (a -> Value) -> Deudas a -> Value
-jsonEncDeudas localEncoder_a val = (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(jsonEncParticipanteId) t1,(localEncoder_a) t2])) val
 
 
 
