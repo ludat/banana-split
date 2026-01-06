@@ -392,22 +392,19 @@ solveOptimalTransactions' (Deudas oldBalances) = unsafePerformIO $ do
                         )
 
               -- Verify: apply transactions and check all balances become zero
-              let finalBalances = Map.foldrWithKey
-                    (\participante balance acc ->
-                      let outgoing = sum [t.transaccionMonto | t <- transactions, t.transaccionFrom == participante]
-                          incoming = sum [t.transaccionMonto | t <- transactions, t.transaccionTo == participante]
-                          finalBalance = balance + incoming - outgoing
-                      in if abs finalBalance > Monto (Decimal.Decimal (maxPrecision + 2) 1)  -- Allow small rounding error
-                         then error $ "Transaction verification failed: participant " <> show participante
-                                   <> " has non-zero final balance: " <> show finalBalance
-                                   <> " (original: " <> show balance <> ", incoming: " <> show incoming
-                                   <> ", outgoing: " <> show outgoing <> ")"
-                         else acc
-                    )
-                    ()
-                    oldBalances
+              let neto =
+                    transactions
+                    & fmap (\t -> mkDeuda t.transaccionFrom -t.transaccionMonto <> mkDeuda t.transaccionTo t.transaccionMonto)
+                    & mconcat
+                    & totalDeudas
 
-              pure $ Right transactions
+              if neto /= 0
+                then do
+                  putText $ "[error] Transactions do not balance out: " <> show transactions
+                  pure $ Left $ "Transactions do not balance, neto is " <> show neto
+
+                else
+                  pure $ Right transactions
 
         case MIP.solStatus sol of
           MIP.StatusOptimal -> extractAndVerifyTransactions (MIP.solVariables sol)
