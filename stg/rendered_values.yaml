@@ -2,7 +2,7 @@ helm:
   repoURL: ghcr.io/ludat/charts
   chart: herokucito-web
   path: 
-  targetRevision: 0.3.2
+  targetRevision: 0.3.3
 
 image:
   repository: ghcr.io/ludat/banana-split
