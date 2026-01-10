@@ -3,7 +3,7 @@ services:
     image:
       repository: ghcr.io/ludat/banana-split
       tag: 20260108-205417
-    port: 8080
+    port: 8000
     secrets:
       - config
     dependencies: [pg]
