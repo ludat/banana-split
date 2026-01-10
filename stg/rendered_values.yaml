@@ -8,7 +8,7 @@ services:
       - config
     dependencies: [pg]
     routes:
-      - host: dev.split.ludat.io
+      - host: stg.split.ludat.io
 
 dependencies:
   pg:
