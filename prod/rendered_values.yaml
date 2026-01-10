@@ -24,7 +24,7 @@ hooks:
         - |
             timeout 10 banana-split migrations init
             banana-split migrations migrate ./migrations
-  pre-deploy:
+  post-deploy:
     - name: migrations
       service: backend
       command:
