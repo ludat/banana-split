@@ -3,6 +3,9 @@ services:
     image:
       repository: ghcr.io/ludat/banana-split
       tag: 20260108-205417
+      source:
+        type: registry
+        allowTags: '^\d{8}-\d{6}$'
     port: 8000
     secrets:
       - config
