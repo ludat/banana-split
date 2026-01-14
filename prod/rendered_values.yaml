@@ -6,7 +6,7 @@ services:
       tag: 20260108-205417
       source:
         type: stage
-        upstream: dev
+        upstream: stg
     port: 8000
     secrets:
       - config
