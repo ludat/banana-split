@@ -1,23 +1,38 @@
-image:
-  repository: ghcr.io/ludat/banana-split
+services:
+  backend:
+    image:
+      repository: ghcr.io/ludat/banana-split
+      source:
+        type: lexical
+        pattern: '$name-^\d{8}-\d{6}$'
+    port: 8000
+    secrets:
+      - config
+    dependencies: [pg]
+    routes:
+      - host: $name.split.ludat.io
 
-preCommand: |
-  timeout 10 banana-split migrations init
-  banana-split migrations migrate ./migrations
+dependencies:
+  pg:
+    type: postgres
 
-postCommand: |
-  if ! [[ "$(timeout 10 banana-split migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/')" = "Complete" ]]; then
-    banana-split migrations complete
-  fi
-
-expose:
-  enabled: true
-
-secrets:
-  - config
-
-port: 8000
-
-postgres:
-  enabled: true
-  uriEnv: BANANASPLIT_DATABASE_URL
+hooks:
+  pre-deploy:
+    - name: migrations
+      service: backend
+      command:
+        - sh
+        - -c
+        - |
+            timeout 10 banana-split migrations init
+            banana-split migrations migrate ./migrations
+  post-deploy:
+    - name: migrations
+      service: backend
+      command:
+        - sh
+        - -c
+        - |
+            if ! [[ "$(timeout 10 banana-split migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/')" = "Complete" ]]; then
+              banana-split migrations complete
+            fi
