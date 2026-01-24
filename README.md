@@ -97,7 +97,7 @@ stack run
 Entramos a la carpeta de ui y corremos 
 
  ```
-pnpm install 
+pnpm install
 pnpm start
  ```
 
