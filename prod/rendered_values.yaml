@@ -5,8 +5,8 @@ services:
       repository: ghcr.io/ludat/banana-split
       tag: 20260108-205417@sha256:333f82cd597573dd03d743d2cca4470cbd02be8923a530273e7ee13db107837e
       source:
-        type: stage
-        upstream: stg
+        type: upstream
+        stage: stg
     port: 8000
     secrets:
       - config
