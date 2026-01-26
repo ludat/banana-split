@@ -4,13 +4,13 @@ services:
       repository: ghcr.io/ludat/banana-split
       source:
         type: lexical
-        pattern: '^$name-\d{8}-\d{6}$'
+        pattern: '^$slug-\d{8}-\d{6}$'
     port: 8000
     secrets:
       - config
     dependencies: [pg]
     routes:
-      - host: $name.split.ludat.io
+      - host: $slug.split.ludat.io
 
 dependencies:
   pg:
