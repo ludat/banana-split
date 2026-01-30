@@ -40,9 +40,11 @@ jobs:
           nix develop --command cabal test --test-show-details=always
 
       - name: Install dependencies
+        working-directory: ./ui
         run: |
           nix develop --command pnpm install --frozen-lockfile
 
       - name: Run Elm tests
+        working-directory: ./ui
         run: |
           nix develop --command pnpm test
