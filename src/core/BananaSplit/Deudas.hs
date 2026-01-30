@@ -435,7 +435,7 @@ calcularNetosRepartija repartija =
                           claimsSobrante = item.cantidad - totalNetos (mconcat claimsExplicitos)
                       in claimsExplicitos
                             & mconcat
-                            & (<> if claimsSobrante /= 0 then mkDeuda (ParticipanteId nullUlid) claimsSobrante else mempty)
+                            & (<> if claimsSobrante > 0 then mkDeuda (ParticipanteId nullUlid) claimsSobrante else mempty)
                             & fmap fromIntegral
                             & distribuirEntrePonderados item.monto
 
