@@ -4,7 +4,7 @@ on:
   push:
 
 jobs:
-  tests:
+  image-release:
     runs-on: ubuntu-latest
     outputs:
       image_tag: ${{ steps.push_tag.outputs.tag }}
@@ -63,18 +63,8 @@ jobs:
           docker tag banana-split ghcr.io/ludat/banana-split:latest
           docker push ghcr.io/ludat/banana-split:latest
 
-  # - name: Trigger infra-cluster deploy
-  #   # https://gitlab.com/10Pines/infra/infra-cluster
-  #   # Infra cluster project id = 32472203
-  #   if: github.ref == 'refs/heads/main'
-  #   run: |
-  #     curl --request POST \
-  #       --form "variables[ENV]=prod" \
-  #       --form "variables[APP]=banana-split" \
-  #       --form "variables[HELM_VALUES]=revision: '${{ github.sha }}'" \
-  #       "https://gitlab.com/api/v4/projects/32472203/trigger/pipeline?token=${{ secrets.GITLAB_INFRA_TOKEN }}&ref=main"
-  helm-test:
-    needs: [tests]
+  integration-test:
+    needs: [image-release]
     # permissions:
     #   contents: write
     runs-on: ubuntu-latest
@@ -100,7 +90,7 @@ jobs:
 
       - name: Pull image tag
         run: |
-          docker pull ghcr.io/ludat/banana-split:${{ needs.tests.outputs.image_tag }}
+          docker pull ghcr.io/ludat/banana-split:${{ needs.image-release.outputs.image_tag }}
 
       - name: Create k8s Kind Cluster
         uses: helm/kind-action@v1
@@ -119,7 +109,7 @@ jobs:
           NS=split-$RANDOM
           kubectl create namespace "$NS"
           kubectl config set-context kind-chart-testing --namespace "$NS"
-          docker tag ghcr.io/ludat/banana-split:${{ needs.tests.outputs.image_tag }} kind-registry:5000/banana-split:latest
+          docker tag ghcr.io/ludat/banana-split:${{ needs.image-release.outputs.image_tag }} kind-registry:5000/banana-split:latest
           docker push kind-registry:5000/banana-split:latest
 
           kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
