@@ -82,7 +82,6 @@ init grupoId pagoId store =
         [ Store.ensureGrupo grupoId store
         , Store.ensurePago pagoId store
         , Effect.getCurrentUser grupoId
-        , waitAndCheckNecessaryData
         ]
     )
         |> andThenSendWarningOnExit

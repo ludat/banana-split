@@ -137,6 +137,7 @@ init grupoId store =
     , Effect.batch
         [ Store.ensureGrupo grupoId store
         , Effect.getCurrentUser grupoId
+        , waitAndCheckNecessaryData
         ]
     )
         |> andThenSendWarningOnExit
@@ -552,8 +553,100 @@ update store userId msg model =
         CheckIfPagoAndGrupoArePresent ->
             case model.currentPagoId of
                 Nothing ->
-                    ( model, Effect.none )
-                        |> andThenUpdateResumenesFromForms model
+                    case Store.getGrupo model.grupoId store of
+                        NotAsked ->
+                            ( model, waitAndCheckNecessaryData )
+
+                        Loading ->
+                            ( model, waitAndCheckNecessaryData )
+
+                        Failure _ ->
+                            ( model, Effect.none )
+
+                        Success grupo ->
+                            let
+                                initialFormValues =
+                                    [ Form.setString "id" emptyUlid
+                                    , Form.setString "nombre" ""
+                                    , Form.setString "monto" ""
+                                    , Form.setGroup "distribucion_pagadores" <|
+                                        (distribucionToForm
+                                            { id = emptyUlid
+                                            , tipo =
+                                                TipoDistribucionMontosEspecificos
+                                                    { id = emptyUlid
+                                                    , montos =
+                                                        grupo.participantes
+                                                            |> List.map
+                                                                (\p ->
+                                                                    { id = emptyUlid
+                                                                    , participante = p.participanteId
+                                                                    , monto = Monto.zero
+                                                                    }
+                                                                )
+                                                    }
+                                            }
+                                            ++ distribucionToForm
+                                                { id = emptyUlid
+                                                , tipo =
+                                                    TipoDistribucionMontoEquitativo
+                                                        { id = emptyUlid
+                                                        , participantes = []
+                                                        }
+                                                }
+                                        )
+                                    , Form.setGroup "distribucion_deudores"
+                                        (distribucionToForm
+                                            { id = emptyUlid
+                                            , tipo =
+                                                TipoDistribucionMontosEspecificos
+                                                    { id = emptyUlid
+                                                    , montos =
+                                                        grupo.participantes
+                                                            |> List.map
+                                                                (\p ->
+                                                                    { id = emptyUlid
+                                                                    , participante = p.participanteId
+                                                                    , monto = Monto.zero
+                                                                    }
+                                                                )
+                                                    }
+                                            }
+                                            ++ distribucionToForm
+                                                { id = emptyUlid
+                                                , tipo =
+                                                    TipoDistribucionRepartija
+                                                        { id = emptyUlid
+                                                        , nombre = "GENERATED"
+                                                        , items = []
+                                                        , claims = []
+                                                        , extra = Monto.zero
+                                                        }
+                                                }
+                                            ++ distribucionToForm
+                                                { id = emptyUlid
+                                                , tipo =
+                                                    TipoDistribucionMontoEquitativo
+                                                        { id = emptyUlid
+                                                        , participantes = grupo.participantes |> List.map .participanteId
+                                                        }
+                                                }
+                                        )
+                                    ]
+                            in
+                            ( { model
+                                | pagoForm = Form.initial initialFormValues (validatePago grupo.participantes)
+                                , pagadoresForm = Form.initial initialFormValues (validatePagoInSection PagadoresSection grupo.participantes)
+                                , deudoresForm = Form.initial initialFormValues (validatePagoInSection DeudoresSection grupo.participantes)
+                                , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData grupo.participantes)
+                                , resumenPago = Loading
+                                , storedClaims = Nothing
+                                , hasUnsavedChanges = False
+                              }
+                            , Effect.none
+                            )
+                                |> andThenUpdateResumenesFromForms model
+                                |> andThenSendWarningOnExit
 
                 Just pagoId ->
                     case ( Store.getGrupo model.grupoId store, Store.getPago pagoId store ) of
@@ -569,10 +662,10 @@ update store userId msg model =
                         ( _, Loading ) ->
                             ( model, waitAndCheckNecessaryData )
 
-                        ( Failure e, _ ) ->
+                        ( Failure _, _ ) ->
                             ( model, Effect.none )
 
-                        ( _, Failure e ) ->
+                        ( _, Failure _ ) ->
                             ( model, Effect.none )
 
                         ( Success grupo, Success pago ) ->
