@@ -12,10 +12,13 @@
     "start": "concurrently pnpm:start:elm pnpm:start:css",
     "start:elm": "elm-land server",
     "start:css": "css-in-elm watch src/styles.css src/Css.elm",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "elm-test"
   },
   "author": "",
   "license": "ISC",
+  "devDependencies": {
+    "elm-test": "^0.19.1-revision12"
+  },
   "dependencies": {
     "@ryannhg/css-in-elm": "^1.0.0",
     "concurrently": "^9.2.0",
