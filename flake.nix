@@ -109,6 +109,7 @@
 
                     ./ui/static
                     ./ui/src
+                    ./ui/tests
 
                     ./ui/elm.json
                     ./ui/elm-land.json
