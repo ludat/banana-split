@@ -36,6 +36,7 @@ jobs:
 
       - name: Run Haskell tests
         run: |
+          nix develop --command cabal update
           nix develop --command cabal test --test-show-details=always
 
       - name: Install dependencies
