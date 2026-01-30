@@ -126,3 +126,25 @@ spec = describe "validar repartija" $ do
         , (participante1, 150)
         , (participante2, 150)
         ]
+  it "para un item con cantidad 1, reclamar 1 y 1 es equivalente a reclamar participacion" $ do
+    let participante1 = participante 32
+    let participante2 = participante 33
+    let item1 = fakeUlid 2
+    let repartijaConCantidades = fakeRepartija
+          { extra = 0
+          , items = [ RepartijaItem item1 "Item" 100 1 ]
+          , claims =
+            [ RepartijaClaim (fakeUlid 100) participante1 item1 (Just 1)
+            , RepartijaClaim (fakeUlid 101) participante2 item1 (Just 1)
+            ]
+          }
+    let repartijaConParticipacion = fakeRepartija
+          { extra = 0
+          , items = [ RepartijaItem item1 "Item" 100 1 ]
+          , claims =
+            [ RepartijaClaim (fakeUlid 100) participante1 item1 Nothing
+            , RepartijaClaim (fakeUlid 101) participante2 item1 Nothing
+            ]
+          }
+    calcularNetosRepartija repartijaConCantidades
+      `shouldBe` calcularNetosRepartija repartijaConParticipacion
