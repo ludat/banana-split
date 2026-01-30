@@ -43,6 +43,7 @@ jobs:
         working-directory: ./ui
         run: |
           nix develop --command pnpm install --frozen-lockfile
+          nix develop --command pnpm build
 
       - name: Run Elm tests
         working-directory: ./ui
