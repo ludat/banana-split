@@ -162,20 +162,17 @@
                   busybox
                   cbc
                   # tesseract
-                  (writeShellScriptBin "entrypoint" ''
-                    set -euo pipefail
-                    find /opt/banana-split -exec touch -d "@${toString inputs.self.lastModified}" {} +;
-                    exec "$@";
-                  '')
-
                 ];
               };
+              runAsRoot = ''
+                #!${pkgs.runtimeShell}
+                find /opt/banana-split -exec touch -d "@${toString inputs.self.lastModified}" {} +;
+              '';
               config = {
                 Cmd = [
                   "banana-split"
                   "server"
                 ];
-                Entrypoint = [ "entrypoint" ];
                 WorkingDir = "/opt/banana-split";
               };
             };
