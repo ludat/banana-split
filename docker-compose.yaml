@@ -1,12 +1,16 @@
 services:
-  # app:
-  #   image: ghcr.io/ludat/banana-split
-  #   ports:
-  #     - "8000:8000"
-  #   environment:
-  #     - BANANASPLIT_DATABASE_URL=postgres://postgres:postgres@database/bananasplit_dev
+  app:
+    image: banana-split
+    ports:
+      - "8000:8000"
+    depends_on:
+      - database
+    environment:
+      - BANANASPLIT_DATABASE_URL=postgres://postgres:postgres@database/bananasplit_dev
+    volumes:
+      - ./config/dev.properties:/opt/banana-split/config/dev.properties
   database:
-    image: "postgres:16-alpine"
+    image: "postgres:18-alpine"
     restart: always
     environment:
       - POSTGRES_DB=bananasplit_dev
@@ -17,6 +21,12 @@ services:
     command: ["postgres", "-c", "log_statement=all"]
     volumes:
       - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 1s
+      retries: 6
+      start_period: 60s
+      timeout: 10s
 
 volumes:
   db-data:

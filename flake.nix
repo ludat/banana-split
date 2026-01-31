@@ -9,6 +9,10 @@
       url = "github:msakai/haskell-MIP";
       flake = false;
     };
+    conferer = {
+      url = "github:ludat/conferer";
+      flake = false;
+    };
   };
 
   outputs =
@@ -29,7 +33,7 @@
         }:
         {
           haskellProjects.default = {
-            basePackages = pkgs.haskell.packages.ghc984;
+            basePackages = pkgs.haskellPackages;
             projectRoot =
               with lib.fileset;
               toSource {
@@ -50,6 +54,8 @@
             # Packages to add on top of `basePackages`, e.g. from Hackage
             packages = {
               MIP.source = inputs.MIP + /MIP;
+              conferer.source = inputs.conferer + /packages/conferer;
+              conferer-warp.source = inputs.conferer + /packages/warp;
             };
 
             # my-haskell-package development shell configuration
