@@ -35,6 +35,7 @@ common base-settings
     beam-postgres,
     bytestring,
     conferer,
+    conferer-warp,
     containers,
     directory,
     elm-bridge,

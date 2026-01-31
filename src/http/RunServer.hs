@@ -9,6 +9,7 @@ import BananaSplit.PgRoll qualified as PgRoll
 import BananaSplit.Receipts (ReceiptsReaderConfig(..))
 
 import Conferer qualified
+import Conferer.FromConfig.Warp ()
 
 import Data.Pool qualified as Pool
 import Data.String (String)
