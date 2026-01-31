@@ -50,8 +50,6 @@ type Msg
     | DeletePago ULID
     | ConfirmDeletePago ULID
     | CancelDeletePago
-    | IniciarCrearPago
-    | ShowPagoDetails ULID
     | DeletePagoResponse (Result Http.Error ULID)
 
 
@@ -128,20 +126,6 @@ update store userId msg model =
                 Err e ->
                     ( model, pushToast ToastDanger "Falle al borrar el pago" )
 
-        IniciarCrearPago ->
-            ( model
-            , Effect.batch
-                [ Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos_New { grupoId = model.grupoId }
-                ]
-            )
-
-        ShowPagoDetails ulid ->
-            ( model
-            , Effect.batch
-                [ Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = ulid }
-                ]
-            )
-
 
 
 -- SUBSCRIPTIONS
@@ -174,7 +158,7 @@ view store model =
             { title = grupo.nombre
             , body =
                 [ div [ class "container columns is-mobile is-justify-content-end px-4 pt-2 pb-1 m-0" ]
-                    [ button [ class "button mx-3", onClick IniciarCrearPago ] [ text "Agregar pago" ]
+                    [ a [ class "button mx-3", Path.href <| Path.Grupos_GrupoId__Pagos_New { grupoId = model.grupoId } ] [ text "Agregar pago" ]
                     ]
                 , div
                     [ class "container columns is-flex-wrap-wrap px-4 pb-4 pt-1" ]
@@ -231,7 +215,10 @@ view store model =
                                                 ]
                                             ]
                                         , footer [ class "card-footer" ]
-                                            [ button [ class "card-footer-item", onClick <| ShowPagoDetails pago.pagoId ]
+                                            [ a
+                                                [ class "button card-footer-item"
+                                                , Path.href <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = pago.pagoId }
+                                                ]
                                                 [ Icons.toHtml [] Icons.edit
                                                 ]
                                             , button [ class "card-footer-item", onClick <| DeletePago pago.pagoId ]
