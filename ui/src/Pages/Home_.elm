@@ -127,7 +127,12 @@ subscriptions model =
 ui5TextInput : Form.FieldState CustomFormError String -> List (Attribute Form.Msg) -> Html Form.Msg
 ui5TextInput state attrs =
     Html.node "ui5-input"
-        ([ value (Maybe.withDefault "" state.value)
+        ([ case state.value of
+            Just v ->
+                value v
+
+            Nothing ->
+                class ""
          , onInput (\v -> Input state.path Form.Text (Form.Field.String v))
          , on "focusin" (Json.Decode.succeed (Focus state.path))
          , on "focusout" (Json.Decode.succeed (Blur state.path))
@@ -142,7 +147,7 @@ ui5TextInput state attrs =
          ]
             ++ attrs
         )
-        []
+        [ div [ Attr.attribute "slot" "valueStateMessage" ] [ errorForField state ] ]
 
 
 ui5FormItem : String -> Form.FieldState CustomFormError String -> List (Attribute Form.Msg) -> Html Form.Msg
