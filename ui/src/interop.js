@@ -13,6 +13,10 @@ import "@ui5/webcomponents/dist/Form.js";
 import "@ui5/webcomponents/dist/FormItem.js";
 import "@ui5/webcomponents/dist/Input.js";
 import "@ui5/webcomponents/dist/Label.js";
+import "@ui5/webcomponents/dist/Link.js";
+import "@ui5/webcomponents/dist/Option.js";
+import "@ui5/webcomponents/dist/Select.js";
+import "@ui5/webcomponents/dist/Bar.js";
 import "@ui5/webcomponents/dist/Title.js";
 import "@ui5/webcomponents-fiori/dist/Page.js";
 
