@@ -3,7 +3,8 @@ module Components.NavBar exposing (..)
 import Generated.Api exposing (Grupo, ULID)
 import Html exposing (..)
 import Html.Attributes exposing (..)
-import Html.Events exposing (onInput)
+import Html.Events exposing (on, onInput)
+import Json.Decode
 import Models.Grupo exposing (GrupoLike)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -27,59 +28,62 @@ modelFromShared shared grupoId =
 navBar : NavBarModel -> Store -> Route.Path -> Bool -> Html Shared.Msg
 navBar navBarModel store path navBarOpen =
     div
-        [ classList [ ( "is-active", navBarOpen ) ]
-        , class "navbar-menu"
+        [ style "display" "flex"
+        , style "align-items" "center"
+        , style "gap" "0.5rem"
+        , style "width" "100%"
         ]
-        [ div [ class "navbar-start" ]
-            [ navBarItem { currentPath = path, path = Route.Grupos_Id_ { id = navBarModel.grupoId }, attrs = [] }
-                [ case store |> Store.getGrupo navBarModel.grupoId of
-                    NotAsked ->
-                        text ""
+        [ navBarItem { currentPath = path, path = Route.Home_, attrs = [ attribute "slot" "startContent" ] }
+            [ text "🍌 Banana Split" ]
+        , navBarItem { currentPath = path, path = Route.Grupos_Id_ { id = navBarModel.grupoId }, attrs = [] }
+            [ case store |> Store.getGrupo navBarModel.grupoId of
+                NotAsked ->
+                    text ""
 
-                    Loading ->
-                        text "Cargando..."
+                Loading ->
+                    text "Cargando..."
 
-                    Failure _ ->
-                        text ""
+                Failure _ ->
+                    text ""
 
-                    Success grupo ->
-                        text <| grupo.nombre
-                ]
-            , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Pagos { grupoId = navBarModel.grupoId }, attrs = [] }
-                [ text "Pagos" ]
-            , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }, attrs = [] }
-                [ text "Participantes" ]
+                Success grupo ->
+                    text <| grupo.nombre
             ]
-        , div [ class "navbar-end" ]
-            [ div [ class "navbar-item" ]
-                [ strong []
-                    [ case Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe of
-                        Just grupo ->
-                            viewGlobalUserSelector navBarModel.userId grupo
+        , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Pagos { grupoId = navBarModel.grupoId }, attrs = [] }
+            [ text "Pagos" ]
+        , navBarItem { currentPath = path, path = Route.Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }, attrs = [] }
+            [ text "Participantes" ]
+        , div [ style "margin-left" "auto" ]
+            [ case Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe of
+                Just grupo ->
+                    viewGlobalUserSelector navBarModel.userId grupo
 
-                        Nothing ->
-                            text ""
-                    ]
-                ]
+                Nothing ->
+                    text ""
             ]
         ]
 
 
 viewGlobalUserSelector : Maybe ULID -> GrupoLike r -> Html Shared.Msg
 viewGlobalUserSelector activeUser grupo =
-    div [ class "select" ]
-        [ select
-            [ onInput (\userId -> Shared.SetCurrentUser { grupoId = grupo.id, userId = userId }) ]
-            ([ option [ selected (activeUser == Nothing) ] [ text "" ] ]
-                ++ (grupo.participantes
-                        |> List.map
-                            (\participante ->
-                                option [ selected (activeUser == Just participante.participanteId), value participante.participanteId ]
-                                    [ text participante.participanteNombre ]
-                            )
-                   )
+    Html.node "ui5-select"
+        [ on "change"
+            (Json.Decode.at [ "detail", "selectedOption", "value" ] Json.Decode.string
+                |> Json.Decode.map (\userId -> Shared.SetCurrentUser { grupoId = grupo.id, userId = userId })
             )
         ]
+        (Html.node "ui5-option" [ selected (activeUser == Nothing), value "" ] [ text "" ]
+            :: (grupo.participantes
+                    |> List.map
+                        (\participante ->
+                            Html.node "ui5-option"
+                                [ selected (activeUser == Just participante.participanteId)
+                                , value participante.participanteId
+                                ]
+                                [ text participante.participanteNombre ]
+                        )
+               )
+        )
 
 
 navBarItem :
@@ -90,14 +94,14 @@ navBarItem :
     -> List (Html msg)
     -> Html msg
 navBarItem props =
-    a
-        ([ class "navbar-item is-tab"
+    Html.node "ui5-link"
+        ([ Route.href props.path
          , if props.path == props.currentPath then
-            class "is-active"
+            attribute "design" "Emphasized"
 
            else
-            class ""
-         , Route.href props.path
+            attribute "design" "Default"
+         , target "_self"
          ]
             ++ props.attrs
         )
