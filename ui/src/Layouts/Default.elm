@@ -113,60 +113,42 @@ view navBarFunction remoteGrupo activeUser toasts path { toContentMsg, model, co
         else
             content.title
     , body =
-        [ nav
-            [ class "navbar"
-            , attribute "role" "navigation"
-            , attribute "aria-label" "main navigation"
-            ]
-          <|
-            [ div [ class "navbar-brand" ]
-                [ navBarItem { path = Route.Path.Home_, attrs = [], currentPath = path } [ text "🍌 Banana Split" ]
-                , span
-                    [ attribute "role" "button"
-                    , class "navbar-burger"
-                    , classList [ ( "is-active", model.navBarOpen ) ]
-                    , attribute "aria-label" "menu"
-                    , attribute "aria-expanded" "true"
-                    , onClick <| toContentMsg ToggleNavBar
-                    ]
-                    [ span [ attribute "aria-hidden" "true" ] []
-                    , span [ attribute "aria-hidden" "true" ] []
-                    , span [ attribute "aria-hidden" "true" ] []
-                    , span [ attribute "aria-hidden" "true" ] []
-                    ]
+        [ Html.node "ui5-page"
+            [ style "height" "100vh" ]
+            [ Html.node "ui5-bar"
+                [ attribute "slot" "header"
+                , attribute "design" "Header"
                 ]
-            , case navBarFunction of
-                Just navBarF ->
-                    Html.map toContentMsg <| Html.map ForwardSharedMessage <| navBarF model.navBarOpen
+              <|
+                case navBarFunction of
+                    Just navBarF ->
+                        [ Html.map toContentMsg <|
+                            Html.map ForwardSharedMessage <|
+                                navBarF model.navBarOpen
+                        ]
 
-                Nothing ->
-                    text ""
-            ]
-        , div [ Css.toasts_container ]
-            [ Html.map toContentMsg <|
-                Toasts.view Toasts.config renderToast ToastMsg toasts
-            ]
-        , case ( activeUser, remoteGrupo ) of
-            ( Nothing, Success grupo ) ->
-                if List.isEmpty grupo.participantes then
-                    -- No participantes in grupo, show the UI
-                    div [ class "container p-4" ] content.body
+                    Nothing ->
+                        []
+            , div [ Css.toasts_container ]
+                [ Html.map toContentMsg <|
+                    Toasts.view Toasts.config renderToast ToastMsg toasts
+                ]
+            , case ( activeUser, remoteGrupo ) of
+                ( Nothing, Success grupo ) ->
+                    if List.isEmpty grupo.participantes then
+                        div [ style "padding" "1rem" ] content.body
 
-                else
-                    -- There are participantes, show user selection
-                    Html.map toContentMsg <|
-                        Html.map ForwardSharedMessage <|
-                            div [ class "container p-4" ]
-                                [ div [ class "box has-text-centered" ]
-                                    [ p [ class "mb-4" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
-                                    , div [ class "is-flex is-justify-content-center" ]
-                                        [ viewGlobalUserSelector activeUser grupo
-                                        ]
+                    else
+                        Html.map toContentMsg <|
+                            Html.map ForwardSharedMessage <|
+                                div [ style "padding" "1rem", style "text-align" "center" ]
+                                    [ p [ style "margin-bottom" "1rem" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
+                                    , viewGlobalUserSelector activeUser grupo
                                     ]
-                                ]
 
-            ( _, _ ) ->
-                div [ class "container p-4" ] content.body
+                ( _, _ ) ->
+                    div [ style "padding" "1rem" ] content.body
+            ]
         ]
     }
 
