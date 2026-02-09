@@ -12,11 +12,14 @@
     "start": "concurrently pnpm:start:elm pnpm:start:css",
     "start:elm": "elm-land server",
     "start:css": "css-in-elm watch src/styles.css src/Css.elm",
-    "test": "elm-test"
+    "test": "elm-test",
+    "postinstall": "pnpm run inject",
+    "inject": "elm-sideload install --always"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "elm-sideload": "^1.0.2",
     "elm-test": "^0.19.1-revision12"
   },
   "dependencies": {

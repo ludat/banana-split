@@ -39,6 +39,9 @@ importers:
         specifier: ^0.20.1
         version: 0.20.1
     devDependencies:
+      elm-sideload:
+        specifier: ^1.0.2
+        version: 1.0.2
       elm-test:
         specifier: ^0.19.1-revision12
         version: 0.19.1-revision17
@@ -566,6 +569,10 @@ packages:
     resolution: {integrity: sha512-FQN4MRfuJeHf7cBbBMJFXhKSDq+2kAArBlmRBvcvFE5BB1HZKXtSFASDhdlz9zOYwxh8lDdnvmMOe/+5cdoEdg==}
     engines: {node: '>= 0.8'}
 
+  commander@14.0.3:
+    resolution: {integrity: sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw==}
+    engines: {node: '>=20'}
+
   commander@2.20.3:
     resolution: {integrity: sha512-GpVkmM8vF2vQUkj2LvZmD35JxeJOLCwJ9cUkugyk2nuhbv3+mJvpLYYt+0+USMxE+oj+ey/lJEnhZw75x/OMcQ==}
 
@@ -601,6 +608,14 @@ packages:
     resolution: {integrity: sha512-z2S+W9X73hAUUki+N+9Za2lBlun89zigOyGrsax+KUQ6wKW4ZoWpEYBkGhQjwAjjDCkWxhY0VKEhk8wzY7F5cA==}
     engines: {node: '>=0.10.0'}
 
+  dedent@1.7.1:
+    resolution: {integrity: sha512-9JmrhGZpOlEgOLdQgSm0zxFaYoQon408V1v49aqTWuXENVlnCuY9JBZcXZiCsZQWDjTm5Qf/nIvAy77mXDAjEg==}
+    peerDependencies:
+      babel-plugin-macros: ^3.1.0
+    peerDependenciesMeta:
+      babel-plugin-macros:
+        optional: true
+
   delayed-stream@1.0.0:
     resolution: {integrity: sha512-ZySD7Nf91aLB0RxL4KGrKHBXl7Eds1DAmEdcoVawXnLD7SDhpNgtuII2aAkg7a7QS41jxPSZ17p4VdGnMHk3MQ==}
     engines: {node: '>=0.4.0'}
@@ -618,6 +633,11 @@ packages:
 
   elm-land@0.20.1:
     resolution: {integrity: sha512-AY8BxYNT7mblaIO9SS2YQPdskZdMsLL6fqjAA5bORdkGIRDkMeaw+rXgiVSHUM2+TK0k/ld0TdQEAd24Moi5nw==}
+    hasBin: true
+
+  elm-sideload@1.0.2:
+    resolution: {integrity: sha512-ieTnuAEcR1x83aTodD14RNIw8GqHcVmOPNlTqg4RJpM15W8g5yc7ZIxl8Y4blI4FuY2MmtuYEZHFiTW8dRDG+w==}
+    engines: {node: '>=14.0.0'}
     hasBin: true
 
   elm-solve-deps-wasm@2.0.0:
@@ -832,6 +852,10 @@ packages:
     resolution: {integrity: sha512-N8SpfPUnUp1bK+PMYW8qSWdl9U+wwNWI4QKxOYDy9JAro3WMX7p2OeVRF9v+347pnakNevPmiHhNmZ2HbFA76w==}
     engines: {node: ^10 || ^12 || ^13.7 || ^14 || >=15.0.1}
     hasBin: true
+
+  neverthrow@8.2.0:
+    resolution: {integrity: sha512-kOCT/1MCPAxY5iUV3wytNFUMUolzuwd/VF/1KCx7kf6CutrOsTie+84zTGTpgQycjvfLdBBdvBvFLqFD2c0wkQ==}
+    engines: {node: '>=18'}
 
   normalize-path@3.0.0:
     resolution: {integrity: sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==}
@@ -1547,6 +1571,8 @@ snapshots:
     dependencies:
       delayed-stream: 1.0.0
 
+  commander@14.0.3: {}
+
   commander@2.20.3: {}
 
   commander@9.5.0: {}
@@ -1586,6 +1612,8 @@ snapshots:
 
   decamelize@1.2.0: {}
 
+  dedent@1.7.1: {}
+
   delayed-stream@1.0.0: {}
 
   ecc-jsbn@0.1.2:
@@ -1620,6 +1648,14 @@ snapshots:
       - sass
       - stylus
       - sugarss
+
+  elm-sideload@1.0.2:
+    dependencies:
+      commander: 14.0.3
+      dedent: 1.7.1
+      neverthrow: 8.2.0
+    transitivePeerDependencies:
+      - babel-plugin-macros
 
   elm-solve-deps-wasm@2.0.0: {}
 
@@ -1822,6 +1858,10 @@ snapshots:
   mkdirp@1.0.4: {}
 
   nanoid@3.3.11: {}
+
+  neverthrow@8.2.0:
+    optionalDependencies:
+      '@rollup/rollup-linux-x64-gnu': 4.40.2
 
   normalize-path@3.0.0: {}
 
