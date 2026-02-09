@@ -1,15 +1,17 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
 import Effect exposing (Effect, pushRoutePath)
-import Form exposing (Form)
+import Form exposing (Form, Msg(..))
 import Form.Error as Form
+import Form.Field
 import Form.Input as FormInput
 import Form.Validate as Validate exposing (..)
 import Generated.Api as Api exposing (CreateGrupoParams)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (onClick, onSubmit)
+import Html.Events exposing (on, onClick, onInput, onSubmit)
 import Http
+import Json.Decode
 import Layouts
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..))
@@ -122,6 +124,41 @@ subscriptions model =
     Sub.none
 
 
+ui5TextInput : Form.FieldState CustomFormError String -> List (Attribute Form.Msg) -> Html Form.Msg
+ui5TextInput state attrs =
+    Html.node "ui5-input"
+        ([ value (Maybe.withDefault "" state.value)
+         , onInput (\v -> Input state.path Form.Text (Form.Field.String v))
+         , on "focusin" (Json.Decode.succeed (Focus state.path))
+         , on "focusout" (Json.Decode.succeed (Blur state.path))
+         , id state.path
+         , Attr.attribute "value-state"
+            (if hasErrorField state then
+                "Negative"
+
+             else
+                "None"
+            )
+         ]
+            ++ attrs
+        )
+        []
+
+
+ui5FormItem : String -> Form.FieldState CustomFormError String -> List (Attribute Form.Msg) -> Html Form.Msg
+ui5FormItem labelText state inputAttrs =
+    Html.node "ui5-form-item"
+        []
+        [ Html.node "ui5-label"
+            [ Attr.attribute "slot" "labelContent"
+            , Attr.attribute "show-colon" ""
+            , for state.path
+            ]
+            [ text labelText ]
+        , ui5TextInput state inputAttrs
+        ]
+
+
 view : Model -> View Msg
 view model =
     let
@@ -133,44 +170,29 @@ view model =
     in
     { title = ""
     , body =
-        [ div [ class "container" ]
-            [ section [ class "section" ]
-                [ Html.form [ onSubmit <| UpdateForm Form.Submit ]
-                    [ div [ class "field" ]
-                        [ label [ class "label" ]
-                            [ text "Nombre" ]
-                        , div [ class "control" ]
-                            [ Html.map UpdateForm <|
-                                FormInput.textInput nombreField
-                                    [ class "input"
-                                    , type_ "text"
-                                    , placeholder "After del viernes"
-                                    , classList [ ( "is-danger", hasErrorField nombreField ) ]
-                                    ]
-                            , errorForField nombreField
-                            ]
+        [ Html.form [ onSubmit <| UpdateForm Submit ]
+            [ Html.node "ui5-form"
+                [ Attr.attribute "header-text" "Crear grupo"
+                , Attr.attribute "layout" "S1 M1 L1 XL1"
+                , Attr.attribute "label-span" "S12 M12 L12 XL12"
+                ]
+                [ Html.map UpdateForm <|
+                    ui5FormItem "Nombre"
+                        nombreField
+                        [ placeholder "After del viernes"
+                        , required True
                         ]
-                    , div [ class "field" ]
-                        [ label [ class "label" ]
-                            [ text "Participante" ]
-                        , div [ class "control" ]
-                            [ Html.map UpdateForm <|
-                                FormInput.textInput participanteField
-                                    [ class "input"
-                                    , type_ "text"
-                                    , placeholder "Juan"
-                                    , classList [ ( "is-danger", hasErrorField participanteField ) ]
-                                    ]
-                            , errorForField participanteField
-                            ]
+                , Html.map UpdateForm <|
+                    ui5FormItem "Participante"
+                        participanteField
+                        [ placeholder "Juan"
+                        , required True
                         ]
-                    , div [ class "control" ]
-                        [ button
-                            [ class "button is-primary"
-                            ]
-                            [ text "Crear" ]
-                        ]
+                , Html.node "ui5-button"
+                    [ Attr.attribute "design" "Emphasized"
+                    , onClick <| UpdateForm Submit
                     ]
+                    [ text "Crear" ]
                 ]
             ]
         ]

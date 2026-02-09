@@ -1,5 +1,30 @@
 import "./styles.css";
 
+
+import { setTheme } from "@ui5/webcomponents-base/dist/config/Theme.js";
+import { setLanguage } from "@ui5/webcomponents-base/dist/config/Language.js";
+
+import "@ui5/webcomponents/dist/Assets.js";
+import "@ui5/webcomponents-fiori/dist/Assets.js";
+import "@ui5/webcomponents-icons/dist/Assets.js"
+
+import "@ui5/webcomponents/dist/Button.js";
+import "@ui5/webcomponents/dist/Form.js";
+import "@ui5/webcomponents/dist/FormItem.js";
+import "@ui5/webcomponents/dist/Input.js";
+import "@ui5/webcomponents/dist/Label.js";
+import "@ui5/webcomponents/dist/Title.js";
+import "@ui5/webcomponents-fiori/dist/Page.js";
+
+setLanguage("es");
+
+const darkModeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+console.log(darkModeQuery);
+setTheme(darkModeQuery.matches ? "sap_horizon_dark" : "sap_horizon");
+darkModeQuery.addEventListener("change", (e) => {
+  setTheme(e.matches ? "sap_horizon_dark" : "sap_horizon");
+});
+
 // Storage key format: "banana-split:grupo:{grupoId}:currentUser"
 const makeStorageKey = (grupoId) => `banana-split:grupo:${grupoId}:currentUser`;
 

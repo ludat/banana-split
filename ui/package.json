@@ -21,6 +21,9 @@
   },
   "dependencies": {
     "@ryannhg/css-in-elm": "^1.0.0",
+    "@ui5/webcomponents": "^2.19.1",
+    "@ui5/webcomponents-fiori": "^2.19.1",
+    "@ui5/webcomponents-icons": "^2.19.1",
     "concurrently": "^9.2.0",
     "elm": "0.19.1-6",
     "elm-format": "^0.8.8",
@@ -28,8 +31,8 @@
     "elm-land": "^0.20.1"
   },
   "pnpm": {
-  "overrides": {
-    "launch-editor": "2.11.0"
-  }
+    "overrides": {
+      "launch-editor": "2.11.0"
+    }
   }
 }
