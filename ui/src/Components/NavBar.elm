@@ -94,14 +94,18 @@ navBarItem :
     -> List (Html msg)
     -> Html msg
 navBarItem props =
-    Html.node "ui5-link"
+    a
         ([ Route.href props.path
+         , style "text-decoration" "none"
+         , style "color" "var(--sapLinkColor)"
+         , style "padding" "0 0.75rem"
+         , style "display" "flex"
+         , style "align-items" "center"
          , if props.path == props.currentPath then
-            attribute "design" "Emphasized"
+            style "font-weight" "bold"
 
            else
-            attribute "design" "Default"
-         , target "_self"
+            class ""
          ]
             ++ props.attrs
         )
