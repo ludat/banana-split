@@ -1,4 +1,4 @@
-module Css exposing (barras_precio, arrow_container, is_size_6_5, eje_vertical, toasts_container, toast, spin)
+module Css exposing (arrow_container, barras_precio, eje_vertical, is_size_6_5, spin, toast, toasts_container)
 
 import Html
 import Html.Attributes

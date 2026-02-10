@@ -2,17 +2,16 @@ module Pages.Grupos.GrupoId_.Participantes exposing (Model, Msg, page)
 
 import Browser.Dom
 import Components.NavBar as NavBar
+import Components.Ui5 exposing (..)
 import Effect exposing (Effect)
-import FeatherIcons as Icons
-import Form exposing (Form)
-import Form.Input as FormInput
+import Form exposing (Form, Msg(..))
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
 import Generated.Api as Api exposing (Grupo, Participante, ParticipanteAddParams, ParticipanteId, ULID)
 import Html exposing (..)
-import Html.Attributes exposing (..)
+import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (..)
-import Html.Keyed
 import Http
+import Json.Decode
 import Layouts
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -21,7 +20,7 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Shared
 import Task
-import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Form exposing (CustomFormError)
 import Utils.Toasts exposing (pushToast)
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
@@ -168,11 +167,7 @@ view store model =
         Loading ->
             { title = "Cargando"
             , body =
-                [ div [ class "container" ]
-                    [ section [ class "section" ]
-                        [ text "Cargando..."
-                        ]
-                    ]
+                [ div [] [ text "Cargando..." ]
                 ]
             }
 
@@ -184,64 +179,37 @@ view store model =
         Success grupo ->
             { title = grupo.nombre
             , body =
-                [ div [ class "container px-4" ]
-                    [ Html.form
-                        [ onSubmit <| ParticipanteForm Form.Submit ]
-                        [ table [ class "table" ]
-                            [ thead []
-                                [ tr []
-                                    [ th [ class "px-2" ] [ text "Nombre" ]
-                                    , th [] []
-                                    ]
-                                ]
-                            , Html.Keyed.node "tbody"
-                                []
-                                ((grupo.participantes
-                                    |> List.map
-                                        (\p ->
-                                            ( p.participanteId
-                                            , tr []
-                                                [ td [ class "is-vcentered px-4" ] [ text p.participanteNombre ]
-                                                , td []
-                                                    [ div [ class "button is-danger is-outlined", onClick <| DeleteParticipante p.participanteId ]
-                                                        [ Icons.toHtml [] Icons.trash2 ]
-                                                    ]
-                                                ]
-                                            )
-                                        )
-                                 )
-                                    ++ [ ( "new", participantesForm model.participanteForm ) ]
-                                )
-                            ]
+                [ Html.node "ui5-list"
+                    [ Attr.attribute "header-text" "Participantes"
+                    , Attr.attribute "selection-mode" "Delete"
+                    , on "item-delete"
+                        (Json.Decode.at [ "detail", "item", "dataset", "id" ] Json.Decode.string
+                            |> Json.Decode.map DeleteParticipante
+                        )
+                    ]
+                    (grupo.participantes
+                        |> List.map
+                            (\p ->
+                                Html.node "ui5-li"
+                                    [ Attr.attribute "data-id" p.participanteId ]
+                                    [ text p.participanteNombre ]
+                            )
+                    )
+                , ui5Form ParticipanteForm
+                    [ Attr.attribute "header-text" "Agregar Participante"
+                    , Attr.attribute "labelSpan" "S12 M12 L12 XL12"
+                    ]
+                    [ Html.map ParticipanteForm <|
+                        ui5TextFormItem (Form.getFieldAsString "nombre" model.participanteForm)
+                            { placeholder = Just "Juan"
+                            , label = "Nombre"
+                            , required = True
+                            }
+                    , ui5Button
+                        [ Attr.attribute "design" "Emphasized"
+                        , onClick <| ParticipanteForm Form.Submit
                         ]
+                        [ text "Agregar" ]
                     ]
                 ]
             }
-
-
-participantesForm : Form CustomFormError ParticipanteAddParams -> Html Msg
-participantesForm form =
-    let
-        nombreField =
-            Form.getFieldAsString "nombre" form
-    in
-    tr []
-        [ td [ class "field" ]
-            [ div [ class "control" ]
-                [ Html.map ParticipanteForm <|
-                    FormInput.textInput nombreField
-                        [ class "input"
-                        , type_ "text"
-                        , placeholder "Juan"
-                        , id nombreField.path
-                        , classList [ ( "is-danger", hasErrorField nombreField ) ]
-                        ]
-                , errorForField nombreField
-                ]
-            ]
-        , td [ class "control" ]
-            [ button
-                [ class "button is-primary has-text-white" ]
-                [ Icons.toHtml [] Icons.userPlus ]
-            ]
-        ]

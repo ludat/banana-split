@@ -1,24 +1,21 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
+import Components.Ui5 exposing (..)
 import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form, Msg(..))
-import Form.Error as Form
-import Form.Field
-import Form.Input as FormInput
 import Form.Validate as Validate exposing (..)
 import Generated.Api as Api exposing (CreateGrupoParams)
 import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (on, onClick, onInput, onSubmit)
+import Html.Events exposing (onClick, onSubmit)
 import Http
-import Json.Decode
 import Layouts
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
-import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Form exposing (CustomFormError)
 import View exposing (View)
 
 
@@ -124,46 +121,6 @@ subscriptions model =
     Sub.none
 
 
-ui5TextInput : Form.FieldState CustomFormError String -> List (Attribute Form.Msg) -> Html Form.Msg
-ui5TextInput state attrs =
-    Html.node "ui5-input"
-        ([ case state.value of
-            Just v ->
-                value v
-
-            Nothing ->
-                class ""
-         , onInput (\v -> Input state.path Form.Text (Form.Field.String v))
-         , on "focusin" (Json.Decode.succeed (Focus state.path))
-         , on "focusout" (Json.Decode.succeed (Blur state.path))
-         , id state.path
-         , Attr.attribute "value-state"
-            (if hasErrorField state then
-                "Negative"
-
-             else
-                "None"
-            )
-         ]
-            ++ attrs
-        )
-        [ div [ Attr.attribute "slot" "valueStateMessage" ] [ errorForField state ] ]
-
-
-ui5FormItem : String -> Form.FieldState CustomFormError String -> List (Attribute Form.Msg) -> Html Form.Msg
-ui5FormItem labelText state inputAttrs =
-    Html.node "ui5-form-item"
-        []
-        [ Html.node "ui5-label"
-            [ Attr.attribute "slot" "labelContent"
-            , Attr.attribute "show-colon" ""
-            , for state.path
-            ]
-            [ text labelText ]
-        , ui5TextInput state inputAttrs
-        ]
-
-
 view : Model -> View Msg
 view model =
     let
@@ -182,17 +139,19 @@ view model =
                 , Attr.attribute "label-span" "S12 M12 L12 XL12"
                 ]
                 [ Html.map UpdateForm <|
-                    ui5FormItem "Nombre"
+                    ui5TextFormItem
                         nombreField
-                        [ placeholder "After del viernes"
-                        , required True
-                        ]
+                        { required = True
+                        , label = "Nombre"
+                        , placeholder = Just "After del viernes, Vacaciones a Calamuchita"
+                        }
                 , Html.map UpdateForm <|
-                    ui5FormItem "Participante"
+                    ui5TextFormItem
                         participanteField
-                        [ placeholder "Juan"
-                        , required True
-                        ]
+                        { required = True
+                        , label = "Participante"
+                        , placeholder = Just "Juan"
+                        }
                 , Html.node "ui5-button"
                     [ Attr.attribute "design" "Emphasized"
                     , onClick <| UpdateForm Submit
