@@ -11,6 +11,7 @@ import "@ui5/webcomponents-icons/dist/add.js"
 import "@ui5/webcomponents-icons/dist/alert.js"
 import "@ui5/webcomponents-icons/dist/delete.js"
 import "@ui5/webcomponents-icons/dist/edit.js"
+import "@ui5/webcomponents-icons/dist/upload.js"
 
 import "@ui5/webcomponents/dist/Button.js";
 import "@ui5/webcomponents/dist/Dialog.js";
@@ -23,8 +24,14 @@ import "@ui5/webcomponents/dist/Label.js";
 import "@ui5/webcomponents/dist/Link.js";
 import "@ui5/webcomponents/dist/Option.js";
 import "@ui5/webcomponents/dist/Select.js";
+import "@ui5/webcomponents/dist/SegmentedButton.js";
 import "@ui5/webcomponents/dist/Bar.js";
 import "@ui5/webcomponents/dist/Title.js";
+import "@ui5/webcomponents-fiori/dist/Wizard.js";
+import "@ui5/webcomponents/dist/CheckBox.js";
+import "@ui5/webcomponents/dist/MessageStrip.js";
+import "@ui5/webcomponents/dist/BusyIndicator.js";
+import "@ui5/webcomponents/dist/FileUploader.js";
 import "@ui5/webcomponents-fiori/dist/Page.js";
 
 setLanguage("es");
