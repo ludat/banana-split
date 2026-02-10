@@ -7,10 +7,13 @@ import { setLanguage } from "@ui5/webcomponents-base/dist/config/Language.js";
 import "@ui5/webcomponents/dist/Assets.js";
 import "@ui5/webcomponents-fiori/dist/Assets.js";
 import "@ui5/webcomponents-icons/dist/Assets.js"
-import "@ui5/webcomponents-icons/dist/delete.js"
 import "@ui5/webcomponents-icons/dist/add.js"
+import "@ui5/webcomponents-icons/dist/alert.js"
+import "@ui5/webcomponents-icons/dist/delete.js"
+import "@ui5/webcomponents-icons/dist/edit.js"
 
 import "@ui5/webcomponents/dist/Button.js";
+import "@ui5/webcomponents/dist/Dialog.js";
 import "@ui5/webcomponents/dist/List.js";
 import "@ui5/webcomponents/dist/ListItemStandard.js";
 import "@ui5/webcomponents/dist/Form.js";
