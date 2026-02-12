@@ -36,11 +36,16 @@ import "@ui5/webcomponents-fiori/dist/Page.js";
 
 setLanguage("es");
 
+// const defaultTheme = "sap_horizon"
+const defaultTheme = "sap_fiori_3"
+const defaultDarkTheme = defaultTheme + "_dark"
+
 const darkModeQuery = window.matchMedia("(prefers-color-scheme: dark)");
 console.log(darkModeQuery);
-setTheme(darkModeQuery.matches ? "sap_horizon_dark" : "sap_horizon");
+setTheme(darkModeQuery.matches ? defaultDarkTheme : defaultTheme);
 darkModeQuery.addEventListener("change", (e) => {
-  setTheme(e.matches ? "sap_horizon_dark" : "sap_horizon");
+  // setTheme(e.matches ? "sap_horizon_dark" : "sap_horizon");
+  setTheme(e.matches ? defaultDarkTheme : defaultTheme);
 });
 
 // Storage key format: "banana-split:grupo:{grupoId}:currentUser"
