@@ -312,15 +312,14 @@ update store userId msg model =
             )
 
         UpdatedPagoResponse (Ok pago) ->
-            ( { model | hasUnsavedChanges = False }
+            ( setFormsFromPago participantes pago model
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
-
-                -- , Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos { grupoId = model.grupoId }
                 , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el pago"
                 ]
             )
+                |> andThenUpdateResumenesFromForms model
                 |> andThenSendWarningOnExit
 
         UpdatedPagoResponse (Err error) ->
@@ -668,29 +667,7 @@ update store userId msg model =
                             ( model, Effect.none )
 
                         ( Success grupo, Success pago ) ->
-                            let
-                                initialFormValues =
-                                    [ Form.setString "id" pagoId
-                                    , Form.setString "nombre" pago.nombre
-                                    , Form.setString "monto" (Monto.toString pago.monto)
-                                    , Form.setGroup "distribucion_pagadores" (distribucionToForm pago.pagadores)
-                                    , Form.setGroup "distribucion_deudores" (distribucionToForm pago.deudores)
-                                    ]
-
-                                claimsToStore =
-                                    { pagadores = extractClaimsFromDistribucion pago.pagadores
-                                    , deudores = extractClaimsFromDistribucion pago.deudores
-                                    }
-                            in
-                            ( { model
-                                | pagoForm = Form.initial initialFormValues (validatePago grupo.participantes)
-                                , pagadoresForm = Form.initial initialFormValues (validatePagoInSection PagadoresSection grupo.participantes)
-                                , deudoresForm = Form.initial initialFormValues (validatePagoInSection DeudoresSection grupo.participantes)
-                                , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData grupo.participantes)
-                                , resumenPago = Loading
-                                , storedClaims = Just claimsToStore
-                                , hasUnsavedChanges = False
-                              }
+                            ( setFormsFromPago grupo.participantes pago model
                             , Effect.none
                             )
                                 |> andThenUpdateResumenesFromForms model
@@ -705,6 +682,32 @@ andThenSendWarningOnExit ( model, oldEffects ) =
         , Effect.setUnsavedChangesWarning model.hasUnsavedChanges
         ]
     )
+
+
+setFormsFromPago : List Participante -> Pago -> Model -> Model
+setFormsFromPago participantes pago model =
+    let
+        initialFormValues =
+            [ Form.setString "id" pago.pagoId
+            , Form.setString "nombre" pago.nombre
+            , Form.setString "monto" (Monto.toString pago.monto)
+            , Form.setGroup "distribucion_pagadores" (distribucionToForm pago.pagadores)
+            , Form.setGroup "distribucion_deudores" (distribucionToForm pago.deudores)
+            ]
+
+        claimsToStore =
+            { pagadores = extractClaimsFromDistribucion pago.pagadores
+            , deudores = extractClaimsFromDistribucion pago.deudores
+            }
+    in
+    { model
+        | pagoForm = Form.initial initialFormValues (validatePago participantes)
+        , pagadoresForm = Form.initial initialFormValues (validatePagoInSection PagadoresSection participantes)
+        , deudoresForm = Form.initial initialFormValues (validatePagoInSection DeudoresSection participantes)
+        , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData participantes)
+        , storedClaims = Just claimsToStore
+        , hasUnsavedChanges = False
+    }
 
 
 {-| This is a bit of a hack, we need to wait for the `Grupo` AND possibly the `Pago` (if we are editing) before
