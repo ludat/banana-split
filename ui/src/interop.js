@@ -15,6 +15,7 @@ import "@ui5/webcomponents-icons/dist/upload.js"
 import "@ui5/webcomponents-icons/dist/sys-minus.js"
 import "@ui5/webcomponents-icons/dist/accept.js"
 import "@ui5/webcomponents-icons/dist/decline.js"
+import "@ui5/webcomponents-icons/dist/arrow-right.js"
 
 import "@ui5/webcomponents/dist/Button.js";
 import "@ui5/webcomponents/dist/Dialog.js";
