@@ -791,9 +791,8 @@ mergeClaimsIntoDistribucion claims distribucion =
 
 distribucionToForm : Distribucion -> List ( String, FormField.Field )
 distribucionToForm distribucion =
-    [ Form.setString "id" distribucion.id
-    ]
-        ++ (case distribucion.tipo of
+    Form.setString "id" distribucion.id
+        :: (case distribucion.tipo of
                 TipoDistribucionMontoEquitativo distribucionMontoEquitativo ->
                     [ Form.setString "monto_equitativo_id" distribucionMontoEquitativo.id
                     , Form.setString "tipo" "monto_equitativo"
@@ -1210,7 +1209,8 @@ pagoForm participantes form =
     in
     Html.form [ onSubmit <| SubmitCurrentSection ]
         [ Html.node "ui5-form"
-            [ Attr.attribute "label-span" "S12 M12 L12 XL12" ]
+            [ Attr.attribute "label-span" "S12 M12 L12 XL12"
+            ]
             [ Html.map PagoForm <|
                 ui5TextFormItem nombreField
                     { label = "Nombre"
@@ -1243,9 +1243,6 @@ distribucionForm participantes prefix form receiptParseState =
     let
         tipoField =
             Form.getFieldAsString (prefix ++ ".tipo") form
-
-        selectId =
-            prefix ++ "-tipo"
     in
     div [] <|
         div [ style "margin-bottom" "1rem" ]
@@ -1259,7 +1256,8 @@ distribucionForm participantes prefix form receiptParseState =
                     [ Html.node "ui5-segmented-button-item"
                         [ Attr.attribute "data-id" "monto_equitativo"
                         , if tipoField.value == Just "monto_equitativo" then
-                            Attr.attribute "pressed" ""
+                            Attr.attribute "selected" ""
+
                           else
                             class ""
                         ]
@@ -1267,7 +1265,8 @@ distribucionForm participantes prefix form receiptParseState =
                     , Html.node "ui5-segmented-button-item"
                         [ Attr.attribute "data-id" "montos_especificos"
                         , if tipoField.value == Just "montos_especificos" then
-                            Attr.attribute "pressed" ""
+                            Attr.attribute "selected" ""
+
                           else
                             class ""
                         ]
@@ -1275,7 +1274,8 @@ distribucionForm participantes prefix form receiptParseState =
                     , Html.node "ui5-segmented-button-item"
                         [ Attr.attribute "data-id" "repartija"
                         , if tipoField.value == Just "repartija" then
-                            Attr.attribute "pressed" ""
+                            Attr.attribute "selected" ""
+
                           else
                             class ""
                         ]

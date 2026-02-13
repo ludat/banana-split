@@ -2,17 +2,16 @@ module Pages.Grupos.GrupoId_.Pagos.PagoId_ exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
-import Form exposing (Form)
-import Generated.Api exposing (Distribucion, Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, Repartija, RepartijaItem, ShallowGrupo, ULID)
+import Form
+import Generated.Api exposing (Parte(..), ULID)
 import Layouts
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
 import Pages.Grupos.GrupoId_.Pagos.New as P exposing (Model, Msg(..), Section(..), andThenSendWarningOnExit, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
-import RemoteData exposing (RemoteData(..), WebData)
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Shared
-import View exposing (View)
 
 
 type alias Model =
