@@ -46,8 +46,8 @@ import "@ui5/webcomponents-fiori/dist/Page.js";
 
 setLanguage("es");
 
-// const defaultTheme = "sap_horizon"
-const defaultTheme = "sap_fiori_3"
+const defaultTheme = "sap_horizon"
+// const defaultTheme = "sap_fiori_3"
 const defaultDarkTheme = defaultTheme + "_dark"
 
 const darkModeQuery = window.matchMedia("(prefers-color-scheme: dark)");
