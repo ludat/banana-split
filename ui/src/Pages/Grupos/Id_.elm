@@ -8,6 +8,7 @@ import Html exposing (..)
 import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (onClick)
 import Http
+import Json.Encode as Encode
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
@@ -236,7 +237,10 @@ viewTransferencias grupo resumen =
     div []
         (if List.isEmpty resumen.transaccionesParaSaldar then
             [ Html.node "ui5-message-strip"
-                [ Attr.attribute "design" "Positive", style "text-align" "center" ]
+                [ Attr.attribute "design" "Positive"
+                , style "text-align" "center"
+                , Attr.property "hideCloseButton" (Encode.bool True)
+                ]
                 [ text "¡No hay deudas pendientes! Todos están al día." ]
             ]
 
@@ -247,7 +251,7 @@ viewTransferencias grupo resumen =
                         div [ style "display" "grid", style "grid-template-columns" "1fr auto 1fr", style "align-items" "center", style "margin-bottom" "0.5rem" ]
                             [ div [ style "text-align" "right" ]
                                 [ div [] [ text <| lookupNombreParticipante grupo t.transaccionFrom ]
-                                , div [ style "color" "var(--sapNegativeTextColor)", style "font-size" "0.85rem" ]
+                                , div [ style "color" "var(--sapNegativeTextColor)" ]
                                     [ text "$"
                                     , text <| Monto.toString t.transaccionMonto
                                     ]
@@ -260,7 +264,7 @@ viewTransferencias grupo resumen =
                                 , style "margin" "0 0.5rem"
                                 ]
                                 []
-                            , div []
+                            , span []
                                 [ text <| lookupNombreParticipante grupo t.transaccionTo
                                 ]
                             ]

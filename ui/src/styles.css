@@ -11,13 +11,13 @@
     grid-template-columns: 1fr 1fr;
     align-items: center;
 
-    &>.nombre {
+    & > .nombre {
         &.izquierda {
             text-align: right;
         }
     }
 
-    &>.monto {
+    & > .monto {
         position: relative;
 
         &.izquierda {
@@ -71,6 +71,12 @@
     z-index: 9999;
     bottom: 0;
     width: 100%;
+
+    ol {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
 }
 
 .toast {

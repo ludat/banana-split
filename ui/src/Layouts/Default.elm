@@ -5,8 +5,9 @@ import Css
 import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, ShallowGrupo, ULID)
 import Html exposing (..)
-import Html.Attributes exposing (..)
+import Html.Attributes as Attr exposing (..)
 import Html.Events exposing (onClick)
+import Json.Encode
 import Layout exposing (Layout)
 import Models.Grupo exposing (GrupoLike)
 import RemoteData exposing (RemoteData(..), WebData)
@@ -156,23 +157,25 @@ view navBarFunction remoteGrupo activeUser toasts path { toContentMsg, model, co
 renderToast : Toast -> Html Msg
 renderToast toast =
     div [ Css.toast ]
-        [ div
-            [ class "notification"
-            , case toast.level of
-                ToastNoLevel ->
-                    class ""
+        [ Html.node "ui5-message-strip"
+            [ Attr.attribute "design"
+                (case toast.level of
+                    ToastNoLevel ->
+                        "Information"
 
-                ToastSuccess ->
-                    class "is-success"
+                    ToastSuccess ->
+                        "Positive"
 
-                ToastInfo ->
-                    class "is-info"
+                    ToastInfo ->
+                        "Information"
 
-                ToastWarning ->
-                    class "is-warning"
+                    ToastWarning ->
+                        "Warning"
 
-                ToastDanger ->
-                    class "is-danger"
+                    ToastDanger ->
+                        "Negative"
+                )
+            , Attr.property "hideCloseButton" (Json.Encode.bool True)
             ]
             [ text toast.content ]
         ]
