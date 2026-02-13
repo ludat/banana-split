@@ -28,7 +28,7 @@ import Browser.Navigation
 import Dict exposing (Dict)
 import Json.Encode
 import Models.Store.Types exposing (StoreMsg)
-import Route exposing (Route)
+import Route
 import Route.Path
 import Shared.Model
 import Shared.Msg

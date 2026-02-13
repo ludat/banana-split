@@ -28,8 +28,8 @@ import Set
 import Shared
 import Utils.Form exposing (CustomFormError)
 import Utils.Http exposing (viewHttpError)
-import Utils.Toasts as Toast exposing (..)
-import Utils.Toasts.Types as Toast exposing (..)
+import Utils.Toasts exposing (..)
+import Utils.Toasts.Types exposing (..)
 import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
