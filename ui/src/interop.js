@@ -12,6 +12,9 @@ import "@ui5/webcomponents-icons/dist/alert.js"
 import "@ui5/webcomponents-icons/dist/delete.js"
 import "@ui5/webcomponents-icons/dist/edit.js"
 import "@ui5/webcomponents-icons/dist/upload.js"
+import "@ui5/webcomponents-icons/dist/sys-minus.js"
+import "@ui5/webcomponents-icons/dist/accept.js"
+import "@ui5/webcomponents-icons/dist/decline.js"
 
 import "@ui5/webcomponents/dist/Button.js";
 import "@ui5/webcomponents/dist/Dialog.js";
@@ -32,6 +35,13 @@ import "@ui5/webcomponents/dist/CheckBox.js";
 import "@ui5/webcomponents/dist/MessageStrip.js";
 import "@ui5/webcomponents/dist/BusyIndicator.js";
 import "@ui5/webcomponents/dist/FileUploader.js";
+import "@ui5/webcomponents/dist/ResponsivePopover.js";
+import "@ui5/webcomponents/dist/Table.js";
+import "@ui5/webcomponents/dist/TableHeaderRow.js";
+import "@ui5/webcomponents/dist/TableHeaderCell.js";
+import "@ui5/webcomponents/dist/TableRow.js";
+import "@ui5/webcomponents/dist/TableRowAction.js";
+import "@ui5/webcomponents/dist/TableCell.js";
 import "@ui5/webcomponents-fiori/dist/Page.js";
 
 setLanguage("es");
