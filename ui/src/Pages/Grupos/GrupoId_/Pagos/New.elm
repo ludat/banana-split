@@ -1098,31 +1098,32 @@ view store model =
                             [ p [] [ text "Revisá el resumen del pago antes de confirmar. Verificá que los montos y participantes sean correctos." ]
                             , case model.resumenPago of
                                 Success resumen ->
-                                    div []
-                                        [ Html.section []
-                                            [ h1 [] [ text "Pago" ]
-                                            , p [] [ text <| "total: ", text <| Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumen ]
-                                            , p []
-                                                [ text <| "participantes: "
-                                                , resumen.resumen
-                                                    |> getParticipantesFromResumen
-                                                    |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                                    |> Maybe.withDefault "???"
-                                                    |> text
-                                                ]
-                                            , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumen ]
-                                            , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| getDeudasFromResumen <| resumen.resumen ]
-                                            , p [] <|
-                                                case Form.getOutput model.pagoForm of
+                                    Html.section [] <|
+                                        [ h1 [] [ text "Pago" ]
+                                        , p [] [ text <| "total: ", text <| Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumen ]
+                                        , p []
+                                            [ text <| "participantes: "
+                                            , resumen.resumen
+                                                |> getParticipantesFromResumen
+                                                |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
+                                                |> Maybe.withDefault "???"
+                                                |> text
+                                            ]
+                                        , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumen ]
+                                        , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| getDeudasFromResumen <| resumen.resumen ]
+                                        ]
+                                            ++ (case Form.getOutput model.pagoForm of
                                                     Just pago ->
                                                         [ case pago.pagadores.tipo of
                                                             TipoDistribucionRepartija repartija ->
                                                                 if repartija.id /= emptyUlid then
-                                                                    a
-                                                                        [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
-                                                                        , target "_blank"
+                                                                    p [] <|
+                                                                        [ node "ui5-link"
+                                                                            [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
+                                                                            , target "_blank"
+                                                                            ]
+                                                                            [ text "repartija pagadores" ]
                                                                         ]
-                                                                        [ text "repartija pagadores" ]
 
                                                                 else
                                                                     text ""
@@ -1132,11 +1133,13 @@ view store model =
                                                         , case pago.deudores.tipo of
                                                             TipoDistribucionRepartija repartija ->
                                                                 if repartija.id /= emptyUlid then
-                                                                    a
-                                                                        [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
-                                                                        , target "_blank"
+                                                                    p [] <|
+                                                                        [ a
+                                                                            [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
+                                                                            , target "_blank"
+                                                                            ]
+                                                                            [ text "repartija deudores" ]
                                                                         ]
-                                                                        [ text "repartija deudores" ]
 
                                                                 else
                                                                     text ""
@@ -1147,8 +1150,7 @@ view store model =
 
                                                     Nothing ->
                                                         []
-                                            ]
-                                        ]
+                                               )
 
                                 NotAsked ->
                                     text "notasked"
@@ -1156,20 +1158,28 @@ view store model =
                                 Loading ->
                                     text "loading"
 
-                                Failure _ ->
-                                    text "e"
-                            , Html.node "ui5-button"
-                                [ Attr.attribute "design" "Emphasized"
-                                , onClick (PagoForm Form.Submit)
-                                , id "pago-submit-button"
-                                ]
-                                [ case model.currentPagoId of
-                                    Nothing ->
-                                        text "Crear pago"
+                                Failure e ->
+                                    viewHttpError e
+                            , let
+                                textoCTA =
+                                    case model.currentPagoId of
+                                        Nothing ->
+                                            text "Crear pago"
 
-                                    Just _ ->
-                                        text "Actualizar pago"
-                                ]
+                                        Just _ ->
+                                            text "Actualizar pago"
+                              in
+                              if model.hasUnsavedChanges then
+                                Html.node "ui5-button"
+                                    [ Attr.attribute "design" "Emphasized"
+                                    , onClick (PagoForm Form.Submit)
+                                    , id "pago-submit-button"
+                                    ]
+                                    [ textoCTA
+                                    ]
+
+                              else
+                                text ""
                             ]
                         ]
                     ]
@@ -1452,17 +1462,20 @@ repartijaItemForm i prefix form =
     in
     Html.node "ui5-table-row"
         []
-        [ Html.node "ui5-table-cell" []
+        [ Html.node "ui5-table-cell"
+            []
             [ Html.map PagoForm <|
                 ui5TextInput nombreField
                     [ placeholder "Birrita" ]
             ]
-        , Html.node "ui5-table-cell" []
+        , Html.node "ui5-table-cell"
+            []
             [ Html.map PagoForm <|
                 ui5TextInput montoField
                     [ placeholder "20000" ]
             ]
-        , Html.node "ui5-table-cell" []
+        , Html.node "ui5-table-cell"
+            []
             [ Html.map PagoForm <|
                 ui5TextInput cantidadField
                     [ placeholder "4" ]
