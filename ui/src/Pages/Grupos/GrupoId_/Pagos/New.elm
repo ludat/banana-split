@@ -1407,20 +1407,18 @@ repartijaForm prefix form receiptParseState =
 
             Nothing ->
                 text ""
-        , table [ style "width" "100%" ]
-            [ thead []
-                [ tr []
-                    [ th [ style "padding" "0.5rem", style "text-align" "left" ] [ text "Item" ]
-                    , th [ style "padding" "0.5rem", style "text-align" "left" ] [ text "Monto total" ]
-                    , th [ style "padding" "0.5rem", style "text-align" "left" ] [ text "Cantidad" ]
-                    , th [] []
-                    ]
+        , Html.node "ui5-table"
+            [ Attr.attribute "row-action-count" "1" ]
+            (Html.node "ui5-table-header-row"
+                [ Attr.attribute "slot" "headerRow" ]
+                [ Html.node "ui5-table-header-cell" [] [ text "Item" ]
+                , Html.node "ui5-table-header-cell" [] [ text "Monto total" ]
+                , Html.node "ui5-table-header-cell" [] [ text "Cantidad" ]
                 ]
-            , tbody [] <|
-                List.map
+                :: List.map
                     (\i -> repartijaItemForm i prefix form)
                     itemsIndexes
-            ]
+            )
         , div [ style "margin-bottom" "1rem" ]
             [ Html.node "ui5-button"
                 [ Attr.attribute "icon" "add"
@@ -1452,31 +1450,31 @@ repartijaItemForm i prefix form =
         cantidadField =
             Form.getFieldAsString (prefix ++ ".items." ++ String.fromInt i ++ ".cantidad") form
     in
-    tr []
-        [ td [ style "padding" "0.25rem" ]
+    Html.node "ui5-table-row"
+        []
+        [ Html.node "ui5-table-cell" []
             [ Html.map PagoForm <|
                 ui5TextInput nombreField
                     [ placeholder "Birrita" ]
             ]
-        , td [ style "padding" "0.25rem" ]
+        , Html.node "ui5-table-cell" []
             [ Html.map PagoForm <|
                 ui5TextInput montoField
                     [ placeholder "20000" ]
             ]
-        , td [ style "padding" "0.25rem" ]
+        , Html.node "ui5-table-cell" []
             [ Html.map PagoForm <|
                 ui5TextInput cantidadField
                     [ placeholder "4" ]
             ]
-        , td [ style "padding" "0.25rem" ]
-            [ Html.node "ui5-button"
-                [ Attr.attribute "design" "Negative"
-                , Attr.attribute "icon" "delete"
-                , type_ "button"
-                , onClick <| PagoForm <| Form.RemoveItem (prefix ++ ".items") i
-                ]
-                []
+        , Html.node "ui5-table-row-action"
+            [ Attr.attribute "slot" "actions"
+            , Attr.attribute "icon" "delete"
+            , Attr.attribute "text" "Eliminar"
+            , Attr.attribute "tooltip" "Eliminar item"
+            , on "click" (Decode.succeed <| PagoForm <| Form.RemoveItem (prefix ++ ".items") i)
             ]
+            []
         ]
 
 
