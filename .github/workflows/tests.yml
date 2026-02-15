@@ -43,6 +43,8 @@ jobs:
         run: |
           export ELM_HOME=$PWD/.elm-home
           nix develop --command pnpm install --frozen-lockfile
+          nix develop --command pnpm format
+          nix develop --command pnpm review
           nix develop --command pnpm build
 
       - name: Run Elm tests
