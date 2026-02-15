@@ -1,4 +1,4 @@
-module Components.NavBar exposing (NavBarModel, modelFromShared, navBar, viewGlobalUserSelector)
+module Components.NavBar exposing (NavBarModel, modelFromShared, navBar, navBarItem, viewGlobalUserSelector)
 
 import Generated.Api exposing (ULID)
 import Html exposing (Attribute, Html, a, div, text)
