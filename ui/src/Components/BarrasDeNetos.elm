@@ -1,9 +1,9 @@
-module Components.BarrasDeNetos exposing (..)
+module Components.BarrasDeNetos exposing (viewNetosBarras)
 
 import Css
-import Generated.Api exposing (Grupo, Monto, Netos)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
+import Generated.Api exposing (Monto, Netos)
+import Html exposing (Html, div, p, text)
+import Html.Attributes exposing (class, style)
 import Models.Grupo exposing (GrupoLike, lookupParticipante)
 import Models.Monto as Monto
 import Numeric.Decimal as Decimal
@@ -36,24 +36,8 @@ viewNetosBarras grupo netos =
                         participante =
                             lookupParticipante grupo participanteId
 
-                        nombreDerecha =
-                            div [ class "nombre derecha", style "margin-left" "0.5rem" ] [ text participante.participanteNombre ]
-
                         nombreIzquierda =
                             div [ class "nombre izquierda", style "margin-right" "0.5rem" ] [ text participante.participanteNombre ]
-
-                        barraIzquierda =
-                            div [ class "monto izquierda" ]
-                                [ p
-                                    [ style "margin-right" "0.5rem" ]
-                                    [ text <| Decimal.toString monto ]
-                                , div
-                                    [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
-                                    , class "barra"
-                                    , style "background-color" "var(--sapErrorColor, rgb(72, 199, 142))"
-                                    ]
-                                    []
-                                ]
 
                         barraDerecha =
                             div [ class "monto derecha" ]
@@ -70,6 +54,23 @@ viewNetosBarras grupo netos =
                     in
                     case compare m.valor 0 of
                         LT ->
+                            let
+                                nombreDerecha =
+                                    div [ class "nombre derecha", style "margin-left" "0.5rem" ] [ text participante.participanteNombre ]
+
+                                barraIzquierda =
+                                    div [ class "monto izquierda" ]
+                                        [ p
+                                            [ style "margin-right" "0.5rem" ]
+                                            [ text <| Decimal.toString monto ]
+                                        , div
+                                            [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
+                                            , class "barra"
+                                            , style "background-color" "var(--sapErrorColor, rgb(72, 199, 142))"
+                                            ]
+                                            []
+                                        ]
+                            in
                             [ barraIzquierda
                             , nombreDerecha
                             ]

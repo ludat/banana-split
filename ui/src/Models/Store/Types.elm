@@ -1,7 +1,7 @@
-module Models.Store.Types exposing (..)
+module Models.Store.Types exposing (Store, StoreMsg(..))
 
 import Dict exposing (Dict)
-import Generated.Api exposing (Grupo, Pago, Repartija, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
+import Generated.Api exposing (Pago, Repartija, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
 import RemoteData exposing (WebData)
 
 
@@ -25,4 +25,3 @@ type StoreMsg
     | FetchPago ULID
     | RepartijaFetched ULID (WebData Repartija)
     | FetchRepartija ULID
-    | StoreNoOp String

@@ -41,19 +41,6 @@
     }
 }
 
-.arrow-container {
-    height: 28px;
-    width: 28px;
-
-    svg {
-        width: 100%;
-    }
-}
-
-.is-size-6-5 {
-    font-size: 0.85rem;
-}
-
 .eje-vertical {
     background-color: gray;
     height: calc(100% + var(--alto-barra) + 24px);
@@ -83,18 +70,4 @@
     max-width: 50rem;
     padding-bottom: 1rem;
     margin: auto;
-}
-
-.spin {
-    animation: spinAnimation 1s linear infinite;
-}
-
-@keyframes spinAnimation {
-    0% {
-        transform: rotate(0deg);
-    }
-
-    100% {
-        transform: rotate(360deg);
-    }
 }

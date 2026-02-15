@@ -1,11 +1,11 @@
 module Pages.Grupos.GrupoId_.Pagos exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
-import Components.Ui5 exposing (..)
+import Components.Ui5 exposing (slot)
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Distribucion, Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, ShallowGrupo, ShallowPago, ULID)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
+import Generated.Api as Api exposing (ShallowPago, ULID)
+import Html exposing (Html, div, p, strong, text)
+import Html.Attributes as Attr exposing (class, style)
 import Html.Events exposing (on, onClick)
 import Http
 import Json.Decode
@@ -14,7 +14,7 @@ import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..), WebData)
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
@@ -27,7 +27,7 @@ page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route.params.grupoId shared.store
-        , update = update shared.store shared.userId
+        , update = update shared.store
         , subscriptions = subscriptions
         , view = view shared.store
         }
@@ -77,8 +77,8 @@ init grupoId store =
 -- UPDATE
 
 
-update : Store -> Maybe ULID -> Msg -> Model -> ( Model, Effect Msg )
-update store userId msg model =
+update : Store -> Msg -> Model -> ( Model, Effect Msg )
+update store msg model =
     case msg of
         NoOp ->
             ( model, Effect.none )
@@ -116,7 +116,7 @@ update store userId msg model =
 
         DeletePagoResponse result ->
             case result of
-                Ok pagoBorradoId ->
+                Ok _ ->
                     ( model
                     , Effect.batch
                         [ Store.refreshGrupo model.grupoId
@@ -126,7 +126,7 @@ update store userId msg model =
                         ]
                     )
 
-                Err e ->
+                Err _ ->
                     ( model, pushToast ToastDanger "Falle al borrar el pago" )
 
 
@@ -135,7 +135,7 @@ update store userId msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -197,7 +197,7 @@ view store model =
                 ]
             }
 
-        ( _, _ ) ->
+        _ ->
             { title = "Impossible"
             , body = []
             }

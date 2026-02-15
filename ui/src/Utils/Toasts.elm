@@ -1,9 +1,9 @@
-module Utils.Toasts exposing (..)
+module Utils.Toasts exposing (addToast, config, initialState, pushToast, update, view)
 
 import Effect exposing (Effect)
 import Html exposing (Html)
 import Toasty
-import Utils.Toasts.Types exposing (Toast, ToastContent, ToastLevel, Toasts)
+import Utils.Toasts.Types exposing (ToastContent, ToastLevel, Toasts)
 
 
 config : Toasty.Config msg

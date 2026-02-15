@@ -3,12 +3,12 @@ module Pages.Grupos.GrupoId_.Pagos.PagoId_ exposing (Model, Msg, page)
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import Form
-import Generated.Api exposing (Parte(..), ULID)
+import Generated.Api exposing (ULID)
 import Layouts
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import Pages.Grupos.GrupoId_.Pagos.New as P exposing (Model, Msg(..), Section(..), andThenSendWarningOnExit, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
+import Pages.Grupos.GrupoId_.Pagos.New as P exposing (Model, Section(..), andThenSendWarningOnExit, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Shared
@@ -26,7 +26,7 @@ page : Shared.Model -> Route { grupoId : String, pagoId : String } -> Page Model
 page shared route =
     Page.new
         { init = \() -> init route.params.grupoId route.params.pagoId shared.store
-        , update = update shared.store shared.userId
+        , update = update shared.store
         , subscriptions = subscriptions
         , view =
             \m ->
@@ -44,7 +44,7 @@ page shared route =
                             ( Just grupo, Just pago ) ->
                                 grupo.nombre ++ ": " ++ pago.nombre
 
-                            ( _, _ ) ->
+                            _ ->
                                 "Cargando"
                 }
         }

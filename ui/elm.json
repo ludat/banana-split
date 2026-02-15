@@ -8,7 +8,6 @@
     "elm-version": "0.19.1",
     "dependencies": {
         "direct": {
-            "1602/elm-feather": "2.3.5",
             "bartavelle/json-helpers": "2.0.2",
             "chelovek0v/bbase64": "1.0.1",
             "elm/browser": "1.0.2",
@@ -18,7 +17,6 @@
             "elm/html": "1.0.1",
             "elm/http": "2.0.0",
             "elm/json": "1.1.4",
-            "elm/svg": "1.0.1",
             "elm/url": "1.0.0",
             "elm-community/list-extra": "8.7.0",
             "krisajenkins/remotedata": "6.1.0",

@@ -1,18 +1,15 @@
 module Shared exposing
-    ( Flags, decoder
-    , Model, Msg
-    , init, update, subscriptions
+    ( Flags
+    , Model
+    , Msg
+    , decoder
+    , init
+    , subscriptions
+    , update
     )
 
-{-|
-
-@docs Flags, decoder
-@docs Model, Msg
-@docs init, update, subscriptions
-
--}
-
 import Effect exposing (Effect, incoming)
+import Generated.Api exposing (ULID)
 import Json.Decode
 import Json.Encode
 import Models.Store as Store
@@ -43,22 +40,8 @@ type alias Model =
     Shared.Model.Model
 
 
-updateWithCmd : (( m, Cmd msg ) -> ( m, Cmd msg )) -> ( m, Effect msg ) -> ( m, Effect msg )
-updateWithCmd f ( oldModel, oldEffects ) =
-    let
-        ( newModel, newCmd ) =
-            f ( oldModel, Cmd.none )
-    in
-    ( newModel
-    , Effect.batch
-        [ oldEffects
-        , Effect.sendCmd newCmd
-        ]
-    )
-
-
 init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
-init flagsResult route =
+init _ _ =
     ( { toasties = Toast.initialState
       , store = Store.empty
       , userId = Nothing
@@ -76,7 +59,7 @@ type alias Msg =
 
 
 update : Route () -> Msg -> Model -> ( Model, Effect Msg )
-update route msg model =
+update _ msg model =
     case msg of
         Shared.Msg.NoOp ->
             ( model
@@ -106,6 +89,7 @@ update route msg model =
 
         SetCurrentUser { grupoId, userId } ->
             let
+                newUserId : Maybe ULID
                 newUserId =
                     if userId == "" then
                         Nothing
@@ -122,7 +106,7 @@ update route msg model =
                     Effect.clearCurrentUser grupoId
             )
 
-        CurrentUserLoaded { grupoId, userId } ->
+        CurrentUserLoaded { userId } ->
             ( { model
                 | userId = userId
               }
@@ -135,7 +119,7 @@ update route msg model =
 
 
 subscriptions : Route () -> Model -> Sub Msg
-subscriptions route model =
+subscriptions _ _ =
     incoming (decodeIncomingPortMessage >> Maybe.withDefault NoOp)
 
 

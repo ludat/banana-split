@@ -1,10 +1,10 @@
-module Components.Ui5 exposing (slot, ui5Button, ui5CheckBox, ui5Form, ui5FormItem, ui5Label, ui5Select, ui5TextFormItem, ui5TextFormItemOptions, ui5TextInput)
+module Components.Ui5 exposing (slot, ui5Button, ui5CheckBox, ui5Form, ui5Select, ui5TextFormItem, ui5TextInput)
 
 import Form exposing (Msg(..))
 import Form.Field
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (..)
+import Html exposing (Attribute, Html, div, text)
+import Html.Attributes as Attr exposing (checked, class, for, id, placeholder, required, selected, value)
+import Html.Events exposing (on, onInput, onSubmit)
 import Json.Decode
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 
@@ -55,11 +55,6 @@ ui5Form f attrs children =
     Html.form [ onSubmit <| f Form.Submit ]
         [ Html.node "ui5-form" attrs children
         ]
-
-
-ui5TextFormItemOptions : { placeholder : Maybe String, required : Bool, label : String }
-ui5TextFormItemOptions =
-    { placeholder = Nothing, required = False, label = "" }
 
 
 ui5Button : List (Attribute m) -> List (Html m) -> Html m

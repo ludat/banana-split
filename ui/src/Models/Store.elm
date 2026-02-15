@@ -1,8 +1,8 @@
-module Models.Store exposing (..)
+module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureRepartija, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, refreshGrupo, refreshPagos, refreshRepartija, refreshResumen, update, updateRepartija)
 
-import Dict exposing (Dict)
+import Dict
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Grupo, Netos, Pago, Repartija, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
+import Generated.Api as Api exposing (Pago, Repartija, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
@@ -11,9 +11,6 @@ import Shared.Msg exposing (Msg(..))
 update : StoreMsg -> Store -> ( Store, Effect Shared.Msg.Msg )
 update msg store =
     case msg of
-        StoreNoOp string ->
-            ( store, Effect.none )
-
         GrupoFetched grupoId grupo ->
             ( store |> saveGrupo grupoId grupo, Effect.none )
 
@@ -137,11 +134,6 @@ refreshPagos grupoId =
     Effect.sendStoreMsg <| FetchPagos grupoId
 
 
-refreshPago : ULID -> Effect msg
-refreshPago pagoId =
-    Effect.sendStoreMsg <| FetchPago pagoId
-
-
 refreshRepartija : ULID -> Effect msg
 refreshRepartija repartijaId =
     Effect.sendStoreMsg <| FetchRepartija repartijaId
@@ -260,15 +252,6 @@ getRepartija repartijaId store =
     store.repartijas
         |> Dict.get repartijaId
         |> Maybe.withDefault NotAsked
-
-
-evictGroup : ULID -> Store -> Store
-evictGroup grupoId store =
-    { store
-        | grupos = store.grupos |> Dict.remove grupoId
-        , resumenes = store.resumenes |> Dict.remove grupoId
-        , pagosPorGrupo = store.pagosPorGrupo |> Dict.remove grupoId
-    }
 
 
 empty : Store

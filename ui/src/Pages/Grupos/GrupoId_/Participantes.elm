@@ -2,21 +2,21 @@ module Pages.Grupos.GrupoId_.Participantes exposing (Model, Msg, page)
 
 import Browser.Dom
 import Components.NavBar as NavBar
-import Components.Ui5 exposing (..)
+import Components.Ui5 exposing (ui5Button, ui5Form, ui5TextFormItem)
 import Effect exposing (Effect)
-import Form exposing (Form, Msg(..))
+import Form exposing (Form)
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
-import Generated.Api as Api exposing (Grupo, Participante, ParticipanteAddParams, ParticipanteId, ULID)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (..)
+import Generated.Api as Api exposing (Participante, ParticipanteAddParams, ParticipanteId, ULID)
+import Html exposing (div, text)
+import Html.Attributes as Attr
+import Html.Events exposing (on, onClick)
 import Http
 import Json.Decode
 import Layouts
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..), WebData)
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Shared
 import Task
@@ -100,7 +100,7 @@ update store msg model =
                             GotAddedParticipanteResponse
                     )
 
-                ( _, _ ) ->
+                _ ->
                     ( { model
                         | participanteForm = Form.update validateParticipante Form.Submit model.participanteForm
                       }
@@ -144,15 +144,15 @@ update store msg model =
 
         DeleteParticipanteResponse result ->
             case result of
-                Ok participanteBorrado ->
+                Ok _ ->
                     ( model, Store.refreshGrupo model.grupoId )
 
-                Err e ->
+                Err _ ->
                     ( model, pushToast ToastDanger "Fallo al borrar el participante." )
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -171,7 +171,7 @@ view store model =
                 ]
             }
 
-        Failure e ->
+        Failure _ ->
             { title = "Fallo"
             , body = []
             }

@@ -1,6 +1,6 @@
 module Utils.Http exposing (viewHttpError)
 
-import Html exposing (..)
+import Html exposing (Html, text)
 import Http
 
 

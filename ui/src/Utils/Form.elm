@@ -2,14 +2,12 @@ module Utils.Form exposing (CustomFormError(..), errorForField, hasErrorField)
 
 import Form
 import Form.Error as FormError
-import Html exposing (..)
-import Html.Attributes exposing (..)
+import Html exposing (Html, text)
 import Numeric.ArithmeticError as DecimalError
 
 
 type CustomFormError
     = DecimalError DecimalError.ArithmeticError
-    | StringError String
 
 
 hasErrorField : Form.FieldState CustomFormError String -> Bool
@@ -70,8 +68,10 @@ errorTextForField field =
                     FormError.NotIncludedIn ->
                         "Not included in"
 
-                    FormError.CustomError _ ->
-                        "Jajan't"
+                    FormError.CustomError customError ->
+                        case customError of
+                            DecimalError arithmeticError ->
+                                DecimalError.toString arithmeticError
             )
 
 

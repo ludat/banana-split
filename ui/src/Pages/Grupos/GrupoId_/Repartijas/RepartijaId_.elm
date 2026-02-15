@@ -3,13 +3,11 @@ module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Model, Msg, page)
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import Form exposing (Form)
-import Form.Error as FormError
-import Form.Field as Form
 import Form.Validate as V
-import Generated.Api as Api exposing (Grupo, Pago, Participante, ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (on, onClick, onSubmit)
+import Generated.Api as Api exposing (ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
+import Html exposing (Html, div, text)
+import Html.Attributes as Attr exposing (class, id, style)
+import Html.Events exposing (on, onClick)
 import Json.Decode
 import Json.Encode
 import Layouts
@@ -28,8 +26,6 @@ import Set
 import Shared
 import Utils.Form exposing (CustomFormError)
 import Utils.Http exposing (viewHttpError)
-import Utils.Toasts exposing (..)
-import Utils.Toasts.Types exposing (..)
 import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
@@ -110,8 +106,6 @@ type Msg
     | ChangeCurrentClaim RepartijaItem Int
     | JoinCurrentClaim RepartijaItem
     | LeaveCurrentClaim RepartijaClaim
-    | OpenDesdoblarItemModal RepartijaItem
-    | DeleteClaim RepartijaClaim
     | CreateRepartijaClaimResponded (WebData RepartijaClaim)
     | DeleteRepartijaClaimResponded ULID (WebData String)
     | OpenParticipanteClaimsPopup ParticipanteId
@@ -151,16 +145,6 @@ update maybeParticipanteId store msg model =
                     , Effect.batch [ Store.refreshRepartija model.repartijaId ]
                     )
 
-        DeleteClaim repartijaClaim ->
-            ( { model | pendingItemOperation = Just repartijaClaim.itemId }
-            , Effect.batch
-                [ Effect.sendCmd <|
-                    Api.deleteRepartijasClaimsByClaimId
-                        repartijaClaim.id
-                        (RemoteData.fromResult >> DeleteRepartijaClaimResponded repartijaClaim.id)
-                ]
-            )
-
         DeleteRepartijaClaimResponded claimId webDataResponse ->
             case ( webDataResponse, Store.getRepartija model.repartijaId store ) of
                 ( Success _, Success repartija ) ->
@@ -178,11 +162,6 @@ update maybeParticipanteId store msg model =
                     ( { model | pendingItemOperation = Nothing }
                     , Effect.batch [ Store.refreshRepartija model.repartijaId ]
                     )
-
-        OpenDesdoblarItemModal repartijaItem ->
-            ( model
-            , Effect.none
-            )
 
         OpenParticipanteClaimsPopup participanteId ->
             ( { model | participanteClaimsModal = Just participanteId }
@@ -310,7 +289,7 @@ update maybeParticipanteId store msg model =
 
         LeaveCurrentClaim item ->
             case maybeParticipanteId of
-                Just participanteId ->
+                Just _ ->
                     ( { model | pendingItemOperation = Just item.itemId }
                     , Effect.sendCmd <|
                         Api.deleteRepartijasClaimsByClaimId item.id
@@ -326,7 +305,7 @@ update maybeParticipanteId store msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -341,7 +320,7 @@ view userId store model =
             { title = grupo.nombre ++ ": " ++ repartija.nombre
             , body =
                 [ viewParticipantes grupo repartija
-                , viewRepartijaItems userId grupo repartija model.pendingItemOperation model.openPopoverItemId model.pickSchemeItemId
+                , viewRepartijaItems userId grupo repartija model.openPopoverItemId model.pickSchemeItemId
                 , viewParticipanteClaimsModal model grupo repartija
 
                 -- , button
@@ -377,7 +356,7 @@ view userId store model =
                 ]
             }
 
-        ( _, _ ) ->
+        _ ->
             { title = ""
             , body =
                 [ text "cargando" ]
@@ -415,8 +394,8 @@ viewParticipantes grupo repartija =
         ]
 
 
-viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Maybe ULID -> Maybe ULID -> Maybe ULID -> Html Msg
-viewRepartijaItems userId grupo repartija pendingItemOperation openPopoverItemId pickSchemeItemId =
+viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Maybe ULID -> Maybe ULID -> Html Msg
+viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
     Html.node "ui5-table"
         [ Attr.attribute "alternate-row-colors" ""
         , Attr.attribute "row-action-count" "5"
@@ -429,7 +408,7 @@ viewRepartijaItems userId grupo repartija pendingItemOperation openPopoverItemId
             , Html.node "ui5-table-header-cell" [ Attr.attribute "horizontal-align" "Center" ] [ text "Repartido" ]
             ]
             :: (repartija.items
-                    |> List.map (\item -> viewClaimsLine userId grupo repartija item pendingItemOperation openPopoverItemId pickSchemeItemId)
+                    |> List.map (\item -> viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId)
                )
             ++ [ Html.node "ui5-table-row"
                     []
@@ -488,8 +467,8 @@ interpretClaims originalClaims =
     List.foldl folder NoClaims originalClaims
 
 
-viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Maybe ULID -> Maybe ULID -> Maybe ULID -> Html Msg
-viewClaimsLine userId grupo repartija item pendingItemOperation openPopoverItemId pickSchemeItemId =
+viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Maybe ULID -> Maybe ULID -> Html Msg
+viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
     let
         claimsForItem =
             repartija.claims
@@ -502,10 +481,6 @@ viewClaimsLine userId grupo repartija item pendingItemOperation openPopoverItemI
         itemRepartidoState : ItemRepartidoState
         itemRepartidoState =
             calculateItemRepartidoState item itemsClaimed
-
-        isPending : Bool
-        isPending =
-            pendingItemOperation == Just item.id
 
         userClaim =
             claimsForItem |> find (\c -> Just c.participante == userId)
@@ -567,7 +542,7 @@ viewClaimsLine userId grupo repartija item pendingItemOperation openPopoverItemI
         , Html.node "ui5-table-cell" [] [ text <| String.fromInt item.cantidad ]
         , Html.node "ui5-table-cell"
             []
-            [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemRepartidoState openPopoverItemId
+            [ viewClaimProgressAndDropdown grupo item claimsForItem itemRepartidoState openPopoverItemId
             , Html.node "ui5-responsive-popover"
                 ([ Attr.attribute "opener" pickSchemeButtonId
                  , Attr.attribute "placement" "Bottom"
@@ -671,8 +646,8 @@ calculateItemRepartidoState item itemsClaimed =
             SinRepartir
 
 
-viewClaimProgressAndDropdown : GrupoLike g -> Repartija -> RepartijaItem -> List RepartijaClaim -> ItemRepartidoState -> Maybe ULID -> Html Msg
-viewClaimProgressAndDropdown grupo repartija item claimsForItem itemRepartidoState openPopoverItemId =
+viewClaimProgressAndDropdown : GrupoLike g -> RepartijaItem -> List RepartijaClaim -> ItemRepartidoState -> Maybe ULID -> Html Msg
+viewClaimProgressAndDropdown grupo item claimsForItem itemRepartidoState openPopoverItemId =
     let
         statusButtonId =
             "repartido-status-" ++ item.id
@@ -772,10 +747,12 @@ viewParticipanteClaimsModal model grupo repartija =
     case model.participanteClaimsModal of
         Just participanteId ->
             let
+                claims : List RepartijaClaim
                 claims =
                     repartija.claims
                         |> List.filter (\c -> c.participante == participanteId)
 
+                participanteNombre : String
                 participanteNombre =
                     lookupNombreParticipante grupo participanteId
 

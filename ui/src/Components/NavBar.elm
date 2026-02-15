@@ -1,14 +1,14 @@
-module Components.NavBar exposing (..)
+module Components.NavBar exposing (NavBarModel, modelFromShared, navBar, viewGlobalUserSelector)
 
-import Generated.Api exposing (Grupo, ULID)
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (on, onInput)
+import Generated.Api exposing (ULID)
+import Html exposing (Attribute, Html, a, div, text)
+import Html.Attributes exposing (attribute, class, selected, style, value)
+import Html.Events exposing (on)
 import Json.Decode
 import Models.Grupo exposing (GrupoLike)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
-import RemoteData exposing (RemoteData(..), WebData)
+import RemoteData exposing (RemoteData(..))
 import Route.Path as Route
 import Shared.Model as Shared
 import Shared.Msg as Shared
@@ -26,7 +26,7 @@ modelFromShared shared grupoId =
 
 
 navBar : NavBarModel -> Store -> Route.Path -> Bool -> Html Shared.Msg
-navBar navBarModel store path navBarOpen =
+navBar navBarModel store path _ =
     div
         [ style "display" "flex"
         , style "align-items" "center"

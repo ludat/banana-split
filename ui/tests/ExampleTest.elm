@@ -1,7 +1,7 @@
-module ExampleTest exposing (..)
+module ExampleTest exposing (suite)
 
 import Expect
-import Test exposing (..)
+import Test exposing (Test, describe, test)
 
 
 suite : Test

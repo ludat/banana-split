@@ -1,11 +1,11 @@
-module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg(..), Section(..), andThenSendWarningOnExit, page, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
+module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg, ReceiptReadingState, Section(..), andThenSendWarningOnExit, page, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
 
 import Base64.Encode
 import Browser.Dom
 import Bytes exposing (Bytes)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
-import Components.Ui5 exposing (..)
+import Components.Ui5 exposing (ui5CheckBox, ui5Select, ui5TextFormItem, ui5TextInput)
 import Effect exposing (Effect)
 import File exposing (File)
 import Form exposing (Form)
@@ -13,9 +13,9 @@ import Form.Error as FormError
 import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Distribucion, ErrorResumen(..), Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos(..), ResumenPago, ShallowGrupo, TipoDistribucion(..), ULID)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
+import Generated.Api as Api exposing (Distribucion, ErrorResumen(..), Monto, Netos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos(..), ResumenPago, TipoDistribucion(..), ULID)
+import Html exposing (Html, a, details, div, h1, node, p, summary, text)
+import Html.Attributes as Attr exposing (accept, class, disabled, id, placeholder, selected, style, target, type_)
 import Html.Events exposing (on, onClick, onSubmit)
 import Http
 import Json.Decode as Decode
@@ -31,10 +31,10 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Task
-import Utils.Form exposing (..)
+import Utils.Form exposing (CustomFormError)
 import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toasts
-import Utils.Toasts.Types as Toasts exposing (ToastLevel(..))
+import Utils.Toasts.Types as Toasts
 import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
@@ -43,7 +43,7 @@ page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route.params.grupoId shared.store
-        , update = update shared.store shared.userId
+        , update = update shared.store
         , subscriptions = subscriptions
         , view = view shared.store
         }
@@ -271,15 +271,15 @@ validateDistribucion participantes =
             )
 
 
-update : Store -> Maybe ULID -> Msg -> Model -> ( Model, Effect Msg )
-update store userId msg model =
+update : Store -> Msg -> Model -> ( Model, Effect Msg )
+update store msg model =
     let
         participantes =
             case Store.getGrupo model.grupoId store of
                 Success grupo ->
                     grupo.participantes
 
-                Failure e ->
+                Failure _ ->
                     []
 
                 NotAsked ->
@@ -303,7 +303,7 @@ update store userId msg model =
             )
                 |> andThenSendWarningOnExit
 
-        AddedPagoResponse (Err error) ->
+        AddedPagoResponse (Err _) ->
             ( model
             , Effect.batch
                 [ Toasts.pushToast Toasts.ToastDanger "Falló la creación del pago"
@@ -322,7 +322,7 @@ update store userId msg model =
                 |> andThenUpdateResumenesFromForms model
                 |> andThenSendWarningOnExit
 
-        UpdatedPagoResponse (Err error) ->
+        UpdatedPagoResponse (Err _) ->
             ( model
             , Toasts.pushToast Toasts.ToastDanger "Falló la actualización del pago"
             )
@@ -358,7 +358,7 @@ update store userId msg model =
                                     AddedPagoResponse
                             )
 
-                ( _, _ ) ->
+                _ ->
                     ( { model
                         | pagoForm = Form.update (validatePago participantes) Form.Submit model.pagoForm
                       }
@@ -873,14 +873,14 @@ andThenUpdateResumenesFromForms originalModel ( model, oldEffects ) =
         updateResumenFromForm getForm event =
             case Form.getOutput (getForm model) of
                 Just pago ->
-                    let
-                        pagoWithClaims =
-                            mergeClaimsIntoPago model.storedClaims pago
-                    in
                     if Form.getOutput (getForm originalModel) == Just pago then
                         Effect.none
 
                     else
+                        let
+                            pagoWithClaims =
+                                mergeClaimsIntoPago model.storedClaims pago
+                        in
                         Effect.batch
                             [ Effect.sendMsg <| event Loading
                             , Effect.sendCmd <| Api.postPagosResumen pagoWithClaims (RemoteData.fromResult >> event)
@@ -904,7 +904,7 @@ andThenUpdateResumenesFromForms originalModel ( model, oldEffects ) =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -1004,7 +1004,7 @@ view store model =
                         , selected (model.currentSection == BasicPagoData)
                         ]
                         [ p [] [ text "Ingresá la información básica del pago: un nombre descriptivo y el monto total." ]
-                        , pagoForm grupo.participantes model.pagoBasicoForm
+                        , pagoForm model.pagoBasicoForm
                         ]
                     , Html.node "ui5-wizard-step"
                         [ Attr.attribute "title-text" "Pagadores"
@@ -1163,16 +1163,16 @@ view store model =
 
                                 Failure e ->
                                     viewHttpError e
-                            , let
-                                textoCTA =
-                                    case model.currentPagoId of
-                                        Nothing ->
-                                            text "Crear pago"
+                            , if model.hasUnsavedChanges then
+                                let
+                                    textoCTA =
+                                        case model.currentPagoId of
+                                            Nothing ->
+                                                text "Crear pago"
 
-                                        Just _ ->
-                                            text "Actualizar pago"
-                              in
-                              if model.hasUnsavedChanges then
+                                            Just _ ->
+                                                text "Actualizar pago"
+                                in
                                 Html.node "ui5-button"
                                     [ Attr.attribute "design" "Emphasized"
                                     , onClick (PagoForm Form.Submit)
@@ -1211,8 +1211,8 @@ view store model =
             }
 
 
-pagoForm : List Participante -> Form CustomFormError Pago -> Html Msg
-pagoForm participantes form =
+pagoForm : Form CustomFormError Pago -> Html Msg
+pagoForm form =
     let
         nombreField =
             Form.getFieldAsString "nombre" form

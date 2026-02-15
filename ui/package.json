@@ -9,6 +9,8 @@
   "scripts": {
     "build": "elm-land build",
     "format": "elm-format src/ --yes",
+    "review": "elm-review",
+    "review:fix": "elm-review --fix",
     "start": "concurrently pnpm:start:elm pnpm:start:css",
     "start:elm": "elm-land server",
     "start:css": "css-in-elm watch src/styles.css src/Css.elm",
@@ -19,6 +21,7 @@
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "elm-review": "^2.13.5",
     "elm-sideload": "^1.0.2",
     "elm-test": "^0.19.1-revision12"
   },

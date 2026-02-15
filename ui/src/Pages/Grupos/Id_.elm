@@ -3,21 +3,19 @@ module Pages.Grupos.Id_ exposing (Model, Msg, page)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Grupo, Netos, Pago, Parte(..), ResumenGrupo, Transaccion, ULID)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
+import Generated.Api as Api exposing (Pago, ResumenGrupo, Transaccion, ULID)
+import Html exposing (Html, a, div, p, section, span, text)
+import Html.Attributes as Attr exposing (class, style)
 import Html.Events exposing (onClick)
 import Http
 import Json.Encode as Encode
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
-import Models.Pago as Pago
 import Models.Store as Store
-import Models.Store.Types as Store exposing (Store)
-import Numeric.Decimal as Decimal
+import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..), WebData)
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
@@ -62,20 +60,14 @@ init grupoId store =
 
 
 type Msg
-    = NoOp
-    | CrearPago Pago
+    = CrearPago Pago
     | AddedPagoResponse (Result Http.Error Pago)
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        NoOp ->
-            ( model
-            , Effect.none
-            )
-
-        AddedPagoResponse (Ok pago) ->
+        AddedPagoResponse (Ok _) ->
             ( model
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
@@ -85,7 +77,7 @@ update msg model =
                 ]
             )
 
-        AddedPagoResponse (Err error) ->
+        AddedPagoResponse (Err _) ->
             ( model
             , Toasts.pushToast Toasts.ToastDanger "No se pudo completar el pago"
             )
@@ -136,7 +128,7 @@ pagoFromTransaccion transaction =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -159,7 +151,7 @@ view store model =
                 ]
             }
 
-        Failure e ->
+        Failure _ ->
             { title = "Fallo"
             , body = []
             }
@@ -175,7 +167,7 @@ view store model =
                     , style "margin-left" "auto"
                     , style "margin-right" "auto"
                     ]
-                    (if grupo.participantes == [] then
+                    (if List.isEmpty grupo.participantes then
                         [ p [] [ text "Tu grupo todavía no tiene participantes!" ]
                         , p []
                             [ text "Agregalos "
@@ -225,7 +217,7 @@ view store model =
                             Loading ->
                                 [ text "Carganding" ]
 
-                            Failure e ->
+                            Failure _ ->
                                 [ text "Error cargando los netos" ]
                     )
                 ]

@@ -1,4 +1,4 @@
-module Utils.Ulid exposing (..)
+module Utils.Ulid exposing (emptyUlid)
 
 import Generated.Api exposing (ULID)
 
@@ -6,8 +6,3 @@ import Generated.Api exposing (ULID)
 emptyUlid : ULID
 emptyUlid =
     "00000000000000000000000000"
-
-
-toString : ULID -> String
-toString =
-    identity

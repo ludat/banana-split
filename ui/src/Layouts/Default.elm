@@ -1,18 +1,15 @@
 module Layouts.Default exposing (Model, Msg, Props, layout)
 
-import Components.NavBar exposing (navBarItem, viewGlobalUserSelector)
+import Components.NavBar exposing (viewGlobalUserSelector)
 import Css
 import Effect exposing (Effect)
-import Generated.Api exposing (Grupo, ShallowGrupo, ULID)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
-import Html.Events exposing (onClick)
+import Generated.Api exposing (ShallowGrupo, ULID)
+import Html exposing (Html, div, p, text)
+import Html.Attributes as Attr exposing (attribute, style)
 import Json.Encode
 import Layout exposing (Layout)
-import Models.Grupo exposing (GrupoLike)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
-import Route.Path exposing (Path)
 import Shared
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types exposing (Toast, ToastLevel(..), ToastMsg, Toasts)
@@ -26,11 +23,11 @@ type alias Props =
 
 
 layout : Props -> Shared.Model -> Route () -> Layout () Model Msg contentMsg
-layout props shared route =
+layout props shared _ =
     Layout.new
-        { init = \() -> init props
+        { init = \() -> init
         , update = update
-        , view = view props.navBarContent props.grupo shared.userId shared.toasties route.path
+        , view = view props.navBarContent props.grupo shared.userId shared.toasties
         , subscriptions = subscriptions
         }
 
@@ -44,8 +41,8 @@ type alias Model =
     }
 
 
-init : Props -> ( Model, Effect Msg )
-init props =
+init : ( Model, Effect Msg )
+init =
     ( { navBarOpen = False
       }
     , Effect.none
@@ -57,27 +54,13 @@ init props =
 
 
 type Msg
-    = NoOp
-    | ToggleNavBar
-    | ToastMsg ToastMsg
+    = ToastMsg ToastMsg
     | ForwardSharedMessage Shared.Msg
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        ToggleNavBar ->
-            ( { model
-                | navBarOpen = not model.navBarOpen
-              }
-            , Effect.none
-            )
-
-        NoOp ->
-            ( model
-            , Effect.none
-            )
-
         ToastMsg toastMsg ->
             ( model
             , Effect.sendToastMsg toastMsg
@@ -90,7 +73,7 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -103,10 +86,9 @@ view :
     -> WebData ShallowGrupo
     -> Maybe ULID
     -> Toasts
-    -> Path
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view navBarFunction remoteGrupo activeUser toasts path { toContentMsg, model, content } =
+view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content } =
     { title =
         if content.title == "" then
             "Banana split"
@@ -147,7 +129,7 @@ view navBarFunction remoteGrupo activeUser toasts path { toContentMsg, model, co
                                     , viewGlobalUserSelector activeUser grupo
                                     ]
 
-                ( _, _ ) ->
+                _ ->
                     div [ style "padding" "1rem" ] content.body
             ]
         ]
@@ -160,17 +142,8 @@ renderToast toast =
         [ Html.node "ui5-message-strip"
             [ Attr.attribute "design"
                 (case toast.level of
-                    ToastNoLevel ->
-                        "Information"
-
                     ToastSuccess ->
                         "Positive"
-
-                    ToastInfo ->
-                        "Information"
-
-                    ToastWarning ->
-                        "Warning"
 
                     ToastDanger ->
                         "Negative"
