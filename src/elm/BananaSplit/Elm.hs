@@ -34,7 +34,7 @@ generateElmFiles = do
       "Api"
     ]
     defElmImports
-    "ui/src/"
+    "ui/generated-src/"
     [ DefineElm (Proxy :: Proxy CreateGrupoParams)
     , DefineElm (Proxy :: Proxy ReceiptImageRequest)
     , DefineElm (Proxy :: Proxy ReceiptImageResponse)

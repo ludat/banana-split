@@ -115,10 +115,12 @@
 
                     ./ui/static
                     ./ui/src
+                    ./ui/generated-src
                     ./ui/tests
 
                     ./ui/elm.json
                     ./ui/elm-land.json
+                    ./ui/elm.sideload.json
                   ];
                 };
               nativeBuildInputs = with pkgs; [
@@ -129,7 +131,8 @@
               ];
 
               buildPhase = ''
-                HOME=$PWD
+                export HOME=$PWD
+                export ELM_HOME=$HOME/.elm-home
                 pnpm install --reporter=append-only --frozen-lockfile
                 pnpm run build
               '';

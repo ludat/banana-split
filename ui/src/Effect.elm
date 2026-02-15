@@ -1,34 +1,34 @@
 port module Effect exposing
     ( Effect
-    , none, batch
-    , sendCmd, sendMsg
-    , pushRoute, replaceRoute
-    , pushRoutePath, replaceRoutePath
-    , loadExternalUrl, back
-    , map, toCmd
-    , clearCurrentUser, getCurrentUser, incoming, outgoing, saveCurrentUser, sendSharedMsg, sendStoreMsg, sendToast, sendToastMsg, setUnsavedChangesWarning
+    , back
+    , batch
+    , clearCurrentUser
+    , getCurrentUser
+    , incoming
+    , loadExternalUrl
+    , map
+    , none
+    , outgoing
+    , pushRoute
+    , pushRoutePath
+    , replaceRoute
+    , replaceRoutePath
+    , saveCurrentUser
+    , sendCmd
+    , sendMsg
+    , sendSharedMsg
+    , sendStoreMsg
+    , sendToast
+    , sendToastMsg
+    , setUnsavedChangesWarning
+    , toCmd
     )
-
-{-|
-
-@docs Effect
-
-@docs none, batch
-@docs sendCmd, sendMsg
-
-@docs pushRoute, replaceRoute
-@docs pushRoutePath, replaceRoutePath
-@docs loadExternalUrl, back
-
-@docs map, toCmd
-
--}
 
 import Browser.Navigation
 import Dict exposing (Dict)
 import Json.Encode
 import Models.Store.Types exposing (StoreMsg)
-import Route exposing (Route)
+import Route
 import Route.Path
 import Shared.Model
 import Shared.Msg

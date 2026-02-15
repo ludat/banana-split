@@ -1,18 +1,15 @@
 module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
-import Css
 import Effect exposing (Effect)
-import FeatherIcons
 import Form exposing (Form)
-import Form.Error as FormError
-import Form.Field as Form
-import Form.Input as FormInput
 import Form.Validate as V
-import Generated.Api as Api exposing (Grupo, Pago, Participante, ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (onClick, onSubmit)
+import Generated.Api as Api exposing (ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
+import Html exposing (Html, div, text)
+import Html.Attributes as Attr exposing (class, id, style)
+import Html.Events exposing (on, onClick)
+import Json.Decode
+import Json.Encode
 import Layouts
 import List.Extra exposing (find)
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
@@ -29,8 +26,6 @@ import Set
 import Shared
 import Utils.Form exposing (CustomFormError)
 import Utils.Http exposing (viewHttpError)
-import Utils.Toasts as Toast exposing (..)
-import Utils.Toasts.Types as Toast exposing (..)
 import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
@@ -62,6 +57,8 @@ type alias Model =
     , claimForm : Form CustomFormError RepartijaClaim
     , participanteClaimsModal : Maybe ParticipanteId
     , pendingItemOperation : Maybe ULID
+    , openPopoverItemId : Maybe ULID
+    , pickSchemeItemId : Maybe ULID
     }
 
 
@@ -72,6 +69,8 @@ init grupoId repartijaId store =
       , claimForm = Form.initial [] validateClaim
       , participanteClaimsModal = Nothing
       , pendingItemOperation = Nothing
+      , openPopoverItemId = Nothing
+      , pickSchemeItemId = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -107,12 +106,14 @@ type Msg
     | ChangeCurrentClaim RepartijaItem Int
     | JoinCurrentClaim RepartijaItem
     | LeaveCurrentClaim RepartijaClaim
-    | OpenDesdoblarItemModal RepartijaItem
-    | DeleteClaim RepartijaClaim
     | CreateRepartijaClaimResponded (WebData RepartijaClaim)
     | DeleteRepartijaClaimResponded ULID (WebData String)
     | OpenParticipanteClaimsPopup ParticipanteId
     | CloseParticipanteClaimsPopup
+    | ToggleItemPopover ULID
+    | CloseItemPopover
+    | TogglePickScheme ULID
+    | ClosePickScheme
 
 
 update : Maybe ULID -> Store -> Msg -> Model -> ( Model, Effect Msg )
@@ -144,16 +145,6 @@ update maybeParticipanteId store msg model =
                     , Effect.batch [ Store.refreshRepartija model.repartijaId ]
                     )
 
-        DeleteClaim repartijaClaim ->
-            ( { model | pendingItemOperation = Just repartijaClaim.itemId }
-            , Effect.batch
-                [ Effect.sendCmd <|
-                    Api.deleteRepartijasClaimsByClaimId
-                        repartijaClaim.id
-                        (RemoteData.fromResult >> DeleteRepartijaClaimResponded repartijaClaim.id)
-                ]
-            )
-
         DeleteRepartijaClaimResponded claimId webDataResponse ->
             case ( webDataResponse, Store.getRepartija model.repartijaId store ) of
                 ( Success _, Success repartija ) ->
@@ -172,11 +163,6 @@ update maybeParticipanteId store msg model =
                     , Effect.batch [ Store.refreshRepartija model.repartijaId ]
                     )
 
-        OpenDesdoblarItemModal repartijaItem ->
-            ( model
-            , Effect.none
-            )
-
         OpenParticipanteClaimsPopup participanteId ->
             ( { model | participanteClaimsModal = Just participanteId }
             , Effect.none
@@ -184,6 +170,40 @@ update maybeParticipanteId store msg model =
 
         CloseParticipanteClaimsPopup ->
             ( { model | participanteClaimsModal = Nothing }
+            , Effect.none
+            )
+
+        ToggleItemPopover itemId ->
+            ( { model
+                | openPopoverItemId =
+                    if model.openPopoverItemId == Just itemId then
+                        Nothing
+
+                    else
+                        Just itemId
+              }
+            , Effect.none
+            )
+
+        CloseItemPopover ->
+            ( { model | openPopoverItemId = Nothing }
+            , Effect.none
+            )
+
+        TogglePickScheme itemId ->
+            ( { model
+                | pickSchemeItemId =
+                    if model.pickSchemeItemId == Just itemId then
+                        Nothing
+
+                    else
+                        Just itemId
+              }
+            , Effect.none
+            )
+
+        ClosePickScheme ->
+            ( { model | pickSchemeItemId = Nothing }
             , Effect.none
             )
 
@@ -211,7 +231,7 @@ update maybeParticipanteId store msg model =
                                                 |> (\x -> x + deltaCantidad)
                                                 |> Basics.max 0
                                     in
-                                    ( { model | pendingItemOperation = Just item.id }
+                                    ( { model | pendingItemOperation = Just item.id, pickSchemeItemId = Nothing }
                                     , if newCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
@@ -229,7 +249,7 @@ update maybeParticipanteId store msg model =
                                     )
 
                                 Nothing ->
-                                    ( { model | pendingItemOperation = Just item.id }
+                                    ( { model | pendingItemOperation = Just item.id, pickSchemeItemId = Nothing }
                                     , if deltaCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
@@ -253,7 +273,7 @@ update maybeParticipanteId store msg model =
         JoinCurrentClaim item ->
             case maybeParticipanteId of
                 Just participanteId ->
-                    ( { model | pendingItemOperation = Just item.id }
+                    ( { model | pendingItemOperation = Just item.id, pickSchemeItemId = Nothing }
                     , Effect.sendCmd <|
                         Api.putRepartijasByRepartijaId model.repartijaId
                             { id = emptyUlid
@@ -269,7 +289,7 @@ update maybeParticipanteId store msg model =
 
         LeaveCurrentClaim item ->
             case maybeParticipanteId of
-                Just participanteId ->
+                Just _ ->
                     ( { model | pendingItemOperation = Just item.itemId }
                     , Effect.sendCmd <|
                         Api.deleteRepartijasClaimsByClaimId item.id
@@ -285,7 +305,7 @@ update maybeParticipanteId store msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -300,7 +320,7 @@ view userId store model =
             { title = grupo.nombre ++ ": " ++ repartija.nombre
             , body =
                 [ viewParticipantes grupo repartija
-                , viewRepartijaItems userId grupo repartija model.pendingItemOperation
+                , viewRepartijaItems userId grupo repartija model.openPopoverItemId model.pickSchemeItemId
                 , viewParticipanteClaimsModal model grupo repartija
 
                 -- , button
@@ -336,7 +356,7 @@ view userId store model =
                 ]
             }
 
-        ( _, _ ) ->
+        _ ->
             { title = ""
             , body =
                 [ text "cargando" ]
@@ -352,17 +372,19 @@ viewParticipantes grupo repartija =
                 |> Set.fromList
     in
     div []
-        [ div [ class "buttons has-addons my-5" ]
+        [ div [ style "display" "flex", style "gap" "0.5rem", style "flex-wrap" "wrap", style "margin" "1.25rem 0" ]
             (grupo.participantes
                 |> List.map
                     (\participante ->
-                        button
-                            [ class "button is-success"
-                            , if Set.member participante.participanteId participantesConClaims then
-                                class "is-success is-light"
+                        Html.node "ui5-button"
+                            [ Attr.attribute "design"
+                                (if Set.member participante.participanteId participantesConClaims then
+                                    "Positive"
 
-                              else
-                                class "is-danger is-light"
+                                 else
+                                    "Negative"
+                                )
+                            , id ("participante-btn-" ++ participante.participanteId)
                             , onClick <| OpenParticipanteClaimsPopup participante.participanteId
                             ]
                             [ text participante.participanteNombre
@@ -372,49 +394,47 @@ viewParticipantes grupo repartija =
         ]
 
 
-viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Maybe ULID -> Html Msg
-viewRepartijaItems userId grupo repartija pendingItemOperation =
-    table [ class "table is-fullwidth is-striped is-hoverable" ] <|
-        [ thead []
-            [ tr []
-                [ th [] [ text "Descripcion" ]
-                , th [ class "has-text-right" ] [ text "Monto total" ]
-                , th [ class "has-text-right" ] [ text "Cantidad" ]
-                , th [] [ text "Repartido" ]
-                , th [] []
-                ]
-            ]
-        , tbody []
-            (repartija.items
-                |> List.map (\item -> viewClaimsLine userId grupo repartija item pendingItemOperation)
-                |> (\x ->
-                        List.append x
-                            [ tr []
-                                [ td [] [ text "Propina" ]
-                                , td [ class "has-text-right" ] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.extra ]
-                                , td [] []
-                                , td [] []
-                                , td [] []
-                                ]
-                            , tr []
-                                [ td [] [ text "Total" ]
-                                , td [ class "has-text-right" ]
-                                    [ text "$"
-                                    , repartija.items
-                                        |> List.map (\i -> Monto.toDecimal i.monto)
-                                        |> List.foldl Decimal.add (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                                        |> Decimal.add (Monto.toDecimal repartija.extra)
-                                        |> Decimal.toString
-                                        |> text
-                                    ]
-                                , td [] []
-                                , td [] []
-                                , td [] []
-                                ]
-                            ]
-                   )
-            )
+viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Maybe ULID -> Maybe ULID -> Html Msg
+viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
+    Html.node "ui5-table"
+        [ Attr.attribute "alternate-row-colors" ""
+        , Attr.attribute "row-action-count" "5"
         ]
+        (Html.node "ui5-table-header-row"
+            [ Attr.attribute "slot" "headerRow" ]
+            [ Html.node "ui5-table-header-cell" [] [ text "Descripcion" ]
+            , Html.node "ui5-table-header-cell" [ Attr.attribute "horizontal-align" "End" ] [ text "Monto total" ]
+            , Html.node "ui5-table-header-cell" [ Attr.attribute "horizontal-align" "End" ] [ text "Cantidad" ]
+            , Html.node "ui5-table-header-cell" [ Attr.attribute "horizontal-align" "Center" ] [ text "Repartido" ]
+            ]
+            :: (repartija.items
+                    |> List.map (\item -> viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId)
+               )
+            ++ [ Html.node "ui5-table-row"
+                    []
+                    [ Html.node "ui5-table-cell" [] [ text "Propina" ]
+                    , Html.node "ui5-table-cell" [] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.extra ]
+                    , Html.node "ui5-table-cell" [] []
+                    , Html.node "ui5-table-cell" [] []
+                    ]
+               , Html.node "ui5-table-row"
+                    []
+                    [ Html.node "ui5-table-cell" [] [ text "Total" ]
+                    , Html.node "ui5-table-cell"
+                        []
+                        [ text "$"
+                        , repartija.items
+                            |> List.map (\i -> Monto.toDecimal i.monto)
+                            |> List.foldl Decimal.add (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
+                            |> Decimal.add (Monto.toDecimal repartija.extra)
+                            |> Decimal.toString
+                            |> text
+                        ]
+                    , Html.node "ui5-table-cell" [] []
+                    , Html.node "ui5-table-cell" [] []
+                    ]
+               ]
+        )
 
 
 interpretClaims : List RepartijaClaim -> ItemClaimsState
@@ -447,8 +467,8 @@ interpretClaims originalClaims =
     List.foldl folder NoClaims originalClaims
 
 
-viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Maybe ULID -> Html Msg
-viewClaimsLine userId grupo repartija item pendingItemOperation =
+viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Maybe ULID -> Maybe ULID -> Html Msg
+viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
     let
         claimsForItem =
             repartija.claims
@@ -462,132 +482,111 @@ viewClaimsLine userId grupo repartija item pendingItemOperation =
         itemRepartidoState =
             calculateItemRepartidoState item itemsClaimed
 
-        isPending : Bool
-        isPending =
-            pendingItemOperation == Just item.id
+        userClaim =
+            claimsForItem |> find (\c -> Just c.participante == userId)
 
-        loadingOverlay : Html Msg
-        loadingOverlay =
-            if isPending then
-                div
-                    [ style "position" "absolute"
-                    , style "top" "0"
-                    , style "left" "0"
-                    , style "right" "0"
-                    , style "bottom" "0"
-                    , style "display" "flex"
-                    , style "align-items" "center"
-                    , style "justify-content" "center"
-                    , style "z-index" "10"
-                    , style "opacity" "0.9"
-                    , class "has-background-dark"
-                    ]
-                    [ span [ class "icon is-large", Css.spin ]
-                        [ FeatherIcons.loader
-                            |> FeatherIcons.withSize 32
-                            |> FeatherIcons.toHtml []
-                        ]
-                    ]
+        allHidden =
+            { plus1 = False, minus1 = False, participe = False, salirse = False, repartir = False }
 
-            else
-                text ""
-    in
-    tr []
-        [ td [ class "is-vcentered" ] [ text <| item.nombre ]
-        , td [ class "has-text-right is-vcentered" ]
-            [ text <| "$" ++ Decimal.toString (Monto.toDecimal item.monto)
-            ]
-        , td [ class "has-text-right is-vcentered" ] [ text <| String.fromInt item.cantidad ]
-        , td [] [ viewClaimProgressAndDropdown grupo repartija item claimsForItem itemRepartidoState ]
-        , td []
-            [ case ( userId, itemRepartidoState, claimsForItem |> find (\c -> Just c.participante == userId) ) of
+        visibility =
+            case ( userId, itemRepartidoState, userClaim ) of
                 ( Nothing, _, _ ) ->
-                    div [ class "buttons has-addons is-centered" ]
-                        [ text "Selecciona tu nombre arriba a la derecha"
-                        ]
+                    allHidden
 
-                ( Just _, RepartidoIncorrectamente, Just userClaim ) ->
-                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger" ] [ text "-1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
-                        , button [ onClick <| LeaveCurrentClaim userClaim, class "button is-danger" ] [ text "Salirse" ]
-                        , loadingOverlay
-                        ]
+                ( Just _, RepartidoIncorrectamente, Just _ ) ->
+                    { allHidden | plus1 = True, minus1 = True }
 
                 ( Just _, RepartidoIncorrectamente, Nothing ) ->
-                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
-                        , loadingOverlay
-                        ]
+                    { allHidden | plus1 = True }
 
-                ( Just _, RepartidoExactamente { deltaDeCantidad }, Just userClaim ) ->
-                    case compararConCero deltaDeCantidad of
-                        ExactamenteCero ->
-                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
-                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined" ] [ text "-1" ]
-                                , loadingOverlay
-                                ]
+                ( Just _, RepartidoExactamente _, Just _ ) ->
+                    { allHidden | plus1 = True, minus1 = True }
 
-                        QuedaCortoPor _ ->
-                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link " ] [ text "+1" ]
-                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined" ] [ text "-1" ]
-                                , loadingOverlay
-                                ]
-
-                        SePasaPor _ ->
-                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
-                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger" ] [ text "-1" ]
-                                , loadingOverlay
-                                ]
-
-                ( Just _, RepartidoExactamente { deltaDeCantidad }, Nothing ) ->
-                    case compararConCero deltaDeCantidad of
-                        ExactamenteCero ->
-                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
-                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined", disabled True ] [ text "-1" ]
-                                , loadingOverlay
-                                ]
-
-                        QuedaCortoPor _ ->
-                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link " ] [ text "+1" ]
-                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger is-outlined", disabled True ] [ text "-1" ]
-                                , loadingOverlay
-                                ]
-
-                        SePasaPor _ ->
-                            div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                                [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-warning is-outlined" ] [ text "+1" ]
-                                , button [ onClick <| ChangeCurrentClaim item -1, class "button is-danger", disabled True ] [ text "-1" ]
-                                , loadingOverlay
-                                ]
+                ( Just _, RepartidoExactamente _, Nothing ) ->
+                    { allHidden | plus1 = True }
 
                 ( Just _, RepartidoEquitativamenteEntre _, Nothing ) ->
-                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                        [ button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
-                        , loadingOverlay
-                        ]
+                    { allHidden | participe = True }
 
-                ( Just _, RepartidoEquitativamenteEntre _, Just userClaim ) ->
-                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                        [ button [ onClick <| LeaveCurrentClaim userClaim, class "button is-danger is-outlined" ] [ text "Salirse" ]
-                        , loadingOverlay
-                        ]
+                ( Just _, RepartidoEquitativamenteEntre _, Just _ ) ->
+                    { allHidden | salirse = True }
 
                 ( Just _, SinRepartir, _ ) ->
-                    div [ class "buttons has-addons is-centered", style "position" "relative" ]
-                        [ button [ onClick <| ChangeCurrentClaim item 1, class "button is-link" ] [ text "+1" ]
-                        , button [ onClick <| ChangeCurrentClaim item 1, class "button is-link", disabled True ] [ text "-1" ]
-                        , button [ onClick <| JoinCurrentClaim item, class "button is-link" ] [ text "Participé" ]
-                        , loadingOverlay
+                    { allHidden | repartir = True }
+
+        pickSchemeButtonId =
+            "pick-scheme-" ++ item.id
+
+        rowAction iconName textLabel maybeId msg isVisible =
+            Html.node "ui5-table-row-action"
+                [ Attr.attribute "slot" "actions"
+                , Attr.attribute "icon" iconName
+                , Attr.attribute "text" textLabel
+                , Attr.attribute "tooltip" textLabel
+                , on "click" (Json.Decode.succeed msg)
+                , case maybeId of
+                    Just id_ ->
+                        id id_
+
+                    Nothing ->
+                        class ""
+                , Attr.property "invisible" <|
+                    Json.Encode.bool (not isVisible)
+                ]
+                []
+    in
+    Html.node "ui5-table-row"
+        []
+        [ Html.node "ui5-table-cell" [] [ text <| item.nombre ]
+        , Html.node "ui5-table-cell" [] [ text <| "$" ++ Decimal.toString (Monto.toDecimal item.monto) ]
+        , Html.node "ui5-table-cell" [] [ text <| String.fromInt item.cantidad ]
+        , Html.node "ui5-table-cell"
+            []
+            [ viewClaimProgressAndDropdown grupo item claimsForItem itemRepartidoState openPopoverItemId
+            , Html.node "ui5-responsive-popover"
+                ([ Attr.attribute "opener" pickSchemeButtonId
+                 , Attr.attribute "placement" "Bottom"
+                 , on "close" (Json.Decode.succeed ClosePickScheme)
+                 ]
+                    ++ (if pickSchemeItemId == Just item.id then
+                            [ Attr.attribute "open" "" ]
+
+                        else
+                            []
+                       )
+                )
+                [ Html.node "ui5-list"
+                    [ Attr.attribute "header-text" "Elegí cómo repartir" ]
+                    [ Html.node "ui5-li"
+                        [ Attr.attribute "icon" "add"
+                        , Attr.attribute "description" "Indicás cuántas unidades consumió cada persona"
+                        , on "click" (Json.Decode.succeed (ChangeCurrentClaim item 1))
                         ]
+                        [ text "Por cantidad" ]
+                    , Html.node "ui5-li"
+                        [ Attr.attribute "icon" "accept"
+                        , Attr.attribute "description" "Se divide en partes iguales entre los que participaron"
+                        , on "click" (Json.Decode.succeed (JoinCurrentClaim item))
+                        ]
+                        [ text "Equitativo" ]
+                    ]
+                ]
             ]
+        , rowAction "edit" "Repartir" (Just pickSchemeButtonId) (TogglePickScheme item.id) visibility.repartir
+        , rowAction "add" "+1" Nothing (ChangeCurrentClaim item 1) visibility.plus1
+        , rowAction "sys-minus" "-1" Nothing (ChangeCurrentClaim item -1) visibility.minus1
+        , rowAction "accept" "Participé" Nothing (JoinCurrentClaim item) visibility.participe
+        , rowAction "decline"
+            "Salirse"
+            Nothing
+            (case userClaim of
+                Just claim ->
+                    LeaveCurrentClaim claim
+
+                Nothing ->
+                    NoOp
+            )
+            visibility.salirse
         ]
 
 
@@ -647,78 +646,78 @@ calculateItemRepartidoState item itemsClaimed =
             SinRepartir
 
 
-viewClaimProgressAndDropdown : GrupoLike g -> Repartija -> RepartijaItem -> List RepartijaClaim -> ItemRepartidoState -> Html Msg
-viewClaimProgressAndDropdown grupo repartija item claimsForItem itemRepartidoState =
-    div [ class "is-flex" ]
-        [ div
-            [ class "dropdown is-hoverable"
-            ]
-            [ div [ class "dropdown-trigger" ]
-                [ viewRepartidoState itemRepartidoState
-                ]
-            , div
-                [ class "dropdown-menu"
-                , attribute "role" "menu"
-                ]
-                [ div
-                    [ class "dropdown-content"
-                    ]
-                    (claimsForItem
-                        |> List.map
-                            (\claim ->
-                                div [ class "dropdown-item" ]
-                                    [ let
-                                        nombre =
-                                            lookupNombreParticipante grupo claim.participante
-                                      in
-                                      case claim.cantidad of
+viewClaimProgressAndDropdown : GrupoLike g -> RepartijaItem -> List RepartijaClaim -> ItemRepartidoState -> Maybe ULID -> Html Msg
+viewClaimProgressAndDropdown grupo item claimsForItem itemRepartidoState openPopoverItemId =
+    let
+        statusButtonId =
+            "repartido-status-" ++ item.id
+
+        isPopoverOpen =
+            openPopoverItemId == Just item.id
+    in
+    div [ style "display" "flex" ]
+        [ viewRepartidoState itemRepartidoState statusButtonId item.id
+        , Html.node "ui5-responsive-popover"
+            ([ Attr.attribute "opener" statusButtonId
+             , Attr.attribute "placement" "Bottom"
+             , on "close" (Json.Decode.succeed CloseItemPopover)
+             ]
+                ++ (if isPopoverOpen then
+                        [ Attr.attribute "open" "" ]
+
+                    else
+                        []
+                   )
+            )
+            [ Html.node "ui5-list"
+                []
+                (claimsForItem
+                    |> List.map
+                        (\claim ->
+                            Html.node "ui5-li"
+                                [ Attr.attribute "description"
+                                    (case claim.cantidad of
                                         Just cantidad ->
-                                            text <| String.fromInt cantidad ++ " unidad para " ++ nombre
+                                            String.fromInt cantidad ++ " unidad"
 
                                         Nothing ->
-                                            text <| "parte para " ++ nombre
-                                    , button
-                                        [ class "delete ml-1"
-                                        , attribute "aria-label" "close"
-                                        , onClick <| DeleteClaim claim
-                                        ]
-                                        []
-                                    ]
-                            )
-                    )
-                ]
+                                            "Equitativo"
+                                    )
+                                ]
+                                [ text (lookupNombreParticipante grupo claim.participante)
+                                ]
+                        )
+                )
             ]
         ]
 
 
-viewRepartidoState : ItemRepartidoState -> Html Msg
-viewRepartidoState itemRepartidoState =
+viewRepartidoState : ItemRepartidoState -> String -> ULID -> Html Msg
+viewRepartidoState itemRepartidoState buttonId itemId =
     let
-        classForRepartido : Attribute msg
-        classForRepartido =
+        designForRepartido : String
+        designForRepartido =
             case itemRepartidoState of
                 SinRepartir ->
-                    class "is-info"
+                    "Default"
 
                 RepartidoIncorrectamente ->
-                    class "is-danger"
+                    "Negative"
 
                 RepartidoExactamente { deltaDeCantidad } ->
                     if deltaDeCantidad == 0 then
-                        class "is-success"
+                        "Positive"
 
                     else
-                        class "is-warning"
+                        "Attention"
 
                 RepartidoEquitativamenteEntre _ ->
-                    class "is-success"
+                    "Positive"
     in
-    button
-        [ class "button"
-        , class "is-outlined"
-        , classForRepartido
-        , style "pointer-events" "none"
-        , attribute "aria-haspopup" "true"
+    Html.node "ui5-button"
+        [ Attr.attribute "design" designForRepartido
+        , id buttonId
+        , onClick (ToggleItemPopover itemId)
         ]
         [ case itemRepartidoState of
             SinRepartir ->
@@ -730,7 +729,7 @@ viewRepartidoState itemRepartidoState =
             RepartidoExactamente { deltaDeCantidad } ->
                 case compararConCero deltaDeCantidad of
                     ExactamenteCero ->
-                        i [ class "icon" ] <| [ FeatherIcons.toHtml [] FeatherIcons.check ]
+                        text "✓"
 
                     QuedaCortoPor n ->
                         text <| "Falta repartir " ++ String.fromInt n
@@ -740,8 +739,6 @@ viewRepartidoState itemRepartidoState =
 
             RepartidoEquitativamenteEntre { cantidadDeParticipantes } ->
                 text <| "Equitativo entre " ++ String.fromInt cantidadDeParticipantes
-        , FeatherIcons.chevronDown
-            |> FeatherIcons.toHtml []
         ]
 
 
@@ -750,10 +747,12 @@ viewParticipanteClaimsModal model grupo repartija =
     case model.participanteClaimsModal of
         Just participanteId ->
             let
+                claims : List RepartijaClaim
                 claims =
                     repartija.claims
                         |> List.filter (\c -> c.participante == participanteId)
 
+                participanteNombre : String
                 participanteNombre =
                     lookupNombreParticipante grupo participanteId
 
@@ -765,57 +764,29 @@ viewParticipanteClaimsModal model grupo repartija =
                         |> Maybe.map .nombre
                         |> Maybe.withDefault "Item desconocido"
             in
-            div
-                [ class "modal is-active" ]
-                [ div
-                    [ class "modal-background"
-                    , onClick CloseParticipanteClaimsPopup
-                    ]
+            Html.node "ui5-responsive-popover"
+                [ Attr.attribute "open" ""
+                , Attr.attribute "opener" ("participante-btn-" ++ participanteId)
+                , Attr.attribute "header-text" ("Asignaciones para " ++ participanteNombre)
+                , Attr.attribute "placement" "Bottom"
+                , on "close" (Json.Decode.succeed CloseParticipanteClaimsPopup)
+                ]
+                [ Html.node "ui5-list"
                     []
-                , div
-                    [ class "modal-card"
-                    ]
-                    [ header
-                        [ class "modal-card-head"
-                        ]
-                        [ p
-                            [ class "modal-card-title"
-                            ]
-                            [ text <| "Asignaciones para " ++ participanteNombre ]
-                        , button
-                            [ class "delete"
-                            , attribute "aria-label" "close"
-                            , onClick CloseParticipanteClaimsPopup
-                            ]
-                            []
-                        ]
-                    , section
-                        [ class "modal-card-body"
-                        ]
-                        [ table [ class "table is-hoverable" ] <|
-                            (tr []
-                                [ th [] [ text "Nombre" ]
-                                , th [] [ text "Cantidad" ]
-                                ]
-                                :: (claims
-                                        |> List.map
-                                            (\claim ->
-                                                tr []
-                                                    [ td [] [ text <| lookupItemName claim.itemId ]
-                                                    , td []
-                                                        [ text
-                                                            (claim.cantidad
-                                                                |> Maybe.map String.fromInt
-                                                                |> Maybe.withDefault "Equitativo"
-                                                            )
-                                                        ]
-                                                    ]
-                                            )
-                                   )
+                    (claims
+                        |> List.map
+                            (\claim ->
+                                Html.node "ui5-li"
+                                    [ Attr.attribute "description"
+                                        (claim.cantidad
+                                            |> Maybe.map (\c -> String.fromInt c ++ " unidad")
+                                            |> Maybe.withDefault "Equitativo"
+                                        )
+                                    ]
+                                    [ text <| lookupItemName claim.itemId ]
                             )
-                        ]
-                    ]
+                    )
                 ]
 
         Nothing ->
-            div [] []
+            text ""

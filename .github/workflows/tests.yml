@@ -41,8 +41,11 @@ jobs:
       - name: Install dependencies
         working-directory: ./ui
         run: |
+          export ELM_HOME=$PWD/.elm-home
           nix develop --command pnpm install --frozen-lockfile
           nix develop --command pnpm build
+          nix develop --command pnpm format
+          nix develop --command pnpm review
 
       - name: Run Elm tests
         working-directory: ./ui

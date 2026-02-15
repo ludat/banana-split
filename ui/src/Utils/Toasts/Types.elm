@@ -1,4 +1,4 @@
-module Utils.Toasts.Types exposing (..)
+module Utils.Toasts.Types exposing (Toast, ToastContent, ToastLevel(..), ToastMsg, Toasts)
 
 import Toasty
 
@@ -14,10 +14,7 @@ type alias ToastContent =
 
 
 type ToastLevel
-    = ToastNoLevel
-    | ToastSuccess
-    | ToastInfo
-    | ToastWarning
+    = ToastSuccess
     | ToastDanger
 
 

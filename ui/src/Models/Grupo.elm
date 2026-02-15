@@ -1,6 +1,6 @@
-module Models.Grupo exposing (GrupoLike, lookupNombreParticipante, lookupParticipante, lookupParticipantes)
+module Models.Grupo exposing (GrupoLike, lookupNombreParticipante, lookupParticipante)
 
-import Generated.Api exposing (Grupo, Participante, ParticipanteAddParams, ParticipanteId, ULID)
+import Generated.Api exposing (Participante, ParticipanteId, ULID)
 
 
 type alias GrupoLike r =
@@ -8,14 +8,6 @@ type alias GrupoLike r =
         | id : ULID
         , participantes : List Participante
     }
-
-
-lookupParticipantes : List Participante -> ParticipanteId -> Participante
-lookupParticipantes participantes participanteId =
-    participantes
-        |> List.filter (\p -> p.participanteId == participanteId)
-        |> List.head
-        |> Maybe.withDefault { participanteId = participanteId, participanteNombre = "Desconocido" }
 
 
 lookupParticipante : GrupoLike g -> ParticipanteId -> Participante

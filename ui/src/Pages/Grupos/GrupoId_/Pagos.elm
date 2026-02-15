@@ -1,21 +1,20 @@
 module Pages.Grupos.GrupoId_.Pagos exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
+import Components.Ui5 exposing (slot)
 import Effect exposing (Effect)
-import FeatherIcons as Icons
-import Generated.Api as Api exposing (Distribucion, Grupo, Monto, Netos, Pago, Parte(..), Participante, ParticipanteId, ShallowGrupo, ShallowPago, ULID)
-import Html exposing (..)
-import Html.Attributes exposing (..)
-import Html.Events exposing (onClick)
+import Generated.Api as Api exposing (ShallowPago, ULID)
+import Html exposing (Html, div, p, strong, text)
+import Html.Attributes as Attr exposing (class, style)
+import Html.Events exposing (on, onClick)
 import Http
+import Json.Decode
 import Layouts
-import Models.Grupo exposing (lookupNombreParticipante)
 import Models.Monto as Monto
-import Models.Pago as Pago
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..), WebData)
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
@@ -28,7 +27,7 @@ page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route.params.grupoId shared.store
-        , update = update shared.store shared.userId
+        , update = update shared.store
         , subscriptions = subscriptions
         , view = view shared.store
         }
@@ -47,6 +46,7 @@ page shared route =
 
 type Msg
     = NoOp
+    | Navigate Path.Path
     | DeletePago ULID
     | ConfirmDeletePago ULID
     | CancelDeletePago
@@ -77,11 +77,14 @@ init grupoId store =
 -- UPDATE
 
 
-update : Store -> Maybe ULID -> Msg -> Model -> ( Model, Effect Msg )
-update store userId msg model =
+update : Store -> Msg -> Model -> ( Model, Effect Msg )
+update store msg model =
     case msg of
         NoOp ->
             ( model, Effect.none )
+
+        Navigate path ->
+            ( model, Effect.pushRoutePath path )
 
         DeletePago pagoId ->
             ( { model | deletingPagoId = Just pagoId }
@@ -113,7 +116,7 @@ update store userId msg model =
 
         DeletePagoResponse result ->
             case result of
-                Ok pagoBorradoId ->
+                Ok _ ->
                     ( model
                     , Effect.batch
                         [ Store.refreshGrupo model.grupoId
@@ -123,7 +126,7 @@ update store userId msg model =
                         ]
                     )
 
-                Err e ->
+                Err _ ->
                     ( model, pushToast ToastDanger "Falle al borrar el pago" )
 
 
@@ -132,7 +135,7 @@ update store userId msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -157,161 +160,89 @@ view store model =
             in
             { title = grupo.nombre
             , body =
-                [ div [ class "container columns is-mobile is-justify-content-end px-4 pt-2 pb-1 m-0" ]
-                    [ a [ class "button mx-3", Path.href <| Path.Grupos_GrupoId__Pagos_New { grupoId = model.grupoId } ] [ text "Agregar pago" ]
+                [ Html.node "ui5-list"
+                    [ Attr.attribute "header-text" "Pagos"
+                    , Attr.attribute "selection-mode" "Delete"
+                    , on "item-delete"
+                        (Json.Decode.at [ "detail", "item", "dataset", "id" ] Json.Decode.string
+                            |> Json.Decode.map DeletePago
+                        )
                     ]
-                , div
-                    [ class "container columns is-flex-wrap-wrap px-4 pb-4 pt-1" ]
                     (pagos
                         |> List.map
                             (\pago ->
-                                div [ class "column is-one-third" ]
-                                    [ div [ class "card" ]
-                                        [ header [ class "card-header" ]
-                                            [ p [ class "card-header-title py-2 px-4" ]
-                                                [ text pago.nombre ]
-                                            , if pago.isValid then
-                                                text ""
+                                Html.node "ui5-li"
+                                    [ Attr.attribute "data-id" pago.pagoId
+                                    , Attr.attribute "additional-text" ("$ " ++ Monto.toString pago.monto)
+                                    , Attr.attribute "type" "Navigation"
+                                    , Attr.attribute "icon"
+                                        (if pago.isValid then
+                                            ""
 
-                                              else
-                                                button
-                                                    [ class "card-header-icon"
-                                                    , attribute "aria-label" "more options"
-                                                    ]
-                                                    [ span
-                                                        [ class "icon has-tooltip-multiline has-tooltip-danger has-text-danger"
-                                                        , attribute "data-tooltip" "Este pago es invalido asi que no se cuenta para las deudas."
-                                                        ]
-                                                        [ Icons.toHtml [] Icons.alertCircle
-                                                        ]
-                                                    ]
-                                            ]
-                                        , div [ class "card-content" ]
-                                            [ p [ class "title is-3 m-0" ]
-                                                [ text "$ "
-                                                , text <| Monto.toString pago.monto
-                                                ]
-                                            , p [ style "display" "none" ]
-                                                [ let
-                                                    pagador2Text pagador =
-                                                        pagador
-                                                            |> lookupNombreParticipante grupo
-                                                  in
-                                                  case Pago.getPagadores pago of
-                                                    [] ->
-                                                        text <| "pagado por nadie!"
-
-                                                    [ pagador ] ->
-                                                        text <| "pagado por " ++ pagador2Text pagador
-
-                                                    [ pagador1, pagador2 ] ->
-                                                        text <| ("pagado  por " ++ pagador2Text pagador1 ++ " y " ++ pagador2Text pagador2)
-
-                                                    [ pagador1, pagador2, pagador3 ] ->
-                                                        text <| ("pagado por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ pagador2Text pagador3)
-
-                                                    pagador1 :: pagador2 :: rest ->
-                                                        text <| ("pagado por " ++ pagador2Text pagador1 ++ ", " ++ pagador2Text pagador2 ++ " y " ++ String.fromInt (List.length rest) ++ " personas mas")
-                                                ]
-                                            ]
-                                        , footer [ class "card-footer" ]
-                                            [ a
-                                                [ class "button card-footer-item"
-                                                , Path.href <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = pago.pagoId }
-                                                ]
-                                                [ Icons.toHtml [] Icons.edit
-                                                ]
-                                            , button [ class "card-footer-item", onClick <| DeletePago pago.pagoId ]
-                                                [ Icons.toHtml [] Icons.trash2
-                                                ]
-                                            ]
-                                        ]
+                                         else
+                                            "alert"
+                                        )
+                                    , onClick (Navigate <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = pago.pagoId })
                                     ]
+                                    [ text pago.nombre ]
                             )
                     )
-                , deleteConfirmationModal model.deletingPagoId pagoBeingDeleted
+                , Html.node "ui5-button"
+                    [ Attr.attribute "design" "Emphasized"
+                    , Attr.attribute "icon" "add"
+                    , onClick (Navigate <| Path.Grupos_GrupoId__Pagos_New { grupoId = model.grupoId })
+                    ]
+                    [ text "Agregar pago" ]
+                , deleteConfirmationDialog model.deletingPagoId pagoBeingDeleted
                 ]
             }
 
-        ( _, _ ) ->
+        _ ->
             { title = "Impossible"
             , body = []
             }
 
 
-deleteConfirmationModal : Maybe ULID -> Maybe ShallowPago -> Html Msg
-deleteConfirmationModal deletingPagoId maybePago =
-    div
-        (class "modal"
-            :: (case deletingPagoId of
-                    Nothing ->
-                        []
+deleteConfirmationDialog : Maybe ULID -> Maybe ShallowPago -> Html Msg
+deleteConfirmationDialog deletingPagoId maybePago =
+    Html.node "ui5-dialog"
+        [ Attr.attribute "header-text" "Confirmar"
+        , Attr.attribute "state" "Negative"
+        , if deletingPagoId /= Nothing then
+            Attr.attribute "open" ""
 
-                    Just _ ->
-                        [ class "is-active" ]
-               )
-        )
-        [ div
-            [ class "modal-background"
-            , onClick CancelDeletePago
+          else
+            class ""
+        , on "close" (Json.Decode.succeed CancelDeletePago)
+        ]
+        [ p []
+            [ text "¿Estás seguro que querés eliminar "
+            , case maybePago of
+                Just pago ->
+                    strong [] [ text ("\"" ++ pago.nombre ++ "\"") ]
+
+                Nothing ->
+                    text "este pago"
+            , text "?"
             ]
-            []
-        , div
-            [ class "modal-card"
-            ]
-            [ header
-                [ class "modal-card-head"
+        , p [ style "margin-top" "0.75rem" ]
+            [ text "Esta acción no se puede deshacer." ]
+        , div [ slot "footer", style "display" "flex", style "gap" "0.5rem", style "justify-content" "end", style "width" "100%", style "padding" "0.25rem 0" ]
+            [ Html.node "ui5-button"
+                [ Attr.attribute "design" "Transparent"
+                , onClick CancelDeletePago
                 ]
-                [ p
-                    [ class "modal-card-title"
-                    ]
-                    [ text "Confirmar" ]
-                , button
-                    [ class "delete"
-                    , attribute "aria-label" "close"
-                    , onClick CancelDeletePago
-                    ]
-                    []
-                ]
-            , section
-                [ class "modal-card-body"
-                ]
-                [ p []
-                    [ text "¿Estás seguro que querés eliminar "
-                    , case maybePago of
-                        Just pago ->
-                            strong [] [ text ("\"" ++ pago.nombre ++ "\"") ]
+                [ text "Cancelar" ]
+            , Html.node "ui5-button"
+                [ Attr.attribute "design" "Negative"
+                , onClick <|
+                    case deletingPagoId of
+                        Just pagoId ->
+                            ConfirmDeletePago pagoId
 
                         Nothing ->
-                            text "este pago"
-                    , text "?"
-                    ]
-                , p [ class "mt-3" ]
-                    [ text "Esta acción no se puede deshacer." ]
+                            NoOp
                 ]
-            , footer
-                [ class "modal-card-foot"
-                ]
-                [ div
-                    [ class "buttons"
-                    ]
-                    [ button
-                        [ class "button is-danger"
-                        , onClick <|
-                            case deletingPagoId of
-                                Just pagoId ->
-                                    ConfirmDeletePago pagoId
-
-                                Nothing ->
-                                    NoOp
-                        ]
-                        [ text "Eliminar" ]
-                    , button
-                        [ class "button"
-                        , onClick CancelDeletePago
-                        ]
-                        [ text "Cancelar" ]
-                    ]
-                ]
+                [ text "Eliminar" ]
             ]
         ]

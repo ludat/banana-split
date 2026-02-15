@@ -3,21 +3,19 @@ module Pages.Grupos.Id_ exposing (Model, Msg, page)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Effect exposing (Effect)
-import FeatherIcons as Icons
-import Generated.Api as Api exposing (Grupo, Netos, Pago, Parte(..), ResumenGrupo, Transaccion, ULID)
-import Html exposing (..)
-import Html.Attributes exposing (..)
+import Generated.Api as Api exposing (Pago, ResumenGrupo, Transaccion, ULID)
+import Html exposing (Html, a, div, p, section, span, text)
+import Html.Attributes as Attr exposing (class, style)
 import Html.Events exposing (onClick)
 import Http
+import Json.Encode as Encode
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
-import Models.Pago as Pago
 import Models.Store as Store
-import Models.Store.Types as Store exposing (Store)
-import Numeric.Decimal as Decimal
+import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..), WebData)
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
@@ -62,20 +60,14 @@ init grupoId store =
 
 
 type Msg
-    = NoOp
-    | CrearPago Pago
+    = CrearPago Pago
     | AddedPagoResponse (Result Http.Error Pago)
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        NoOp ->
-            ( model
-            , Effect.none
-            )
-
-        AddedPagoResponse (Ok pago) ->
+        AddedPagoResponse (Ok _) ->
             ( model
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
@@ -85,7 +77,7 @@ update msg model =
                 ]
             )
 
-        AddedPagoResponse (Err error) ->
+        AddedPagoResponse (Err _) ->
             ( model
             , Toasts.pushToast Toasts.ToastDanger "No se pudo completar el pago"
             )
@@ -136,7 +128,7 @@ pagoFromTransaccion transaction =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -159,7 +151,7 @@ view store model =
                 ]
             }
 
-        Failure e ->
+        Failure _ ->
             { title = "Fallo"
             , body = []
             }
@@ -167,8 +159,15 @@ view store model =
         Success grupo ->
             { title = grupo.nombre
             , body =
-                [ div [ class "container columns is-flex-direction-column is-align-items-center" ]
-                    (if grupo.participantes == [] then
+                [ div
+                    [ style "max-width" "var(--sapBreakpoint_L_Min)"
+                    , style "display" "flex"
+                    , style "justify-content" "center"
+                    , style "flex-direction" "column"
+                    , style "margin-left" "auto"
+                    , style "margin-right" "auto"
+                    ]
+                    (if List.isEmpty grupo.participantes then
                         [ p [] [ text "Tu grupo todavía no tiene participantes!" ]
                         , p []
                             [ text "Agregalos "
@@ -183,18 +182,18 @@ view store model =
                         case store |> Store.getResumen model.grupoId of
                             Success resumen ->
                                 if resumen.cantidadPagos == 0 then
-                                    [ div [ class "column is-two-thirds" ]
-                                        [ div [ class "notification is-info has-text-centered" ]
-                                            [ text "Todavía no hay pagos registrados. "
-                                            , a [ Path.href <| Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id } ]
-                                                [ text "¡Agregá el primer pago para empezar a dividir gastos!" ]
-                                            ]
+                                    [ Html.node "ui5-message-strip"
+                                        [ Attr.attribute "design" "Information", style "text-align" "center" ]
+                                        [ text "Todavía no hay pagos registrados. "
+                                        , a [ Path.href <| Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id } ]
+                                            [ text "¡Agregá el primer pago para empezar a dividir gastos!" ]
                                         ]
                                     ]
 
                                 else
                                     [ if resumen.cantidadPagosInvalidos > 0 then
-                                        div [ class "notification is-danger" ]
+                                        Html.node "ui5-message-strip"
+                                            [ Attr.attribute "design" "Negative", style "margin-bottom" "1rem" ]
                                             [ text <|
                                                 if resumen.cantidadPagosInvalidos == 1 then
                                                     "Tenés 1 pago inválido, ese no se cuenta para las deudas."
@@ -207,7 +206,7 @@ view store model =
 
                                       else
                                         text ""
-                                    , div [ class "column is-two-thirds mb-6" ]
+                                    , div [ style "width" "100%", style "margin-bottom" "1.5rem" ]
                                         [ viewNetosBarras grupo resumen.netos ]
                                     , viewTransferencias grupo resumen
                                     ]
@@ -218,7 +217,7 @@ view store model =
                             Loading ->
                                 [ text "Carganding" ]
 
-                            Failure e ->
+                            Failure _ ->
                                 [ text "Error cargando los netos" ]
                     )
                 ]
@@ -227,9 +226,13 @@ view store model =
 
 viewTransferencias : GrupoLike g -> ResumenGrupo -> Html Msg
 viewTransferencias grupo resumen =
-    div [ class "column is-two-thirds" ]
+    div []
         (if List.isEmpty resumen.transaccionesParaSaldar then
-            [ div [ class "notification is-success has-text-centered" ]
+            [ Html.node "ui5-message-strip"
+                [ Attr.attribute "design" "Positive"
+                , style "text-align" "center"
+                , Attr.property "hideCloseButton" (Encode.bool True)
+                ]
                 [ text "¡No hay deudas pendientes! Todos están al día." ]
             ]
 
@@ -237,22 +240,24 @@ viewTransferencias grupo resumen =
             resumen.transaccionesParaSaldar
                 |> List.map
                     (\t ->
-                        div [ class "fixed-grid has-11-cols mb-2" ]
-                            [ div [ class "grid" ]
-                                [ div [ class "cell is-col-span-5 has-text-right" ]
-                                    [ p [ class "" ]
-                                        [ text <| lookupNombreParticipante grupo t.transaccionFrom
-                                        , p [ class "has-text-danger is-size-6-5" ]
-                                            [ text "$"
-                                            , text <| Monto.toString t.transaccionMonto
-                                            ]
-                                        ]
+                        div [ style "display" "grid", style "grid-template-columns" "1fr auto 1fr", style "align-items" "center", style "margin-bottom" "0.5rem" ]
+                            [ div [ style "text-align" "right" ]
+                                [ div [] [ text <| lookupNombreParticipante grupo t.transaccionFrom ]
+                                , div [ style "color" "var(--sapNegativeTextColor)" ]
+                                    [ text "$"
+                                    , text <| Monto.toString t.transaccionMonto
                                     ]
-                                , div [ class "cell is-col-span-1 is-flex is-justify-content-center is-align-items-center is-clickable" ]
-                                    [ span [ class "arrow-container" ] [ Icons.toHtml [ onClick <| CrearPago <| pagoFromTransaccion t ] Icons.arrowRight ] ]
-                                , div [ class "cell is-col-span-5 is-flex is-align-items-center" ]
-                                    [ text <| lookupNombreParticipante grupo t.transaccionTo
-                                    ]
+                                ]
+                            , Html.node "ui5-button"
+                                [ Attr.attribute "design" "Transparent"
+                                , Attr.attribute "icon" "arrow-right"
+                                , Attr.attribute "tooltip" "Crear pago para saldar esta deuda"
+                                , onClick <| CrearPago <| pagoFromTransaccion t
+                                , style "margin" "0 0.5rem"
+                                ]
+                                []
+                            , span []
+                                [ text <| lookupNombreParticipante grupo t.transaccionTo
                                 ]
                             ]
                     )

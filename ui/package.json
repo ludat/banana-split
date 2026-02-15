@@ -8,28 +8,39 @@
   },
   "scripts": {
     "build": "elm-land build",
-    "format": "elm-format src/ --yes",
+    "format": "elm-format src/ --validate",
+    "format:fix": "elm-format src/ --yes",
+    "review": "elm-review",
+    "review:fix": "elm-review --fix",
     "start": "concurrently pnpm:start:elm pnpm:start:css",
     "start:elm": "elm-land server",
-    "start:css": "css-in-elm watch src/styles.css src/Css.elm",
-    "test": "elm-test"
+    "start:css": "css-in-elm watch src/styles.css generated-src/Css.elm",
+    "test": "elm-test",
+    "postinstall": "pnpm run inject",
+    "inject": "elm-sideload install --always"
   },
   "author": "",
   "license": "ISC",
   "devDependencies": {
+    "elm-review": "^2.13.5",
+    "elm-sideload": "^1.0.2",
     "elm-test": "^0.19.1-revision12"
   },
   "dependencies": {
     "@ryannhg/css-in-elm": "^1.0.0",
+    "@ui5/webcomponents": "^2.19.1",
+    "@ui5/webcomponents-fiori": "^2.19.1",
+    "@ui5/webcomponents-icons": "^2.19.1",
     "concurrently": "^9.2.0",
     "elm": "0.19.1-6",
     "elm-format": "^0.8.8",
     "elm-json": "^0.2.13",
-    "elm-land": "^0.20.1"
+    "elm-land": "^0.20.1",
+    "modern-normalize": "^3.0.1"
   },
   "pnpm": {
-  "overrides": {
-    "launch-editor": "2.11.0"
-  }
+    "overrides": {
+      "launch-editor": "2.11.0"
+    }
   }
 }

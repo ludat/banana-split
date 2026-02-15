@@ -1,50 +1,44 @@
-@import "https://cdn.jsdelivr.net/npm/bulma@1.0.4/css/bulma.min.css";
-@import "https://cdn.jsdelivr.net/npm/bulma-v1-tooltip/dist/bulma-v1-tooltip.min.css";
+@import "modern-normalize";
 
 :root {
     --alto-barra: 11px;
 }
 
 .barras-precio {
-    gap: 30px 0;
+    gap: 20px 0;
     position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    align-items: center;
 
-    .monto {
-        position: relative;
-    }
-
-    .barra {
-        position: absolute;
-        height: var(--alto-barra);
-    }
-
-    & > .izquierda {
-        text-align: right;
-
-        .barra {
-            border-bottom-left-radius: 8px;
-            border-top-left-radius: 8px;
-            right: 0;
+    & > .nombre {
+        &.izquierda {
+            text-align: right;
         }
     }
 
-    & > .derecha .barra {
-        border-bottom-right-radius: 8px;
-        border-top-right-radius: 8px;
+    & > .monto {
+        position: relative;
+
+        &.izquierda {
+            text-align: right;
+        }
+
+        .barra {
+            position: absolute;
+            height: var(--alto-barra);
+            bottom: 0;
+
+            .derecha & {
+                border-radius: 0 8px 8px 0;
+            }
+
+            .izquierda & {
+                border-radius: 8px 0 0 8px;
+                right: 0;
+            }
+        }
     }
-}
-
-.arrow-container {
-    height: 28px;
-    width: 28px;
-
-    svg {
-        width: 100%;
-    }
-}
-
-.is-size-6-5 {
-    font-size: 0.85rem;
 }
 
 .eje-vertical {
@@ -64,23 +58,16 @@
     z-index: 9999;
     bottom: 0;
     width: 100%;
+
+    ol {
+        list-style: none;
+        padding: 0;
+        margin: 0;
+    }
 }
 
 .toast {
     max-width: 50rem;
     padding-bottom: 1rem;
     margin: auto;
-}
-
-.spin {
-  animation: spinAnimation 1s linear infinite;
-}
-
-@keyframes spinAnimation {
-  0% {
-    transform: rotate(0deg);
-  }
-  100% {
-    transform: rotate(360deg);
-  }
 }

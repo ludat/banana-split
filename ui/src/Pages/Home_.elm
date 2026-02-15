@@ -1,44 +1,45 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
+import Components.NavBar exposing (navBarItem)
+import Components.Ui5 exposing (ui5TextFormItem)
 import Effect exposing (Effect, pushRoutePath)
-import Form exposing (Form)
-import Form.Error as Form
-import Form.Input as FormInput
-import Form.Validate as Validate exposing (..)
+import Form exposing (Form, Msg(..))
+import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
 import Generated.Api as Api exposing (CreateGrupoParams)
-import Html exposing (..)
-import Html.Attributes as Attr exposing (..)
+import Html exposing (Html, div, text)
+import Html.Attributes as Attr exposing (attribute, style)
 import Html.Events exposing (onClick, onSubmit)
-import Http
 import Layouts
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
-import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Form exposing (CustomFormError)
 import View exposing (View)
 
 
 page : Shared.Model -> Route () -> Page Model Msg
-page shared route =
+page _ _ =
     Page.new
         { init = init
         , update = update
         , subscriptions = subscriptions
         , view = view
         }
-        |> Page.withLayout (\m -> Layouts.Default { navBarContent = Just navBar, grupo = NotAsked })
+        |> Page.withLayout (\_ -> Layouts.Default { navBarContent = Just navBar, grupo = NotAsked })
 
 
 navBar : Bool -> Html msg
-navBar navBarOpen =
+navBar _ =
     div
-        [ classList [ ( "is-active", navBarOpen ) ]
-        , class "navbar-menu"
+        [ style "display" "flex"
+        , style "align-items" "center"
+        , style "gap" "0.5rem"
+        , style "width" "100%"
         ]
-        [ div [ class "navbar-start" ]
-            []
+        [ navBarItem { currentPath = Path.Home_, path = Path.Home_, attrs = [ attribute "slot" "startContent" ] }
+            [ text "🍌 Banana Split" ]
         ]
 
 
@@ -87,7 +88,7 @@ update msg model =
                                     Ok grupo ->
                                         GrupoCreated grupo
 
-                                    Err error ->
+                                    Err _ ->
                                         NoOp
                             )
                     )
@@ -118,7 +119,7 @@ update msg model =
 
 
 subscriptions : Model -> Sub Msg
-subscriptions model =
+subscriptions _ =
     Sub.none
 
 
@@ -133,44 +134,31 @@ view model =
     in
     { title = ""
     , body =
-        [ div [ class "container" ]
-            [ section [ class "section" ]
-                [ Html.form [ onSubmit <| UpdateForm Form.Submit ]
-                    [ div [ class "field" ]
-                        [ label [ class "label" ]
-                            [ text "Nombre" ]
-                        , div [ class "control" ]
-                            [ Html.map UpdateForm <|
-                                FormInput.textInput nombreField
-                                    [ class "input"
-                                    , type_ "text"
-                                    , placeholder "After del viernes"
-                                    , classList [ ( "is-danger", hasErrorField nombreField ) ]
-                                    ]
-                            , errorForField nombreField
-                            ]
-                        ]
-                    , div [ class "field" ]
-                        [ label [ class "label" ]
-                            [ text "Participante" ]
-                        , div [ class "control" ]
-                            [ Html.map UpdateForm <|
-                                FormInput.textInput participanteField
-                                    [ class "input"
-                                    , type_ "text"
-                                    , placeholder "Juan"
-                                    , classList [ ( "is-danger", hasErrorField participanteField ) ]
-                                    ]
-                            , errorForField participanteField
-                            ]
-                        ]
-                    , div [ class "control" ]
-                        [ button
-                            [ class "button is-primary"
-                            ]
-                            [ text "Crear" ]
-                        ]
+        [ Html.form [ onSubmit <| UpdateForm Submit ]
+            [ Html.node "ui5-form"
+                [ Attr.attribute "header-text" "Crear grupo"
+                , Attr.attribute "layout" "S1 M1 L1 XL1"
+                , Attr.attribute "label-span" "S12 M12 L12 XL12"
+                ]
+                [ Html.map UpdateForm <|
+                    ui5TextFormItem
+                        nombreField
+                        { required = True
+                        , label = "Nombre"
+                        , placeholder = Just "After del viernes, Vacaciones a Calamuchita"
+                        }
+                , Html.map UpdateForm <|
+                    ui5TextFormItem
+                        participanteField
+                        { required = True
+                        , label = "Participante"
+                        , placeholder = Just "Juan"
+                        }
+                , Html.node "ui5-button"
+                    [ Attr.attribute "design" "Emphasized"
+                    , onClick <| UpdateForm Submit
                     ]
+                    [ text "Crear" ]
                 ]
             ]
         ]

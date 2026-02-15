@@ -10,7 +10,7 @@ own file, so they can be imported by `Effect.elm`
 
 import Generated.Api exposing (ULID)
 import Models.Store.Types exposing (Store)
-import Utils.Toasts.Types exposing (Toast, Toasts)
+import Utils.Toasts.Types exposing (Toasts)
 
 
 type alias Model =
