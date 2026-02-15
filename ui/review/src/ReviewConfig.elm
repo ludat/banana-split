@@ -57,5 +57,5 @@ config =
     , NoUnused.Variables.rule
     , Simplify.rule Simplify.defaults
     ]
-        |> List.map (Rule.ignoreErrorsForFiles [ "src/Generated/Api.elm" ])
+        |> List.map (Rule.ignoreErrorsForFiles [ "generated-src/Generated/Api.elm" ])
         |> List.map (Rule.ignoreErrorsForDirectories [ ".elm-land/" ])
