@@ -115,6 +115,7 @@
 
                     ./ui/static
                     ./ui/src
+                    ./ui/generated-src
                     ./ui/tests
 
                     ./ui/elm.json
