@@ -63,78 +63,79 @@ jobs:
           docker tag banana-split ghcr.io/ludat/banana-split:latest
           docker push ghcr.io/ludat/banana-split:latest
 
-  integration-test:
-    needs: [image-release]
-    # permissions:
-    #   contents: write
-    runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./charts/banana-split/
-    steps:
-      - uses: actions/checkout@v6
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v3
-        if: |
-          github.ref == 'refs/heads/main' ||
-          github.event_name == 'pull_request'
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      # - name: Configure Git
-      #   run: |
-      #     git config user.name "$GITHUB_ACTOR"
-      #     git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
-
-      - name: Pull image tag
-        run: |
-          docker pull ghcr.io/ludat/banana-split:${{ needs.image-release.outputs.image_tag }}
-
-      - name: Create k8s Kind Cluster
-        uses: helm/kind-action@v1
-        with:
-          registry: true
-          config: .github/configs/cluster.yaml
-
-      - name: Get nodes
-        run: |
-          kubectl get nodes -o wide
-
-      - name: Run tests with helm
-        run: |
-          set -euo pipefail
-          set -x
-          NS=split-$RANDOM
-          kubectl create namespace "$NS"
-          kubectl config set-context kind-chart-testing --namespace "$NS"
-          docker tag ghcr.io/ludat/banana-split:${{ needs.image-release.outputs.image_tag }} kind-registry:5000/banana-split:latest
-          docker push kind-registry:5000/banana-split:latest
-
-          kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
-          kubectl wait --for=condition=ready=false pod -l app.kubernetes.io/component=admission-webhook -n ingress-nginx --timeout=20s
-          kubectl wait --for=condition=ready=true pod -l app.kubernetes.io/component=controller -n ingress-nginx --timeout=20s
-
-          kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.26.1.yaml
-          kubectl wait --for=condition=available deployment/cnpg-controller-manager -n cnpg-system --timeout=30s
-
-          helm install --wait --values=./ci-values.yaml banana-split-test . &
-          HELM_PID=$!
-
-          while ps -p "$HELM_PID" > /dev/null; do
-            sleep 10
-            kubectl logs -l role=app || true
-            kubectl logs -l role=migration-start || true
-            kubectl logs -l role=migration-complete || true
-            kubectl get pods -o wide
-          done;
-          echo helm is done
-
-          helm test --logs banana-split-test
-
-      # - name: Push release tag
-      #   if: github.event_name == 'release'
-      #   run: |
-      #     docker tag banana-split ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
-      #     docker push ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
+  # TODO: we are no longer releasing a helm chart
+  # integration-test:
+  #   needs: [image-release]
+  #   # permissions:
+  #   #   contents: write
+  #   runs-on: ubuntu-latest
+  #   defaults:
+  #     run:
+  #       working-directory: ./charts/banana-split/
+  #   steps:
+  #     - uses: actions/checkout@v6
+  #     - name: Login to GitHub Container Registry
+  #       uses: docker/login-action@v3
+  #       if: |
+  #         github.ref == 'refs/heads/main' ||
+  #         github.event_name == 'pull_request'
+  #       with:
+  #         registry: ghcr.io
+  #         username: ${{ github.actor }}
+  #         password: ${{ secrets.GITHUB_TOKEN }}
+  #
+  #     # - name: Configure Git
+  #     #   run: |
+  #     #     git config user.name "$GITHUB_ACTOR"
+  #     #     git config user.email "$GITHUB_ACTOR@users.noreply.github.com"
+  #
+  #     - name: Pull image tag
+  #       run: |
+  #         docker pull ghcr.io/ludat/banana-split:${{ needs.image-release.outputs.image_tag }}
+  #
+  #     - name: Create k8s Kind Cluster
+  #       uses: helm/kind-action@v1
+  #       with:
+  #         registry: true
+  #         config: .github/configs/cluster.yaml
+  #
+  #     - name: Get nodes
+  #       run: |
+  #         kubectl get nodes -o wide
+  #
+  #     - name: Run tests with helm
+  #       run: |
+  #         set -euo pipefail
+  #         set -x
+  #         NS=split-$RANDOM
+  #         kubectl create namespace "$NS"
+  #         kubectl config set-context kind-chart-testing --namespace "$NS"
+  #         docker tag ghcr.io/ludat/banana-split:${{ needs.image-release.outputs.image_tag }} kind-registry:5000/banana-split:latest
+  #         docker push kind-registry:5000/banana-split:latest
+  #
+  #         kubectl apply -f https://kind.sigs.k8s.io/examples/ingress/deploy-ingress-nginx.yaml
+  #         kubectl wait --for=condition=ready=false pod -l app.kubernetes.io/component=admission-webhook -n ingress-nginx --timeout=20s
+  #         kubectl wait --for=condition=ready=true pod -l app.kubernetes.io/component=controller -n ingress-nginx --timeout=20s
+  #
+  #         kubectl apply --server-side -f https://raw.githubusercontent.com/cloudnative-pg/cloudnative-pg/main/releases/cnpg-1.26.1.yaml
+  #         kubectl wait --for=condition=available deployment/cnpg-controller-manager -n cnpg-system --timeout=30s
+  #
+  #         helm install --wait --values=./ci-values.yaml banana-split-test . &
+  #         HELM_PID=$!
+  #
+  #         while ps -p "$HELM_PID" > /dev/null; do
+  #           sleep 10
+  #           kubectl logs -l role=app || true
+  #           kubectl logs -l role=migration-start || true
+  #           kubectl logs -l role=migration-complete || true
+  #           kubectl get pods -o wide
+  #         done;
+  #         echo helm is done
+  #
+  #         helm test --logs banana-split-test
+  #
+  #     # - name: Push release tag
+  #     #   if: github.event_name == 'release'
+  #     #   run: |
+  #     #     docker tag banana-split ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
+  #     #     docker push ghcr.io/ludat/banana-split:${{ github.event.release.tag_name }}
