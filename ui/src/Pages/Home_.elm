@@ -11,7 +11,7 @@ import Html.Attributes as Attr exposing (style)
 import Html.Events exposing (onClick)
 import Layouts
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
@@ -30,7 +30,7 @@ page _ _ =
         |> Page.withLayout (\_ -> Layouts.Default { navBarContent = Just navBar, grupo = NotAsked })
 
 
-navBar : Bool -> Html msg
+navBar : Bool -> Html Shared.Msg
 navBar _ =
     div
         [ style "display" "flex"
@@ -45,12 +45,14 @@ navBar _ =
 
 type alias Model =
     { form : Form CustomFormError CreateGrupoParams
+    , createGrupoResponse : WebData Api.Grupo
     }
 
 
 init : () -> ( Model, Effect Msg )
 init () =
     ( { form = Form.initial [] validate
+      , createGrupoResponse = NotAsked
       }
     , Effect.setUnsavedChangesWarning False
     )
@@ -59,7 +61,7 @@ init () =
 type Msg
     = NoOp
     | UpdateForm Form.Msg
-    | GrupoCreated Api.Grupo
+    | GrupoCreatedRequest (WebData Api.Grupo)
 
 
 validate : Validation CustomFormError CreateGrupoParams
@@ -86,7 +88,7 @@ update msg model =
                             (\r ->
                                 case r of
                                     Ok grupo ->
-                                        GrupoCreated grupo
+                                        GrupoCreatedRequest (RemoteData.Success grupo)
 
                                     Err _ ->
                                         NoOp
@@ -103,7 +105,7 @@ update msg model =
             , Effect.none
             )
 
-        GrupoCreated grupo ->
+        GrupoCreatedRequest (Success grupo) ->
             ( { model | form = Form.initial [] validate }
             , Effect.batch
                 [ -- Automatically select the first participante as current user
