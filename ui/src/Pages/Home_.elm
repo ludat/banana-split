@@ -1,14 +1,14 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
 import Components.NavBar exposing (navBarItem)
-import Components.Ui5 exposing (ui5TextFormItem)
+import Components.Ui5 as Ui5
 import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form, Msg(..))
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
 import Generated.Api as Api exposing (CreateGrupoParams)
 import Html exposing (Html, div, text)
-import Html.Attributes as Attr exposing (attribute, style)
-import Html.Events exposing (onClick, onSubmit)
+import Html.Attributes as Attr exposing (style)
+import Html.Events exposing (onClick)
 import Layouts
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..))
@@ -38,7 +38,7 @@ navBar _ =
         , style "gap" "0.5rem"
         , style "width" "100%"
         ]
-        [ navBarItem { currentPath = Path.Home_, path = Path.Home_, attrs = [ attribute "slot" "startContent" ] }
+        [ navBarItem { currentPath = Path.Home_, path = Path.Home_, attrs = [ Ui5.slot "startContent" ] }
             [ text "🍌 Banana Split" ]
         ]
 
@@ -132,34 +132,32 @@ view model =
         participanteField =
             Form.getFieldAsString "participante" model.form
     in
-    { title = ""
+    { title = "Banana split"
     , body =
-        [ Html.form [ onSubmit <| UpdateForm Submit ]
-            [ Html.node "ui5-form"
-                [ Attr.attribute "header-text" "Crear grupo"
-                , Attr.attribute "layout" "S1 M1 L1 XL1"
-                , Attr.attribute "label-span" "S12 M12 L12 XL12"
+        [ Ui5.form UpdateForm
+            [ Attr.attribute "header-text" "Crear grupo"
+            , Attr.attribute "layout" "S1 M1 L1 XL1"
+            , Attr.attribute "label-span" "S12 M12 L12 XL12"
+            ]
+            [ Html.map UpdateForm <|
+                Ui5.textFormItem
+                    nombreField
+                    { required = True
+                    , label = "Nombre"
+                    , placeholder = Just "After del viernes, Vacaciones a Calamuchita"
+                    }
+            , Html.map UpdateForm <|
+                Ui5.textFormItem
+                    participanteField
+                    { required = True
+                    , label = "Participante"
+                    , placeholder = Just "Juan"
+                    }
+            , Ui5.button
+                [ Attr.attribute "design" "Emphasized"
+                , onClick <| UpdateForm Submit
                 ]
-                [ Html.map UpdateForm <|
-                    ui5TextFormItem
-                        nombreField
-                        { required = True
-                        , label = "Nombre"
-                        , placeholder = Just "After del viernes, Vacaciones a Calamuchita"
-                        }
-                , Html.map UpdateForm <|
-                    ui5TextFormItem
-                        participanteField
-                        { required = True
-                        , label = "Participante"
-                        , placeholder = Just "Juan"
-                        }
-                , Html.node "ui5-button"
-                    [ Attr.attribute "design" "Emphasized"
-                    , onClick <| UpdateForm Submit
-                    ]
-                    [ text "Crear" ]
-                ]
+                [ text "Crear" ]
             ]
         ]
     }

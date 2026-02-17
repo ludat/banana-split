@@ -1,7 +1,7 @@
 module Pages.Grupos.GrupoId_.Pagos exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
-import Components.Ui5 exposing (slot)
+import Components.Ui5 as Ui5
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (ShallowPago, ULID)
 import Html exposing (Html, div, p, strong, text)
@@ -149,18 +149,17 @@ view store model =
         ( Success grupo, Success pagos ) ->
             let
                 pagoBeingDeleted =
-                    case model.deletingPagoId of
-                        Just pagoId ->
-                            pagos
-                                |> List.filter (\p -> p.pagoId == pagoId)
-                                |> List.head
-
-                        Nothing ->
-                            Nothing
+                    model.deletingPagoId
+                        |> Maybe.andThen
+                            (\pagoId ->
+                                pagos
+                                    |> List.filter (\p -> p.pagoId == pagoId)
+                                    |> List.head
+                            )
             in
             { title = grupo.nombre
             , body =
-                [ Html.node "ui5-list"
+                [ Ui5.list
                     [ Attr.attribute "header-text" "Pagos"
                     , Attr.attribute "selection-mode" "Delete"
                     , on "item-delete"
@@ -171,7 +170,7 @@ view store model =
                     (pagos
                         |> List.map
                             (\pago ->
-                                Html.node "ui5-li"
+                                Ui5.li
                                     [ Attr.attribute "data-id" pago.pagoId
                                     , Attr.attribute "additional-text" ("$ " ++ Monto.toString pago.monto)
                                     , Attr.attribute "type" "Navigation"
@@ -187,7 +186,7 @@ view store model =
                                     [ text pago.nombre ]
                             )
                     )
-                , Html.node "ui5-button"
+                , Ui5.button
                     [ Attr.attribute "design" "Emphasized"
                     , Attr.attribute "icon" "add"
                     , onClick (Navigate <| Path.Grupos_GrupoId__Pagos_New { grupoId = model.grupoId })
@@ -205,7 +204,7 @@ view store model =
 
 deleteConfirmationDialog : Maybe ULID -> Maybe ShallowPago -> Html Msg
 deleteConfirmationDialog deletingPagoId maybePago =
-    Html.node "ui5-dialog"
+    Ui5.dialog
         [ Attr.attribute "header-text" "Confirmar"
         , Attr.attribute "state" "Negative"
         , if deletingPagoId /= Nothing then
@@ -227,13 +226,13 @@ deleteConfirmationDialog deletingPagoId maybePago =
             ]
         , p [ style "margin-top" "0.75rem" ]
             [ text "Esta acción no se puede deshacer." ]
-        , div [ slot "footer", style "display" "flex", style "gap" "0.5rem", style "justify-content" "end", style "width" "100%", style "padding" "0.25rem 0" ]
-            [ Html.node "ui5-button"
+        , div [ Ui5.slot "footer", style "display" "flex", style "gap" "0.5rem", style "justify-content" "end", style "width" "100%", style "padding" "0.25rem 0" ]
+            [ Ui5.button
                 [ Attr.attribute "design" "Transparent"
                 , onClick CancelDeletePago
                 ]
                 [ text "Cancelar" ]
-            , Html.node "ui5-button"
+            , Ui5.button
                 [ Attr.attribute "design" "Negative"
                 , onClick <|
                     case deletingPagoId of

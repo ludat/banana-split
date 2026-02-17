@@ -1,8 +1,9 @@
 module Components.NavBar exposing (NavBarModel, modelFromShared, navBar, navBarItem, viewGlobalUserSelector)
 
+import Components.Ui5 as Ui5
 import Generated.Api exposing (ULID)
 import Html exposing (Attribute, Html, a, div, text)
-import Html.Attributes exposing (attribute, class, selected, style, value)
+import Html.Attributes exposing (class, selected, style, value)
 import Html.Events exposing (on)
 import Json.Decode
 import Models.Grupo exposing (GrupoLike)
@@ -33,7 +34,7 @@ navBar navBarModel store path _ =
         , style "gap" "0.5rem"
         , style "width" "100%"
         ]
-        [ navBarItem { currentPath = path, path = Route.Home_, attrs = [ attribute "slot" "startContent" ] }
+        [ navBarItem { currentPath = path, path = Route.Home_, attrs = [ Ui5.slot "startContent" ] }
             [ text "🍌 Banana Split" ]
         , navBarItem { currentPath = path, path = Route.Grupos_Id_ { id = navBarModel.grupoId }, attrs = [] }
             [ case store |> Store.getGrupo navBarModel.grupoId of
@@ -66,17 +67,17 @@ navBar navBarModel store path _ =
 
 viewGlobalUserSelector : Maybe ULID -> GrupoLike r -> Html Shared.Msg
 viewGlobalUserSelector activeUser grupo =
-    Html.node "ui5-select"
+    Ui5.select
         [ on "change"
             (Json.Decode.at [ "detail", "selectedOption", "value" ] Json.Decode.string
                 |> Json.Decode.map (\userId -> Shared.SetCurrentUser { grupoId = grupo.id, userId = userId })
             )
         ]
-        (Html.node "ui5-option" [ selected (activeUser == Nothing), value "" ] [ text "" ]
+        (Ui5.option [ selected (activeUser == Nothing), value "" ] [ text "" ]
             :: (grupo.participantes
                     |> List.map
                         (\participante ->
-                            Html.node "ui5-option"
+                            Ui5.option
                                 [ selected (activeUser == Just participante.participanteId)
                                 , value participante.participanteId
                                 ]

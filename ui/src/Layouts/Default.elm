@@ -1,6 +1,7 @@
 module Layouts.Default exposing (Model, Msg, Props, layout)
 
 import Components.NavBar exposing (viewGlobalUserSelector)
+import Components.Ui5 as Ui5
 import Css
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
@@ -96,10 +97,10 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
         else
             content.title
     , body =
-        [ Html.node "ui5-page"
+        [ Ui5.page
             [ style "height" "100vh" ]
-            [ Html.node "ui5-bar"
-                [ attribute "slot" "header"
+            [ Ui5.bar
+                [ Ui5.slot "header"
                 , attribute "design" "Header"
                 ]
               <|
@@ -139,7 +140,7 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
 renderToast : Toast -> Html Msg
 renderToast toast =
     div [ Css.toast ]
-        [ Html.node "ui5-message-strip"
+        [ Ui5.messageStrip
             [ Attr.attribute "design"
                 (case toast.level of
                     ToastSuccess ->

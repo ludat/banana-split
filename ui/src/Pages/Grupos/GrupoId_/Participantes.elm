@@ -2,7 +2,7 @@ module Pages.Grupos.GrupoId_.Participantes exposing (Model, Msg, page)
 
 import Browser.Dom
 import Components.NavBar as NavBar
-import Components.Ui5 exposing (ui5Button, ui5Form, ui5TextFormItem)
+import Components.Ui5 as Ui5
 import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
@@ -179,7 +179,7 @@ view store model =
         Success grupo ->
             { title = grupo.nombre
             , body =
-                [ Html.node "ui5-list"
+                [ Ui5.list
                     [ Attr.attribute "header-text" "Participantes"
                     , Attr.attribute "selection-mode" "Delete"
                     , on "item-delete"
@@ -190,22 +190,22 @@ view store model =
                     (grupo.participantes
                         |> List.map
                             (\p ->
-                                Html.node "ui5-li"
+                                Ui5.li
                                     [ Attr.attribute "data-id" p.participanteId ]
                                     [ text p.participanteNombre ]
                             )
                     )
-                , ui5Form ParticipanteForm
+                , Ui5.form ParticipanteForm
                     [ Attr.attribute "header-text" "Agregar Participante"
                     , Attr.attribute "labelSpan" "S12 M12 L12 XL12"
                     ]
                     [ Html.map ParticipanteForm <|
-                        ui5TextFormItem (Form.getFieldAsString "nombre" model.participanteForm)
+                        Ui5.textFormItem (Form.getFieldAsString "nombre" model.participanteForm)
                             { placeholder = Just "Juan"
                             , label = "Nombre"
                             , required = True
                             }
-                    , ui5Button
+                    , Ui5.button
                         [ Attr.attribute "design" "Emphasized"
                         , onClick <| ParticipanteForm Form.Submit
                         ]

@@ -2,6 +2,7 @@ module Pages.Grupos.Id_ exposing (Model, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
+import Components.Ui5 as Ui5
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Pago, ResumenGrupo, Transaccion, ULID)
 import Html exposing (Html, a, div, p, section, span, text)
@@ -182,7 +183,7 @@ view store model =
                         case store |> Store.getResumen model.grupoId of
                             Success resumen ->
                                 if resumen.cantidadPagos == 0 then
-                                    [ Html.node "ui5-message-strip"
+                                    [ Ui5.messageStrip
                                         [ Attr.attribute "design" "Information", style "text-align" "center" ]
                                         [ text "Todavía no hay pagos registrados. "
                                         , a [ Path.href <| Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id } ]
@@ -192,7 +193,7 @@ view store model =
 
                                 else
                                     [ if resumen.cantidadPagosInvalidos > 0 then
-                                        Html.node "ui5-message-strip"
+                                        Ui5.messageStrip
                                             [ Attr.attribute "design" "Negative", style "margin-bottom" "1rem" ]
                                             [ text <|
                                                 if resumen.cantidadPagosInvalidos == 1 then
@@ -228,7 +229,7 @@ viewTransferencias : GrupoLike g -> ResumenGrupo -> Html Msg
 viewTransferencias grupo resumen =
     div []
         (if List.isEmpty resumen.transaccionesParaSaldar then
-            [ Html.node "ui5-message-strip"
+            [ Ui5.messageStrip
                 [ Attr.attribute "design" "Positive"
                 , style "text-align" "center"
                 , Attr.property "hideCloseButton" (Encode.bool True)
@@ -248,7 +249,7 @@ viewTransferencias grupo resumen =
                                     , text <| Monto.toString t.transaccionMonto
                                     ]
                                 ]
-                            , Html.node "ui5-button"
+                            , Ui5.button
                                 [ Attr.attribute "design" "Transparent"
                                 , Attr.attribute "icon" "arrow-right"
                                 , Attr.attribute "tooltip" "Crear pago para saldar esta deuda"

@@ -1,6 +1,7 @@
 module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
+import Components.Ui5 as Ui5
 import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Validate as V
@@ -376,7 +377,7 @@ viewParticipantes grupo repartija =
             (grupo.participantes
                 |> List.map
                     (\participante ->
-                        Html.node "ui5-button"
+                        Ui5.button
                             [ Attr.attribute "design"
                                 (if Set.member participante.participanteId participantesConClaims then
                                     "Positive"
@@ -396,31 +397,31 @@ viewParticipantes grupo repartija =
 
 viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Maybe ULID -> Maybe ULID -> Html Msg
 viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
-    Html.node "ui5-table"
+    Ui5.table
         [ Attr.attribute "alternate-row-colors" ""
         , Attr.attribute "row-action-count" "5"
         ]
-        (Html.node "ui5-table-header-row"
-            [ Attr.attribute "slot" "headerRow" ]
-            [ Html.node "ui5-table-header-cell" [] [ text "Descripcion" ]
-            , Html.node "ui5-table-header-cell" [ Attr.attribute "horizontal-align" "End" ] [ text "Monto total" ]
-            , Html.node "ui5-table-header-cell" [ Attr.attribute "horizontal-align" "End" ] [ text "Cantidad" ]
-            , Html.node "ui5-table-header-cell" [ Attr.attribute "horizontal-align" "Center" ] [ text "Repartido" ]
+        (Ui5.tableHeaderRow
+            [ Ui5.slot "headerRow" ]
+            [ Ui5.tableHeaderCell [] [ text "Descripcion" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End" ] [ text "Monto total" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End" ] [ text "Cantidad" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "Center" ] [ text "Repartido" ]
             ]
             :: (repartija.items
                     |> List.map (\item -> viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId)
                )
-            ++ [ Html.node "ui5-table-row"
+            ++ [ Ui5.tableRow
                     []
-                    [ Html.node "ui5-table-cell" [] [ text "Propina" ]
-                    , Html.node "ui5-table-cell" [] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.extra ]
-                    , Html.node "ui5-table-cell" [] []
-                    , Html.node "ui5-table-cell" [] []
+                    [ Ui5.tableCell [] [ text "Propina" ]
+                    , Ui5.tableCell [] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.extra ]
+                    , Ui5.tableCell [] []
+                    , Ui5.tableCell [] []
                     ]
-               , Html.node "ui5-table-row"
+               , Ui5.tableRow
                     []
-                    [ Html.node "ui5-table-cell" [] [ text "Total" ]
-                    , Html.node "ui5-table-cell"
+                    [ Ui5.tableCell [] [ text "Total" ]
+                    , Ui5.tableCell
                         []
                         [ text "$"
                         , repartija.items
@@ -430,8 +431,8 @@ viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
                             |> Decimal.toString
                             |> text
                         ]
-                    , Html.node "ui5-table-cell" [] []
-                    , Html.node "ui5-table-cell" [] []
+                    , Ui5.tableCell [] []
+                    , Ui5.tableCell [] []
                     ]
                ]
         )
@@ -518,8 +519,8 @@ viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
             "pick-scheme-" ++ item.id
 
         rowAction iconName textLabel maybeId msg isVisible =
-            Html.node "ui5-table-row-action"
-                [ Attr.attribute "slot" "actions"
+            Ui5.tableRowAction
+                [ Ui5.slot "actions"
                 , Attr.attribute "icon" iconName
                 , Attr.attribute "text" textLabel
                 , Attr.attribute "tooltip" textLabel
@@ -535,15 +536,15 @@ viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
                 ]
                 []
     in
-    Html.node "ui5-table-row"
+    Ui5.tableRow
         []
-        [ Html.node "ui5-table-cell" [] [ text <| item.nombre ]
-        , Html.node "ui5-table-cell" [] [ text <| "$" ++ Decimal.toString (Monto.toDecimal item.monto) ]
-        , Html.node "ui5-table-cell" [] [ text <| String.fromInt item.cantidad ]
-        , Html.node "ui5-table-cell"
+        [ Ui5.tableCell [] [ text <| item.nombre ]
+        , Ui5.tableCell [] [ text <| "$" ++ Decimal.toString (Monto.toDecimal item.monto) ]
+        , Ui5.tableCell [] [ text <| String.fromInt item.cantidad ]
+        , Ui5.tableCell
             []
             [ viewClaimProgressAndDropdown grupo item claimsForItem itemRepartidoState openPopoverItemId
-            , Html.node "ui5-responsive-popover"
+            , Ui5.responsivePopover
                 ([ Attr.attribute "opener" pickSchemeButtonId
                  , Attr.attribute "placement" "Bottom"
                  , on "close" (Json.Decode.succeed ClosePickScheme)
@@ -555,15 +556,15 @@ viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
                             []
                        )
                 )
-                [ Html.node "ui5-list"
+                [ Ui5.list
                     [ Attr.attribute "header-text" "Elegí cómo repartir" ]
-                    [ Html.node "ui5-li"
+                    [ Ui5.li
                         [ Attr.attribute "icon" "add"
                         , Attr.attribute "description" "Indicás cuántas unidades consumió cada persona"
                         , on "click" (Json.Decode.succeed (ChangeCurrentClaim item 1))
                         ]
                         [ text "Por cantidad" ]
-                    , Html.node "ui5-li"
+                    , Ui5.li
                         [ Attr.attribute "icon" "accept"
                         , Attr.attribute "description" "Se divide en partes iguales entre los que participaron"
                         , on "click" (Json.Decode.succeed (JoinCurrentClaim item))
@@ -657,7 +658,7 @@ viewClaimProgressAndDropdown grupo item claimsForItem itemRepartidoState openPop
     in
     div [ style "display" "flex" ]
         [ viewRepartidoState itemRepartidoState statusButtonId item.id
-        , Html.node "ui5-responsive-popover"
+        , Ui5.responsivePopover
             ([ Attr.attribute "opener" statusButtonId
              , Attr.attribute "placement" "Bottom"
              , on "close" (Json.Decode.succeed CloseItemPopover)
@@ -669,12 +670,12 @@ viewClaimProgressAndDropdown grupo item claimsForItem itemRepartidoState openPop
                         []
                    )
             )
-            [ Html.node "ui5-list"
+            [ Ui5.list
                 []
                 (claimsForItem
                     |> List.map
                         (\claim ->
-                            Html.node "ui5-li"
+                            Ui5.li
                                 [ Attr.attribute "description"
                                     (case claim.cantidad of
                                         Just cantidad ->
@@ -714,7 +715,7 @@ viewRepartidoState itemRepartidoState buttonId itemId =
                 RepartidoEquitativamenteEntre _ ->
                     "Positive"
     in
-    Html.node "ui5-button"
+    Ui5.button
         [ Attr.attribute "design" designForRepartido
         , id buttonId
         , onClick (ToggleItemPopover itemId)
@@ -764,19 +765,19 @@ viewParticipanteClaimsModal model grupo repartija =
                         |> Maybe.map .nombre
                         |> Maybe.withDefault "Item desconocido"
             in
-            Html.node "ui5-responsive-popover"
+            Ui5.responsivePopover
                 [ Attr.attribute "open" ""
                 , Attr.attribute "opener" ("participante-btn-" ++ participanteId)
                 , Attr.attribute "header-text" ("Asignaciones para " ++ participanteNombre)
                 , Attr.attribute "placement" "Bottom"
                 , on "close" (Json.Decode.succeed CloseParticipanteClaimsPopup)
                 ]
-                [ Html.node "ui5-list"
+                [ Ui5.list
                     []
                     (claims
                         |> List.map
                             (\claim ->
-                                Html.node "ui5-li"
+                                Ui5.li
                                     [ Attr.attribute "description"
                                         (claim.cantidad
                                             |> Maybe.map (\c -> String.fromInt c ++ " unidad")
