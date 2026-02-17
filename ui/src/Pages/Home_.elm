@@ -27,20 +27,7 @@ page _ _ =
         , subscriptions = subscriptions
         , view = view
         }
-        |> Page.withLayout (\_ -> Layouts.Default { navBarContent = Just navBar, grupo = NotAsked })
-
-
-navBar : Bool -> Html msg
-navBar _ =
-    div
-        [ style "display" "flex"
-        , style "align-items" "center"
-        , style "gap" "0.5rem"
-        , style "width" "100%"
-        ]
-        [ navBarItem { currentPath = Path.Home_, path = Path.Home_, attrs = [ Ui5.slot "startContent" ] }
-            [ text "🍌 Banana Split" ]
-        ]
+        |> Page.withLayout (\_ -> Layouts.Default { navBarContent = Nothing, grupo = NotAsked })
 
 
 type alias Model =

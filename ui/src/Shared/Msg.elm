@@ -10,6 +10,7 @@ own file, so they can be imported by `Effect.elm`
 
 import Generated.Api exposing (ULID)
 import Models.Store.Types exposing (StoreMsg)
+import Route.Path as Route
 import Utils.Toasts.Types exposing (Toast, ToastMsg)
 
 
@@ -18,5 +19,6 @@ type Msg
     | AddToast Toast
     | ToastMsg ToastMsg
     | StoreMsg StoreMsg
+    | NavigateTo Route.Path
     | SetCurrentUser { grupoId : ULID, userId : ULID }
     | CurrentUserLoaded { grupoId : ULID, userId : Maybe ULID }

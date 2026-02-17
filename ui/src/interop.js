@@ -15,6 +15,9 @@ import "@ui5/webcomponents-icons/dist/upload.js";
 import "@ui5/webcomponents-icons/dist/sys-minus.js";
 import "@ui5/webcomponents-icons/dist/accept.js";
 import "@ui5/webcomponents-icons/dist/decline.js";
+import "@ui5/webcomponents-icons/dist/user-edit.js";
+import "@ui5/webcomponents-icons/dist/home.js";
+import "@ui5/webcomponents-icons/dist/money-bills.js";
 import "@ui5/webcomponents-icons/dist/arrow-right.js";
 
 import "@ui5/webcomponents/dist/Button.js";
@@ -46,6 +49,8 @@ import "@ui5/webcomponents/dist/TableCell.js";
 import "@ui5/webcomponents-fiori/dist/NavigationLayout.js";
 import "@ui5/webcomponents-fiori/dist/Page.js";
 import "@ui5/webcomponents-fiori/dist/ShellBar.js";
+import "@ui5/webcomponents-fiori/dist/ShellBarBranding.js";
+import "@ui5/webcomponents-fiori/dist/ShellBarItem.js";
 import "@ui5/webcomponents-fiori/dist/SideNavigation.js";
 import "@ui5/webcomponents-fiori/dist/SideNavigationGroup.js";
 import "@ui5/webcomponents-fiori/dist/SideNavigationItem.js";
