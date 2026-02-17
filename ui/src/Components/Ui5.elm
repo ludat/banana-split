@@ -1,4 +1,4 @@
-module Components.Ui5 exposing (bar, busyIndicator, button, dialog, fileUploader, form, formCheckbox, formSelect, label, li, link, list, messageStrip, option, page, responsivePopover, segmentedButton, segmentedButtonItem, select, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, textFormItem, textInput, wizard, wizardStep)
+module Components.Ui5 exposing (avatar, bar, busyIndicator, button, dialog, fileUploader, form, formCheckbox, formSelect, label, li, link, list, messageStrip, navigationLayout, option, page, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, shellbarItem, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, textFormItem, textInput, toggleButton, wizard, wizardStep)
 
 import Form exposing (Msg(..))
 import Form.Field
@@ -118,9 +118,59 @@ page attrs children =
     Html.node "ui5-page" attrs children
 
 
+navigationLayout : List (Attribute m) -> List (Html m) -> Html m
+navigationLayout attrs children =
+    Html.node "ui5-navigation-layout" attrs children
+
+
+sideNavigation : List (Attribute m) -> List (Html m) -> Html m
+sideNavigation attrs children =
+    Html.node "ui5-side-navigation" attrs children
+
+
+sideNavigationGroup : List (Attribute m) -> List (Html m) -> Html m
+sideNavigationGroup attrs children =
+    Html.node "ui5-side-navigation-group" attrs children
+
+
+sideNavigationItem : List (Attribute m) -> List (Html m) -> Html m
+sideNavigationItem attrs children =
+    Html.node "ui5-side-navigation-item" attrs children
+
+
+sideNavigationSubItem : List (Attribute m) -> List (Html m) -> Html m
+sideNavigationSubItem attrs children =
+    Html.node "ui5-side-navigation-sub-item" attrs children
+
+
 bar : List (Attribute m) -> List (Html m) -> Html m
 bar attrs children =
     Html.node "ui5-bar" attrs children
+
+
+shellBar : List (Attribute m) -> List (Html m) -> Html m
+shellBar attrs children =
+    Html.node "ui5-shellbar" attrs children
+
+
+shellbarBranding : List (Attribute m) -> List (Html m) -> Html m
+shellbarBranding attrs children =
+    Html.node "ui5-shellbar-branding" attrs children
+
+
+toggleButton : List (Attribute m) -> List (Html m) -> Html m
+toggleButton attrs children =
+    Html.node "ui5-toggle-button" attrs children
+
+
+shellbarItem : List (Attribute m) -> List (Html m) -> Html m
+shellbarItem attrs children =
+    Html.node "ui5-shellbar-item" attrs children
+
+
+avatar : List (Attribute m) -> List (Html m) -> Html m
+avatar attrs children =
+    Html.node "ui5-avatar" attrs children
 
 
 messageStrip : List (Attribute m) -> List (Html m) -> Html m

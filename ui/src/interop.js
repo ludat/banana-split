@@ -1,21 +1,21 @@
 import "./styles.css";
 
-
 import { setTheme } from "@ui5/webcomponents-base/dist/config/Theme.js";
 import { setLanguage } from "@ui5/webcomponents-base/dist/config/Language.js";
 
 import "@ui5/webcomponents/dist/Assets.js";
 import "@ui5/webcomponents-fiori/dist/Assets.js";
-import "@ui5/webcomponents-icons/dist/Assets.js"
-import "@ui5/webcomponents-icons/dist/add.js"
-import "@ui5/webcomponents-icons/dist/alert.js"
-import "@ui5/webcomponents-icons/dist/delete.js"
-import "@ui5/webcomponents-icons/dist/edit.js"
-import "@ui5/webcomponents-icons/dist/upload.js"
-import "@ui5/webcomponents-icons/dist/sys-minus.js"
-import "@ui5/webcomponents-icons/dist/accept.js"
-import "@ui5/webcomponents-icons/dist/decline.js"
-import "@ui5/webcomponents-icons/dist/arrow-right.js"
+import "@ui5/webcomponents-icons/dist/Assets.js";
+import "@ui5/webcomponents-icons/dist/add.js";
+import "@ui5/webcomponents-icons/dist/alert.js";
+import "@ui5/webcomponents-icons/dist/menu.js";
+import "@ui5/webcomponents-icons/dist/delete.js";
+import "@ui5/webcomponents-icons/dist/edit.js";
+import "@ui5/webcomponents-icons/dist/upload.js";
+import "@ui5/webcomponents-icons/dist/sys-minus.js";
+import "@ui5/webcomponents-icons/dist/accept.js";
+import "@ui5/webcomponents-icons/dist/decline.js";
+import "@ui5/webcomponents-icons/dist/arrow-right.js";
 
 import "@ui5/webcomponents/dist/Button.js";
 import "@ui5/webcomponents/dist/Dialog.js";
@@ -43,13 +43,19 @@ import "@ui5/webcomponents/dist/TableHeaderCell.js";
 import "@ui5/webcomponents/dist/TableRow.js";
 import "@ui5/webcomponents/dist/TableRowAction.js";
 import "@ui5/webcomponents/dist/TableCell.js";
+import "@ui5/webcomponents-fiori/dist/NavigationLayout.js";
 import "@ui5/webcomponents-fiori/dist/Page.js";
+import "@ui5/webcomponents-fiori/dist/ShellBar.js";
+import "@ui5/webcomponents-fiori/dist/SideNavigation.js";
+import "@ui5/webcomponents-fiori/dist/SideNavigationGroup.js";
+import "@ui5/webcomponents-fiori/dist/SideNavigationItem.js";
+import "@ui5/webcomponents-fiori/dist/SideNavigationSubItem.js";
 
 setLanguage("es");
 
-const defaultTheme = "sap_horizon"
+const defaultTheme = "sap_horizon";
 // const defaultTheme = "sap_fiori_3"
-const defaultDarkTheme = defaultTheme + "_dark"
+const defaultDarkTheme = defaultTheme + "_dark";
 
 const darkModeQuery = window.matchMedia("(prefers-color-scheme: dark)");
 console.log(darkModeQuery);
@@ -75,10 +81,7 @@ export const onReady = ({ app, env }) => {
         case "SAVE_CURRENT_USER":
           // data: { grupoId: string, userId: string }
           if (data.grupoId && data.userId) {
-            localStorage.setItem(
-              makeStorageKey(data.grupoId),
-              data.userId
-            );
+            localStorage.setItem(makeStorageKey(data.grupoId), data.userId);
           }
           break;
 
@@ -97,17 +100,17 @@ export const onReady = ({ app, env }) => {
               tag: "CURRENT_USER_LOADED",
               data: {
                 grupoId: data.grupoId,
-                userId: userId
-              }
+                userId: userId,
+              },
             });
           }
           break;
         case "SET_UNSAVED_CHANGES_WARNING":
           // data: { enabled: bool }
           if (data.enabled) {
-            window.addEventListener('beforeunload', beforeUnloadHandler);
+            window.addEventListener("beforeunload", beforeUnloadHandler);
           } else {
-            window.removeEventListener('beforeunload', beforeUnloadHandler);
+            window.removeEventListener("beforeunload", beforeUnloadHandler);
           }
           break;
 

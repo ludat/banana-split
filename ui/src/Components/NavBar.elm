@@ -33,8 +33,9 @@ navBar navBarModel store path _ =
         , style "align-items" "center"
         , style "gap" "0.5rem"
         , style "width" "100%"
+        , Ui5.slot "startContent"
         ]
-        [ navBarItem { currentPath = path, path = Route.Home_, attrs = [ Ui5.slot "startContent" ] }
+        [ navBarItem { currentPath = path, path = Route.Home_, attrs = [] }
             [ text "🍌 Banana Split" ]
         , navBarItem { currentPath = path, path = Route.Grupos_Id_ { id = navBarModel.grupoId }, attrs = [] }
             [ case store |> Store.getGrupo navBarModel.grupoId of
