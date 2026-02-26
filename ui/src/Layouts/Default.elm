@@ -1,27 +1,28 @@
-module Layouts.Default exposing (Model, Msg, Props, layout)
+module Layouts.Default exposing (Model, Msg(..), Props, layout, viewGlobalUserSelector)
 
-import Components.NavBar exposing (viewGlobalUserSelector)
 import Components.Ui5 as Ui5
 import Css
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
 import Html exposing (Html, div, img, p, text)
-import Html.Attributes as Attr exposing (class, src, style)
-import Html.Events exposing (onClick)
+import Html.Attributes as Attr exposing (selected, src, style, value)
+import Html.Events exposing (on, onClick)
+import Json.Decode as Decode
 import Json.Encode
 import Layout exposing (Layout)
+import Models.Grupo exposing (GrupoLike)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
-import Shared
-import Shared.Msg exposing (Msg(..))
+import Shared.Model as Shared
+import Shared.Msg as Shared
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types exposing (Toast, ToastLevel(..), ToastMsg, Toasts)
 import View exposing (View)
 
 
 type alias Props =
-    { navBarContent : Maybe (Bool -> Html Shared.Msg)
+    { navBarContent : Maybe (Bool -> Html Msg)
     , grupo : WebData ShallowGrupo
     }
 
@@ -60,7 +61,8 @@ init =
 type Msg
     = ToastMsg ToastMsg
     | ToggleNavBar
-    | ForwardSharedMessage Shared.Msg
+      --| NavigateTo Path.Path
+    | ForwardSharedMessage Bool Shared.Msg
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -71,9 +73,11 @@ update msg model =
             , Effect.sendToastMsg toastMsg
             )
 
-        ForwardSharedMessage sharedMsg ->
-            ( model
-            , Effect.sendSharedMsg sharedMsg
+        ForwardSharedMessage closeNavBar sharedMsg ->
+            ( { model | navBarOpen = not closeNavBar }
+            , Effect.batch
+                [ Effect.sendSharedMsg sharedMsg
+                ]
             )
 
         ToggleNavBar ->
@@ -92,7 +96,7 @@ subscriptions _ =
 
 
 view :
-    Maybe (Bool -> Html Shared.Msg)
+    Maybe (Bool -> Html Msg)
     -> WebData ShallowGrupo
     -> Maybe ULID
     -> Toasts
@@ -126,7 +130,7 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
                     []
                 , Ui5.shellbarBranding
                     [ Ui5.slot "branding"
-                    , onClick (toContentMsg <| ForwardSharedMessage <| NavigateTo <| Path.Home_)
+                    , onClick (toContentMsg <| ForwardSharedMessage True <| Shared.NavigateTo <| Path.Home_)
                     ]
                     [ text "Banana Split"
                     , img [ Ui5.slot "logo", src "/favicon.png" ] []
@@ -134,7 +138,7 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
                 ]
             , case navBarFunction of
                 Just navBarF ->
-                    Html.map (\e -> toContentMsg <| ForwardSharedMessage e) <| navBarF model.navBarOpen
+                    Html.map (\e -> toContentMsg e) <| navBarF model.navBarOpen
 
                 Nothing ->
                     text ""
@@ -149,17 +153,39 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
 
                     else
                         Html.map toContentMsg <|
-                            Html.map ForwardSharedMessage <|
-                                div [ style "padding" "1rem", style "text-align" "center" ]
-                                    [ p [ style "margin-bottom" "1rem" ] [ Ui5.text "Por favor seleccioná quién sos para comenzar:" ]
-                                    , viewGlobalUserSelector activeUser grupo
-                                    ]
+                            div [ style "padding" "1rem", style "text-align" "center" ]
+                                [ p [ style "margin-bottom" "1rem" ] [ Ui5.text "Por favor seleccioná quién sos para comenzar:" ]
+                                , viewGlobalUserSelector activeUser grupo
+                                ]
 
                 _ ->
                     div [ style "padding" "1rem" ] content.body
             ]
         ]
     }
+
+
+viewGlobalUserSelector : Maybe ULID -> GrupoLike r -> Html Msg
+viewGlobalUserSelector activeUser grupo =
+    Ui5.select
+        [ on "change"
+            (Decode.at [ "detail", "selectedOption", "value" ] Decode.string
+                |> Decode.map (\userId -> ForwardSharedMessage True <| Shared.SetCurrentUser { grupoId = grupo.id, userId = userId })
+            )
+        , Ui5.slot "fixedItems"
+        ]
+        (Ui5.option [ selected (activeUser == Nothing), value "" ] [ text "" ]
+            :: (grupo.participantes
+                    |> List.map
+                        (\participante ->
+                            Ui5.option
+                                [ selected (activeUser == Just participante.participanteId)
+                                , value participante.participanteId
+                                ]
+                                [ text participante.participanteNombre ]
+                        )
+               )
+        )
 
 
 renderToast : Toast -> Html Msg

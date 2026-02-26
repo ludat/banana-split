@@ -1,13 +1,12 @@
-module Components.NavBar exposing (NavBarModel, modelFromShared, navBar, viewGlobalUserSelector)
+module Components.NavBar exposing (NavBarModel, modelFromShared, navBar)
 
 import Components.Ui5 as Ui5
 import Generated.Api exposing (ULID)
 import Html exposing (Attribute, Html, text)
-import Html.Attributes as Attr exposing (class, selected, value)
-import Html.Events exposing (on, onClick)
-import Json.Decode as Decode
+import Html.Attributes as Attr exposing (class)
+import Html.Events exposing (onClick)
 import Json.Encode as Encode
-import Models.Grupo exposing (GrupoLike)
+import Layouts.Default as Layout exposing (viewGlobalUserSelector)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import RemoteData exposing (RemoteData(..))
@@ -27,7 +26,7 @@ modelFromShared shared grupoId =
     { grupoId = grupoId, userId = shared.userId }
 
 
-navBar : NavBarModel -> Store -> Route.Path -> Bool -> Html Shared.Msg
+navBar : NavBarModel -> Store -> Route.Path -> Bool -> Html Layout.Msg
 navBar navBarModel store path _ =
     Ui5.sideNavigation
         [ Ui5.slot "sideContent"
@@ -68,40 +67,17 @@ navBar navBarModel store path _ =
         ]
 
 
-viewGlobalUserSelector : Maybe ULID -> GrupoLike r -> Html Shared.Msg
-viewGlobalUserSelector activeUser grupo =
-    Ui5.select
-        [ on "change"
-            (Decode.at [ "detail", "selectedOption", "value" ] Decode.string
-                |> Decode.map (\userId -> Shared.SetCurrentUser { grupoId = grupo.id, userId = userId })
-            )
-        , Ui5.slot "fixedItems"
-        ]
-        (Ui5.option [ selected (activeUser == Nothing), value "" ] [ text "" ]
-            :: (grupo.participantes
-                    |> List.map
-                        (\participante ->
-                            Ui5.option
-                                [ selected (activeUser == Just participante.participanteId)
-                                , value participante.participanteId
-                                ]
-                                [ text participante.participanteNombre ]
-                        )
-               )
-        )
-
-
 navBarItem :
     { path : Route.Path
     , currentPath : Route.Path
-    , attrs : List (Attribute Shared.Msg)
+    , attrs : List (Attribute Layout.Msg)
     , icon : Maybe String
     }
     -> String
-    -> Html Shared.Msg
+    -> Html Layout.Msg
 navBarItem props title =
     Ui5.sideNavigationItem
-        [ onClick <| Shared.NavigateTo props.path
+        [ onClick <| Layout.ForwardSharedMessage True <| Shared.NavigateTo props.path
         , Attr.attribute "text" title
         , props.icon |> Maybe.map (Attr.attribute "icon") |> Maybe.withDefault (class "")
         , Attr.property "selected" (Encode.bool <| props.currentPath == props.path)
