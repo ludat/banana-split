@@ -1,8 +1,9 @@
 module Components.BarrasDeNetos exposing (viewNetosBarras)
 
+import Components.Ui5 as Ui5
 import Css
 import Generated.Api exposing (Monto, Netos)
-import Html exposing (Html, div, p, text)
+import Html exposing (Html, div, p)
 import Html.Attributes exposing (class, style)
 import Models.Grupo exposing (GrupoLike, lookupParticipante)
 import Models.Monto as Monto
@@ -37,13 +38,13 @@ viewNetosBarras grupo netos =
                             lookupParticipante grupo participanteId
 
                         nombreIzquierda =
-                            div [ class "nombre izquierda", style "margin-right" "0.5rem" ] [ text participante.participanteNombre ]
+                            div [ class "nombre izquierda", style "margin-right" "0.5rem" ] [ Ui5.text participante.participanteNombre ]
 
                         barraDerecha =
                             div [ class "monto derecha" ]
                                 [ p
                                     [ style "margin-left" "0.5rem" ]
-                                    [ text <| Decimal.toString monto ]
+                                    [ Ui5.text <| Decimal.toString monto ]
                                 , div
                                     [ style "width" <| String.fromFloat (Decimal.toFloat monto * 100 / maximo) ++ "%"
                                     , class "barra"
@@ -56,13 +57,13 @@ viewNetosBarras grupo netos =
                         LT ->
                             let
                                 nombreDerecha =
-                                    div [ class "nombre derecha", style "margin-left" "0.5rem" ] [ text participante.participanteNombre ]
+                                    div [ class "nombre derecha", style "margin-left" "0.5rem" ] [ Ui5.text participante.participanteNombre ]
 
                                 barraIzquierda =
                                     div [ class "monto izquierda" ]
                                         [ p
                                             [ style "margin-right" "0.5rem" ]
-                                            [ text <| Decimal.toString monto ]
+                                            [ Ui5.text <| Decimal.toString monto ]
                                         , div
                                             [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
                                             , class "barra"

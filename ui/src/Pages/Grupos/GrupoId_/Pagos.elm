@@ -215,17 +215,17 @@ deleteConfirmationDialog deletingPagoId maybePago =
         , on "close" (Json.Decode.succeed CancelDeletePago)
         ]
         [ p []
-            [ text "¿Estás seguro que querés eliminar "
+            [ Ui5.text "¿Estás seguro que querés eliminar "
             , case maybePago of
                 Just pago ->
-                    strong [] [ text ("\"" ++ pago.nombre ++ "\"") ]
+                    strong [] [ Ui5.text ("\"" ++ pago.nombre ++ "\"") ]
 
                 Nothing ->
-                    text "este pago"
-            , text "?"
+                    Ui5.text "este pago"
+            , Ui5.text "?"
             ]
         , p [ style "margin-top" "0.75rem" ]
-            [ text "Esta acción no se puede deshacer." ]
+            [ Ui5.text "Esta acción no se puede deshacer." ]
         , div [ Ui5.slot "footer", style "display" "flex", style "gap" "0.5rem", style "justify-content" "end", style "width" "100%", style "padding" "0.25rem 0" ]
             [ Ui5.button
                 [ Attr.attribute "design" "Transparent"

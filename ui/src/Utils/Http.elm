@@ -1,6 +1,7 @@
 module Utils.Http exposing (viewHttpError)
 
-import Html exposing (Html, text)
+import Components.Ui5 as Ui5
+import Html exposing (Html)
 import Http
 
 
@@ -8,16 +9,16 @@ viewHttpError : Http.Error -> Html a
 viewHttpError e =
     case e of
         Http.BadUrl string ->
-            text <| "Bad url: '" ++ string ++ "'."
+            Ui5.text <| "Bad url: '" ++ string ++ "'."
 
         Http.Timeout ->
-            text <| "Server timed out."
+            Ui5.text "Server timed out."
 
         Http.NetworkError ->
-            text <| "Network error."
+            Ui5.text "Network error."
 
         Http.BadStatus status ->
-            text <| "Bad status: '" ++ String.fromInt status ++ "'."
+            Ui5.text <| "Bad status: '" ++ String.fromInt status ++ "'."
 
         Http.BadBody body ->
-            text <| "Bad status: '" ++ body ++ "'."
+            Ui5.text <| "Bad status: '" ++ body ++ "'."

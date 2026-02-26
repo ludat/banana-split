@@ -1,13 +1,12 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
-import Components.NavBar exposing (navBarItem)
 import Components.Ui5 as Ui5
 import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form, Msg(..))
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
 import Generated.Api as Api exposing (CreateGrupoParams)
-import Html exposing (Html, div, text)
-import Html.Attributes as Attr exposing (style)
+import Html exposing (text)
+import Html.Attributes as Attr
 import Html.Events exposing (onClick)
 import Layouts
 import Page exposing (Page)

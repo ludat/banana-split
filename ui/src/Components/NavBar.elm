@@ -1,9 +1,9 @@
-module Components.NavBar exposing (NavBarModel, modelFromShared, navBar, navBarItem, viewGlobalUserSelector)
+module Components.NavBar exposing (NavBarModel, modelFromShared, navBar, viewGlobalUserSelector)
 
 import Components.Ui5 as Ui5
 import Generated.Api exposing (ULID)
-import Html exposing (Attribute, Html, a, div, text)
-import Html.Attributes as Attr exposing (class, selected, style, value)
+import Html exposing (Attribute, Html, text)
+import Html.Attributes as Attr exposing (class, selected, value)
 import Html.Events exposing (on, onClick)
 import Json.Decode as Decode
 import Json.Encode as Encode

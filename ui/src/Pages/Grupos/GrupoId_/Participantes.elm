@@ -167,7 +167,7 @@ view store model =
         Loading ->
             { title = "Cargando"
             , body =
-                [ div [] [ text "Cargando..." ]
+                [ div [] [ Ui5.text "Cargando..." ]
                 ]
             }
 

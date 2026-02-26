@@ -6,8 +6,8 @@ import Css
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
 import Html exposing (Html, div, img, p, text)
-import Html.Attributes as Attr exposing (attribute, class, src, style)
-import Html.Events exposing (on, onClick)
+import Html.Attributes as Attr exposing (class, src, style)
+import Html.Events exposing (onClick)
 import Json.Encode
 import Layout exposing (Layout)
 import RemoteData exposing (RemoteData(..), WebData)
@@ -151,7 +151,7 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
                         Html.map toContentMsg <|
                             Html.map ForwardSharedMessage <|
                                 div [ style "padding" "1rem", style "text-align" "center" ]
-                                    [ p [ style "margin-bottom" "1rem" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
+                                    [ p [ style "margin-bottom" "1rem" ] [ Ui5.text "Por favor seleccioná quién sos para comenzar:" ]
                                     , viewGlobalUserSelector activeUser grupo
                                     ]
 
