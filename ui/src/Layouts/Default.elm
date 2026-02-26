@@ -156,7 +156,7 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
                                     ]
 
                 _ ->
-                    div [ style "padding" "1rem", class "content" ] content.body
+                    div [ style "padding" "1rem" ] content.body
             ]
         ]
     }

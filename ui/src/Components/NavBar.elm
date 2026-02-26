@@ -107,20 +107,3 @@ navBarItem props title =
         , Attr.property "selected" (Encode.bool <| props.currentPath == props.path)
         ]
         []
-
-
-
--- a
---     ([ Route.href props.path
---      , style "text-decoration" "none"
---      , style "color" "var(--sapLinkColor)"
---      , style "padding" "0 0.75rem"
---      , style "display" "flex"
---      , style "align-items" "center"
---      , if props.path == props.currentPath then
---         style "font-weight" "bold"
---        else
---         class ""
---      ]
---         ++ props.attrs
---     )
