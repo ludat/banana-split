@@ -71,3 +71,11 @@
     padding-bottom: 1rem;
     margin: auto;
 }
+
+/*@media (max-width: var(--sapBreakpoint_XS_Min)) {*/
+@media (min-width: 600px) {
+    ui5-shellbar > ui5-button {
+        opacity: 0;
+        pointer-events: none;
+    }
+}

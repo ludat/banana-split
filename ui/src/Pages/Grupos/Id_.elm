@@ -146,7 +146,7 @@ view store model =
             , body =
                 [ div [ class "container" ]
                     [ section [ class "section" ]
-                        [ text "Cargando..."
+                        [ Ui5.text "Cargando..."
                         ]
                     ]
                 ]
@@ -169,9 +169,9 @@ view store model =
                     , style "margin-right" "auto"
                     ]
                     (if List.isEmpty grupo.participantes then
-                        [ p [] [ text "Tu grupo todavía no tiene participantes!" ]
+                        [ p [] [ Ui5.text "Tu grupo todavía no tiene participantes!" ]
                         , p []
-                            [ text "Agregalos "
+                            [ Ui5.text "Agregalos "
                             , a
                                 [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.id }
                                 ]
@@ -213,13 +213,13 @@ view store model =
                                     ]
 
                             NotAsked ->
-                                [ text "Carganding" ]
+                                [ Ui5.text "Carganding" ]
 
                             Loading ->
-                                [ text "Carganding" ]
+                                [ Ui5.text "Carganding" ]
 
                             Failure _ ->
-                                [ text "Error cargando los netos" ]
+                                [ Ui5.text "Error cargando los netos" ]
                     )
                 ]
             }
@@ -243,7 +243,7 @@ viewTransferencias grupo resumen =
                     (\t ->
                         div [ style "display" "grid", style "grid-template-columns" "1fr auto 1fr", style "align-items" "center", style "margin-bottom" "0.5rem" ]
                             [ div [ style "text-align" "right" ]
-                                [ div [] [ text <| lookupNombreParticipante grupo t.transaccionFrom ]
+                                [ div [] [ Ui5.text <| lookupNombreParticipante grupo t.transaccionFrom ]
                                 , div [ style "color" "var(--sapNegativeTextColor)" ]
                                     [ text "$"
                                     , text <| Monto.toString t.transaccionMonto
@@ -258,7 +258,7 @@ viewTransferencias grupo resumen =
                                 ]
                                 []
                             , span []
-                                [ text <| lookupNombreParticipante grupo t.transaccionTo
+                                [ Ui5.text <| lookupNombreParticipante grupo t.transaccionTo
                                 ]
                             ]
                     )

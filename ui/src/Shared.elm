@@ -66,6 +66,11 @@ update _ msg model =
             , Effect.none
             )
 
+        Shared.Msg.NavigateTo path ->
+            ( model
+            , Effect.pushRoutePath path
+            )
+
         ToastMsg toastMsg ->
             let
                 ( newModel, cmd ) =

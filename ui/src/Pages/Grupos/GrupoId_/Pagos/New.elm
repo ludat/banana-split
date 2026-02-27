@@ -1003,7 +1003,7 @@ view store model =
                         , Attr.attribute "data-section" "basic"
                         , selected (model.currentSection == BasicPagoData)
                         ]
-                        [ p [] [ text "Ingresá la información básica del pago: un nombre descriptivo y el monto total." ]
+                        [ p [] [ Ui5.text "Ingresá la información básica del pago: un nombre descriptivo y el monto total." ]
                         , pagoForm model.pagoBasicoForm
                         ]
                     , Ui5.wizardStep
@@ -1012,7 +1012,7 @@ view store model =
                         , selected (model.currentSection == PagadoresSection)
                         ]
                         [ Html.form [ onSubmit <| SubmitCurrentSection ]
-                            [ p [] [ text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
+                            [ p [] [ Ui5.text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
                             , distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
                             , Ui5.button
                                 [ Attr.attribute "design" "Emphasized"
@@ -1024,17 +1024,18 @@ view store model =
                                 Success resumen ->
                                     div []
                                         [ Html.section []
-                                            [ h1 [] [ text "Pagadores" ]
-                                            , p [] [ text <| "total: ", text <| Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenPagadores ]
+                                            [ h1 [] [ Ui5.text "Pagadores" ]
+                                            , p [] [ Ui5.text <| "total: " ++ (Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenPagadores) ]
                                             , p []
-                                                [ text <| "pagadores: "
-                                                , resumen.resumenPagadores
-                                                    |> getParticipantesFromResumen
-                                                    |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                                    |> Maybe.withDefault "???"
-                                                    |> text
+                                                [ Ui5.text <|
+                                                    "pagadores: "
+                                                        ++ (resumen.resumenPagadores
+                                                                |> getParticipantesFromResumen
+                                                                |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
+                                                                |> Maybe.withDefault "???"
+                                                           )
                                                 ]
-                                            , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenPagadores ]
+                                            , p [] [ Ui5.text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenPagadores ]
                                             , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| getDeudasFromResumen <| resumen.resumenPagadores ]
                                             ]
                                         ]
@@ -1043,10 +1044,10 @@ view store model =
                                     text ""
 
                                 Loading ->
-                                    text "cargando..."
+                                    Ui5.text "cargando..."
 
                                 Failure _ ->
-                                    text "error"
+                                    Ui5.text "error"
                             ]
                         ]
                     , Ui5.wizardStep
@@ -1055,7 +1056,7 @@ view store model =
                         , selected (model.currentSection == DeudoresSection)
                         ]
                         [ Html.form [ onSubmit <| SubmitCurrentSection ]
-                            [ p [] [ text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
+                            [ p [] [ Ui5.text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
                             , distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
                             , Ui5.button
                                 [ Attr.attribute "design" "Emphasized"
@@ -1067,17 +1068,18 @@ view store model =
                                 Success resumen ->
                                     div []
                                         [ Html.section []
-                                            [ h1 [] [ text "Deudores" ]
-                                            , p [] [ text <| "total: ", text <| Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenDeudores ]
+                                            [ h1 [] [ Ui5.text "Deudores" ]
+                                            , p [] [ Ui5.text <| "total: " ++ (Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenDeudores) ]
                                             , p []
-                                                [ text <| "deudores: "
-                                                , resumen.resumenDeudores
-                                                    |> getParticipantesFromResumen
-                                                    |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                                    |> Maybe.withDefault "???"
-                                                    |> text
+                                                [ Ui5.text <|
+                                                    "deudores: "
+                                                        ++ (resumen.resumenDeudores
+                                                                |> getParticipantesFromResumen
+                                                                |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
+                                                                |> Maybe.withDefault "???"
+                                                           )
                                                 ]
-                                            , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenDeudores ]
+                                            , p [] [ Ui5.text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenDeudores ]
                                             , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| Maybe.map (List.map (\( pp, m ) -> ( pp, Monto.negate m ))) <| getDeudasFromResumen <| resumen.resumenDeudores ]
                                             ]
                                         ]
@@ -1086,10 +1088,10 @@ view store model =
                                     text ""
 
                                 Loading ->
-                                    text "cargando..."
+                                    Ui5.text "cargando..."
 
                                 Failure _ ->
-                                    text "error"
+                                    Ui5.text "error"
                             ]
                         ]
                     , Ui5.wizardStep
@@ -1098,21 +1100,22 @@ view store model =
                         , selected (model.currentSection == PagoConfirmation)
                         ]
                         [ Html.form [ onSubmit <| PagoForm Form.Submit ]
-                            [ p [] [ text "Revisá el resumen del pago antes de confirmar. Verificá que los montos y participantes sean correctos." ]
+                            [ p [] [ Ui5.text "Revisá el resumen del pago antes de confirmar. Verificá que los montos y participantes sean correctos." ]
                             , case model.resumenPago of
                                 Success resumen ->
                                     Html.section [] <|
-                                        [ h1 [] [ text "Pago" ]
-                                        , p [] [ text <| "total: ", text <| Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumen ]
+                                        [ h1 [] [ Ui5.text "Pago" ]
+                                        , p [] [ Ui5.text <| "total: " ++ (Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumen) ]
                                         , p []
-                                            [ text <| "participantes: "
-                                            , resumen.resumen
-                                                |> getParticipantesFromResumen
-                                                |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                                |> Maybe.withDefault "???"
-                                                |> text
+                                            [ Ui5.text <|
+                                                "participantes: "
+                                                    ++ (resumen.resumen
+                                                            |> getParticipantesFromResumen
+                                                            |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
+                                                            |> Maybe.withDefault "???"
+                                                       )
                                             ]
-                                        , p [] [ text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumen ]
+                                        , p [] [ Ui5.text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumen ]
                                         , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| getDeudasFromResumen <| resumen.resumen ]
                                         ]
                                             ++ (case Form.getOutput model.pagoForm of
@@ -1156,10 +1159,10 @@ view store model =
                                                )
 
                                 NotAsked ->
-                                    text "notasked"
+                                    Ui5.text "notasked"
 
                                 Loading ->
-                                    text "loading"
+                                    Ui5.text "loading"
 
                                 Failure e ->
                                     viewHttpError e
@@ -1191,12 +1194,12 @@ view store model =
 
         NotAsked ->
             { title = "BananaSplit"
-            , body = [ text "Cargando" ]
+            , body = [ Ui5.text "Cargando" ]
             }
 
         Loading ->
             { title = "BananaSplit"
-            , body = [ text "Cargando" ]
+            , body = [ Ui5.text "Cargando" ]
             }
 
         Failure e ->
@@ -1204,7 +1207,7 @@ view store model =
             , body =
                 [ details []
                     [ summary []
-                        [ text "Algo salio mal" ]
+                        [ Ui5.text "Algo salio mal" ]
                     , viewHttpError e
                     ]
                 ]
@@ -1296,7 +1299,7 @@ distribucionForm participantes prefix form receiptParseState =
             :: (case tipoField.value of
                     Just "repartija" ->
                         [ p [ style "margin-bottom" "1rem" ]
-                            [ text "División por items del recibo. Podés subir una foto del ticket para que se complete automáticamente." ]
+                            [ Ui5.text "División por items del recibo. Podés subir una foto del ticket para que se complete automáticamente." ]
                         , repartijaForm prefix form receiptParseState
                         ]
 
@@ -1306,7 +1309,7 @@ distribucionForm participantes prefix form receiptParseState =
                                 Form.getListIndexes (prefix ++ ".montos") form
                         in
                         [ p [ style "margin-bottom" "1rem" ]
-                            [ text "Cada participante pone/debe un monto fijo que vos especificás." ]
+                            [ Ui5.text "Cada participante pone/debe un monto fijo que vos especificás." ]
                         , div [ style "margin-bottom" "0.5rem" ] <|
                             (montosIndexes
                                 |> List.map
@@ -1348,7 +1351,7 @@ distribucionForm participantes prefix form receiptParseState =
 
                     Just "monto_equitativo" ->
                         [ p [ style "margin-bottom" "1rem" ]
-                            [ text "El monto se divide en partes iguales entre los participantes seleccionados." ]
+                            [ Ui5.text "El monto se divide en partes iguales entre los participantes seleccionados." ]
                         , div [ style "margin-bottom" "0.5rem" ]
                             (participantes
                                 |> List.map

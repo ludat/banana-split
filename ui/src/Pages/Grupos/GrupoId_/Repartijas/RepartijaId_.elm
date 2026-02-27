@@ -335,7 +335,7 @@ view userId store model =
         ( Failure e1, Failure e2 ) ->
             { title = ""
             , body =
-                [ text "falle"
+                [ Ui5.text "falle"
                 , viewHttpError e1
                 , viewHttpError e2
                 ]
@@ -344,7 +344,7 @@ view userId store model =
         ( Failure e, _ ) ->
             { title = ""
             , body =
-                [ text "falle"
+                [ Ui5.text "falle"
                 , viewHttpError e
                 ]
             }
@@ -352,7 +352,7 @@ view userId store model =
         ( _, Failure e ) ->
             { title = ""
             , body =
-                [ text "falle"
+                [ Ui5.text "falle"
                 , viewHttpError e
                 ]
             }
@@ -360,7 +360,7 @@ view userId store model =
         _ ->
             { title = ""
             , body =
-                [ text "cargando" ]
+                [ Ui5.text "cargando" ]
             }
 
 
