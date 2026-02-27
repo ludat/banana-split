@@ -10,7 +10,7 @@ import Layouts.Default as Layout exposing (ShouldHideNavbar(..), viewGlobalUserS
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import RemoteData exposing (RemoteData(..))
-import Route.Path as Route
+import Route.Path exposing (Path(..))
 import Shared.Model as Shared
 import Shared.Msg as Shared
 
@@ -26,39 +26,51 @@ modelFromShared shared grupoId =
     { grupoId = grupoId, userId = shared.userId }
 
 
-navBar : NavBarModel -> Store -> Route.Path -> Bool -> Html Layout.Msg
+navBar : NavBarModel -> Store -> Path -> Bool -> Html Layout.Msg
 navBar navBarModel store path _ =
     Ui5.sideNavigation
         [ Ui5.slot "sideContent"
         ]
-        [ navBarItem { currentPath = path, path = Route.Grupos_Id_ { id = navBarModel.grupoId }, icon = Just "home", attrs = [] } <|
-            case store |> Store.getGrupo navBarModel.grupoId of
-                NotAsked ->
-                    ""
+        [ Ui5.sideNavigationGroup
+            [ Attr.property "expanded" <| Encode.bool True
+            , Attr.attribute "text" <|
+                case store |> Store.getGrupo navBarModel.grupoId of
+                    NotAsked ->
+                        ""
 
-                Loading ->
-                    "Cargando..."
+                    Loading ->
+                        "Cargando..."
 
-                Failure _ ->
-                    ""
+                    Failure _ ->
+                        ""
 
-                Success grupo ->
-                    grupo.nombre
-        , navBarItem
-            { currentPath = path
-            , path = Route.Grupos_GrupoId__Pagos { grupoId = navBarModel.grupoId }
-            , icon = Just "money-bills"
-            , attrs = []
-            }
-            "Pagos"
-        , navBarItem
-            { currentPath = path
-            , path = Route.Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }
-            , icon = Just "user-edit"
-            , attrs = []
-            }
-            "Participantes"
-        , case Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe of
+                    Success grupo ->
+                        grupo.nombre
+            ]
+            [ navBarItem
+                { currentPath = path
+                , path = Grupos_Id_ { id = navBarModel.grupoId }
+                , icon = Just "activity-2"
+                , attrs = []
+                }
+              <|
+                "Resumen"
+            , navBarItem
+                { currentPath = path
+                , path = Grupos_GrupoId__Pagos { grupoId = navBarModel.grupoId }
+                , icon = Just "money-bills"
+                , attrs = []
+                }
+                "Pagos"
+            , navBarItem
+                { currentPath = path
+                , path = Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }
+                , icon = Just "user-edit"
+                , attrs = []
+                }
+                "Participantes"
+            ]
+        , case Debug.log "Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe" (Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe) of
             Just grupo ->
                 viewGlobalUserSelector navBarModel.userId grupo
 
@@ -68,8 +80,8 @@ navBar navBarModel store path _ =
 
 
 navBarItem :
-    { path : Route.Path
-    , currentPath : Route.Path
+    { path : Path
+    , currentPath : Path
     , attrs : List (Attribute Layout.Msg)
     , icon : Maybe String
     }
