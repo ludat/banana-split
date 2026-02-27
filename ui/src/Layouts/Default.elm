@@ -1,4 +1,4 @@
-module Layouts.Default exposing (Model, Msg(..), Props, layout, viewGlobalUserSelector)
+module Layouts.Default exposing (Model, Msg(..), Props, ShouldHideNavbar(..), layout, viewGlobalUserSelector)
 
 import Components.Ui5 as Ui5
 import Css
@@ -61,8 +61,16 @@ init =
 type Msg
     = ToastMsg ToastMsg
     | ToggleNavBar
-      --| NavigateTo Path.Path
-    | ForwardSharedMessage Bool Shared.Msg
+    | ForwardSharedMessage ShouldHideNavbar Shared.Msg
+
+
+
+-- This variant is not used but may be in the future
+-- | LeaveNavbarAsBefore
+
+
+type ShouldHideNavbar
+    = HideNavbarAfterEvent
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -73,8 +81,13 @@ update msg model =
             , Effect.sendToastMsg toastMsg
             )
 
-        ForwardSharedMessage closeNavBar sharedMsg ->
-            ( { model | navBarOpen = not closeNavBar }
+        ForwardSharedMessage shouldHideNavbar sharedMsg ->
+            ( { model
+                | navBarOpen =
+                    case shouldHideNavbar of
+                        HideNavbarAfterEvent ->
+                            False
+              }
             , Effect.batch
                 [ Effect.sendSharedMsg sharedMsg
                 ]
@@ -130,7 +143,7 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
                     []
                 , Ui5.shellbarBranding
                     [ Ui5.slot "branding"
-                    , onClick (toContentMsg <| ForwardSharedMessage True <| Shared.NavigateTo <| Path.Home_)
+                    , onClick (toContentMsg <| ForwardSharedMessage HideNavbarAfterEvent <| Shared.NavigateTo <| Path.Home_)
                     ]
                     [ text "Banana Split"
                     , img [ Ui5.slot "logo", src "/favicon.png" ] []
@@ -170,7 +183,7 @@ viewGlobalUserSelector activeUser grupo =
     Ui5.select
         [ on "change"
             (Decode.at [ "detail", "selectedOption", "value" ] Decode.string
-                |> Decode.map (\userId -> ForwardSharedMessage True <| Shared.SetCurrentUser { grupoId = grupo.id, userId = userId })
+                |> Decode.map (\userId -> ForwardSharedMessage HideNavbarAfterEvent <| Shared.SetCurrentUser { grupoId = grupo.id, userId = userId })
             )
         , Ui5.slot "fixedItems"
         ]

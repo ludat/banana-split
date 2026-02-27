@@ -6,7 +6,7 @@ import Html exposing (Attribute, Html, text)
 import Html.Attributes as Attr exposing (class)
 import Html.Events exposing (onClick)
 import Json.Encode as Encode
-import Layouts.Default as Layout exposing (viewGlobalUserSelector)
+import Layouts.Default as Layout exposing (ShouldHideNavbar(..), viewGlobalUserSelector)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import RemoteData exposing (RemoteData(..))
@@ -77,7 +77,7 @@ navBarItem :
     -> Html Layout.Msg
 navBarItem props title =
     Ui5.sideNavigationItem
-        [ onClick <| Layout.ForwardSharedMessage True <| Shared.NavigateTo props.path
+        [ onClick <| Layout.ForwardSharedMessage HideNavbarAfterEvent <| Shared.NavigateTo props.path
         , Attr.attribute "text" title
         , props.icon |> Maybe.map (Attr.attribute "icon") |> Maybe.withDefault (class "")
         , Attr.property "selected" (Encode.bool <| props.currentPath == props.path)
