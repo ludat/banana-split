@@ -1,7 +1,9 @@
 module Layouts.Default exposing (Model, Msg(..), Props, ShouldHideNavbar(..), layout, viewGlobalUserSelector)
 
+import Changelog
 import Components.Ui5 as Ui5
 import Css
+import Date exposing (Date)
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
 import Html exposing (Html, div, img, p, text)
@@ -32,7 +34,7 @@ layout props shared _ =
     Layout.new
         { init = \() -> init
         , update = update
-        , view = view props.navBarContent props.grupo shared.userId shared.toasties
+        , view = view props.navBarContent props.grupo shared.userId shared.toasties shared.lastReadChangelog (Date.fromPosix shared.zone shared.now)
         , subscriptions = subscriptions
         }
 
@@ -43,12 +45,14 @@ layout props shared _ =
 
 type alias Model =
     { navBarOpen : Bool
+    , changelogOpen : Bool
     }
 
 
 init : ( Model, Effect Msg )
 init =
     ( { navBarOpen = False
+      , changelogOpen = False
       }
     , Effect.none
     )
@@ -62,6 +66,9 @@ type Msg
     = ToastMsg ToastMsg
     | ToggleNavBar
     | ForwardSharedMessage ShouldHideNavbar Shared.Msg
+    | OpenChangelog
+    | CloseChangelog
+    | MarkChangelogReadAndClose
 
 
 
@@ -98,6 +105,21 @@ update msg model =
             , Effect.none
             )
 
+        OpenChangelog ->
+            ( { model | changelogOpen = True }
+            , Effect.none
+            )
+
+        CloseChangelog ->
+            ( { model | changelogOpen = False }
+            , Effect.none
+            )
+
+        MarkChangelogReadAndClose ->
+            ( { model | changelogOpen = False }
+            , Effect.sendSharedMsg Shared.MarkChangelogRead
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
@@ -113,9 +135,18 @@ view :
     -> WebData ShallowGrupo
     -> Maybe ULID
     -> Toasts
+    -> Maybe Date
+    -> Date
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content } =
+view navBarFunction remoteGrupo activeUser toasts lastReadChangelog now { toContentMsg, model, content } =
+    let
+        recentEntries =
+            Changelog.recentChangelog lastReadChangelog now
+
+        unread =
+            List.length recentEntries
+    in
     { title =
         if content.title == "" then
             "Banana split"
@@ -133,8 +164,17 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
                         "Auto"
             ]
             [ Ui5.shellBar
-                [ Ui5.slot "header"
-                ]
+                (Ui5.slot "header"
+                    :: (if unread > 0 then
+                            [ Attr.attribute "notifications-count" <| String.fromInt unread
+                            , Attr.attribute "show-notifications" ""
+                            , on "notifications-click" (Decode.succeed <| toContentMsg OpenChangelog)
+                            ]
+
+                        else
+                            []
+                       )
+                )
                 [ Ui5.button
                     [ Attr.attribute "icon" "menu"
                     , Ui5.slot "startButton"
@@ -149,6 +189,8 @@ view navBarFunction remoteGrupo activeUser toasts { toContentMsg, model, content
                     , img [ Ui5.slot "logo", src "/favicon.png" ] []
                     ]
                 ]
+            , Html.map toContentMsg <|
+                viewChangelogPopover model.changelogOpen recentEntries
             , case navBarFunction of
                 Just navBarF ->
                     Html.map (\e -> toContentMsg e) <| navBarF model.navBarOpen
@@ -217,3 +259,44 @@ renderToast toast =
             ]
             [ text toast.content ]
         ]
+
+
+viewChangelogPopover : Bool -> List Changelog.Entry -> Html Msg
+viewChangelogPopover isOpen entries =
+    Ui5.dialog
+        ([ Attr.attribute "header-text" "Novedades"
+         , on "close" (Decode.succeed CloseChangelog)
+         ]
+            ++ (if isOpen then
+                    [ Attr.attribute "open" "" ]
+
+                else
+                    []
+               )
+        )
+        [ Ui5.list []
+            (entries
+                |> List.map viewChangelogEntry
+            )
+        , div [ Attr.attribute "slot" "footer", style "display" "flex", style "gap" "0.5rem", style "width" "100%", style "justify-content" "end" ]
+            [ Ui5.button
+                [ Attr.attribute "design" "Emphasized"
+                , onClick MarkChangelogReadAndClose
+                ]
+                [ text "Marcar como leído" ]
+            , Ui5.button
+                [ Attr.attribute "design" "Transparent"
+                , onClick CloseChangelog
+                ]
+                [ text "Cerrar" ]
+            ]
+        ]
+
+
+viewChangelogEntry : Changelog.Entry -> Html Msg
+viewChangelogEntry entry =
+    Ui5.li
+        [ Attr.attribute "description" entry.description
+        , Attr.attribute "additional-text" (Date.toIsoString entry.date)
+        ]
+        [ text entry.title ]

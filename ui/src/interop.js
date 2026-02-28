@@ -5,12 +5,14 @@ import { setLanguage } from "@ui5/webcomponents-base/dist/config/Language.js";
 
 import "@ui5/webcomponents/dist/Assets.js";
 import "@ui5/webcomponents-fiori/dist/Assets.js";
+
 import "@ui5/webcomponents-icons/dist/accept.js";
 import "@ui5/webcomponents-icons/dist/activity-2.js";
 import "@ui5/webcomponents-icons/dist/add.js";
 import "@ui5/webcomponents-icons/dist/alert.js";
 import "@ui5/webcomponents-icons/dist/arrow-right.js";
 import "@ui5/webcomponents-icons/dist/Assets.js";
+import "@ui5/webcomponents-icons/dist/bell.js"
 import "@ui5/webcomponents-icons/dist/decline.js";
 import "@ui5/webcomponents-icons/dist/delete.js";
 import "@ui5/webcomponents-icons/dist/edit.js";
@@ -79,6 +81,16 @@ const beforeUnloadHandler = (event) => {
   event.preventDefault();
 };
 
+export const flags = ({ env }) => {
+  const now = new Date();
+  const lastReadRaw = localStorage.getItem("banana-split:lastReadChangelog");
+  return {
+    now: now.getTime(),
+    offset: now.getTimezoneOffset(),
+    lastReadChangelog: lastReadRaw ? parseInt(lastReadRaw, 10) : null,
+  };
+};
+
 export const onReady = ({ app, env }) => {
   if (app.ports && app.ports.outgoing) {
     app.ports.outgoing.subscribe(({ tag, data }) => {
@@ -119,6 +131,11 @@ export const onReady = ({ app, env }) => {
           } else {
             window.removeEventListener("beforeunload", beforeUnloadHandler);
           }
+          break;
+
+        case "SAVE_LAST_READ_CHANGELOG":
+          // data: null
+          localStorage.setItem("banana-split:lastReadChangelog", new Date().getTime());
           break;
 
         default:

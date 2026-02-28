@@ -14,6 +14,7 @@ port module Effect exposing
     , replaceRoute
     , replaceRoutePath
     , saveCurrentUser
+    , saveLastReadChangelog
     , sendCmd
     , sendMsg
     , sendSharedMsg
@@ -234,6 +235,15 @@ setUnsavedChangesWarning enabled =
                 Json.Encode.object
                     [ ( "enabled", Json.Encode.bool enabled )
                     ]
+            }
+
+
+saveLastReadChangelog : Effect msg
+saveLastReadChangelog =
+    SendCmd <|
+        outgoing
+            { tag = "SAVE_LAST_READ_CHANGELOG"
+            , data = Json.Encode.null
             }
 
 

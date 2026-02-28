@@ -8,8 +8,10 @@ own file, so they can be imported by `Effect.elm`
 
 -}
 
+import Date exposing (Date)
 import Generated.Api exposing (ULID)
 import Models.Store.Types exposing (Store)
+import Time
 import Utils.Toasts.Types exposing (Toasts)
 
 
@@ -17,4 +19,7 @@ type alias Model =
     { toasties : Toasts
     , store : Store
     , userId : Maybe ULID
+    , now : Time.Posix
+    , zone : Time.Zone
+    , lastReadChangelog : Maybe Date
     }

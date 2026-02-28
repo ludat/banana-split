@@ -8,6 +8,7 @@ module Shared exposing
     , update
     )
 
+import Date
 import Effect exposing (Effect, incoming)
 import Generated.Api exposing (ULID)
 import Json.Decode
@@ -16,6 +17,7 @@ import Models.Store as Store
 import Route exposing (Route)
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
+import Time
 import Utils.Toasts as Toast
 
 
@@ -24,12 +26,15 @@ import Utils.Toasts as Toast
 
 
 type alias Flags =
-    {}
+    { now : Int, offset : Int, lastReadChangelog : Maybe Int }
 
 
 decoder : Json.Decode.Decoder Flags
 decoder =
-    Json.Decode.succeed {}
+    Json.Decode.map3 Flags
+        (Json.Decode.field "now" Json.Decode.int)
+        (Json.Decode.field "offset" Json.Decode.int)
+        (Json.Decode.field "lastReadChangelog" (Json.Decode.nullable Json.Decode.int))
 
 
 
@@ -41,10 +46,19 @@ type alias Model =
 
 
 init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
-init _ _ =
+init possiblyFlags _ =
+    let
+        flags =
+            Result.withDefault { now = 0, offset = 0, lastReadChangelog = Nothing } possiblyFlags
+    in
     ( { toasties = Toast.initialState
       , store = Store.empty
       , userId = Nothing
+      , now = Time.millisToPosix flags.now
+      , zone = Time.customZone flags.offset []
+      , lastReadChangelog =
+            flags.lastReadChangelog
+                |> Maybe.map (\ms -> Date.fromPosix (Time.customZone flags.offset []) (Time.millisToPosix ms))
       }
     , Effect.none
     )
@@ -116,6 +130,11 @@ update _ msg model =
                 | userId = userId
               }
             , Effect.none
+            )
+
+        MarkChangelogRead ->
+            ( { model | lastReadChangelog = Just (Date.fromPosix model.zone model.now) }
+            , Effect.saveLastReadChangelog
             )
 
 

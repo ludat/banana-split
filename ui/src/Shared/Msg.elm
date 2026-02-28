@@ -22,3 +22,4 @@ type Msg
     | NavigateTo Route.Path
     | SetCurrentUser { grupoId : ULID, userId : ULID }
     | CurrentUserLoaded { grupoId : ULID, userId : Maybe ULID }
+    | MarkChangelogRead
