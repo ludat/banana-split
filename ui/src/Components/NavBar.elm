@@ -4,7 +4,7 @@ import Components.Ui5 as Ui5
 import Generated.Api exposing (ULID)
 import Html exposing (Attribute, Html, text)
 import Html.Attributes as Attr exposing (class)
-import Html.Events as Events exposing (onClick, preventDefaultOn)
+import Html.Events as Events
 import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts.Default as Layout exposing (ShouldHideNavbar(..), viewGlobalUserSelector)
@@ -73,7 +73,6 @@ navBar navBarModel store path _ =
                 , text = "Nuevo Pago"
                 , attrs = [ Attr.attribute "design" "Action" ]
                 }
-                []
             ]
         , navBarItem
             { currentPath = path
@@ -120,9 +119,8 @@ navBarSubItem :
     , text : String
     , icon : Maybe String
     }
-    -> List (Html Layout.Msg)
     -> Html Layout.Msg
-navBarSubItem props children =
+navBarSubItem props =
     Ui5.sideNavigationSubItem
         ([ Events.stopPropagationOn "click" (Decode.succeed ( Layout.ForwardSharedMessage HideNavbarAfterEvent <| Shared.NavigateTo props.path, True ))
          , Attr.attribute "text" props.text
