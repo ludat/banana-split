@@ -49,6 +49,7 @@ data ShallowGrupo = ShallowGrupo
   { id :: ULID
   , nombre :: Text
   , participantes :: [Participante]
+  , isFrozen :: Bool
   } deriving (Show, Eq, Generic)
 
 data Pago = Pago

@@ -1,0 +1,43 @@
+operations:
+  - add_column:
+      table: grupos
+      column:
+        name: is_frozen
+        type: boolean
+        nullable: false
+        default: "false"
+
+  - create_table:
+      name: transacciones_congeladas
+      columns:
+        - name: id
+          type: text
+          pk: true
+        - name: grupo__id
+          type: text
+          nullable: false
+          references:
+            table: grupos
+            column: id
+            name: fk_transacciones_congeladas_grupo__id
+            on_delete: CASCADE
+        - name: participante_from__id
+          type: text
+          nullable: false
+          references:
+            table: participantes
+            column: id
+            name: fk_transacciones_congeladas_participante_from__id
+        - name: participante_to__id
+          type: text
+          nullable: false
+          references:
+            table: participantes
+            column: id
+            name: fk_transacciones_congeladas_participante_to__id
+        - name: monto__lugares_despues_de_la_coma
+          type: int
+          nullable: false
+        - name: monto__valor
+          type: bigint
+          nullable: false

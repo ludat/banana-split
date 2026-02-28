@@ -4,11 +4,6 @@
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
     flake-parts.url = "github:hercules-ci/flake-parts";
     haskell-flake.url = "github:srid/haskell-flake";
-
-    MIP = {
-      url = "github:msakai/haskell-MIP";
-      flake = false;
-    };
     conferer = {
       url = "github:ludat/conferer";
       flake = false;
@@ -53,7 +48,6 @@
 
             # Packages to add on top of `basePackages`, e.g. from Hackage
             packages = {
-              MIP.source = inputs.MIP + /MIP;
               conferer.source = inputs.conferer + /packages/conferer;
               conferer-warp.source = inputs.conferer + /packages/warp;
             };

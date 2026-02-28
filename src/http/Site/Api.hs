@@ -60,6 +60,12 @@ data Api routes
       routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] Text
     -- , _routeRepartijaToPago ::
     --   routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
+    , _routeGrupoFreeze ::
+      routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Post '[JSON] ShallowGrupo
+    , _routeGrupoUnfreeze ::
+      routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] ShallowGrupo
+    , _routeGrupoSaldarTransaccion ::
+      routes :- "grupo" :> Capture "id" ULID :> "transacciones-congeladas" :> Capture "transaccionId" ULID :> "saldar" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
     , _routeReceiptImageParse ::
       routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
     , _routeHealth ::
@@ -85,6 +91,7 @@ data ResumenGrupo = ResumenGrupo
   , netos :: Netos Monto
   , cantidadPagosInvalidos :: Int
   , cantidadPagos :: Int
+  , isFrozen :: Bool
   } deriving (Show, Eq, Generic)
 
 data ResumenPago = ResumenPago

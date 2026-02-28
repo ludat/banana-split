@@ -15,19 +15,11 @@ import Data.Decimal (Decimal)
 import Data.Decimal qualified as Decimal
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
-import Data.Scientific (Scientific)
-import Data.Scientific qualified as Scientific
 
 import Elm.Derive qualified as Elm
 
-import Numeric.Optimization.MIP qualified as MIP
-import Numeric.Optimization.MIP.Solver qualified as MIP
-import Numeric.Optimization.MIP.Solver.CBC qualified as CBC
-
 import Protolude
 import Protolude.Error (error)
-
-import System.IO.Unsafe (unsafePerformIO)
 
 
 data Distribucion = Distribucion
@@ -167,8 +159,8 @@ resolverNetosRecursivo netBalances =
 
               transaction =
                 if balance > 0
-                  then Transaccion partner personOwing paymentAmount
-                  else Transaccion personOwing partner paymentAmount
+                  then Transaccion Nothing partner personOwing paymentAmount
+                  else Transaccion Nothing personOwing partner paymentAmount
           in fmap (transaction :) (settleDebts nextBalances)
     -- Helper to insert updated balances (or remove if settled)
     insertOrRemove :: (ParticipanteId, Monto) -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
@@ -179,7 +171,8 @@ resolverNetosRecursivo netBalances =
     deleteByPerson name = filter ((/= name) . fst)
 
 data Transaccion = Transaccion
-  { transaccionFrom :: ParticipanteId
+  { transaccionId :: Maybe ULID
+  , transaccionFrom :: ParticipanteId
   , transaccionTo :: ParticipanteId
   , transaccionMonto :: Monto
   } deriving (Show, Eq, Generic)
@@ -280,137 +273,149 @@ resolverNetosNaif deudas
         (mayorPagador, mayorPagado) = extraerMaximoPagador deudas'
         deudas'' = removerDeudor mayorPagador deudas'
       in case compare mayorDeuda mayorPagado of
-          LT -> Transaccion mayorDeudor mayorPagador mayorDeuda
+          LT -> Transaccion Nothing mayorDeudor mayorPagador mayorDeuda
             : resolverNetosNaif (deudas'' <> mkDeuda mayorPagador (mayorPagado - mayorDeuda))
-          GT -> Transaccion mayorDeudor mayorPagador mayorPagado
+          GT -> Transaccion Nothing mayorDeudor mayorPagador mayorPagado
             : resolverNetosNaif (deudas'' <> mkDeuda mayorDeudor (-mayorDeuda + mayorPagado))
-          EQ -> Transaccion mayorDeudor mayorPagador mayorPagado
+          EQ -> Transaccion Nothing mayorDeudor mayorPagador mayorPagado
             : resolverNetosNaif deudas''
 
 solveOptimalTransactions' :: Netos Monto -> Either Text [Transaccion]
-solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
-    let
-      maxPrecision =
-        oldBalances
-        & Map.elems
-        & fmap Monto.getLugaresDespuesDeLaComa
-        & \case
-            [] -> 0
-            xs -> maximum xs
-      balances :: Map ParticipanteId Scientific
-      balances = fmap (realToFrac . (* 10 ^ maxPrecision)) oldBalances
+solveOptimalTransactions' (Netos oldBalances) =
+  let
+    maxPrecision =
+      oldBalances
+      & Map.elems
+      & fmap Monto.getLugaresDespuesDeLaComa
+      & \case
+          [] -> 0
+          xs -> maximum xs
+    -- Scale all amounts to integers to avoid floating-point issues
+    scaledBalances :: Map ParticipanteId Integer
+    scaledBalances = Map.map
+      (\m -> Decimal.decimalMantissa $ Decimal.roundTo maxPrecision $ inMonto m)
+      oldBalances
+    balanceSum = sum $ Map.elems scaledBalances
+    debtors    = Netos $ Map.filter (< 0) scaledBalances
+    creditors  = Netos $ Map.filter (> 0) scaledBalances
+    toMonto scaledAmount = Monto $ Decimal.Decimal maxPrecision scaledAmount
+  in
+    if balanceSum /= 0
+    then error $ "Balance is not 0, instead is: " <> show (inMonto (sum $ Map.elems oldBalances))
+    else Right $
+      decomposeSubgroups debtors creditors
+      & concatMap (uncurry solveSubgroupOptimal)
+      & fmap (\(debtorId, creditorId, scaledAmount) -> Transaccion Nothing debtorId creditorId (toMonto scaledAmount))
 
-      balanceSum = sum $ Map.elems balances
-      debtorMap = Map.filter (< 0) balances
-      creditorMap = Map.filter (> 0) balances
-      debtors = Map.keys debtorMap
-      creditors = Map.keys creditorMap
+-- | Decompose into independent subgroups via subset-sum matching.
+-- Each subgroup's debts can be settled independently without involving
+-- participants from other subgroups.
+decomposeSubgroups
+  :: Netos Integer
+  -> Netos Integer
+  -> [(Netos Integer, Netos Integer)]
+decomposeSubgroups initialDebtors initialCreditors = go initialDebtors initialCreditors
+  where
+    go debtors@(Netos debtorMap) creditors@(Netos creditorMap)
+      | Map.null debtorMap && Map.null creditorMap = []
+      | Map.null creditorMap = error $ "decomposeSubgroups: debtors without creditors (bug in data): " <> show (Map.keys debtorMap)
+      | Map.null debtorMap   = error $ "decomposeSubgroups: creditors without debtors (bug in data): " <> show (Map.keys creditorMap)
+      | otherwise =
+          case findIndependentSubgroup (Map.toList debtorMap) (Map.toList creditorMap) of
+            Nothing ->
+              [(debtors, creditors)]
+            Just (debtorSubset, creditorSubset) ->
+              (Netos (Map.fromList debtorSubset), Netos (Map.fromList creditorSubset))
+              : go (Netos (Map.difference debtorMap (Map.fromList debtorSubset)))
+                   (Netos (Map.difference creditorMap (Map.fromList creditorSubset)))
 
-    -- If no debts, no transactions needed
-    if | balanceSum /= 0 -> error $ "Balance is not 0, instead is: " <> show balanceSum
-       | Map.null debtorMap -> pure $ Right []
-       | otherwise -> do
-        -- A "big M" value, larger than any possible transaction
-        let bigM = balances & Map.elems & filter (> 0) & sum
+    findIndependentSubgroup
+      :: [(ParticipanteId, Integer)]
+      -> [(ParticipanteId, Integer)]
+      -> Maybe ([(ParticipanteId, Integer)], [(ParticipanteId, Integer)])
+    findIndependentSubgroup allDebtorPairs allCreditorPairs =
+      let creditorSubsets      = List.subsequences allCreditorPairs
+                                   & filter (\subset -> not (null subset) && length subset < length allCreditorPairs)
+          creditorSubsetsBySum = Map.fromListWith (++)
+                                   [(sum (fmap snd subset), [subset]) | subset <- creditorSubsets]
+          debtorCount          = length allDebtorPairs
+      in listToMaybe
+           [ (debtorSubset, creditorSubset)
+           | subsetSize              <- [1 .. debtorCount - 1]
+           , debtorSubset            <- List.subsequences allDebtorPairs & filter ((== subsetSize) . length)
+           , let debtorSubsetAbsSum  = negate (sum (fmap snd debtorSubset))
+           , debtorSubsetAbsSum > 0
+           , matchingCreditorSubsets <- maybeToList (Map.lookup debtorSubsetAbsSum creditorSubsetsBySum)
+           , creditorSubset          <- matchingCreditorSubsets
+           ]
 
-        -- Create mappings from (debtor, creditor) pairs to variable names
-        let d_c_pairs = [(d, c) | d <- debtors, c <- creditors]
+-- | Solve a single balanced subgroup using recursive search with upper-bound pruning.
+-- Debtors have negative balances, creditors have positive balances.
+-- Returns (debtorId, creditorId, paymentAmount) triples.
+solveSubgroupOptimal
+  :: Netos Integer
+  -> Netos Integer
+  -> [(ParticipanteId, ParticipanteId, Integer)]
+solveSubgroupOptimal (Netos debtorMap) (Netos creditorMap)
+  | Map.null debtorMap   = []
+  | Map.null creditorMap = []
+  | otherwise =
+      let debtorPairs     = Map.toList debtorMap
+          creditorPairs   = Map.toList creditorMap
+          initialSolution = twoPointerSolve debtorPairs creditorPairs
+      in search debtorPairs creditorPairs [] initialSolution
+  where
+    search
+      :: [(ParticipanteId, Integer)] -> [(ParticipanteId, Integer)]
+      -> [(ParticipanteId, ParticipanteId, Integer)]
+      -> [(ParticipanteId, ParticipanteId, Integer)]
+      -> [(ParticipanteId, ParticipanteId, Integer)]
+    search [] _ currentTransactions bestSolution
+      | length currentTransactions < length bestSolution = currentTransactions
+      | otherwise                                        = bestSolution
+    search _ [] currentTransactions bestSolution
+      | length currentTransactions < length bestSolution = currentTransactions
+      | otherwise                                        = bestSolution
+    search ((debtorId, debtorBalance):remainingDebtors) creditors currentTransactions bestSolution =
+      foldl' trySettlingWithCreditor bestSolution creditors
+      where
+        trySettlingWithCreditor currentBest (creditorId, creditorBalance) =
+          let paymentAmount          = min (abs debtorBalance) creditorBalance
+              debtorBalanceAfter     = debtorBalance + paymentAmount
+              creditorBalanceAfter   = creditorBalance - paymentAmount
+              remainingDebtorCount   = length remainingDebtors + if debtorBalanceAfter /= 0 then 1 else 0
+              remainingCreditorCount = length creditors - 1 + if creditorBalanceAfter /= 0 then 1 else 0
+              transactionLowerBound  = max remainingDebtorCount remainingCreditorCount
+              updatedDebtors         = if debtorBalanceAfter == 0
+                                       then remainingDebtors
+                                       else (debtorId, debtorBalanceAfter) : remainingDebtors
+              updatedCreditors       = [(pid, bal) | (pid, bal) <- creditors, pid /= creditorId]
+                                       <> [(creditorId, creditorBalanceAfter) | creditorBalanceAfter /= 0]
+              newTransaction         = (debtorId, creditorId, paymentAmount)
+          in if length currentTransactions + 1 + transactionLowerBound >= length currentBest
+             then currentBest
+             else search updatedDebtors updatedCreditors (newTransaction : currentTransactions) currentBest
 
-        -- Create variable name helpers
-        let tVar d c = "t_" <> show d <> "_" <> show c :: Text
-            eVar d c = "e_" <> show d <> "_" <> show c :: Text
-
-        -- All variable names
-        let allTVars = [tVar d c | (d, c) <- d_c_pairs]
-            allEVars = [eVar d c | (d, c) <- d_c_pairs]
-
-        -- Build variable domains
-        let varDomains = Map.fromList $
-              -- Transaction variables (continuous, >= 0)
-              [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.PosInf))) | v <- allTVars] ++
-              -- Binary edge variables (represented as integer variables with bounds 0 and 1)
-              [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.Finite 1))) | v <- allEVars]
-
-        -- Build objective: minimize sum of binary edge variables
-        let objective = MIP.def
-              { MIP.objDir = MIP.OptMin
-              , MIP.objExpr = sum [MIP.varExpr (MIP.Var (eVar d c)) | (d, c) <- d_c_pairs]
-              }
-
-        -- Build constraints
-        let constraints =
-              -- Debtor constraints: sum of outgoing transactions should equal their debt
-              [ sum [MIP.varExpr (MIP.Var (tVar debtor c)) | c <- creditors]
-                MIP..==. MIP.constExpr (negate $ balances Map.! debtor)
-              | debtor <- debtors
-              ] ++
-              -- Creditor constraints: sum of incoming transactions should equal their credit
-              [ sum [MIP.varExpr (MIP.Var (tVar d creditor)) | d <- debtors]
-                MIP..==. MIP.constExpr (balances Map.! creditor)
-              | creditor <- creditors
-              ] ++
-              -- Big-M constraints: t_d_c <= bigM * e_d_c (transaction only if edge is active)
-              [ MIP.varExpr (MIP.Var (tVar d c)) MIP..<=. MIP.constExpr bigM * MIP.varExpr (MIP.Var (eVar d c))
-              | (d, c) <- d_c_pairs
-              ]
-
-        -- Create the problem
-        let prob = MIP.def
-              { MIP.objectiveFunction = objective
-              , MIP.constraints = constraints
-              , MIP.varDomains = varDomains
-              }
-
-        -- Solve using CBC with timeout protection and optimality gap tolerance
-        let solverOpts = MIP.def
-              { MIP.solveTimeLimit = Just 5.0
-              , MIP.solveLogger = \msg -> putStrLn $ "[CBC] " <> msg  -- Debug logging
-              , MIP.solveErrorLogger = \msg -> putStrLn $ "[CBC ERROR] " <> msg  -- Debug logging
-              , MIP.solveTol = Just MIP.Tol
-                  { integralityTol = 0
-                  , feasibilityTol = 0
-                  , optimalityTol = 0
-                  }
-              }
-        -- Configure CBC to stop after finding a good solution
-        -- For transaction minimization, first feasible solution is often near-optimal
-        let solver = CBC.cbc
-        sol <- MIP.solve solver solverOpts prob
-
-        -- Helper to extract and verify transactions
-        let extractAndVerifyTransactions solVars = do
-              let transactions = d_c_pairs
-                    & mapMaybe (\(d, c) ->
-                      solVars
-                        & Map.lookup (MIP.Var (tVar d c))
-                        & mfilter (/= 0)
-                        & fmap (\v -> Transaccion
-                          { transaccionFrom = d
-                          , transaccionTo = c
-                          , transaccionMonto = Monto $ Decimal.Decimal maxPrecision (round $ Scientific.toRealFloat @Double v)
-                          })
-                        )
-
-              -- Verify: apply transactions and check all balances become zero
-              let neto =
-                    transactions
-                    & fmap (\t -> mkDeuda t.transaccionFrom -t.transaccionMonto <> mkDeuda t.transaccionTo t.transaccionMonto)
-                    & mconcat
-                    & totalNetos
-
-              if neto /= 0
-                then do
-                  putText $ "[error] Transactions do not balance out: " <> show transactions
-                  pure $ Left $ "Transactions do not balance, neto is " <> show neto
-
-                else
-                  pure $ Right transactions
-
-        case MIP.solStatus sol of
-          MIP.StatusOptimal -> extractAndVerifyTransactions (MIP.solVariables sol)
-          MIP.StatusInfeasible -> pure $ Left "LP solver found the problem infeasible"
-          MIP.StatusUnknown -> extractAndVerifyTransactions (MIP.solVariables sol)
-          status -> pure $ Left $ "Failed resolving deudas: " <> show status
+-- | Sorted two-pointer: produces at most |D|+|C|-1 transactions in O(n log n).
+-- Used as the initial upper bound for the recursive search in 'solveSubgroupOptimal'.
+twoPointerSolve
+  :: [(ParticipanteId, Integer)]
+  -> [(ParticipanteId, Integer)]
+  -> [(ParticipanteId, ParticipanteId, Integer)]
+twoPointerSolve debtorPairs creditorPairs = go sortedDebtors sortedCreditors
+  where
+    sortedDebtors  = List.sortBy (comparing (Down . abs . snd)) debtorPairs
+    sortedCreditors = List.sortBy (comparing (Down . snd)) creditorPairs
+    go [] _ = []
+    go _ [] = []
+    go ((debtorId, debtorBalance):remainingDebtors) ((creditorId, creditorBalance):remainingCreditors) =
+      let paymentAmount       = min (abs debtorBalance) creditorBalance
+          debtorBalanceAfter  = debtorBalance + paymentAmount
+          creditorBalanceAfter = creditorBalance - paymentAmount
+      in (debtorId, creditorId, paymentAmount) :
+           if | debtorBalanceAfter == 0 && creditorBalanceAfter == 0 -> go remainingDebtors remainingCreditors
+              | debtorBalanceAfter == 0                              -> go remainingDebtors ((creditorId, creditorBalanceAfter) : remainingCreditors)
+              | otherwise                                            -> go ((debtorId, debtorBalanceAfter) : remainingDebtors) remainingCreditors
 
 totalRepartija :: Repartija -> Monto
 totalRepartija repartija =

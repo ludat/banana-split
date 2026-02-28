@@ -4,7 +4,7 @@ import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Components.Ui5 as Ui5
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Pago, ResumenGrupo, Transaccion, ULID)
+import Generated.Api as Api exposing (Pago, ResumenGrupo, ShallowGrupo, Transaccion, ULID)
 import Html exposing (Html, a, div, p, section, span, text)
 import Html.Attributes as Attr exposing (class, style)
 import Html.Events exposing (onClick)
@@ -63,6 +63,12 @@ init grupoId store =
 type Msg
     = CrearPago Pago
     | AddedPagoResponse (Result Http.Error Pago)
+    | FreezeGrupo
+    | FreezeGrupoResponse (Result Http.Error ShallowGrupo)
+    | UnfreezeGrupo
+    | UnfreezeGrupoResponse (Result Http.Error ShallowGrupo)
+    | SaldarTransaccion ULID Pago
+    | SaldadaTransaccionResponse (Result Http.Error Pago)
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -90,6 +96,75 @@ update msg model =
                     model.grupoId
                     pago
                     AddedPagoResponse
+            )
+
+        FreezeGrupo ->
+            ( model
+            , Effect.sendCmd <|
+                Api.postGrupoByIdFreeze
+                    model.grupoId
+                    FreezeGrupoResponse
+            )
+
+        FreezeGrupoResponse (Ok _) ->
+            ( model
+            , Effect.batch
+                [ Store.refreshResumen model.grupoId
+                , Store.refreshGrupo model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Grupo congelado"
+                ]
+            )
+
+        FreezeGrupoResponse (Err _) ->
+            ( model
+            , Toasts.pushToast Toasts.ToastDanger "No se pudo congelar el grupo"
+            )
+
+        UnfreezeGrupo ->
+            ( model
+            , Effect.sendCmd <|
+                Api.deleteGrupoByIdFreeze
+                    model.grupoId
+                    UnfreezeGrupoResponse
+            )
+
+        UnfreezeGrupoResponse (Ok _) ->
+            ( model
+            , Effect.batch
+                [ Store.refreshResumen model.grupoId
+                , Store.refreshGrupo model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Grupo descongelado"
+                ]
+            )
+
+        UnfreezeGrupoResponse (Err _) ->
+            ( model
+            , Toasts.pushToast Toasts.ToastDanger "No se pudo descongelar el grupo"
+            )
+
+        SaldarTransaccion transaccionId pago ->
+            ( model
+            , Effect.sendCmd <|
+                Api.postGrupoByIdTransaccionescongeladasByTransaccionIdSaldar
+                    model.grupoId
+                    transaccionId
+                    pago
+                    SaldadaTransaccionResponse
+            )
+
+        SaldadaTransaccionResponse (Ok _) ->
+            ( model
+            , Effect.batch
+                [ Store.refreshResumen model.grupoId
+                , Store.refreshGrupo model.grupoId
+                , Store.refreshPagos model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Se completó el pago"
+                ]
+            )
+
+        SaldadaTransaccionResponse (Err _) ->
+            ( model
+            , Toasts.pushToast Toasts.ToastDanger "No se pudo completar el pago"
             )
 
 
@@ -207,9 +282,20 @@ view store model =
 
                                       else
                                         text ""
+                                    , if resumen.isFrozen then
+                                        Ui5.messageStrip
+                                            [ Attr.attribute "design" "Warning"
+                                            , style "margin-bottom" "1rem"
+                                            , Attr.property "hideCloseButton" (Encode.bool True)
+                                            ]
+                                            [ text "Este grupo está congelado. Las deudas están fijas y no se pueden agregar, editar ni eliminar pagos." ]
+
+                                      else
+                                        text ""
                                     , div [ style "width" "100%", style "margin-bottom" "1.5rem" ]
                                         [ viewNetosBarras grupo resumen.netos ]
                                     , viewTransferencias grupo resumen
+                                    , viewFreezeActions grupo resumen
                                     ]
 
                             NotAsked ->
@@ -223,6 +309,30 @@ view store model =
                     )
                 ]
             }
+
+
+viewFreezeActions : GrupoLike g -> ResumenGrupo -> Html Msg
+viewFreezeActions grupo resumen =
+    div [ style "display" "flex", style "justify-content" "flex-end", style "margin-top" "1rem" ]
+        [ if resumen.isFrozen then
+            Ui5.button
+                [ Attr.attribute "design" "Default"
+                , Attr.attribute "icon" "unlocked"
+                , onClick UnfreezeGrupo
+                ]
+                [ text "Descongelar" ]
+
+          else if resumen.cantidadPagos > 0 then
+            Ui5.button
+                [ Attr.attribute "design" "Default"
+                , Attr.attribute "icon" "locked"
+                , onClick FreezeGrupo
+                ]
+                [ text "Congelar" ]
+
+          else
+            text ""
+        ]
 
 
 viewTransferencias : GrupoLike g -> ResumenGrupo -> Html Msg
@@ -253,7 +363,13 @@ viewTransferencias grupo resumen =
                                 [ Attr.attribute "design" "Transparent"
                                 , Attr.attribute "icon" "arrow-right"
                                 , Attr.attribute "tooltip" "Crear pago para saldar esta deuda"
-                                , onClick <| CrearPago <| pagoFromTransaccion t
+                                , onClick <|
+                                    case t.transaccionId of
+                                        Just transaccionId ->
+                                            SaldarTransaccion transaccionId (pagoFromTransaccion t)
+
+                                        Nothing ->
+                                            CrearPago (pagoFromTransaccion t)
                                 , style "margin" "0 0.5rem"
                                 ]
                                 []

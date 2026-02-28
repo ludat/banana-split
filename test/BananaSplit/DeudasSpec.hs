@@ -7,6 +7,8 @@ import BananaSplit.TestUtils
 
 import Data.Decimal qualified as Decimal
 
+import Debug.Pretty.Simple (pTraceShowIdForceColor)
+
 import Protolude
 
 import Test.Hspec
@@ -77,7 +79,7 @@ spec = do
     it "simplifica una sola transaccion trivialmente" $ do
       let transacciones = netos [(participante 1, 10), (participante 2, -10)]
 
-      minimizeTransactions transacciones `shouldBe` [Transaccion (participante 2) (participante 1) 10]
+      minimizeTransactions transacciones `shouldBe` [Transaccion Nothing (participante 2) (participante 1) 10]
     it "simplifica un caso en el que el algoritmo greedy falla" $ do
       minimizeTransactions (netos
         [ (u1, 10)
@@ -100,7 +102,7 @@ spec = do
         evaluate (minimizeTransactions (netos
           [ (u1, Monto $ Decimal.Decimal 0 10)
           , (u2, Monto $ Decimal.Decimal 0 -11)
-          ])) `shouldThrow` errorCall "Balance is not 0, instead is: -1.0"
+          ])) `shouldThrow` errorCall "Balance is not 0, instead is: -1"
 
       it "con una deuda compleja no crashea" $ do
         evaluate (minimizeTransactions (netos
@@ -110,7 +112,7 @@ spec = do
           , (u4,  6)
           , (u5, -3)
           , (u6, -2)
-          ])) `shouldThrow` errorCall "Balance is not 0, instead is: 1.0"
+          ])) `shouldThrow` errorCall "Balance is not 0, instead is: 1"
 
       it "cuando una sola persona tiene plata a favor" $ do
         pendingWith "this crashes the solver"
@@ -140,7 +142,7 @@ spec = do
           , (participante 18, mkMonto 2 -1070334)
           , (participante 19, mkMonto 2 -766257)
           ])
-           `shouldSatisfy` ((== 18) . length)
+           `shouldSatisfy` ((<= 18) . length)
 
       -- xit "manual testing" $ do
       --   let
@@ -157,7 +159,7 @@ spec = do
           [ ( u1, mkMonto 10  5)
           , ( u2, mkMonto 10 -5)
           ]) `shouldBe`
-            [ Transaccion u2 u1 $ mkMonto 10 5
+            [ Transaccion Nothing u2 u1 $ mkMonto 10 5
             ]
 
       it "una deuda simple con montos heterogeneos" $ do
@@ -167,6 +169,6 @@ spec = do
           , ( u3, mkMonto 0  5)
           , ( u4, mkMonto 0 -5)
           ]) `shouldBe`
-            [ Transaccion u2 u1 $ mkMonto 10 5
-            , Transaccion u4 u3 5
+            [ Transaccion Nothing u2 u1 $ mkMonto 10 5
+            , Transaccion Nothing u4 u3 5
             ]

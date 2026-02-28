@@ -1,21 +1,5 @@
 {
   "nodes": {
-    "MIP": {
-      "flake": false,
-      "locked": {
-        "lastModified": 1767565529,
-        "narHash": "sha256-knKvwdHJf4WdaqaMEfIv1hqe78n7jH55kVuaWsKXjrs=",
-        "owner": "msakai",
-        "repo": "haskell-MIP",
-        "rev": "310e5959bb4b5a10e47c3257a7350303f74bf761",
-        "type": "github"
-      },
-      "original": {
-        "owner": "msakai",
-        "repo": "haskell-MIP",
-        "type": "github"
-      }
-    },
     "conferer": {
       "flake": false,
       "locked": {
@@ -98,7 +82,6 @@
     },
     "root": {
       "inputs": {
-        "MIP": "MIP",
         "conferer": "conferer",
         "flake-parts": "flake-parts",
         "haskell-flake": "haskell-flake",

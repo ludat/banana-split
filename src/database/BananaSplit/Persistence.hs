@@ -14,13 +14,19 @@ module BananaSplit.Persistence
     , deletePago
     , deleteRepartijaClaim
     , deleteShallowParticipante
+    , deleteTransaccionCongelada
     , fetchGrupo
+    , fetchGrupoIdFromClaim
+    , fetchGrupoIdFromRepartija
     , fetchPago
     , fetchRepartija
     , fetchShallowPagos
+    , fetchTransaccionesCongeladas
+    , freezeGrupo
     , savePago
     , saveRepartija
     , saveRepartijaClaim
+    , unfreezeGrupo
     , updateIsValidPago
     , updatePago
     ) where
@@ -55,6 +61,7 @@ data BananaSplitDb f = BananaSplitDb
   , repartijas :: f (TableEntity DistribucionRepartijaT)
   , repartija_items :: f (TableEntity RepartijaItemT)
   , repartija_claims :: f (TableEntity RepartijaClaimT)
+  , transacciones_congeladas :: f (TableEntity TransaccionCongeladaT)
   } deriving (Generic, Database be)
 
 db :: DatabaseSettings be BananaSplitDb
@@ -63,6 +70,7 @@ db = defaultDbSettings
 data GrupoT f = Grupo
   { id :: Columnar f ULID
   , nombre :: Columnar f Text
+  , is_frozen :: Columnar f Bool
   } deriving (Generic, Beamable )
 
 type GrupoId = PrimaryKey GrupoT Identity
@@ -282,11 +290,30 @@ instance Table RepartijaClaimT where
   data PrimaryKey RepartijaClaimT f = RepartijaClaimId (C f ULID) deriving (Generic, Beamable)
   primaryKey = RepartijaClaimId . (.repartijaclaimId)
 
+data TransaccionCongeladaT f = TransaccionCongelada
+  { id :: Columnar f ULID
+  , grupo :: PrimaryKey GrupoT f
+  , participante_from :: PrimaryKey ParticipanteT f
+  , participante_to :: PrimaryKey ParticipanteT f
+  , monto :: MontoT f
+  } deriving (Generic, Beamable)
+
+type TransaccionCongelada = TransaccionCongeladaT Identity
+type TransaccionCongeladaId = PrimaryKey TransaccionCongeladaT Identity
+
+deriving instance Show TransaccionCongelada
+deriving instance Show TransaccionCongeladaId
+
+instance Table TransaccionCongeladaT where
+  data PrimaryKey TransaccionCongeladaT f = TransaccionCongeladaId (Columnar f ULID)
+    deriving (Generic, Beamable)
+  primaryKey = TransaccionCongeladaId . (.id)
+
 createGrupo :: Text -> Text -> Pg M.Grupo
 createGrupo nombre participante = do
   newId <- liftIO ULID.getULID
   runInsert $ insert db.grupos $ insertValues [
-      Grupo newId nombre
+      Grupo newId nombre False
     ]
   p <- addParticipante newId participante
     `orElse` \e -> fail $ show e
@@ -313,6 +340,7 @@ fetchGrupo aGrupoId = do
         { M.id = grupo.id
         , M.nombre = grupo.nombre
         , M.participantes = participantes
+        , M.isFrozen = grupo.is_frozen
         }
 
 fetchPago :: ULID -> ULID -> Pg M.Pago
@@ -755,6 +783,77 @@ claimToRow claim =
     , repartijaclaimRepartijaItem = RepartijaItemId claim.itemId
     , repartijaclaimCantidad = fromIntegral <$> claim.cantidad
     }
+
+freezeGrupo :: ULID -> [M.Transaccion] -> Pg ()
+freezeGrupo grupoId transacciones = do
+  runDelete $ delete db.transacciones_congeladas
+    (\tc -> tc.grupo ==. GrupoId (val_ grupoId))
+  runUpdate $ update db.grupos
+    (\g -> g.is_frozen <-. val_ True)
+    (\g -> g.id ==. val_ grupoId)
+  transaccionIds <- liftIO $ forM transacciones $ \_ -> ULID.getULID
+  runInsert $ insert db.transacciones_congeladas $ insertValues
+    [ TransaccionCongelada
+        { id = tid
+        , grupo = GrupoId grupoId
+        , participante_from = ParticipanteId $ M.participanteId2ULID t.transaccionFrom
+        , participante_to = ParticipanteId $ M.participanteId2ULID t.transaccionTo
+        , monto = deconstructMonto t.transaccionMonto
+        }
+    | (tid, t) <- zip transaccionIds transacciones
+    ]
+
+unfreezeGrupo :: ULID -> Pg ()
+unfreezeGrupo grupoId = do
+  runDelete $ delete db.transacciones_congeladas
+    (\tc -> tc.grupo ==. GrupoId (val_ grupoId))
+  runUpdate $ update db.grupos
+    (\g -> g.is_frozen <-. val_ False)
+    (\g -> g.id ==. val_ grupoId)
+
+fetchTransaccionesCongeladas :: ULID -> Pg [M.Transaccion]
+fetchTransaccionesCongeladas grupoId = do
+  rows <- runSelectReturningList $ select $ do
+    tc <- all_ db.transacciones_congeladas
+    guard_ (tc.grupo ==. GrupoId (val_ grupoId))
+    pure tc
+  pure $ rows <&> \tc -> M.Transaccion
+    { M.transaccionId = Just tc.id
+    , M.transaccionFrom = M.ParticipanteId $ case tc.participante_from of ParticipanteId ulid -> ulid
+    , M.transaccionTo = M.ParticipanteId $ case tc.participante_to of ParticipanteId ulid -> ulid
+    , M.transaccionMonto = constructMonto tc.monto
+    }
+
+deleteTransaccionCongelada :: ULID -> Pg ()
+deleteTransaccionCongelada transaccionId = do
+  runDelete $ delete db.transacciones_congeladas
+    (\tc -> tc.id ==. val_ transaccionId)
+
+fetchGrupoIdFromRepartija :: ULID -> Pg (Maybe ULID)
+fetchGrupoIdFromRepartija repartijaId = runSelectReturningOne $ select $ do
+  repartija <- all_ db.repartijas
+  guard_ (repartija.id ==. val_ repartijaId)
+  distrib <- all_ db.distribuciones
+  guard_ (repartija.distribucion `references_` distrib)
+  pago <- all_ db.pagos
+  guard_ (pago.distribucion_pagadores `references_` distrib ||. pago.distribucion_deudores `references_` distrib)
+  let GrupoId grupoId = pago.pagoGrupo
+  pure grupoId
+
+fetchGrupoIdFromClaim :: ULID -> Pg (Maybe ULID)
+fetchGrupoIdFromClaim claimId = runSelectReturningOne $ select $ do
+  claim <- all_ db.repartija_claims
+  guard_ (claim.repartijaclaimId ==. val_ claimId)
+  item <- all_ db.repartija_items
+  guard_ (claim.repartijaclaimRepartijaItem `references_` item)
+  repartija <- all_ db.repartijas
+  guard_ (item.repartijaitemRepartija `references_` repartija)
+  distrib <- all_ db.distribuciones
+  guard_ (repartija.distribucion `references_` distrib)
+  pago <- all_ db.pagos
+  guard_ (pago.distribucion_pagadores `references_` distrib ||. pago.distribucion_deudores `references_` distrib)
+  let GrupoId grupoId = pago.pagoGrupo
+  pure grupoId
 
 instance HasSqlValueSyntax PgValueSyntax ULID where
   sqlValueSyntax :: ULID -> PgValueSyntax
