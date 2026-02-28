@@ -4,7 +4,8 @@ import Components.Ui5 as Ui5
 import Generated.Api exposing (ULID)
 import Html exposing (Attribute, Html, text)
 import Html.Attributes as Attr exposing (class)
-import Html.Events exposing (onClick)
+import Html.Events as Events exposing (onClick, preventDefaultOn)
+import Json.Decode as Decode
 import Json.Encode as Encode
 import Layouts.Default as Layout exposing (ShouldHideNavbar(..), viewGlobalUserSelector)
 import Models.Store as Store
@@ -31,46 +32,58 @@ navBar navBarModel store path _ =
     Ui5.sideNavigation
         [ Ui5.slot "sideContent"
         ]
-        [ Ui5.sideNavigationGroup
-            [ Attr.property "expanded" <| Encode.bool True
-            , Attr.attribute "text" <|
+        [ Ui5.sideNavigationItem
+            [ Attr.attribute "text" <|
                 case store |> Store.getGrupo navBarModel.grupoId of
                     NotAsked ->
-                        ""
+                        "Cargando..."
 
                     Loading ->
                         "Cargando..."
 
                     Failure _ ->
-                        ""
+                        "Error"
 
                     Success grupo ->
                         grupo.nombre
+            , Attr.attribute "icon" "home"
+            , Attr.property "unselectable" (Encode.bool True)
+            , Ui5.slot "header"
             ]
-            [ navBarItem
+            []
+        , navBarItem
+            { currentPath = path
+            , path = Grupos_Id_ { id = navBarModel.grupoId }
+            , icon = Just "activity-2"
+            , text = "Resumen"
+            , attrs = []
+            }
+            []
+        , navBarItem
+            { currentPath = path
+            , path = Grupos_GrupoId__Pagos { grupoId = navBarModel.grupoId }
+            , icon = Just "money-bills"
+            , text = "Pagos"
+            , attrs = []
+            }
+            [ navBarSubItem
                 { currentPath = path
-                , path = Grupos_Id_ { id = navBarModel.grupoId }
-                , icon = Just "activity-2"
-                , attrs = []
+                , path = Grupos_GrupoId__Pagos_New { grupoId = navBarModel.grupoId }
+                , icon = Just "add"
+                , text = "Nuevo Pago"
+                , attrs = [ Attr.attribute "design" "Action" ]
                 }
-              <|
-                "Resumen"
-            , navBarItem
-                { currentPath = path
-                , path = Grupos_GrupoId__Pagos { grupoId = navBarModel.grupoId }
-                , icon = Just "money-bills"
-                , attrs = []
-                }
-                "Pagos"
-            , navBarItem
-                { currentPath = path
-                , path = Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }
-                , icon = Just "user-edit"
-                , attrs = []
-                }
-                "Participantes"
+                []
             ]
-        , case Debug.log "Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe" (Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe) of
+        , navBarItem
+            { currentPath = path
+            , path = Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }
+            , icon = Just "user-edit"
+            , text = "Participantes"
+            , attrs = []
+            }
+            []
+        , case Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe of
             Just grupo ->
                 viewGlobalUserSelector navBarModel.userId grupo
 
@@ -83,15 +96,39 @@ navBarItem :
     { path : Path
     , currentPath : Path
     , attrs : List (Attribute Layout.Msg)
+    , text : String
     , icon : Maybe String
     }
-    -> String
+    -> List (Html Layout.Msg)
     -> Html Layout.Msg
-navBarItem props title =
+navBarItem props children =
     Ui5.sideNavigationItem
-        [ onClick <| Layout.ForwardSharedMessage HideNavbarAfterEvent <| Shared.NavigateTo props.path
-        , Attr.attribute "text" title
-        , props.icon |> Maybe.map (Attr.attribute "icon") |> Maybe.withDefault (class "")
-        , Attr.property "selected" (Encode.bool <| props.currentPath == props.path)
-        ]
+        ([ Events.stopPropagationOn "click" (Decode.succeed ( Layout.ForwardSharedMessage HideNavbarAfterEvent <| Shared.NavigateTo props.path, True ))
+         , Attr.attribute "text" props.text
+         , props.icon |> Maybe.map (Attr.attribute "icon") |> Maybe.withDefault (class "")
+         , Attr.property "selected" (Encode.bool <| props.currentPath == props.path)
+         ]
+            |> List.append props.attrs
+        )
+        children
+
+
+navBarSubItem :
+    { path : Path
+    , currentPath : Path
+    , attrs : List (Attribute Layout.Msg)
+    , text : String
+    , icon : Maybe String
+    }
+    -> List (Html Layout.Msg)
+    -> Html Layout.Msg
+navBarSubItem props children =
+    Ui5.sideNavigationSubItem
+        ([ Events.stopPropagationOn "click" (Decode.succeed ( Layout.ForwardSharedMessage HideNavbarAfterEvent <| Shared.NavigateTo props.path, True ))
+         , Attr.attribute "text" props.text
+         , props.icon |> Maybe.map (Attr.attribute "icon") |> Maybe.withDefault (class "")
+         , Attr.property "selected" (Encode.bool <| props.currentPath == props.path)
+         ]
+            |> List.append props.attrs
+        )
         []
