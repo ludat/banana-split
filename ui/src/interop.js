@@ -81,6 +81,51 @@ const beforeUnloadHandler = (event) => {
   event.preventDefault();
 };
 
+customElements.define(
+  "pwa-manifest",
+  class extends HTMLElement {
+    static observedAttributes = ["grupo-id", "nombre"];
+
+    connectedCallback() {
+      this.updateManifest();
+    }
+
+    attributeChangedCallback() {
+      this.updateManifest();
+    }
+
+    disconnectedCallback() {
+      const link = document.querySelector('link[rel="manifest"]');
+      if (link) link.removeAttribute("href");
+    }
+
+    updateManifest() {
+      const grupoId = this.getAttribute("grupo-id");
+      const nombre = this.getAttribute("nombre");
+      if (!grupoId || !nombre) return;
+      const origin = window.location.origin;
+      const manifest = {
+        name: `Banana Split - ${nombre}`,
+        short_name: nombre,
+        start_url: `${origin}/grupos/${grupoId}`,
+        scope: `${origin}/grupos/${grupoId}`,
+        display: "standalone",
+        background_color: "#ffffff",
+        theme_color: "#0070f2",
+        icons: [{ src: `${origin}/favicon.png`, sizes: "any", type: "image/png" }],
+      };
+      const dataUrl = `data:application/manifest+json,${encodeURIComponent(JSON.stringify(manifest))}`;
+      let link = document.querySelector('link[rel="manifest"]');
+      if (!link) {
+        link = document.createElement("link");
+        link.rel = "manifest";
+        document.head.appendChild(link);
+      }
+      link.href = dataUrl;
+    }
+  }
+);
+
 export const flags = ({ env }) => {
   const now = new Date();
   const lastReadRaw = localStorage.getItem("banana-split:lastReadChangelog");
