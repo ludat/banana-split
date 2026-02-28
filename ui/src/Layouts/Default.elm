@@ -154,7 +154,17 @@ view navBarFunction remoteGrupo activeUser toasts lastReadChangelog now { toCont
         else
             content.title
     , body =
-        [ Ui5.navigationLayout
+        [ case remoteGrupo of
+            Success grupo ->
+                Html.node "pwa-manifest"
+                    [ Attr.attribute "grupo-id" grupo.id
+                    , Attr.attribute "nombre" grupo.nombre
+                    ]
+                    []
+
+            _ ->
+                text ""
+        , Ui5.navigationLayout
             [ Attr.attribute "mode" <|
                 case ( navBarFunction, model.navBarOpen ) of
                     ( _, True ) ->
