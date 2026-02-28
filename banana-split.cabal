@@ -27,7 +27,6 @@ common base-settings
 
   build-depends:
     Decimal,
-    MIP,
     aeson,
     base,
     base64-bytestring,

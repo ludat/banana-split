@@ -9,15 +9,19 @@ module Site.Handler.Pagos
     , handlePagoResumenPost
     , handlePagoUpdate
     , handlePagosGet
+    , handleSaldarTransaccion
     ) where
 
 import BananaSplit
-import BananaSplit.Persistence (deletePago, fetchPago, fetchShallowPagos, savePago, updatePago)
+import BananaSplit.Persistence (deletePago, deleteTransaccionCongelada, fetchGrupo, fetchPago,
+                                fetchShallowPagos, savePago, updatePago)
 
 import Protolude
 
+import Servant (err404)
+
 import Site.Api
-import Site.Handler.Utils (runBeam)
+import Site.Handler.Utils (err423, orElseMay, runBeam, throwJsonError)
 import Site.Types
 
 handlePagosGet :: ULID -> AppHandler [ShallowPago]
@@ -30,6 +34,9 @@ handlePagoGet grupoId pagoId = do
 
 handlePagoPost :: ULID -> Pago -> AppHandler Pago
 handlePagoPost grupoId pago = do
+  shallowGrupo <- runBeam (fetchGrupo grupoId)
+    `orElseMay` throwJsonError err404 "Grupo no encontrado"
+  when shallowGrupo.isFrozen $ throwJsonError err423 "El grupo está congelado"
   runBeam (savePago grupoId pago)
 
 handlePagoResumenPost :: Pago -> AppHandler ResumenPago
@@ -41,10 +48,22 @@ handlePagoResumenPost pago = do
     }
 
 handleDeletePago :: ULID -> ULID -> AppHandler ULID
-handleDeletePago _grupoId pagoId = do
+handleDeletePago grupoId pagoId = do
+  shallowGrupo <- runBeam (fetchGrupo grupoId)
+    `orElseMay` throwJsonError err404 "Grupo no encontrado"
+  when shallowGrupo.isFrozen $ throwJsonError err423 "El grupo está congelado"
   runBeam (deletePago pagoId)
   pure pagoId
 
 handlePagoUpdate :: ULID -> ULID -> Pago -> AppHandler Pago
 handlePagoUpdate grupoId pagoId pago = do
+  shallowGrupo <- runBeam (fetchGrupo grupoId)
+    `orElseMay` throwJsonError err404 "Grupo no encontrado"
+  when shallowGrupo.isFrozen $ throwJsonError err423 "El grupo está congelado"
   runBeam $ updatePago grupoId pagoId pago
+
+handleSaldarTransaccion :: ULID -> ULID -> Pago -> AppHandler Pago
+handleSaldarTransaccion grupoId transaccionId pago = do
+  savedPago <- runBeam $ savePago grupoId pago
+  runBeam $ deleteTransaccionCongelada transaccionId
+  pure savedPago
