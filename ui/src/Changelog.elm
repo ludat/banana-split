@@ -14,6 +14,10 @@ changelog =
       , title = "Nueva interfaz con UI5"
       , description = "Se migró la interfaz de Bulma CSS a UI5 Web Components para una experiencia más moderna y consistente."
       }
+    , { date = Date.fromCalendarDate 2026 Mar 3
+      , title = "Instalá como un app"
+      , description = "Ahora podés instalar un grupo en tu celu como si fuera un app nativa. Adios a perder el enlace de un grupo."
+      }
     ]
 
 
