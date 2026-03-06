@@ -1,9 +1,8 @@
-module Site.Handler.GruposSpec
-    ( spec
-    ) where
+module Site.Handler.GruposSpec (
+  spec,
+) where
 
 import Protolude
-
 import Test.Hspec
 
 spec :: Spec

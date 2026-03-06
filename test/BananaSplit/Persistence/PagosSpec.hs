@@ -1,7 +1,12 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
-module BananaSplit.Persistence.PagosSpec
-    ( spec
-    ) where
+
+module BananaSplit.Persistence.PagosSpec (
+  spec,
+) where
+
+import Protolude
+import Test.Hspec
+import Test.QuickCheck
 
 import BananaSplit.Core
 import BananaSplit.Deudas
@@ -10,20 +15,15 @@ import BananaSplit.Persistence
 import BananaSplit.Persistence.SpecHook
 import BananaSplit.Repartija
 
-import Protolude
-
-import Test.Hspec
-import Test.QuickCheck
-
 spec :: SpecWith RunDb
 spec =
   describe "pago persistance" $ do
     it "I can update a distribution multiple times and the last one is the one that counts" $ \(RunDb runDb) -> property $ \pagoOriginal d1 d2 -> do
       grupo <- runDb $ createGrupo "Test Grupo" "alguien"
       pago <- runDb $ savePago grupo.id pagoOriginal
-      pago <- runDb $ updatePago grupo.id pago.pagoId pago {pagadores = pago.pagadores { tipo = d1 }}
-      pago <- runDb $ updatePago grupo.id pago.pagoId pago {pagadores = pago.pagadores { tipo = d2 }}
-      pagoWithoutIds pago `shouldBe` pagoWithoutIds pagoOriginal {pagadores = Distribucion nullUlid d2}
+      pago <- runDb $ updatePago grupo.id pago.pagoId pago{pagadores = pago.pagadores{tipo = d1}}
+      pago <- runDb $ updatePago grupo.id pago.pagoId pago{pagadores = pago.pagadores{tipo = d2}}
+      pagoWithoutIds pago `shouldBe` pagoWithoutIds pagoOriginal{pagadores = Distribucion nullUlid d2}
 
     it "Pago roundtrips from the db" $ \(RunDb runDb) -> property $ \pago -> do
       grupo <- runDb $ createGrupo "Test Grupo" "alguien"
@@ -47,12 +47,13 @@ instance Arbitrary Monto where
     Monto <$> fmap fromInteger arbitrary
 
 instance Arbitrary Pago where
-  arbitrary = Pago nullUlid
-    <$> arbitrary
-    <*> pure False
-    <*> pure "nombre"
-    <*> arbitrary
-    <*> arbitrary
+  arbitrary =
+    Pago nullUlid
+      <$> arbitrary
+      <*> pure False
+      <*> pure "nombre"
+      <*> arbitrary
+      <*> arbitrary
 
 pagoWithoutIds :: Pago -> Pago
 pagoWithoutIds pago =
@@ -74,7 +75,7 @@ distribucionWithoutIds distribucion =
 
 distribucionMontoEquitativoWithoutIds :: DistribucionMontoEquitativo -> DistribucionMontoEquitativo
 distribucionMontoEquitativoWithoutIds d =
-  d { id = nullUlid }
+  d{id = nullUlid}
 
 distribucionMontosEspecificosWithoutIds :: DistribucionMontosEspecificos -> DistribucionMontosEspecificos
 distribucionMontosEspecificosWithoutIds d =
@@ -85,7 +86,7 @@ distribucionMontosEspecificosWithoutIds d =
 
 montoEspecificoWithoutIds :: MontoEspecifico -> MontoEspecifico
 montoEspecificoWithoutIds m =
-  m { id = nullUlid }
+  m{id = nullUlid}
 
 repartijaWithoutIds :: Repartija -> Repartija
 repartijaWithoutIds r =
@@ -97,8 +98,8 @@ repartijaWithoutIds r =
 
 repartijaItemWithoutIds :: RepartijaItem -> RepartijaItem
 repartijaItemWithoutIds item =
-  item { id = nullUlid }
+  item{id = nullUlid}
 
 repartijaClaimWithoutIds :: RepartijaClaim -> RepartijaClaim
 repartijaClaimWithoutIds claim =
-  claim { id = nullUlid }
+  claim{id = nullUlid}
