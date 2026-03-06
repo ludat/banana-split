@@ -82,15 +82,17 @@ type alias ResumenGrupo  =
    , netos: (Netos Monto)
    , cantidadPagosInvalidos: Int
    , cantidadPagos: Int
+   , isFrozen: Bool
    }
 
 jsonDecResumenGrupo : Json.Decode.Decoder ( ResumenGrupo )
 jsonDecResumenGrupo =
-   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos pcantidadPagos -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos, cantidadPagos = pcantidadPagos})
+   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos pcantidadPagos pisFrozen -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos, cantidadPagos = pcantidadPagos, isFrozen = pisFrozen})
    |> required "transaccionesParaSaldar" (Json.Decode.list (jsonDecTransaccion))
    |> required "netos" (jsonDecNetos (jsonDecMonto))
    |> required "cantidadPagosInvalidos" (Json.Decode.int)
    |> required "cantidadPagos" (Json.Decode.int)
+   |> required "isFrozen" (Json.Decode.bool)
 
 jsonEncResumenGrupo : ResumenGrupo -> Value
 jsonEncResumenGrupo  val =
@@ -99,6 +101,7 @@ jsonEncResumenGrupo  val =
    , ("netos", (jsonEncNetos (jsonEncMonto)) val.netos)
    , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
    , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
+   , ("isFrozen", Json.Encode.bool val.isFrozen)
    ]
 
 
@@ -202,14 +205,16 @@ type alias ShallowGrupo  =
    { id: ULID
    , nombre: String
    , participantes: (List Participante)
+   , isFrozen: Bool
    }
 
 jsonDecShallowGrupo : Json.Decode.Decoder ( ShallowGrupo )
 jsonDecShallowGrupo =
-   Json.Decode.succeed (\pid pnombre pparticipantes -> {id = pid, nombre = pnombre, participantes = pparticipantes})
+   Json.Decode.succeed (\pid pnombre pparticipantes pisFrozen -> {id = pid, nombre = pnombre, participantes = pparticipantes, isFrozen = pisFrozen})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
    |> required "participantes" (Json.Decode.list (jsonDecParticipante))
+   |> required "isFrozen" (Json.Decode.bool)
 
 jsonEncShallowGrupo : ShallowGrupo -> Value
 jsonEncShallowGrupo  val =
@@ -217,6 +222,7 @@ jsonEncShallowGrupo  val =
    [ ("id", jsonEncULID val.id)
    , ("nombre", Json.Encode.string val.nombre)
    , ("participantes", (Json.Encode.list jsonEncParticipante) val.participantes)
+   , ("isFrozen", Json.Encode.bool val.isFrozen)
    ]
 
 
@@ -242,24 +248,27 @@ jsonEncParticipante  val =
 
 
 type alias Transaccion  =
-   { transaccionFrom: ParticipanteId
-   , transaccionTo: ParticipanteId
-   , transaccionMonto: Monto
+   { id: (Maybe ULID)
+   , from: ParticipanteId
+   , to: ParticipanteId
+   , monto: Monto
    }
 
 jsonDecTransaccion : Json.Decode.Decoder ( Transaccion )
 jsonDecTransaccion =
-   Json.Decode.succeed (\ptransaccionFrom ptransaccionTo ptransaccionMonto -> {transaccionFrom = ptransaccionFrom, transaccionTo = ptransaccionTo, transaccionMonto = ptransaccionMonto})
-   |> required "transaccionFrom" (jsonDecParticipanteId)
-   |> required "transaccionTo" (jsonDecParticipanteId)
-   |> required "transaccionMonto" (jsonDecMonto)
+   Json.Decode.succeed (\pid pfrom pto pmonto -> {id = pid, from = pfrom, to = pto, monto = pmonto})
+   |> fnullable "id" (jsonDecULID)
+   |> required "from" (jsonDecParticipanteId)
+   |> required "to" (jsonDecParticipanteId)
+   |> required "monto" (jsonDecMonto)
 
 jsonEncTransaccion : Transaccion -> Value
 jsonEncTransaccion  val =
    Json.Encode.object
-   [ ("transaccionFrom", jsonEncParticipanteId val.transaccionFrom)
-   , ("transaccionTo", jsonEncParticipanteId val.transaccionTo)
-   , ("transaccionMonto", jsonEncMonto val.transaccionMonto)
+   [ ("id", (maybeEncode (jsonEncULID)) val.id)
+   , ("from", jsonEncParticipanteId val.from)
+   , ("to", jsonEncParticipanteId val.to)
+   , ("monto", jsonEncMonto val.monto)
    ]
 
 
@@ -1004,6 +1013,98 @@ deleteRepartijasClaimsByClaimId capture_claimId toMsg =
                 Http.emptyBody
             , expect =
                 Http.expectJson toMsg Json.Decode.string
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postGrupoByIdFreeze : ULID -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
+postGrupoByIdFreeze capture_id toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "freeze"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecShallowGrupo
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+deleteGrupoByIdFreeze : ULID -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
+deleteGrupoByIdFreeze capture_id toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "DELETE"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "freeze"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecShallowGrupo
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postGrupoByIdTransaccionescongeladasByTransaccionIdSaldar : ULID -> ULID -> Pago -> (Result Http.Error  (Pago)  -> msg) -> Cmd msg
+postGrupoByIdTransaccionescongeladasByTransaccionIdSaldar capture_id capture_transaccionId body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "transacciones-congeladas"
+                    , (capture_transaccionId)
+                    , "saldar"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncPago body)
+            , expect =
+                Http.expectJson toMsg jsonDecPago
             , timeout =
                 Nothing
             , tracker =

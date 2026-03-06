@@ -82,6 +82,14 @@ navBar navBarModel store path _ =
             , attrs = []
             }
             []
+        , navBarItem
+            { currentPath = path
+            , path = Grupos_GrupoId__Settings { grupoId = navBarModel.grupoId }
+            , icon = Just "action-settings"
+            , text = "Ajustes"
+            , attrs = []
+            }
+            []
         , case Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe of
             Just grupo ->
                 viewGlobalUserSelector navBarModel.userId grupo

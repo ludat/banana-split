@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Site.Handler.Utils
     ( err200
+    , err423
     , orElse
     , orElseMay
     , orElse_
@@ -31,6 +32,13 @@ redirect s = throwError err302 {errHeaders = [("Location", s)]}
 err200 :: ServerError
 err200 = ServerError { errHTTPCode = 200
                      , errReasonPhrase = "OK"
+                     , errBody = ""
+                     , errHeaders = []
+                     }
+
+err423 :: ServerError
+err423 = ServerError { errHTTPCode = 423
+                     , errReasonPhrase = "Locked"
                      , errBody = ""
                      , errHeaders = []
                      }
