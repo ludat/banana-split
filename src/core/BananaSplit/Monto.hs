@@ -3,28 +3,30 @@
 {-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TypeFamilies #-}
-module BananaSplit.Monto
-    ( Monto (..)
-    , getLugaresDespuesDeLaComa
-    , inMonto
-    , mkMonto
-    , monto2Text
-    , scientificToMonto
-    , times
-    ) where
 
+module BananaSplit.Monto (
+  Monto (..),
+  getLugaresDespuesDeLaComa,
+  inMonto,
+  mkMonto,
+  monto2Text,
+  scientificToMonto,
+  times,
+) where
 
 import Data.Aeson
 import Data.Decimal as Decimal
 import Data.Scientific
-
-import Elm.TyRep (EAlias (..), ETCon (..), EType (..), ETypeDef (..), ETypeName (..),
-                  IsElmDefinition (..))
-
+import Elm.TyRep (
+  EAlias (..),
+  ETCon (..),
+  EType (..),
+  ETypeDef (..),
+  ETypeName (..),
+  IsElmDefinition (..),
+ )
 import GHC.Generics
-
 import Protolude
-
 import Servant (FromHttpApiData (..))
 
 newtype Monto = Monto Decimal
@@ -40,25 +42,28 @@ getLugaresDespuesDeLaComa :: Monto -> Word8
 getLugaresDespuesDeLaComa (Monto (Decimal.Decimal lugaresDespuesDeLaComa _)) =
   lugaresDespuesDeLaComa
 
-times :: Integral n => Monto -> n -> Monto
+times :: (Integral n) => Monto -> n -> Monto
 (Monto (Decimal.Decimal lugaresDespuesDeLaComa decimal)) `times` n =
   Monto $ Decimal lugaresDespuesDeLaComa (decimal * fromIntegral n)
 
 instance Generic Monto where
-  type Rep Monto =
-    D1 ('MetaData "Monto" "BananaSplit.Monto" "banana-split" 'False)
-      (C1 ('MetaCons "Monto" 'PrefixI 'False)
-        ( S1 ('MetaSel ('Just "lugaresDespuesDeLaComa") 'NoSourceUnpackedness 'NoSourceStrictness 'DecidedLazy) (Rec0 Word8)
-         :*: S1 ('MetaSel ('Just "valor") 'NoSourceUnpackedness 'NoSourceStrictness 'DecidedLazy) (Rec0 Integer)
+  type
+    Rep Monto =
+      D1
+        ('MetaData "Monto" "BananaSplit.Monto" "banana-split" 'False)
+        ( C1
+            ('MetaCons "Monto" 'PrefixI 'False)
+            ( S1 ('MetaSel ('Just "lugaresDespuesDeLaComa") 'NoSourceUnpackedness 'NoSourceStrictness 'DecidedLazy) (Rec0 Word8)
+                :*: S1 ('MetaSel ('Just "valor") 'NoSourceUnpackedness 'NoSourceStrictness 'DecidedLazy) (Rec0 Integer)
+            )
         )
-      )
 
   from (Monto m) =
     let
       lugaresDespuesDeLaComa = Decimal.decimalPlaces m
-      valor =  Decimal.decimalMantissa m
+      valor = Decimal.decimalMantissa m
     in
-    M1 (M1 (M1 (K1 lugaresDespuesDeLaComa) :*: M1 (K1 valor)))
+      M1 (M1 (M1 (K1 lugaresDespuesDeLaComa) :*: M1 (K1 valor)))
 
   to (M1 (M1 (M1 (K1 lugaresDespuesDeLaComa) :*: M1 (K1 valor)))) =
     Monto $ Decimal.Decimal lugaresDespuesDeLaComa valor
@@ -90,25 +95,26 @@ instance FromHttpApiData Monto where
 instance IsElmDefinition Monto where
   compileElmDef :: Proxy Monto -> ETypeDef
   compileElmDef _ =
-    ETypeAlias (EAlias {
-      ea_name = ETypeName {et_name = "Monto", et_args = []},
-      ea_fields =
-        [ ("lugaresDespuesDeLaComa", ETyCon (ETCon {tc_name = "Int"}))
-        , ("valor", ETyCon (ETCon {tc_name = "Int"}))
-        ],
-      ea_omit_null = False
-      , ea_newtype = False
-      , ea_unwrap_unary = True
-      })
+    ETypeAlias
+      ( EAlias
+          { ea_name = ETypeName{et_name = "Monto", et_args = []}
+          , ea_fields =
+              [ ("lugaresDespuesDeLaComa", ETyCon (ETCon{tc_name = "Int"}))
+              , ("valor", ETyCon (ETCon{tc_name = "Int"}))
+              ]
+          , ea_omit_null = False
+          , ea_newtype = False
+          , ea_unwrap_unary = True
+          }
+      )
 
 scientificToMonto :: Scientific -> Monto
 scientificToMonto = Monto . scientificToDecimal
 
 scientificToDecimal :: Scientific -> Decimal
 scientificToDecimal s =
-    let c = coefficient s
-        e = base10Exponent s
-    in
-        if e >= 0
-           then Decimal 0 (c * 10 ^ e)
-           else Decimal (fromIntegral $ negate e) c
+  let c = coefficient s
+      e = base10Exponent s
+  in if e >= 0
+       then Decimal 0 (c * 10 ^ e)
+       else Decimal (fromIntegral $ negate e) c

@@ -1,19 +1,18 @@
 {-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE TemplateHaskell #-}
-module BananaSplit.Participante
-    ( Participante (..)
-    , ParticipanteId (..)
-    , participanteId2ULID
-    ) where
+
+module BananaSplit.Participante (
+  Participante (..),
+  ParticipanteId (..),
+  participanteId2ULID,
+) where
+
+import Data.Aeson
+import Elm.Derive qualified as Elm
+import Protolude
 
 import BananaSplit.ULID (ULID)
 import BananaSplit.ULID qualified as ULID
-
-import Data.Aeson
-
-import Elm.Derive qualified as Elm
-
-import Protolude
 
 data Participante = Participante
   { participanteId :: ULID

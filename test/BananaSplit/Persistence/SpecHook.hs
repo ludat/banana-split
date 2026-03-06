@@ -1,21 +1,16 @@
-module BananaSplit.Persistence.SpecHook
-    ( RunDb (..)
-    , hook
-    ) where
-
-
-import BananaSplit.PgRoll (init, startAndComplete)
+module BananaSplit.Persistence.SpecHook (
+  RunDb (..),
+  hook,
+) where
 
 import Conferer qualified
-
 import Database.Beam.Postgres (Pg, runBeamPostgres)
 import Database.PostgreSQL.Simple (Connection, close, connectPostgreSQL, execute_)
-
 import Protolude
-
-import Site.Config (createConfig)
-
 import Test.Hspec
+
+import BananaSplit.PgRoll (init, startAndComplete)
+import Site.Config (createConfig)
 
 hook :: SpecWith RunDb -> Spec
 hook =
@@ -61,16 +56,16 @@ resetTestDb conn = do
 withTestDbConn :: ActionWith RunDb -> IO ()
 withTestDbConn action = do
   bracket
-    (do
-      c <- connectTestDb
-      _ <- runBeamPostgres c $ liftIO $ execute_ c "BEGIN"
-      pure c
+    ( do
+        c <- connectTestDb
+        _ <- runBeamPostgres c $ liftIO $ execute_ c "BEGIN"
+        pure c
     )
-    (\c -> do
-      _ <- runBeamPostgres c $ liftIO $ execute_ c "ROLLBACK"
-      close c
-      pure ()
+    ( \c -> do
+        _ <- runBeamPostgres c $ liftIO $ execute_ c "ROLLBACK"
+        close c
+        pure ()
     )
-    (\conn -> do
-      action $ RunDb $ runBeamPostgres conn
+    ( \conn -> do
+        action $ RunDb $ runBeamPostgres conn
     )

@@ -1,17 +1,15 @@
-module BananaSplit.PgRoll
-    ( getLatestSchema
-    , init
-    , rawCall
-    , rollback
-    , start
-    , startAndComplete
-    ) where
+module BananaSplit.PgRoll (
+  getLatestSchema,
+  init,
+  rawCall,
+  rollback,
+  start,
+  startAndComplete,
+) where
+
 import Conferer
-
 import Data.String
-
 import Protolude
-
 import System.Process (callProcess, readProcess)
 
 rawCall :: Config -> [String] -> IO ()
@@ -23,7 +21,7 @@ rawCall config args = do
 getLatestSchema :: IO String
 getLatestSchema =
   readProcess "pgroll" ["latest", "schema", "--local", "./migrations"] ""
-      <&> filter (not . isControl)
+    <&> filter (not . isControl)
 
 init :: Config -> IO ()
 init config = do

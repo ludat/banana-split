@@ -1,14 +1,13 @@
-module Site.Handler.Receipt
-    ( handleReceiptImageParse
-    ) where
+module Site.Handler.Receipt (
+  handleReceiptImageParse,
+) where
+
+import Protolude
 
 import BananaSplit.Monto
 import BananaSplit.Receipts (ParsedReceipt (..), ParsedReceiptItem (..), analyzeReceiptImage)
 import BananaSplit.Repartija
 import BananaSplit.ULID
-
-import Protolude
-
 import Site.Api (ReceiptImageRequest (..), ReceiptImageResponse (..))
 import Site.Types
 
@@ -19,13 +18,17 @@ handleReceiptImageParse req = do
   result <- liftIO $ analyzeReceiptImage config req.imageBase64
 
   case result of
-    Left err -> pure $ ReceiptImageError { error = err }
-    Right parsedReceipt -> pure $ ReceiptImageSuccess { items =
-        parsedReceipt.items
-        <&> \i -> RepartijaItem
-                { id = nullUlid
-                , nombre = i.nombre
-                , monto = scientificToMonto i.monto
-                , cantidad = i.cantidad
-                }
-      }
+    Left err -> pure $ ReceiptImageError{error = err}
+    Right parsedReceipt ->
+      pure $
+        ReceiptImageSuccess
+          { items =
+              parsedReceipt.items
+                <&> \i ->
+                  RepartijaItem
+                    { id = nullUlid
+                    , nombre = i.nombre
+                    , monto = scientificToMonto i.monto
+                    , cantidad = i.cantidad
+                    }
+          }

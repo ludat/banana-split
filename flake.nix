@@ -76,6 +76,7 @@
                     lapack
                     cbc
                     tesseract
+                    fourmolu
                     glpk
                     libpq
                     ;

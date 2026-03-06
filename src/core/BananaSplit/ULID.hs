@@ -1,21 +1,24 @@
 {-# OPTIONS_GHC -Wno-orphans #-}
-module BananaSplit.ULID
-    ( module Data.ULID
-    , nullUlid
-    ) where
+
+module BananaSplit.ULID (
+  module Data.ULID,
+  nullUlid,
+) where
 
 import Control.Monad
-
 import Data.Aeson
 import Data.Aeson.Types
 import Data.ULID
-
-import Elm.TyRep (EPrimAlias (..), ETCon (..), EType (..), ETypeDef (..), ETypeName (..),
-                  IsElmDefinition (..))
-
+import Elm.TyRep (
+  EPrimAlias (..),
+  ETCon (..),
+  EType (..),
+  ETypeDef (..),
+  ETypeName (..),
+  IsElmDefinition (..),
+ )
 import Protolude
 import Protolude.Error
-
 import Servant.API
 
 instance ToJSON ULID where
@@ -44,11 +47,10 @@ instance FromHttpApiData ULID where
       Just ulid -> pure ulid
       Nothing -> Left $ "cant parse a ulid from: " <> show t <> ""
 
-
 instance IsElmDefinition ULID where
   compileElmDef :: Proxy ULID -> ETypeDef
   compileElmDef _ =
-    ETypePrimAlias (EPrimAlias {epa_name = ETypeName {et_name = "ULID", et_args = []}, epa_type = ETyCon (ETCon {tc_name = "String"})})
+    ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "ULID", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
 
 nullUlid :: ULID
 nullUlid = fromRight (error "impossible") $ ulidFromInteger 0

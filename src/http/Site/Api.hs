@@ -1,90 +1,89 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
 module Site.Api where
 
+import Elm.Derive qualified as Elm
+import GHC.Generics
+import Protolude
+import Servant
 
 import BananaSplit
 
-import Elm.Derive qualified as Elm
-
-import GHC.Generics
-
-import Protolude
-
-import Servant
-
-
 type HXTrigger = Header "HX-Trigger" Text
+
 type HXRetarget = Header "HX-Retarget" Text
+
 type HXReswap = Header "HX-Reswap" Text
 
 data Api routes
   = Api
-    { _routeGrupoPost ::
+  { _routeGrupoPost ::
       routes :- "grupo" :> ReqBody '[JSON] CreateGrupoParams :> Post '[JSON] Grupo
-    , _routeGrupoGet ::
+  , _routeGrupoGet ::
       routes :- "grupo" :> Capture "id" ULID :> Get '[JSON] ShallowGrupo
-    , _routeGrupoGetNetos ::
+  , _routeGrupoGetNetos ::
       routes :- "grupo" :> Capture "id" ULID :> "resumen" :> Get '[JSON] ResumenGrupo
-    , _routeGrupoParticipanteAdd ::
+  , _routeGrupoParticipanteAdd ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
-    , _routePagoPost ::
+  , _routePagoPost ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
-    , _routePagosGet ::
+  , _routePagosGet ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Get '[JSON] [ShallowPago]
-    , _routePagoGet ::
+  , _routePagoGet ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> Get '[JSON] Pago
-    , _routePagoResumenPost ::
+  , _routePagoResumenPost ::
       routes :- "pagos" :> "resumen" :> ReqBody '[JSON] Pago :> Post '[JSON] ResumenPago
-    , _routeGrupoParticipanteDelete ::
+  , _routeGrupoParticipanteDelete ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> Delete '[JSON] ULID
-    , _routeGrupoPagoDelete ::
+  , _routeGrupoPagoDelete ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> Delete '[JSON] ULID
-    , _routePagoUpdate ::
+  , _routePagoUpdate ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> ReqBody '[JSON] Pago :> Put '[JSON] Pago
-    -- Repartija
+  , -- Repartija
     -- , _routeRepartijaPost ::
     --   routes :- "grupo" :> Capture "id" ULID :> "repartijas" :> ReqBody '[JSON] Repartija :> Post '[JSON] Repartija
-    , _routeRepartijaGet ::
+    _routeRepartijaGet ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> Get '[JSON] Repartija
-    , _routeRepartijaClaimPut ::
+  , _routeRepartijaClaimPut ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> ReqBody '[JSON] RepartijaClaim :> Put '[JSON] RepartijaClaim
-    , _routeRepartijaClaimDelete ::
+  , _routeRepartijaClaimDelete ::
       routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] Text
-    -- , _routeRepartijaToPago ::
+  , -- , _routeRepartijaToPago ::
     --   routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
-    , _routeGrupoFreeze ::
+    _routeGrupoFreeze ::
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Post '[JSON] ShallowGrupo
-    , _routeGrupoUnfreeze ::
+  , _routeGrupoUnfreeze ::
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] ShallowGrupo
-    , _routeGrupoSaldarTransaccion ::
+  , _routeGrupoSaldarTransaccion ::
       routes :- "grupo" :> Capture "id" ULID :> "transacciones-congeladas" :> Capture "transaccionId" ULID :> "saldar" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
-    , _routeReceiptImageParse ::
+  , _routeReceiptImageParse ::
       routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
-    , _routeHealth ::
+  , _routeHealth ::
       routes :- "health" :> Get '[JSON] Text
-    -- , _routeRepartijaItemDesdoblar ::
-    --   routes :- "repartijas" :> Capture "repartijaId" ULID :> "claim" :> Capture "claimId":> Post '[JSON] String
-    }
+      -- , _routeRepartijaItemDesdoblar ::
+      --   routes :- "repartijas" :> Capture "repartijaId" ULID :> "claim" :> Capture "claimId":> Post '[JSON] String
+  }
   deriving (Generic)
 
 type TheAPI routes = ToServant Api routes
 
 data ParticipanteAddParams = ParticipanteAddParams
   { name :: Text
-  } deriving (Show, Eq, Generic)
+  }
+  deriving (Show, Eq, Generic)
 
 data CreateGrupoParams = CreateGrupoParams
   { grupoName :: Text
   , grupoParticipante :: Text
-  } deriving (Show, Eq, Generic)
+  }
+  deriving (Show, Eq, Generic)
 
 data ResumenGrupo = ResumenGrupo
   { transaccionesParaSaldar :: [Transaccion]
@@ -92,17 +91,20 @@ data ResumenGrupo = ResumenGrupo
   , cantidadPagosInvalidos :: Int
   , cantidadPagos :: Int
   , isFrozen :: Bool
-  } deriving (Show, Eq, Generic)
+  }
+  deriving (Show, Eq, Generic)
 
 data ResumenPago = ResumenPago
   { resumen :: ResumenNetos
   , resumenPagadores :: ResumenNetos
   , resumenDeudores :: ResumenNetos
-  } deriving (Show, Eq, Generic)
+  }
+  deriving (Show, Eq, Generic)
 
 data ReceiptImageRequest = ReceiptImageRequest
   { imageBase64 :: Text
-  } deriving (Show, Eq, Generic)
+  }
+  deriving (Show, Eq, Generic)
 
 data ReceiptImageResponse
   = ReceiptImageSuccess

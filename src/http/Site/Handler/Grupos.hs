@@ -1,27 +1,33 @@
-module Site.Handler.Grupos
-    ( CreateGrupoParams
-    , handleCreateGrupo
-    , handleCreateParticipante
-    , handleDeleteParticipante
-    , handleFreezeGrupo
-    , handleGetNetos
-    , handleShowGrupo
-    , handleUnfreezeGrupo
-    ) where
-
-import BananaSplit
-import BananaSplit.Persistence (addParticipante, createGrupo, deleteShallowParticipante, fetchGrupo,
-                                fetchPago, fetchShallowPagos, fetchTransaccionesCongeladas,
-                                freezeGrupo, unfreezeGrupo, updateIsValidPago)
+module Site.Handler.Grupos (
+  CreateGrupoParams,
+  handleCreateGrupo,
+  handleCreateParticipante,
+  handleDeleteParticipante,
+  handleFreezeGrupo,
+  handleGetNetos,
+  handleShowGrupo,
+  handleUnfreezeGrupo,
+) where
 
 import Protolude
-
 import Servant
 
+import BananaSplit
+import BananaSplit.Persistence (
+  addParticipante,
+  createGrupo,
+  deleteShallowParticipante,
+  fetchGrupo,
+  fetchPago,
+  fetchShallowPagos,
+  fetchTransaccionesCongeladas,
+  freezeGrupo,
+  unfreezeGrupo,
+  updateIsValidPago,
+ )
 import Site.Api
 import Site.Handler.Utils
 import Site.Types
-
 
 handleCreateGrupo :: CreateGrupoParams -> AppHandler Grupo
 handleCreateGrupo CreateGrupoParams{grupoName, grupoParticipante} = do
@@ -29,8 +35,9 @@ handleCreateGrupo CreateGrupoParams{grupoName, grupoParticipante} = do
 
 handleGetNetos :: ULID -> AppHandler ResumenGrupo
 handleGetNetos grupoId = do
-  shallowGrupo <- runBeam (fetchGrupo grupoId)
-    `orElseMay` throwJsonError err404 "Grupo no encontrado"
+  shallowGrupo <-
+    runBeam (fetchGrupo grupoId)
+      `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   pagos <- runBeam $ do
     shallowPagos <- fetchShallowPagos grupoId
@@ -38,32 +45,35 @@ handleGetNetos grupoId = do
       pago <- fetchPago grupoId shallowPago.pagoId
       updateIsValidPago (pago & addIsValidPago)
 
-  let grupo = Grupo
-        { id = shallowGrupo.id
-        , participantes = shallowGrupo.participantes
-        , nombre = shallowGrupo.nombre
-        , pagos = pagos
-        }
+  let grupo =
+        Grupo
+          { id = shallowGrupo.id
+          , participantes = shallowGrupo.participantes
+          , nombre = shallowGrupo.nombre
+          , pagos = pagos
+          }
   let netos = calcularNetosTotales grupo
 
   if shallowGrupo.isFrozen
     then do
       transacciones <- runBeam $ fetchTransaccionesCongeladas grupoId
-      pure $ ResumenGrupo
-        { netos = netos
-        , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
-        , cantidadPagos = length grupo.pagos
-        , transaccionesParaSaldar = transacciones
-        , isFrozen = True
-        }
+      pure $
+        ResumenGrupo
+          { netos = netos
+          , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
+          , cantidadPagos = length grupo.pagos
+          , transaccionesParaSaldar = transacciones
+          , isFrozen = True
+          }
     else
-      pure $ ResumenGrupo
-        { netos = netos
-        , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
-        , cantidadPagos = length grupo.pagos
-        , transaccionesParaSaldar = minimizeTransactions netos
-        , isFrozen = False
-        }
+      pure $
+        ResumenGrupo
+          { netos = netos
+          , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
+          , cantidadPagos = length grupo.pagos
+          , transaccionesParaSaldar = minimizeTransactions netos
+          , isFrozen = False
+          }
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
 handleDeleteParticipante grupoId participanteId = do
@@ -82,31 +92,37 @@ handleCreateParticipante grupoId ParticipanteAddParams{name} = do
 
 handleFreezeGrupo :: ULID -> AppHandler ShallowGrupo
 handleFreezeGrupo grupoId = do
-  shallowGrupo <- runBeam (fetchGrupo grupoId)
-    `orElseMay` throwJsonError err404 "Grupo no encontrado"
+  shallowGrupo <-
+    runBeam (fetchGrupo grupoId)
+      `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   pagos <- runBeam $ do
     shallowPagos <- fetchShallowPagos grupoId
     forM shallowPagos $ \shallowPago ->
       fetchPago grupoId shallowPago.pagoId
 
-  let grupo = Grupo
-        { id = shallowGrupo.id
-        , participantes = shallowGrupo.participantes
-        , nombre = shallowGrupo.nombre
-        , pagos = pagos
-        }
+  let grupo =
+        Grupo
+          { id = shallowGrupo.id
+          , participantes = shallowGrupo.participantes
+          , nombre = shallowGrupo.nombre
+          , pagos = pagos
+          }
   let netos = calcularNetosTotales grupo
   let transacciones = minimizeTransactions netos
 
-  runBeam (do
-    freezeGrupo grupoId transacciones
-    fetchGrupo grupoId
-    ) `orElseMay` throwJsonError err404 "Grupo no encontrado"
+  runBeam
+    ( do
+        freezeGrupo grupoId transacciones
+        fetchGrupo grupoId
+    )
+    `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
 handleUnfreezeGrupo :: ULID -> AppHandler ShallowGrupo
 handleUnfreezeGrupo grupoId = do
-  runBeam (do
-    unfreezeGrupo grupoId
-    fetchGrupo grupoId
-    ) `orElseMay` throwJsonError err404 "Grupo no encontrado"
+  runBeam
+    ( do
+        unfreezeGrupo grupoId
+        fetchGrupo grupoId
+    )
+    `orElseMay` throwJsonError err404 "Grupo no encontrado"

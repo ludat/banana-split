@@ -1,37 +1,34 @@
-module BananaSplit.Elm
-    ( generateElmFiles
-    ) where
-
-import BananaSplit
+module BananaSplit.Elm (
+  generateElmFiles,
+) where
 
 import Data.Data
-
 import Elm.TyRep
-
 import Protolude
 import Protolude.Error
-
 import Servant
 import Servant.Elm
 
+import BananaSplit
 import Site.Api
 
 generateElmFiles :: IO ()
 generateElmFiles = do
   putText "Generating elm files..."
   generateElmModuleWith
-    (defElmOptions
-      { elmToString = \case
-        ETyCon (ETCon "Bool")             -> "(\\value -> if value then \"true\" else \"false\")"
-        ETyCon (ETCon "Float")            -> "String.fromFloat"
-        ETyCon (ETCon "Char")             -> "String.fromChar"
-        ETyApp (ETyCon (ETCon "Maybe")) v -> "(Maybe.map " <> defaultElmToString v <> " >> Maybe.withDefault \"\")"
-        ETyCon (ETCon "ULID") -> ""
-        e -> error $ show e
-       , urlPrefix = Static "/api"
-      })
-    [ "Generated",
-      "Api"
+    ( defElmOptions
+        { elmToString = \case
+            ETyCon (ETCon "Bool") -> "(\\value -> if value then \"true\" else \"false\")"
+            ETyCon (ETCon "Float") -> "String.fromFloat"
+            ETyCon (ETCon "Char") -> "String.fromChar"
+            ETyApp (ETyCon (ETCon "Maybe")) v -> "(Maybe.map " <> defaultElmToString v <> " >> Maybe.withDefault \"\")"
+            ETyCon (ETCon "ULID") -> ""
+            e -> error $ show e
+        , urlPrefix = Static "/api"
+        }
+    )
+    [ "Generated"
+    , "Api"
     ]
     defElmImports
     "ui/generated-src/"

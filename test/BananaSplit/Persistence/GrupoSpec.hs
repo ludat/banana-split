@@ -1,15 +1,14 @@
-module BananaSplit.Persistence.GrupoSpec
-    ( spec
-    ) where
+module BananaSplit.Persistence.GrupoSpec (
+  spec,
+) where
+
+import Protolude
+import Test.Hspec
 
 import BananaSplit.Core
 import BananaSplit.Participante
 import BananaSplit.Persistence
 import BananaSplit.Persistence.SpecHook
-
-import Protolude
-
-import Test.Hspec
 
 spec :: SpecWith RunDb
 spec =

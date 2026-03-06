@@ -1,34 +1,30 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE DerivingStrategies #-}
-{-# LANGUAGE NoFieldSelectors #-}
 {-# LANGUAGE OverloadedRecordDot #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE QuasiQuotes #-}
+{-# LANGUAGE NoFieldSelectors #-}
 
-module BananaSplit.Receipts.OpenRouter
-    ( ParsedReceipt (..)
-    , ParsedReceiptItem (..)
-    , analyzeReceiptImage
-    , analyzeReceiptText
-    ) where
-
-
-import BananaSplit.Receipts.Tesseract (extractTextFromImage)
-import BananaSplit.Receipts.Types
+module BananaSplit.Receipts.OpenRouter (
+  ParsedReceipt (..),
+  ParsedReceiptItem (..),
+  analyzeReceiptImage,
+  analyzeReceiptText,
+) where
 
 import Control.Arrow (left)
 import Control.Monad.Error.Class
-
 import Data.Aeson
 import Data.Scientific (Scientific)
 import Data.String.Interpolate (__i)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
-
 import Network.HTTP.Req
-
 import Protolude
+
+import BananaSplit.Receipts.Tesseract (extractTextFromImage)
+import BananaSplit.Receipts.Types
 
 newtype ParsedReceipt = ParsedReceipt
   { items :: [ParsedReceiptItem]
@@ -65,21 +61,22 @@ data MessageContent
   deriving (Show, Generic)
 
 instance ToJSON MessageContent where
-  toJSON (TextContent txt) = object
-    [ "type" .= ("text" :: Text)
-    , "text" .= txt
-    ]
-  toJSON (ImageContent imgUrl) = object
-    [ "type" .= ("image_url" :: Text)
-    , "image_url" .= imgUrl
-    ]
+  toJSON (TextContent txt) =
+    object
+      [ "type" .= ("text" :: Text)
+      , "text" .= txt
+      ]
+  toJSON (ImageContent imgUrl) =
+    object
+      [ "type" .= ("image_url" :: Text)
+      , "image_url" .= imgUrl
+      ]
 
 newtype ImageUrl = ImageUrl
   { url :: Text
   }
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON)
-
 
 newtype OpenRouterResponse = OpenRouterResponse
   { choices :: [Choice]
@@ -110,11 +107,12 @@ analyzeReceiptText config base64Image = runExceptT $ do
   ExceptT $ analyzeReceiptFromMessage config $ TextContent ocrText
 
 analyzeReceiptFromMessage :: ReceiptsReaderConfig -> MessageContent -> IO (Either Text ParsedReceipt)
-analyzeReceiptFromMessage config msg = runReq defaultHttpConfig {httpConfigCheckResponse = \_ _ _ -> Nothing} $ runExceptT $ do
+analyzeReceiptFromMessage config msg = runReq defaultHttpConfig{httpConfigCheckResponse = \_ _ _ -> Nothing} $ runExceptT $ do
   (model, fallbackModels) <- case config.models of
     [] -> throwError "Reading receipts is not properly configured. Talk to an admin."
-    (model:fallback) -> pure (model, fallback)
-  let systemPrompt = [__i|
+    (model : fallback) -> pure (model, fallback)
+  let systemPrompt =
+        [__i|
         You are a receipt parser. Analyze receipt text extracted via OCR and extract the items in JSON format.
         Return EXACTLY this JSON structure with the extracted data:
 
@@ -134,42 +132,45 @@ analyzeReceiptFromMessage config msg = runReq defaultHttpConfig {httpConfigCheck
         - The error text MUST be in spanish always
         |]
 
-  let requestBody = OpenRouterRequest
-        { model = model
-        , models = fallbackModels
-        , messages =
-            [ OpenRouterMessage
-                { role = "system"
-                , content = [TextContent systemPrompt]
-                }
-            , OpenRouterMessage
-                { role = "user"
-                , content = [msg]
-                }
-            ]
-        }
+  let requestBody =
+        OpenRouterRequest
+          { model = model
+          , models = fallbackModels
+          , messages =
+              [ OpenRouterMessage
+                  { role = "system"
+                  , content = [TextContent systemPrompt]
+                  }
+              , OpenRouterMessage
+                  { role = "user"
+                  , content = [msg]
+                  }
+              ]
+          }
   putText $ "starting request with model: " <> show config.models
-  response <- req
-    POST
-    (https "openrouter.ai" /: "api" /: "v1" /: "chat" /: "completions")
-    (ReqBodyJson requestBody)
-    bsResponse
-    (mconcat
-      [ header "Authorization" ("Bearer " <> Text.encodeUtf8 config.apiKey)
-      , header "HTTP-Referer" "https://split.ludat.io"
-      , header "X-Title" "Banana Split Receipt Parser"
-      ]
-    )
+  response <-
+    req
+      POST
+      (https "openrouter.ai" /: "api" /: "v1" /: "chat" /: "completions")
+      (ReqBodyJson requestBody)
+      bsResponse
+      ( mconcat
+          [ header "Authorization" ("Bearer " <> Text.encodeUtf8 config.apiKey)
+          , header "HTTP-Referer" "https://split.ludat.io"
+          , header "X-Title" "Banana Split Receipt Parser"
+          ]
+      )
 
   putByteString $ responseBody response
   openRouterResp <- liftEither $ left Text.pack $ eitherDecodeStrict @OpenRouterResponse $ responseBody response
 
   Choice (ResponseMessage contentText) <- case openRouterResp.choices of
     [] -> throwError "No response from OpenRouter"
-    (c:_) -> pure c
+    (c : _) -> pure c
 
-  let cleanedText = contentText
-        & Text.dropWhile (/= '{')
-        & Text.dropWhileEnd (/= '}')
+  let cleanedText =
+        contentText
+          & Text.dropWhile (/= '{')
+          & Text.dropWhileEnd (/= '}')
 
   liftEither $ left Text.pack $ eitherDecodeStrict $ Text.encodeUtf8 cleanedText
