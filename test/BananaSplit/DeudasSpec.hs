@@ -77,7 +77,7 @@ spec = do
     it "simplifica una sola transaccion trivialmente" $ do
       let transacciones = netos [(participante 1, 10), (participante 2, -10)]
 
-      minimizeTransactions transacciones `shouldBe` [Transaccion (participante 2) (participante 1) 10]
+      minimizeTransactions transacciones `shouldBe` [Transaccion Nothing (participante 2) (participante 1) 10]
     it "simplifica un caso en el que el algoritmo greedy falla" $ do
       minimizeTransactions (netos
         [ (u1, 10)
@@ -157,7 +157,7 @@ spec = do
           [ ( u1, mkMonto 10  5)
           , ( u2, mkMonto 10 -5)
           ]) `shouldBe`
-            [ Transaccion u2 u1 $ mkMonto 10 5
+            [ Transaccion Nothing u2 u1 $ mkMonto 10 5
             ]
 
       it "una deuda simple con montos heterogeneos" $ do
@@ -167,6 +167,6 @@ spec = do
           , ( u3, mkMonto 0  5)
           , ( u4, mkMonto 0 -5)
           ]) `shouldBe`
-            [ Transaccion u2 u1 $ mkMonto 10 5
-            , Transaccion u4 u3 5
+            [ Transaccion Nothing u2 u1 $ mkMonto 10 5
+            , Transaccion Nothing u4 u3 5
             ]

@@ -22,6 +22,7 @@ import "@ui5/webcomponents-icons/dist/money-bills.js";
 import "@ui5/webcomponents-icons/dist/sys-minus.js";
 import "@ui5/webcomponents-icons/dist/upload.js";
 import "@ui5/webcomponents-icons/dist/user-edit.js";
+import "@ui5/webcomponents-icons/dist/action-settings.js";
 
 import "@ui5/webcomponents/dist/Bar.js";
 import "@ui5/webcomponents/dist/BusyIndicator.js";

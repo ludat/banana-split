@@ -63,6 +63,8 @@ init grupoId store =
 type Msg
     = CrearPago Pago
     | AddedPagoResponse (Result Http.Error Pago)
+    | SaldarTransaccion ULID Pago
+    | SaldadaTransaccionResponse (Result Http.Error Pago)
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -92,13 +94,38 @@ update msg model =
                     AddedPagoResponse
             )
 
+        SaldarTransaccion transaccionId pago ->
+            ( model
+            , Effect.sendCmd <|
+                Api.postGrupoByIdTransaccionescongeladasByTransaccionIdSaldar
+                    model.grupoId
+                    transaccionId
+                    pago
+                    SaldadaTransaccionResponse
+            )
+
+        SaldadaTransaccionResponse (Ok _) ->
+            ( model
+            , Effect.batch
+                [ Store.refreshResumen model.grupoId
+                , Store.refreshGrupo model.grupoId
+                , Store.refreshPagos model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Se completó el pago"
+                ]
+            )
+
+        SaldadaTransaccionResponse (Err _) ->
+            ( model
+            , Toasts.pushToast Toasts.ToastDanger "No se pudo completar el pago"
+            )
+
 
 pagoFromTransaccion : Transaccion -> Pago
 pagoFromTransaccion transaction =
     { pagoId = emptyUlid
     , isValid = False
     , nombre = "Pago saldado"
-    , monto = transaction.transaccionMonto
+    , monto = transaction.monto
     , pagadores =
         { id = emptyUlid
         , tipo =
@@ -106,8 +133,8 @@ pagoFromTransaccion transaction =
                 { id = emptyUlid
                 , montos =
                     [ { id = emptyUlid
-                      , participante = transaction.transaccionFrom
-                      , monto = transaction.transaccionMonto
+                      , participante = transaction.from
+                      , monto = transaction.monto
                       }
                     ]
                 }
@@ -119,8 +146,8 @@ pagoFromTransaccion transaction =
                 { id = emptyUlid
                 , montos =
                     [ { id = emptyUlid
-                      , participante = transaction.transaccionTo
-                      , monto = transaction.transaccionMonto
+                      , participante = transaction.to
+                      , monto = transaction.monto
                       }
                     ]
                 }
@@ -207,6 +234,16 @@ view store model =
 
                                       else
                                         text ""
+                                    , if resumen.isFrozen then
+                                        Ui5.messageStrip
+                                            [ Attr.attribute "design" "Warning"
+                                            , style "margin-bottom" "1rem"
+                                            , Attr.property "hideCloseButton" (Encode.bool True)
+                                            ]
+                                            [ text "Este grupo está congelado. Las deudas están fijas y no se pueden agregar, editar ni eliminar pagos." ]
+
+                                      else
+                                        text ""
                                     , div [ style "width" "100%", style "margin-bottom" "1.5rem" ]
                                         [ viewNetosBarras grupo resumen.netos ]
                                     , viewTransferencias grupo resumen
@@ -243,22 +280,28 @@ viewTransferencias grupo resumen =
                     (\t ->
                         div [ style "display" "grid", style "grid-template-columns" "1fr auto 1fr", style "align-items" "center", style "margin-bottom" "0.5rem" ]
                             [ div [ style "text-align" "right" ]
-                                [ div [] [ Ui5.text <| lookupNombreParticipante grupo t.transaccionFrom ]
+                                [ div [] [ Ui5.text <| lookupNombreParticipante grupo t.from ]
                                 , div [ style "color" "var(--sapNegativeTextColor)" ]
                                     [ text "$"
-                                    , text <| Monto.toString t.transaccionMonto
+                                    , text <| Monto.toString t.monto
                                     ]
                                 ]
                             , Ui5.button
                                 [ Attr.attribute "design" "Transparent"
                                 , Attr.attribute "icon" "arrow-right"
                                 , Attr.attribute "tooltip" "Crear pago para saldar esta deuda"
-                                , onClick <| CrearPago <| pagoFromTransaccion t
+                                , onClick <|
+                                    case t.id of
+                                        Just transaccionId ->
+                                            SaldarTransaccion transaccionId (pagoFromTransaccion t)
+
+                                        Nothing ->
+                                            CrearPago (pagoFromTransaccion t)
                                 , style "margin" "0 0.5rem"
                                 ]
                                 []
                             , span []
-                                [ Ui5.text <| lookupNombreParticipante grupo t.transaccionTo
+                                [ Ui5.text <| lookupNombreParticipante grupo t.to
                                 ]
                             ]
                     )

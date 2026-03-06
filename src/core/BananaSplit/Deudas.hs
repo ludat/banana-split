@@ -167,8 +167,8 @@ resolverNetosRecursivo netBalances =
 
               transaction =
                 if balance > 0
-                  then Transaccion partner personOwing paymentAmount
-                  else Transaccion personOwing partner paymentAmount
+                  then Transaccion Nothing partner personOwing paymentAmount
+                  else Transaccion Nothing personOwing partner paymentAmount
           in fmap (transaction :) (settleDebts nextBalances)
     -- Helper to insert updated balances (or remove if settled)
     insertOrRemove :: (ParticipanteId, Monto) -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
@@ -179,9 +179,10 @@ resolverNetosRecursivo netBalances =
     deleteByPerson name = filter ((/= name) . fst)
 
 data Transaccion = Transaccion
-  { transaccionFrom :: ParticipanteId
-  , transaccionTo :: ParticipanteId
-  , transaccionMonto :: Monto
+  { id :: Maybe ULID
+  , from :: ParticipanteId
+  , to :: ParticipanteId
+  , monto :: Monto
   } deriving (Show, Eq, Generic)
 
 deudoresNoNulos :: Netos Monto -> Int
@@ -280,11 +281,11 @@ resolverNetosNaif deudas
         (mayorPagador, mayorPagado) = extraerMaximoPagador deudas'
         deudas'' = removerDeudor mayorPagador deudas'
       in case compare mayorDeuda mayorPagado of
-          LT -> Transaccion mayorDeudor mayorPagador mayorDeuda
+          LT -> Transaccion Nothing mayorDeudor mayorPagador mayorDeuda
             : resolverNetosNaif (deudas'' <> mkDeuda mayorPagador (mayorPagado - mayorDeuda))
-          GT -> Transaccion mayorDeudor mayorPagador mayorPagado
+          GT -> Transaccion Nothing mayorDeudor mayorPagador mayorPagado
             : resolverNetosNaif (deudas'' <> mkDeuda mayorDeudor (-mayorDeuda + mayorPagado))
-          EQ -> Transaccion mayorDeudor mayorPagador mayorPagado
+          EQ -> Transaccion Nothing mayorDeudor mayorPagador mayorPagado
             : resolverNetosNaif deudas''
 
 solveOptimalTransactions' :: Netos Monto -> Either Text [Transaccion]
@@ -363,7 +364,7 @@ solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
 
         -- Solve using CBC with timeout protection and optimality gap tolerance
         let solverOpts = MIP.def
-              { MIP.solveTimeLimit = Just 5.0
+              { MIP.solveTimeLimit = Just 2.0
               , MIP.solveLogger = \msg -> putStrLn $ "[CBC] " <> msg  -- Debug logging
               , MIP.solveErrorLogger = \msg -> putStrLn $ "[CBC ERROR] " <> msg  -- Debug logging
               , MIP.solveTol = Just MIP.Tol
@@ -385,16 +386,17 @@ solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
                         & Map.lookup (MIP.Var (tVar d c))
                         & mfilter (/= 0)
                         & fmap (\v -> Transaccion
-                          { transaccionFrom = d
-                          , transaccionTo = c
-                          , transaccionMonto = Monto $ Decimal.Decimal maxPrecision (round $ Scientific.toRealFloat @Double v)
+                          { id = Nothing
+                          , from = d
+                          , to = c
+                          , monto = Monto $ Decimal.Decimal maxPrecision (round $ Scientific.toRealFloat @Double v)
                           })
                         )
 
               -- Verify: apply transactions and check all balances become zero
               let neto =
                     transactions
-                    & fmap (\t -> mkDeuda t.transaccionFrom -t.transaccionMonto <> mkDeuda t.transaccionTo t.transaccionMonto)
+                    & fmap (\t -> mkDeuda t.from -t.monto <> mkDeuda t.to t.monto)
                     & mconcat
                     & totalNetos
 
