@@ -554,7 +554,7 @@ fetchShallowPagos grupoId = do
   dbPagos <- runSelectReturningList $ select $ do
     pago <-
       all_ db.pagos
-        & orderBy_ (asc_ . (.pagoId))
+        & orderBy_ (desc_ . (.pagoId))
     guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
     pure pago
 
