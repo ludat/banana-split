@@ -18,6 +18,10 @@ changelog =
       , title = "Instalá como un app"
       , description = "Ahora podés instalar un grupo en tu celu como si fuera un app nativa. Adios a perder el enlace de un grupo."
       }
+    , { date = Date.fromCalendarDate 2026 Mar 7
+      , title = "Congelar grupos"
+      , description = "Ahora podés congelar un grupo para fijar las deudas. Una vez congelado, no se pueden agregar, editar ni eliminar pagos."
+      }
     ]
 
 
