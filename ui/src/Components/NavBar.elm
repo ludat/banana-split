@@ -61,19 +61,12 @@ navBar navBarModel store path _ =
             []
         , navBarItem
             { currentPath = path
-            , path = Grupos_GrupoId__Pagos { grupoId = navBarModel.grupoId }
-            , icon = Just "money-bills"
-            , text = "Pagos"
+            , path = Grupos_GrupoId__Pagos_New { grupoId = navBarModel.grupoId }
+            , icon = Just "add"
+            , text = "Nuevo Pago"
             , attrs = []
             }
-            [ navBarSubItem
-                { currentPath = path
-                , path = Grupos_GrupoId__Pagos_New { grupoId = navBarModel.grupoId }
-                , icon = Just "add"
-                , text = "Nuevo Pago"
-                , attrs = [ Attr.attribute "design" "Action" ]
-                }
-            ]
+            []
         , navBarItem
             { currentPath = path
             , path = Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }
