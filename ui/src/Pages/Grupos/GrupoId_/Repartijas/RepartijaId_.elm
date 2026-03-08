@@ -403,10 +403,10 @@ viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
         ]
         (Ui5.tableHeaderRow
             [ Ui5.slot "headerRow" ]
-            [ Ui5.tableHeaderCell [] [ text "Descripcion" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End" ] [ text "Monto total" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End" ] [ text "Cantidad" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "Center" ] [ text "Repartido" ]
+            [ Ui5.tableHeaderCell [ style "width" "auto", style "min-width" "7.5rem" ] [ text "Descripcion" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", style "min-width" "6.25rem" ] [ text "Monto total" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", style "min-width" "5rem" ] [ text "Cantidad" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "Center", style "min-width" "9.375rem" ] [ text "Repartido" ]
             ]
             :: (repartija.items
                     |> List.map (\item -> viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId)
