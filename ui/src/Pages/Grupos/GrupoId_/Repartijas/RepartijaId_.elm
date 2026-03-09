@@ -399,14 +399,14 @@ viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Maybe ULID -> May
 viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
     Ui5.table
         [ Attr.attribute "alternate-row-colors" ""
-        , Attr.attribute "row-action-count" "5"
         ]
         (Ui5.tableHeaderRow
             [ Ui5.slot "headerRow" ]
-            [ Ui5.tableHeaderCell [ style "width" "auto", style "min-width" "7.5rem" ] [ text "Descripcion" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", style "min-width" "6.25rem" ] [ text "Monto total" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", style "min-width" "5rem" ] [ text "Cantidad" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "Center", style "min-width" "9.375rem" ] [ text "Repartido" ]
+            [ Ui5.tableHeaderCell [ Attr.attribute "width" "auto", Attr.attribute "min-width" "12rem" ] [ text "Descripcion" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", Attr.attribute "min-width" "10rem" ] [ text "Monto total" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", Attr.attribute "min-width" "8rem" ] [ text "Cantidad" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "Center", Attr.attribute "min-width" "14rem" ] [ text "Repartido" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", Attr.attribute "width" "8rem" ] [ text "" ]
             ]
             :: (repartija.items
                     |> List.map (\item -> viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId)
@@ -415,6 +415,7 @@ viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
                     []
                     [ Ui5.tableCell [] [ text "Propina" ]
                     , Ui5.tableCell [] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.extra ]
+                    , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
                     ]
@@ -431,6 +432,7 @@ viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
                             |> Decimal.toString
                             |> text
                         ]
+                    , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
                     ]
@@ -518,22 +520,26 @@ viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
         pickSchemeButtonId =
             "pick-scheme-" ++ item.id
 
-        rowAction iconName textLabel maybeId msg isVisible =
-            Ui5.tableRowAction
-                [ Ui5.slot "actions"
-                , Attr.attribute "icon" iconName
-                , Attr.attribute "text" textLabel
-                , Attr.attribute "tooltip" textLabel
-                , on "click" (Json.Decode.succeed msg)
-                , case maybeId of
-                    Just id_ ->
-                        id id_
+        actionButton iconName textLabel maybeId msg isVisible =
+            if isVisible then
+                [ Ui5.button
+                    ([ Attr.attribute "icon" iconName
+                     , Attr.attribute "tooltip" textLabel
+                     , Attr.attribute "design" "Transparent"
+                     , on "click" (Json.Decode.succeed msg)
+                     ]
+                        ++ (case maybeId of
+                                Just id_ ->
+                                    [ id id_ ]
 
-                    Nothing ->
-                        class ""
-                , Attr.property "invisible" <|
-                    Json.Encode.bool (not isVisible)
+                                Nothing ->
+                                    []
+                           )
+                    )
+                    []
                 ]
+
+            else
                 []
     in
     Ui5.tableRow
@@ -573,21 +579,25 @@ viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
                     ]
                 ]
             ]
-        , rowAction "edit" "Repartir" (Just pickSchemeButtonId) (TogglePickScheme item.id) visibility.repartir
-        , rowAction "add" "+1" Nothing (ChangeCurrentClaim item 1) visibility.plus1
-        , rowAction "sys-minus" "-1" Nothing (ChangeCurrentClaim item -1) visibility.minus1
-        , rowAction "accept" "Participé" Nothing (JoinCurrentClaim item) visibility.participe
-        , rowAction "decline"
-            "Salirse"
-            Nothing
-            (case userClaim of
-                Just claim ->
-                    LeaveCurrentClaim claim
+        , Ui5.tableCell []
+            (List.concat
+                [ actionButton "edit" "Repartir" (Just pickSchemeButtonId) (TogglePickScheme item.id) visibility.repartir
+                , actionButton "add" "+1" Nothing (ChangeCurrentClaim item 1) visibility.plus1
+                , actionButton "sys-minus" "-1" Nothing (ChangeCurrentClaim item -1) visibility.minus1
+                , actionButton "accept" "Participé" Nothing (JoinCurrentClaim item) visibility.participe
+                , actionButton "decline"
+                    "Salirse"
+                    Nothing
+                    (case userClaim of
+                        Just claim ->
+                            LeaveCurrentClaim claim
 
-                Nothing ->
-                    NoOp
+                        Nothing ->
+                            NoOp
+                    )
+                    visibility.salirse
+                ]
             )
-            visibility.salirse
         ]
 
 
