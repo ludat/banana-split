@@ -1425,9 +1425,9 @@ repartijaForm prefix form receiptParseState =
             [ Attr.attribute "row-action-count" "1" ]
             (Ui5.tableHeaderRow
                 [ Ui5.slot "headerRow" ]
-                [ Ui5.tableHeaderCell [] [ text "Item" ]
-                , Ui5.tableHeaderCell [] [ text "Monto total" ]
-                , Ui5.tableHeaderCell [] [ text "Cantidad" ]
+                [ Ui5.tableHeaderCell [ Attr.attribute "width" "auto", Attr.attribute "min-width" "12rem" ] [ text "Item" ]
+                , Ui5.tableHeaderCell [ Attr.attribute "min-width" "10rem" ] [ text "Monto total" ]
+                , Ui5.tableHeaderCell [ Attr.attribute "min-width" "8rem" ] [ text "Cantidad" ]
                 ]
                 :: List.map
                     (\i -> repartijaItemForm i prefix form)

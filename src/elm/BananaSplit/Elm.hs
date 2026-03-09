@@ -60,5 +60,6 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy RepartijaItem)
     , DefineElm (Proxy :: Proxy RepartijaClaim)
     , DefineElm (Proxy :: Proxy ShallowRepartija)
+    , DefineElm (Proxy :: Proxy RepartijaForFrontend)
     ]
     (Proxy :: Proxy (ToServantApi Api))

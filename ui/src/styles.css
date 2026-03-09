@@ -72,6 +72,14 @@
     margin: auto;
 }
 
+ui5-side-navigation-group > ui5-side-navigation-item {
+    padding-left: 1rem;
+}
+
+ui5-side-navigation-item > ui5-side-navigation-sub-item {
+    padding-left: 2rem;
+}
+
 /*@media (max-width: var(--sapBreakpoint_XS_Min)) {*/
 @media (min-width: 600px) {
     ui5-shellbar > ui5-button {

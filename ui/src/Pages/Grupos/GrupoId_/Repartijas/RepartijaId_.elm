@@ -7,10 +7,9 @@ import Form exposing (Form)
 import Form.Validate as V
 import Generated.Api as Api exposing (ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
 import Html exposing (Html, div, text)
-import Html.Attributes as Attr exposing (class, id, style)
+import Html.Attributes as Attr exposing (id, style)
 import Html.Events exposing (on, onClick)
 import Json.Decode
-import Json.Encode
 import Layouts
 import List.Extra exposing (find)
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
@@ -75,7 +74,7 @@ init grupoId repartijaId store =
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
-        , Store.ensureRepartija repartijaId store
+        , Store.refreshRepartija repartijaId
         , Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
         ]
@@ -127,8 +126,11 @@ update maybeParticipanteId store msg model =
 
         CreateRepartijaClaimResponded webDataClaim ->
             case ( webDataClaim, Store.getRepartija model.repartijaId store ) of
-                ( Success newClaim, Success repartija ) ->
+                ( Success newClaim, Success repartijaPage ) ->
                     let
+                        repartija =
+                            repartijaPage.repartija
+
                         updatedRepartija =
                             { repartija
                                 | claims =
@@ -138,7 +140,7 @@ update maybeParticipanteId store msg model =
                             }
                     in
                     ( { model | pendingItemOperation = Nothing }
-                    , Store.updateRepartija model.repartijaId updatedRepartija
+                    , Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
                     )
 
                 _ ->
@@ -148,15 +150,18 @@ update maybeParticipanteId store msg model =
 
         DeleteRepartijaClaimResponded claimId webDataResponse ->
             case ( webDataResponse, Store.getRepartija model.repartijaId store ) of
-                ( Success _, Success repartija ) ->
+                ( Success _, Success repartijaPage ) ->
                     let
+                        repartija =
+                            repartijaPage.repartija
+
                         updatedRepartija =
                             { repartija
                                 | claims = repartija.claims |> List.filter (\c -> c.id /= claimId)
                             }
                     in
                     ( { model | pendingItemOperation = Nothing }
-                    , Store.updateRepartija model.repartijaId updatedRepartija
+                    , Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
                     )
 
                 _ ->
@@ -210,10 +215,13 @@ update maybeParticipanteId store msg model =
 
         ChangeCurrentClaim item deltaCantidad ->
             case store |> Store.getRepartija model.repartijaId |> RemoteData.toMaybe of
-                Just repartija ->
+                Just repartijaPage ->
                     case maybeParticipanteId of
                         Just participanteId ->
                             let
+                                repartija =
+                                    repartijaPage.repartija
+
                                 oldClaimFound =
                                     repartija.claims
                                         |> List.filter
@@ -317,7 +325,11 @@ subscriptions _ =
 view : Maybe ULID -> Store -> Model -> View Msg
 view userId store model =
     case ( Store.getRepartija model.repartijaId store, Store.getGrupo model.grupoId store ) of
-        ( Success repartija, Success grupo ) ->
+        ( Success repartijaPage, Success grupo ) ->
+            let
+                repartija =
+                    repartijaPage.repartija
+            in
             { title = grupo.nombre ++ ": " ++ repartija.nombre
             , body =
                 [ viewParticipantes grupo repartija
@@ -399,14 +411,14 @@ viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Maybe ULID -> May
 viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
     Ui5.table
         [ Attr.attribute "alternate-row-colors" ""
-        , Attr.attribute "row-action-count" "5"
         ]
         (Ui5.tableHeaderRow
             [ Ui5.slot "headerRow" ]
-            [ Ui5.tableHeaderCell [] [ text "Descripcion" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End" ] [ text "Monto total" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End" ] [ text "Cantidad" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "Center" ] [ text "Repartido" ]
+            [ Ui5.tableHeaderCell [ Attr.attribute "width" "auto", Attr.attribute "min-width" "12rem" ] [ text "Descripcion" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", Attr.attribute "min-width" "10rem" ] [ text "Monto total" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", Attr.attribute "min-width" "8rem" ] [ text "Cantidad" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "Center", Attr.attribute "min-width" "14rem" ] [ text "Repartido" ]
+            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", Attr.attribute "width" "8rem" ] [ text "" ]
             ]
             :: (repartija.items
                     |> List.map (\item -> viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId)
@@ -415,6 +427,7 @@ viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
                     []
                     [ Ui5.tableCell [] [ text "Propina" ]
                     , Ui5.tableCell [] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.extra ]
+                    , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
                     ]
@@ -431,6 +444,7 @@ viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
                             |> Decimal.toString
                             |> text
                         ]
+                    , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
                     ]
@@ -518,22 +532,26 @@ viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
         pickSchemeButtonId =
             "pick-scheme-" ++ item.id
 
-        rowAction iconName textLabel maybeId msg isVisible =
-            Ui5.tableRowAction
-                [ Ui5.slot "actions"
-                , Attr.attribute "icon" iconName
-                , Attr.attribute "text" textLabel
-                , Attr.attribute "tooltip" textLabel
-                , on "click" (Json.Decode.succeed msg)
-                , case maybeId of
-                    Just id_ ->
-                        id id_
+        actionButton iconName textLabel maybeId msg isVisible =
+            if isVisible then
+                [ Ui5.button
+                    ([ Attr.attribute "icon" iconName
+                     , Attr.attribute "tooltip" textLabel
+                     , Attr.attribute "design" "Transparent"
+                     , on "click" (Json.Decode.succeed msg)
+                     ]
+                        ++ (case maybeId of
+                                Just id_ ->
+                                    [ id id_ ]
 
-                    Nothing ->
-                        class ""
-                , Attr.property "invisible" <|
-                    Json.Encode.bool (not isVisible)
+                                Nothing ->
+                                    []
+                           )
+                    )
+                    []
                 ]
+
+            else
                 []
     in
     Ui5.tableRow
@@ -573,21 +591,25 @@ viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
                     ]
                 ]
             ]
-        , rowAction "edit" "Repartir" (Just pickSchemeButtonId) (TogglePickScheme item.id) visibility.repartir
-        , rowAction "add" "+1" Nothing (ChangeCurrentClaim item 1) visibility.plus1
-        , rowAction "sys-minus" "-1" Nothing (ChangeCurrentClaim item -1) visibility.minus1
-        , rowAction "accept" "Participé" Nothing (JoinCurrentClaim item) visibility.participe
-        , rowAction "decline"
-            "Salirse"
-            Nothing
-            (case userClaim of
-                Just claim ->
-                    LeaveCurrentClaim claim
+        , Ui5.tableCell []
+            (List.concat
+                [ actionButton "edit" "Repartir" (Just pickSchemeButtonId) (TogglePickScheme item.id) visibility.repartir
+                , actionButton "add" "+1" Nothing (ChangeCurrentClaim item 1) visibility.plus1
+                , actionButton "sys-minus" "-1" Nothing (ChangeCurrentClaim item -1) visibility.minus1
+                , actionButton "accept" "Participé" Nothing (JoinCurrentClaim item) visibility.participe
+                , actionButton "decline"
+                    "Salirse"
+                    Nothing
+                    (case userClaim of
+                        Just claim ->
+                            LeaveCurrentClaim claim
 
-                Nothing ->
-                    NoOp
+                        Nothing ->
+                            NoOp
+                    )
+                    visibility.salirse
+                ]
             )
-            visibility.salirse
         ]
 
 

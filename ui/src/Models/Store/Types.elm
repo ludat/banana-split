@@ -1,7 +1,7 @@
 module Models.Store.Types exposing (Store, StoreMsg(..))
 
 import Dict exposing (Dict)
-import Generated.Api exposing (Pago, Repartija, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
+import Generated.Api exposing (Pago, RepartijaForFrontend, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
 import RemoteData exposing (WebData)
 
 
@@ -9,7 +9,7 @@ type alias Store =
     { grupos : Dict ULID (WebData ShallowGrupo)
     , resumenes : Dict ULID (WebData ResumenGrupo)
     , pagosPorGrupo : Dict ULID (WebData (List ShallowPago))
-    , repartijas : Dict ULID (WebData Repartija)
+    , repartijas : Dict ULID (WebData RepartijaForFrontend)
     , pagos : Dict ULID (WebData Pago)
     }
 
@@ -23,5 +23,5 @@ type StoreMsg
     | FetchPagos ULID
     | PagoFetched ULID (WebData Pago)
     | FetchPago ULID
-    | RepartijaFetched ULID (WebData Repartija)
+    | RepartijaFetched ULID (WebData RepartijaForFrontend)
     | FetchRepartija ULID

@@ -1,4 +1,4 @@
-module Components.Ui5 exposing (busyIndicator, button, dialog, fileUploader, form, formCheckbox, formSelect, label, li, link, list, messageStrip, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
+module Components.Ui5 exposing (busyIndicator, button, dialog, fileUploader, form, formCheckbox, formSelect, label, li, link, list, messageStrip, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
 
 import Form exposing (Msg(..))
 import Form.Field
@@ -131,6 +131,11 @@ sideNavigation attrs children =
 sideNavigationItem : List (Attribute m) -> List (Html m) -> Html m
 sideNavigationItem attrs children =
     Html.node "ui5-side-navigation-item" attrs children
+
+
+sideNavigationGroup : List (Attribute m) -> List (Html m) -> Html m
+sideNavigationGroup attrs children =
+    Html.node "ui5-side-navigation-group" attrs children
 
 
 sideNavigationSubItem : List (Attribute m) -> List (Html m) -> Html m

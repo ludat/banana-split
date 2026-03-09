@@ -11,13 +11,13 @@ module Site.Handler.Repartijas (
 import Protolude
 import Servant (err404)
 
-import BananaSplit (Repartija (..), RepartijaClaim (..), ShallowGrupo (..))
+import BananaSplit (Repartija (..), RepartijaClaim (..), RepartijaForFrontend (..), ShallowGrupo (..))
 import BananaSplit.Persistence
 import BananaSplit.ULID (ULID)
 import Site.Handler.Utils
 import Site.Types
 
-handleRepartijaGet :: ULID -> AppHandler Repartija
+handleRepartijaGet :: ULID -> AppHandler RepartijaForFrontend
 handleRepartijaGet repartijaId = do
   runBeam (fetchRepartija repartijaId)
 
