@@ -43,7 +43,15 @@ data RepartijaClaim = RepartijaClaim
   }
   deriving (Show, Eq, Generic)
 
+data RepartijaForFrontend = RepartijaForFrontend
+  { repartija :: Repartija
+  , pagoId :: ULID
+  , pagoNombre :: Text
+  }
+  deriving (Show, Eq, Generic)
+
 Elm.deriveBoth Elm.defaultOptions ''RepartijaItem
 Elm.deriveBoth Elm.defaultOptions ''RepartijaClaim
 Elm.deriveBoth Elm.defaultOptions ''ShallowRepartija
 Elm.deriveBoth Elm.defaultOptions ''Repartija
+Elm.deriveBoth Elm.defaultOptions ''RepartijaForFrontend

@@ -1,8 +1,8 @@
-module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureRepartija, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, refreshGrupo, refreshPagos, refreshRepartija, refreshResumen, update, updateRepartija)
+module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, refreshGrupo, refreshPagos, refreshRepartija, refreshResumen, update, updateRepartijaForFrontend)
 
 import Dict
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Pago, Repartija, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
+import Generated.Api as Api exposing (Pago, RepartijaForFrontend, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
@@ -105,7 +105,7 @@ savePago pagoId pago store =
     }
 
 
-saveRepartija : ULID -> WebData Repartija -> Store -> Store
+saveRepartija : ULID -> WebData RepartijaForFrontend -> Store -> Store
 saveRepartija repartijaId repartija store =
     { store
         | repartijas =
@@ -124,9 +124,9 @@ refreshResumen grupoId =
     Effect.sendStoreMsg <| FetchResumen grupoId
 
 
-updateRepartija : ULID -> Repartija -> Effect msg
-updateRepartija repartijaId repartija =
-    Effect.sendStoreMsg <| RepartijaFetched repartijaId (Success repartija)
+updateRepartijaForFrontend : ULID -> RepartijaForFrontend -> Effect msg
+updateRepartijaForFrontend repartijaId repartijaPage =
+    Effect.sendStoreMsg <| RepartijaFetched repartijaId (Success repartijaPage)
 
 
 refreshPagos : ULID -> Effect msg
@@ -187,20 +187,21 @@ ensurePago pagoId store =
             Effect.none
 
 
-ensureRepartija : ULID -> Store -> Effect msg
-ensureRepartija repartijaId store =
-    case getRepartija repartijaId store of
-        NotAsked ->
-            Effect.sendStoreMsg <| FetchRepartija repartijaId
 
-        Loading ->
-            Effect.none
-
-        Failure _ ->
-            Effect.none
-
-        Success _ ->
-            Effect.none
+--ensureRepartija : ULID -> Store -> Effect msg
+--ensureRepartija repartijaId store =
+--    case getRepartija repartijaId store of
+--        NotAsked ->
+--            Effect.sendStoreMsg <| FetchRepartija repartijaId
+--
+--        Loading ->
+--            Effect.none
+--
+--        Failure _ ->
+--            Effect.none
+--
+--        Success _ ->
+--            Effect.none
 
 
 ensureResumen : ULID -> Store -> Effect msg
@@ -247,7 +248,7 @@ getPago pagoId store =
         |> Maybe.withDefault NotAsked
 
 
-getRepartija : ULID -> Store -> WebData Repartija
+getRepartija : ULID -> Store -> WebData RepartijaForFrontend
 getRepartija repartijaId store =
     store.repartijas
         |> Dict.get repartijaId

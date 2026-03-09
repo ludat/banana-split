@@ -7,10 +7,9 @@ import Form exposing (Form)
 import Form.Validate as V
 import Generated.Api as Api exposing (ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
 import Html exposing (Html, div, text)
-import Html.Attributes as Attr exposing (class, id, style)
+import Html.Attributes as Attr exposing (id, style)
 import Html.Events exposing (on, onClick)
 import Json.Decode
-import Json.Encode
 import Layouts
 import List.Extra exposing (find)
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
@@ -75,7 +74,7 @@ init grupoId repartijaId store =
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
-        , Store.ensureRepartija repartijaId store
+        , Store.refreshRepartija repartijaId
         , Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
         ]
@@ -127,8 +126,11 @@ update maybeParticipanteId store msg model =
 
         CreateRepartijaClaimResponded webDataClaim ->
             case ( webDataClaim, Store.getRepartija model.repartijaId store ) of
-                ( Success newClaim, Success repartija ) ->
+                ( Success newClaim, Success repartijaPage ) ->
                     let
+                        repartija =
+                            repartijaPage.repartija
+
                         updatedRepartija =
                             { repartija
                                 | claims =
@@ -138,7 +140,7 @@ update maybeParticipanteId store msg model =
                             }
                     in
                     ( { model | pendingItemOperation = Nothing }
-                    , Store.updateRepartija model.repartijaId updatedRepartija
+                    , Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
                     )
 
                 _ ->
@@ -148,15 +150,18 @@ update maybeParticipanteId store msg model =
 
         DeleteRepartijaClaimResponded claimId webDataResponse ->
             case ( webDataResponse, Store.getRepartija model.repartijaId store ) of
-                ( Success _, Success repartija ) ->
+                ( Success _, Success repartijaPage ) ->
                     let
+                        repartija =
+                            repartijaPage.repartija
+
                         updatedRepartija =
                             { repartija
                                 | claims = repartija.claims |> List.filter (\c -> c.id /= claimId)
                             }
                     in
                     ( { model | pendingItemOperation = Nothing }
-                    , Store.updateRepartija model.repartijaId updatedRepartija
+                    , Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
                     )
 
                 _ ->
@@ -210,10 +215,13 @@ update maybeParticipanteId store msg model =
 
         ChangeCurrentClaim item deltaCantidad ->
             case store |> Store.getRepartija model.repartijaId |> RemoteData.toMaybe of
-                Just repartija ->
+                Just repartijaPage ->
                     case maybeParticipanteId of
                         Just participanteId ->
                             let
+                                repartija =
+                                    repartijaPage.repartija
+
                                 oldClaimFound =
                                     repartija.claims
                                         |> List.filter
@@ -317,7 +325,11 @@ subscriptions _ =
 view : Maybe ULID -> Store -> Model -> View Msg
 view userId store model =
     case ( Store.getRepartija model.repartijaId store, Store.getGrupo model.grupoId store ) of
-        ( Success repartija, Success grupo ) ->
+        ( Success repartijaPage, Success grupo ) ->
+            let
+                repartija =
+                    repartijaPage.repartija
+            in
             { title = grupo.nombre ++ ": " ++ repartija.nombre
             , body =
                 [ viewParticipantes grupo repartija

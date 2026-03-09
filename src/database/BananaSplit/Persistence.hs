@@ -536,7 +536,7 @@ fetchDistribucion distribucionId = do
         guard_ (r.distribucion ==. DistribucionId (val_ dbDistribucion.id))
         pure r.id
       repartija <- fetchRepartija repartijaId
-      pure $ Just $ M.TipoDistribucionRepartija repartija
+      pure $ Just $ M.TipoDistribucionRepartija repartija.repartija
     _ -> pure Nothing
 
   case tipo of
@@ -858,9 +858,9 @@ saveRepartijaItems repartijaId repartijaItemsWithoutId = do
       onConflictUpdateAll
   pure repartijaItems
 
-fetchRepartija :: ULID -> Pg M.Repartija
+fetchRepartija :: ULID -> Pg M.RepartijaForFrontend
 fetchRepartija unRepartijaId = do
-  (repartija, nombre) :: (DistribucionRepartija, Text) <- fmap (fromMaybe (error "Repartija not found")) $ runSelectReturningOne $ select $ do
+  (repartija, pagoNombre, pagoId) :: (DistribucionRepartija, Text, ULID) <- fmap (fromMaybe (error "Repartija not found")) $ runSelectReturningOne $ select $ do
     repartija <- all_ db.repartijas
     guard_ (repartija.id ==. val_ unRepartijaId)
 
@@ -869,7 +869,7 @@ fetchRepartija unRepartijaId = do
     pago <- all_ db.pagos
     guard_ (pago.distribucion_pagadores `references_` distrib ||. pago.distribucion_deudores `references_` distrib)
 
-    pure (repartija, pago.pagoNombre)
+    pure (repartija, pago.pagoNombre, pago.pagoId)
   items :: [RepartijaItem] <- runSelectReturningList $ select $ do
     item <- all_ db.repartija_items
     guard_ $ item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartija.id)
@@ -880,32 +880,37 @@ fetchRepartija unRepartijaId = do
     pure claim
 
   pure
-    $ M.Repartija
-      { id = repartija.id
-      , nombre = nombre
-      , extra = constructMonto repartija.extra
-      , claims =
-          claims
-            & fmap
-              ( \r ->
-                  M.RepartijaClaim
-                    { M.id = r.repartijaclaimId
-                    , M.cantidad = fromIntegral <$> r.repartijaclaimCantidad
-                    , M.participante = M.ParticipanteId $ case r.repartijaclaimParticipante of ParticipanteId ulid -> ulid
-                    , M.itemId = case r.repartijaclaimRepartijaItem of RepartijaItemId ulid -> ulid
-                    }
-              )
-      , items =
-          items
-            & fmap
-              ( \dbItem ->
-                  M.RepartijaItem
-                    { M.id = dbItem.repartijaitemId
-                    , M.nombre = dbItem.repartijaitemNombre
-                    , M.monto = constructMonto dbItem.repartijaitemMonto
-                    , M.cantidad = fromIntegral dbItem.repartijaitemCantidad
-                    }
-              )
+    $ M.RepartijaForFrontend
+      { repartija =
+          M.Repartija
+            { id = repartija.id
+            , nombre = pagoNombre
+            , extra = constructMonto repartija.extra
+            , claims =
+                claims
+                  & fmap
+                    ( \r ->
+                        M.RepartijaClaim
+                          { M.id = r.repartijaclaimId
+                          , M.cantidad = fromIntegral <$> r.repartijaclaimCantidad
+                          , M.participante = M.ParticipanteId $ case r.repartijaclaimParticipante of ParticipanteId ulid -> ulid
+                          , M.itemId = case r.repartijaclaimRepartijaItem of RepartijaItemId ulid -> ulid
+                          }
+                    )
+            , items =
+                items
+                  & fmap
+                    ( \dbItem ->
+                        M.RepartijaItem
+                          { M.id = dbItem.repartijaitemId
+                          , M.nombre = dbItem.repartijaitemNombre
+                          , M.monto = constructMonto dbItem.repartijaitemMonto
+                          , M.cantidad = fromIntegral dbItem.repartijaitemCantidad
+                          }
+                    )
+            }
+      , pagoId = pagoId
+      , pagoNombre = pagoNombre
       }
 
 saveRepartijaClaim :: ULID -> M.RepartijaClaim -> Pg M.RepartijaClaim

@@ -1,7 +1,7 @@
 module Components.NavBar exposing (NavBarModel, modelFromShared, navBar)
 
 import Components.Ui5 as Ui5
-import Generated.Api exposing (ULID)
+import Generated.Api exposing (Distribucion, Pago, TipoDistribucion(..), ULID)
 import Html exposing (Attribute, Html, text)
 import Html.Attributes as Attr exposing (class)
 import Html.Events as Events
@@ -59,14 +59,7 @@ navBar navBarModel store path _ =
             , attrs = []
             }
             []
-        , navBarItem
-            { currentPath = path
-            , path = Grupos_GrupoId__Pagos_New { grupoId = navBarModel.grupoId }
-            , icon = Just "add"
-            , text = "Nuevo Pago"
-            , attrs = []
-            }
-            []
+        , pagoNavSection navBarModel store path
         , navBarItem
             { currentPath = path
             , path = Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }
@@ -111,6 +104,95 @@ navBarItem props children =
             |> List.append props.attrs
         )
         children
+
+
+pagoNavSection : NavBarModel -> Store -> Path -> Html Layout.Msg
+pagoNavSection navBarModel store path =
+    let
+        nuevoPagoItem =
+            navBarItem
+                { currentPath = path
+                , path = Grupos_GrupoId__Pagos_New { grupoId = navBarModel.grupoId }
+                , icon = Just "add"
+                , text = "Nuevo Pago"
+                , attrs = [ Attr.attribute "design" "Action" ]
+                }
+                []
+
+        pagoItem pagoPath pagoNombre repartijaChildren =
+            navBarItem
+                { path = pagoPath
+                , currentPath = path
+                , attrs = [ Attr.property "expanded" (Encode.bool True) ]
+                , text = pagoNombre
+                , icon = Just "receipt"
+                }
+                repartijaChildren
+
+        currentPagoItems =
+            case path of
+                Grupos_GrupoId__Pagos_PagoId_ params ->
+                    case Store.getPago params.pagoId store |> RemoteData.toMaybe of
+                        Just pago ->
+                            [ pagoItem path pago.nombre (repartijaSubItemsFromPago navBarModel path pago) ]
+
+                        Nothing ->
+                            []
+
+                Grupos_GrupoId__Repartijas_RepartijaId_ params ->
+                    case Store.getRepartija params.repartijaId store |> RemoteData.toMaybe of
+                        Just repartijaForFrontend ->
+                            let
+                                pagoPath =
+                                    Grupos_GrupoId__Pagos_PagoId_ { grupoId = navBarModel.grupoId, pagoId = repartijaForFrontend.pagoId }
+                            in
+                            [ pagoItem pagoPath
+                                repartijaForFrontend.pagoNombre
+                                [ navBarSubItem
+                                    { path = path
+                                    , currentPath = path
+                                    , attrs = [ Attr.property "unselectable" (Encode.bool True) ]
+                                    , text = "Repartija"
+                                    , icon = Just "add-activity-2"
+                                    }
+                                ]
+                            ]
+
+                        Nothing ->
+                            []
+
+                _ ->
+                    []
+    in
+    Ui5.sideNavigationGroup
+        [ Attr.attribute "text" "Pagos"
+        , Attr.attribute "icon" "money-bills"
+        , Attr.property "expanded" (Encode.bool True)
+        ]
+        (currentPagoItems ++ [ nuevoPagoItem ])
+
+
+repartijaSubItemsFromPago : NavBarModel -> Path -> Pago -> List (Html Layout.Msg)
+repartijaSubItemsFromPago navBarModel currentPath pago =
+    let
+        extractRepartija : Distribucion -> Maybe (Html Layout.Msg)
+        extractRepartija dist =
+            case dist.tipo of
+                TipoDistribucionRepartija repartija ->
+                    Just
+                        (navBarSubItem
+                            { path = Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = navBarModel.grupoId, repartijaId = repartija.id }
+                            , currentPath = currentPath
+                            , attrs = []
+                            , text = "Repartija"
+                            , icon = Just "add-activity-2"
+                            }
+                        )
+
+                _ ->
+                    Nothing
+    in
+    List.filterMap extractRepartija [ pago.pagadores, pago.deudores ]
 
 
 navBarSubItem :

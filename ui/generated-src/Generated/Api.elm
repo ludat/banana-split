@@ -601,6 +601,29 @@ jsonEncShallowRepartija  val =
    ]
 
 
+
+type alias RepartijaForFrontend  =
+   { repartija: Repartija
+   , pagoId: ULID
+   , pagoNombre: String
+   }
+
+jsonDecRepartijaForFrontend : Json.Decode.Decoder ( RepartijaForFrontend )
+jsonDecRepartijaForFrontend =
+   Json.Decode.succeed (\prepartija ppagoId ppagoNombre -> {repartija = prepartija, pagoId = ppagoId, pagoNombre = ppagoNombre})
+   |> required "repartija" (jsonDecRepartija)
+   |> required "pagoId" (jsonDecULID)
+   |> required "pagoNombre" (Json.Decode.string)
+
+jsonEncRepartijaForFrontend : RepartijaForFrontend -> Value
+jsonEncRepartijaForFrontend  val =
+   Json.Encode.object
+   [ ("repartija", jsonEncRepartija val.repartija)
+   , ("pagoId", jsonEncULID val.pagoId)
+   , ("pagoNombre", Json.Encode.string val.pagoNombre)
+   ]
+
+
 postGrupo : CreateGrupoParams -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
 postGrupo body toMsg =
     let
@@ -931,7 +954,7 @@ putGrupoByIdPagosByPagoId capture_id capture_pagoId body toMsg =
                 Nothing
             }
 
-getRepartijasByRepartijaId : ULID -> (Result Http.Error  (Repartija)  -> msg) -> Cmd msg
+getRepartijasByRepartijaId : ULID -> (Result Http.Error  (RepartijaForFrontend)  -> msg) -> Cmd msg
 getRepartijasByRepartijaId capture_repartijaId toMsg =
     let
         params =
@@ -953,7 +976,7 @@ getRepartijasByRepartijaId capture_repartijaId toMsg =
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg jsonDecRepartija
+                Http.expectJson toMsg jsonDecRepartijaForFrontend
             , timeout =
                 Nothing
             , tracker =
