@@ -286,6 +286,7 @@ data DistribucionRepartijaT f = Repartija
   { id :: Columnar f ULID
   , distribucion :: PrimaryKey DistribucionT f
   , extra :: MontoT f
+  , distribucion_de_sobras :: Columnar f Text
   }
   deriving (Generic, Beamable)
 
@@ -810,6 +811,7 @@ saveRepartija distribucionId repartijaSinId = do
               { id = repartija.id
               , distribucion = DistribucionId distribucionId
               , extra = deconstructMonto repartija.extra
+              , distribucion_de_sobras = distribucionDeSobrasToText repartija.distribucionDeSobras
               }
           ]
       )
@@ -884,6 +886,7 @@ fetchRepartija unRepartijaId = do
       { id = repartija.id
       , nombre = nombre
       , extra = constructMonto repartija.extra
+      , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
       , claims =
           claims
             & fmap
@@ -1024,6 +1027,17 @@ fetchGrupoIdFromClaim claimId = runSelectReturningOne $ select $ do
   guard_ (pago.distribucion_pagadores `references_` distrib ||. pago.distribucion_deudores `references_` distrib)
   let GrupoId grupoId = pago.pagoGrupo
   pure grupoId
+
+distribucionDeSobrasToText :: M.DistribucionDeSobras -> Text
+distribucionDeSobrasToText = \case
+  M.SobrasNoDistribuir -> "SobrasNoDistribuir"
+  M.SobrasProporcional -> "SobrasProporcional"
+
+distribucionDeSobrasFromText :: Text -> M.DistribucionDeSobras
+distribucionDeSobrasFromText = \case
+  "SobrasNoDistribuir" -> M.SobrasNoDistribuir
+  "SobrasProporcional" -> M.SobrasProporcional
+  other -> error $ "Unknown DistribucionDeSobras: " <> other
 
 instance HasSqlValueSyntax PgValueSyntax ULID where
   sqlValueSyntax :: ULID -> PgValueSyntax

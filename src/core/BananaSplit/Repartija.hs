@@ -16,6 +16,7 @@ data Repartija = Repartija
   { id :: ULID
   , nombre :: Text
   , extra :: Monto
+  , distribucionDeSobras :: DistribucionDeSobras
   , items :: [RepartijaItem]
   , claims :: [RepartijaClaim]
   }
@@ -43,6 +44,12 @@ data RepartijaClaim = RepartijaClaim
   }
   deriving (Show, Eq, Generic)
 
+data DistribucionDeSobras
+  = SobrasNoDistribuir
+  | SobrasProporcional
+  deriving (Show, Eq, Generic)
+
+Elm.deriveBoth Elm.defaultOptions ''DistribucionDeSobras
 Elm.deriveBoth Elm.defaultOptions ''RepartijaItem
 Elm.deriveBoth Elm.defaultOptions ''RepartijaClaim
 Elm.deriveBoth Elm.defaultOptions ''ShallowRepartija

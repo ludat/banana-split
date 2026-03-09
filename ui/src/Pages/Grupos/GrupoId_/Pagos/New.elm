@@ -13,9 +13,9 @@ import Form.Error as FormError
 import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Distribucion, ErrorResumen(..), Monto, Netos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos(..), ResumenPago, TipoDistribucion(..), ULID)
+import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), ErrorResumen(..), Monto, Netos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos(..), ResumenPago, TipoDistribucion(..), ULID)
 import Html exposing (Html, a, details, div, h1, p, summary, text)
-import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_)
+import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_, value)
 import Html.Events exposing (on, onClick, onSubmit)
 import Http
 import Json.Decode as Decode
@@ -194,12 +194,51 @@ validateId =
     V.defaultValue emptyUlid V.string
 
 
+distribucionDeSobrasToString : DistribucionDeSobras -> String
+distribucionDeSobrasToString distribucionDeSobras =
+    case distribucionDeSobras of
+        SobrasNoDistribuir ->
+            "SobrasNoDistribuir"
+
+        SobrasProporcional ->
+            "SobrasProporcional"
+
+
+distribucionDeSobrasFromString : String -> Maybe DistribucionDeSobras
+distribucionDeSobrasFromString text =
+    case text of
+        "SobrasNoDistribuir" ->
+            Just SobrasNoDistribuir
+
+        "SobrasProporcional" ->
+            Just SobrasProporcional
+
+        _ ->
+            Nothing
+
+
 validateRepartija : V.Validation CustomFormError Repartija
 validateRepartija =
     V.succeed Repartija
         |> V.andMap (V.field "repartija_id" validateId)
         |> V.andMap (V.succeed "GENERATED")
         |> V.andMap (V.field "extra" Monto.validateMonto)
+        |> V.andMap
+            (V.field "distribucionDeSobras"
+                (V.customValidation V.string
+                    (\t ->
+                        case t of
+                            "SobrasNoDistribuir" ->
+                                Ok SobrasNoDistribuir
+
+                            "SobrasProporcional" ->
+                                Ok SobrasProporcional
+
+                            _ ->
+                                Err <| FormError.value FormError.InvalidString
+                    )
+                )
+            )
         |> V.andMap (V.field "items" (V.list validateRepartijaItem))
         |> V.andMap (V.field "claims" (V.succeed []))
 
@@ -619,6 +658,7 @@ update store msg model =
                                                         , items = []
                                                         , claims = []
                                                         , extra = Monto.zero
+                                                        , distribucionDeSobras = SobrasNoDistribuir
                                                         }
                                                 }
                                             ++ distribucionToForm
@@ -825,6 +865,7 @@ distribucionToForm distribucion =
                     [ Form.setString "repartija_id" repartija.id
                     , Form.setString "tipo" "repartija"
                     , Form.setString "extra" (Monto.toString repartija.extra)
+                    , Form.setString "distribucionDeSobras" (distribucionDeSobrasToString repartija.distribucionDeSobras)
                     , Form.setList "items"
                         (repartija.items
                             |> List.map
@@ -1378,6 +1419,9 @@ repartijaForm prefix form receiptParseState =
         montoField =
             Form.getFieldAsString (prefix ++ ".extra") form
 
+        distribucionDeSobrasField =
+            Form.getFieldAsString (prefix ++ ".distribucionDeSobras") form
+
         itemsIndexes =
             Form.getListIndexes (prefix ++ ".items") form
     in
@@ -1448,6 +1492,50 @@ repartijaForm prefix form receiptParseState =
                     Ui5.textInput montoField
                         [ placeholder "1000" ]
                 ]
+            ]
+        , div [ style "margin-bottom" "1rem" ]
+            [ Ui5.label [ Attr.attribute "show-colon" "" ] [ text "Distribución de sobras" ]
+            , p [ style "margin-top" "0.25rem", style "margin-bottom" "0.5rem", style "font-size" "0.875rem", style "color" "var(--sapNeutralTextColor)" ]
+                [ text "Qué hacer con los items que nadie reclamó. Podés cambiar esta opción en cualquier momento." ]
+            , div [ style "margin-top" "0.5rem" ]
+                [ Html.map PagoForm <|
+                    Ui5.select
+                        [ on "change"
+                            (Decode.at [ "detail", "selectedOption", "value" ] Decode.string
+                                |> Decode.map (\v -> Form.Input distribucionDeSobrasField.path Form.Select (FormField.String v))
+                            )
+                        ]
+                        [ Ui5.option
+                            [ value "SobrasNoDistribuir"
+                            , selected (distribucionDeSobrasField.value == Just "SobrasNoDistribuir")
+                            ]
+                            [ text "No distribuir" ]
+                        , Ui5.option
+                            [ value "SobrasProporcional"
+                            , selected (distribucionDeSobrasField.value == Just "SobrasProporcional")
+                            ]
+                            [ text "Proporcional" ]
+                        ]
+                ]
+            , case distribucionDeSobrasField.value of
+                Just "SobrasNoDistribuir" ->
+                    Ui5.messageStrip
+                        [ Attr.attribute "design" "Information"
+                        , Attr.attribute "hide-close-button" ""
+                        , style "margin-top" "0.5rem"
+                        ]
+                        [ text "Las sobras no se asignan a nadie. Solo se reparte lo que cada uno reclamó." ]
+
+                Just "SobrasProporcional" ->
+                    Ui5.messageStrip
+                        [ Attr.attribute "design" "Information"
+                        , Attr.attribute "hide-close-button" ""
+                        , style "margin-top" "0.5rem"
+                        ]
+                        [ text "Las sobras se reparten entre todos proporcionalmente según lo que consumieron." ]
+
+                _ ->
+                    text ""
             ]
         ]
 

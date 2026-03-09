@@ -501,20 +501,39 @@ jsonEncDistribucionMontoEquitativo  val =
 
 
 
+type DistribucionDeSobras  =
+    SobrasNoDistribuir 
+    | SobrasProporcional 
+
+jsonDecDistribucionDeSobras : Json.Decode.Decoder ( DistribucionDeSobras )
+jsonDecDistribucionDeSobras = 
+    let jsonDecDictDistribucionDeSobras = Dict.fromList [("SobrasNoDistribuir", SobrasNoDistribuir), ("SobrasProporcional", SobrasProporcional)]
+    in  decodeSumUnaries "DistribucionDeSobras" jsonDecDictDistribucionDeSobras
+
+jsonEncDistribucionDeSobras : DistribucionDeSobras -> Value
+jsonEncDistribucionDeSobras  val =
+    case val of
+        SobrasNoDistribuir -> Json.Encode.string "SobrasNoDistribuir"
+        SobrasProporcional -> Json.Encode.string "SobrasProporcional"
+
+
+
 type alias Repartija  =
    { id: ULID
    , nombre: String
    , extra: Monto
+   , distribucionDeSobras: DistribucionDeSobras
    , items: (List RepartijaItem)
    , claims: (List RepartijaClaim)
    }
 
 jsonDecRepartija : Json.Decode.Decoder ( Repartija )
 jsonDecRepartija =
-   Json.Decode.succeed (\pid pnombre pextra pitems pclaims -> {id = pid, nombre = pnombre, extra = pextra, items = pitems, claims = pclaims})
+   Json.Decode.succeed (\pid pnombre pextra pdistribucionDeSobras pitems pclaims -> {id = pid, nombre = pnombre, extra = pextra, distribucionDeSobras = pdistribucionDeSobras, items = pitems, claims = pclaims})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
    |> required "extra" (jsonDecMonto)
+   |> required "distribucionDeSobras" (jsonDecDistribucionDeSobras)
    |> required "items" (Json.Decode.list (jsonDecRepartijaItem))
    |> required "claims" (Json.Decode.list (jsonDecRepartijaClaim))
 
@@ -524,6 +543,7 @@ jsonEncRepartija  val =
    [ ("id", jsonEncULID val.id)
    , ("nombre", Json.Encode.string val.nombre)
    , ("extra", jsonEncMonto val.extra)
+   , ("distribucionDeSobras", jsonEncDistribucionDeSobras val.distribucionDeSobras)
    , ("items", (Json.Encode.list jsonEncRepartijaItem) val.items)
    , ("claims", (Json.Encode.list jsonEncRepartijaClaim) val.claims)
    ]
