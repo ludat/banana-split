@@ -8,6 +8,7 @@
   },
   "scripts": {
     "build": "elm-land build",
+    "fix": "pnpm format:fix && pnpm review:fix",
     "format": "elm-format src/ --validate",
     "format:fix": "elm-format src/ --yes",
     "review": "elm-review",
