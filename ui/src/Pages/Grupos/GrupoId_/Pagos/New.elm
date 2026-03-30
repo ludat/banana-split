@@ -13,14 +13,14 @@ import Form.Error as FormError
 import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Distribucion, ErrorResumen(..), Monto, Netos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos(..), ResumenPago, TipoDistribucion(..), ULID)
-import Html exposing (Html, a, details, div, h1, p, summary, text)
-import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_)
+import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), Monto, Netos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos(..), ResumenPago, TipoDistribucion(..), ULID)
+import Html exposing (Html, a, details, div, p, summary, text)
+import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_, value)
 import Html.Events exposing (on, onClick, onSubmit)
 import Http
 import Json.Decode as Decode
 import Layouts
-import Models.Grupo exposing (lookupNombreParticipante)
+import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -113,9 +113,11 @@ init grupoId store =
         defaultDistribucionValues =
             [ Form.setGroup "distribucion_pagadores"
                 [ Form.setString "tipo" "monto_equitativo"
+                , Form.setString "distribucionDeSobras" "SobrasNoDistribuir"
                 ]
             , Form.setGroup "distribucion_deudores"
                 [ Form.setString "tipo" "monto_equitativo"
+                , Form.setString "distribucionDeSobras" "SobrasNoDistribuir"
                 ]
             ]
     in
@@ -194,12 +196,51 @@ validateId =
     V.defaultValue emptyUlid V.string
 
 
+distribucionDeSobrasToString : DistribucionDeSobras -> String
+distribucionDeSobrasToString distribucionDeSobras =
+    case distribucionDeSobras of
+        SobrasNoDistribuir ->
+            "SobrasNoDistribuir"
+
+        SobrasProporcional ->
+            "SobrasProporcional"
+
+
+distribucionDeSobrasFromString : String -> Maybe DistribucionDeSobras
+distribucionDeSobrasFromString text =
+    case text of
+        "SobrasNoDistribuir" ->
+            Just SobrasNoDistribuir
+
+        "SobrasProporcional" ->
+            Just SobrasProporcional
+
+        _ ->
+            Nothing
+
+
 validateRepartija : V.Validation CustomFormError Repartija
 validateRepartija =
     V.succeed Repartija
         |> V.andMap (V.field "repartija_id" validateId)
         |> V.andMap (V.succeed "GENERATED")
         |> V.andMap (V.field "extra" Monto.validateMonto)
+        |> V.andMap
+            (V.field "distribucionDeSobras"
+                (V.customValidation V.string
+                    (\t ->
+                        case t of
+                            "SobrasNoDistribuir" ->
+                                Ok SobrasNoDistribuir
+
+                            "SobrasProporcional" ->
+                                Ok SobrasProporcional
+
+                            _ ->
+                                Err <| FormError.value FormError.InvalidString
+                    )
+                )
+            )
         |> V.andMap (V.field "items" (V.list validateRepartijaItem))
         |> V.andMap (V.field "claims" (V.succeed []))
 
@@ -619,6 +660,7 @@ update store msg model =
                                                         , items = []
                                                         , claims = []
                                                         , extra = Monto.zero
+                                                        , distribucionDeSobras = SobrasNoDistribuir
                                                         }
                                                 }
                                             ++ distribucionToForm
@@ -825,6 +867,7 @@ distribucionToForm distribucion =
                     [ Form.setString "repartija_id" repartija.id
                     , Form.setString "tipo" "repartija"
                     , Form.setString "extra" (Monto.toString repartija.extra)
+                    , Form.setString "distribucionDeSobras" (distribucionDeSobrasToString repartija.distribucionDeSobras)
                     , Form.setList "items"
                         (repartija.items
                             |> List.map
@@ -915,43 +958,109 @@ subscriptions _ =
 getTotalFromResumen : ResumenNetos -> Maybe Monto
 getTotalFromResumen resumen =
     case resumen of
-        NetosIncomputables total _ ->
-            total
-
-        ResumenNetos total _ ->
-            total
+        ResumenNetos total _ _ ->
+            Just total
 
 
 getParticipantesFromResumen : ResumenNetos -> Maybe (List ParticipanteId)
 getParticipantesFromResumen resumen =
     case resumen of
-        NetosIncomputables _ _ ->
-            Nothing
-
-        ResumenNetos _ deudas ->
+        ResumenNetos _ deudas _ ->
             deudas
                 |> List.map (\( p, _ ) -> p)
                 |> Just
 
 
-getErrorFromResumen : ResumenNetos -> Maybe String
-getErrorFromResumen resumen =
-    case resumen of
-        NetosIncomputables _ (ErrorResumen error _) ->
-            error
+viewErrorFromResumen : ResumenNetos -> Html msg
+viewErrorFromResumen (ResumenNetos _ _ errors) =
+    case errors of
+        [] ->
+            text ""
 
-        ResumenNetos _ _ ->
-            Nothing
+        _ ->
+            Ui5.messageStrip
+                [ Attr.attribute "design" "Negative"
+                , Attr.attribute "hide-close-button" ""
+                ]
+                (errors
+                    |> List.map
+                        (\error ->
+                            case error.objeto of
+                                [] ->
+                                    text error.mensaje
+
+                                _ ->
+                                    div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "baseline" ]
+                                        [ Ui5.label [ Attr.attribute "show-colon" "" ] [ text (String.join " > " error.objeto) ]
+                                        , text error.mensaje
+                                        ]
+                        )
+                )
 
 
 getDeudasFromResumen : ResumenNetos -> Maybe (Netos Monto)
 getDeudasFromResumen resumen =
     case resumen of
-        NetosIncomputables _ _ ->
-            Nothing
+        ResumenNetos _ netos _ ->
+            Just netos
 
-        ResumenNetos _ deudas ->
-            Just deudas
+
+viewResumenPanel :
+    GrupoLike g
+    -> WebData ResumenPago
+    -> (ResumenPago -> ResumenNetos)
+    -> Bool
+    -> List (Html Msg)
+    -> Html Msg
+viewResumenPanel grupo resumenData accessor negateMontos extraContent =
+    div [ style "flex" "1", style "min-width" "300px" ]
+        [ Ui5.panel
+            [ Attr.attribute "header-text" "Resumen" ]
+            (case resumenData of
+                Success resumen ->
+                    let
+                        resumenNetos =
+                            accessor resumen
+
+                        netos =
+                            getDeudasFromResumen resumenNetos
+                                |> (if negateMontos then
+                                        Maybe.map (List.map (\( pp, m ) -> ( pp, Monto.negate m )))
+
+                                    else
+                                        identity
+                                   )
+                    in
+                    [ p [] [ Ui5.text <| "total: " ++ (Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumenNetos) ]
+                    , p []
+                        [ Ui5.text <|
+                            "participantes: "
+                                ++ (resumenNetos
+                                        |> getParticipantesFromResumen
+                                        |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
+                                        |> Maybe.withDefault "???"
+                                   )
+                        ]
+                    , viewErrorFromResumen resumenNetos
+                    , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) netos ]
+                    ]
+                        ++ extraContent
+
+                NotAsked ->
+                    []
+
+                Loading ->
+                    [ Ui5.busyIndicator [ Attr.attribute "active" "" ] [] ]
+
+                Failure e ->
+                    [ Ui5.messageStrip
+                        [ Attr.attribute "design" "Negative"
+                        , Attr.attribute "hide-close-button" ""
+                        ]
+                        [ text "Error al cargar el resumen" ]
+                    ]
+            )
+        ]
 
 
 viewUnsavedChangesBanner : Html Msg
@@ -1011,43 +1120,20 @@ view store model =
                         , Attr.attribute "data-section" "pagadores"
                         , selected (model.currentSection == PagadoresSection)
                         ]
-                        [ Html.form [ onSubmit <| SubmitCurrentSection ]
-                            [ p [] [ Ui5.text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
-                            , distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
-                            , Ui5.button
-                                [ Attr.attribute "design" "Emphasized"
-                                , disabled (Form.getOutput model.pagadoresForm == Nothing)
-                                , onClick SubmitCurrentSection
-                                ]
-                                [ text "Siguiente seccion" ]
-                            , case model.resumenPagadores of
-                                Success resumen ->
-                                    div []
-                                        [ Html.section []
-                                            [ h1 [] [ Ui5.text "Pagadores" ]
-                                            , p [] [ Ui5.text <| "total: " ++ (Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenPagadores) ]
-                                            , p []
-                                                [ Ui5.text <|
-                                                    "pagadores: "
-                                                        ++ (resumen.resumenPagadores
-                                                                |> getParticipantesFromResumen
-                                                                |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                                                |> Maybe.withDefault "???"
-                                                           )
-                                                ]
-                                            , p [] [ Ui5.text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenPagadores ]
-                                            , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| getDeudasFromResumen <| resumen.resumenPagadores ]
-                                            ]
+                        [ div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
+                            [ div [ style "flex" "1", style "min-width" "300px" ]
+                                [ Html.form [ onSubmit <| SubmitCurrentSection ]
+                                    [ p [] [ Ui5.text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
+                                    , distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
+                                    , Ui5.button
+                                        [ Attr.attribute "design" "Emphasized"
+                                        , disabled (Form.getOutput model.pagadoresForm == Nothing)
+                                        , onClick SubmitCurrentSection
                                         ]
-
-                                NotAsked ->
-                                    text ""
-
-                                Loading ->
-                                    Ui5.text "cargando..."
-
-                                Failure _ ->
-                                    Ui5.text "error"
+                                        [ text "Siguiente seccion" ]
+                                    ]
+                                ]
+                            , viewResumenPanel grupo model.resumenPagadores .resumenPagadores False []
                             ]
                         ]
                     , Ui5.wizardStep
@@ -1055,43 +1141,20 @@ view store model =
                         , Attr.attribute "data-section" "deudores"
                         , selected (model.currentSection == DeudoresSection)
                         ]
-                        [ Html.form [ onSubmit <| SubmitCurrentSection ]
-                            [ p [] [ Ui5.text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
-                            , distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
-                            , Ui5.button
-                                [ Attr.attribute "design" "Emphasized"
-                                , disabled (Form.getOutput model.deudoresForm == Nothing)
-                                , onClick SubmitCurrentSection
-                                ]
-                                [ text "Siguiente seccion" ]
-                            , case model.resumenDeudores of
-                                Success resumen ->
-                                    div []
-                                        [ Html.section []
-                                            [ h1 [] [ Ui5.text "Deudores" ]
-                                            , p [] [ Ui5.text <| "total: " ++ (Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumenDeudores) ]
-                                            , p []
-                                                [ Ui5.text <|
-                                                    "deudores: "
-                                                        ++ (resumen.resumenDeudores
-                                                                |> getParticipantesFromResumen
-                                                                |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                                                |> Maybe.withDefault "???"
-                                                           )
-                                                ]
-                                            , p [] [ Ui5.text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumenDeudores ]
-                                            , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| Maybe.map (List.map (\( pp, m ) -> ( pp, Monto.negate m ))) <| getDeudasFromResumen <| resumen.resumenDeudores ]
-                                            ]
+                        [ div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
+                            [ div [ style "flex" "1", style "min-width" "300px" ]
+                                [ Html.form [ onSubmit <| SubmitCurrentSection ]
+                                    [ p [] [ Ui5.text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
+                                    , distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
+                                    , Ui5.button
+                                        [ Attr.attribute "design" "Emphasized"
+                                        , disabled (Form.getOutput model.deudoresForm == Nothing)
+                                        , onClick SubmitCurrentSection
                                         ]
-
-                                NotAsked ->
-                                    text ""
-
-                                Loading ->
-                                    Ui5.text "cargando..."
-
-                                Failure _ ->
-                                    Ui5.text "error"
+                                        [ text "Siguiente seccion" ]
+                                    ]
+                                ]
+                            , viewResumenPanel grupo model.resumenDeudores .resumenDeudores True []
                             ]
                         ]
                     , Ui5.wizardStep
@@ -1099,93 +1162,75 @@ view store model =
                         , Attr.attribute "data-section" "confirmation"
                         , selected (model.currentSection == PagoConfirmation)
                         ]
-                        [ Html.form [ onSubmit <| PagoForm Form.Submit ]
-                            [ p [] [ Ui5.text "Revisá el resumen del pago antes de confirmar. Verificá que los montos y participantes sean correctos." ]
-                            , case model.resumenPago of
-                                Success resumen ->
-                                    Html.section [] <|
-                                        [ h1 [] [ Ui5.text "Pago" ]
-                                        , p [] [ Ui5.text <| "total: " ++ (Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumen.resumen) ]
-                                        , p []
-                                            [ Ui5.text <|
-                                                "participantes: "
-                                                    ++ (resumen.resumen
-                                                            |> getParticipantesFromResumen
-                                                            |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                                            |> Maybe.withDefault "???"
-                                                       )
+                        [ div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
+                            [ div [ style "flex" "1", style "min-width" "300px" ]
+                                [ Html.form [ onSubmit <| PagoForm Form.Submit ]
+                                    [ p [] [ Ui5.text "Revisá el resumen del pago antes de confirmar. Verificá que los montos y participantes sean correctos." ]
+                                    , if model.hasUnsavedChanges then
+                                        let
+                                            textoCTA =
+                                                case model.currentPagoId of
+                                                    Nothing ->
+                                                        text "Crear pago"
+
+                                                    Just _ ->
+                                                        text "Actualizar pago"
+                                        in
+                                        Ui5.button
+                                            [ Attr.attribute "design" "Emphasized"
+                                            , onClick (PagoForm Form.Submit)
+                                            , id "pago-submit-button"
                                             ]
-                                        , p [] [ Ui5.text <| Maybe.withDefault "" <| Maybe.map (\s -> "problemas: " ++ s) <| getErrorFromResumen resumen.resumen ]
-                                        , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) <| getDeudasFromResumen <| resumen.resumen ]
-                                        ]
-                                            ++ (case Form.getOutput model.pagoForm of
-                                                    Just pago ->
-                                                        [ case pago.pagadores.tipo of
-                                                            TipoDistribucionRepartija repartija ->
-                                                                if repartija.id /= emptyUlid then
-                                                                    p [] <|
-                                                                        [ Ui5.link
-                                                                            [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
-                                                                            , target "_blank"
-                                                                            ]
-                                                                            [ text "repartija pagadores" ]
-                                                                        ]
+                                            [ textoCTA
+                                            ]
 
-                                                                else
-                                                                    text ""
-
-                                                            _ ->
-                                                                text ""
-                                                        , case pago.deudores.tipo of
-                                                            TipoDistribucionRepartija repartija ->
-                                                                if repartija.id /= emptyUlid then
-                                                                    p [] <|
-                                                                        [ a
-                                                                            [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
-                                                                            , target "_blank"
-                                                                            ]
-                                                                            [ text "repartija deudores" ]
-                                                                        ]
-
-                                                                else
-                                                                    text ""
-
-                                                            _ ->
-                                                                text ""
+                                      else
+                                        text ""
+                                    ]
+                                ]
+                            , viewResumenPanel grupo
+                                model.resumenPago
+                                .resumen
+                                False
+                                (case Form.getOutput model.pagoForm of
+                                    Just pago ->
+                                        [ case pago.pagadores.tipo of
+                                            TipoDistribucionRepartija repartija ->
+                                                if repartija.id /= emptyUlid then
+                                                    p [] <|
+                                                        [ Ui5.link
+                                                            [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
+                                                            , target "_blank"
+                                                            ]
+                                                            [ text "repartija pagadores" ]
                                                         ]
 
-                                                    Nothing ->
-                                                        []
-                                               )
+                                                else
+                                                    text ""
 
-                                NotAsked ->
-                                    Ui5.text "notasked"
+                                            _ ->
+                                                text ""
+                                        , case pago.deudores.tipo of
+                                            TipoDistribucionRepartija repartija ->
+                                                if repartija.id /= emptyUlid then
+                                                    p [] <|
+                                                        [ a
+                                                            [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
+                                                            , target "_blank"
+                                                            ]
+                                                            [ text "repartija deudores" ]
+                                                        ]
 
-                                Loading ->
-                                    Ui5.text "loading"
+                                                else
+                                                    text ""
 
-                                Failure e ->
-                                    viewHttpError e
-                            , if model.hasUnsavedChanges then
-                                let
-                                    textoCTA =
-                                        case model.currentPagoId of
-                                            Nothing ->
-                                                text "Crear pago"
+                                            _ ->
+                                                text ""
+                                        ]
 
-                                            Just _ ->
-                                                text "Actualizar pago"
-                                in
-                                Ui5.button
-                                    [ Attr.attribute "design" "Emphasized"
-                                    , onClick (PagoForm Form.Submit)
-                                    , id "pago-submit-button"
-                                    ]
-                                    [ textoCTA
-                                    ]
-
-                              else
-                                text ""
+                                    Nothing ->
+                                        []
+                                )
                             ]
                         ]
                     ]
@@ -1378,6 +1423,9 @@ repartijaForm prefix form receiptParseState =
         montoField =
             Form.getFieldAsString (prefix ++ ".extra") form
 
+        distribucionDeSobrasField =
+            Form.getFieldAsString (prefix ++ ".distribucionDeSobras") form
+
         itemsIndexes =
             Form.getListIndexes (prefix ++ ".items") form
     in
@@ -1448,6 +1496,54 @@ repartijaForm prefix form receiptParseState =
                     Ui5.textInput montoField
                         [ placeholder "1000" ]
                 ]
+            ]
+        , div [ style "margin-bottom" "1rem" ]
+            [ -- TODO agregar separador
+              Ui5.text "CLAUDIO SEPARADOR!"
+            ]
+        , div [ style "margin-bottom" "1rem" ]
+            [ Ui5.label [ Attr.attribute "show-colon" "" ] [ text "Distribución de sobras" ]
+            , p [ style "margin-top" "0.25rem", style "margin-bottom" "0.5rem", style "font-size" "0.875rem", style "color" "var(--sapNeutralTextColor)" ]
+                [ text "Qué hacer con los items que nadie reclamó. Podés cambiar esta opción en cualquier momento." ]
+            , div [ style "margin-top" "0.5rem" ]
+                [ Html.map PagoForm <|
+                    Ui5.select
+                        [ on "change"
+                            (Decode.at [ "detail", "selectedOption", "value" ] Decode.string
+                                |> Decode.map (\v -> Form.Input distribucionDeSobrasField.path Form.Select (FormField.String v))
+                            )
+                        ]
+                        [ Ui5.option
+                            [ value "SobrasNoDistribuir"
+                            , selected (distribucionDeSobrasField.value == Just "SobrasNoDistribuir")
+                            ]
+                            [ text "No distribuir" ]
+                        , Ui5.option
+                            [ value "SobrasProporcional"
+                            , selected (distribucionDeSobrasField.value == Just "SobrasProporcional")
+                            ]
+                            [ text "Proporcional" ]
+                        ]
+                ]
+            , case distribucionDeSobrasField.value of
+                Just "SobrasNoDistribuir" ->
+                    Ui5.messageStrip
+                        [ Attr.attribute "design" "Information"
+                        , Attr.attribute "hide-close-button" ""
+                        , style "margin-top" "0.5rem"
+                        ]
+                        [ text "Las sobras no se asignan a nadie. Solo se reparte lo que cada uno reclamó." ]
+
+                Just "SobrasProporcional" ->
+                    Ui5.messageStrip
+                        [ Attr.attribute "design" "Information"
+                        , Attr.attribute "hide-close-button" ""
+                        , style "margin-top" "0.5rem"
+                        ]
+                        [ text "Las sobras se reparten entre todos proporcionalmente según lo que consumieron." ]
+
+                _ ->
+                    text ""
             ]
         ]
 

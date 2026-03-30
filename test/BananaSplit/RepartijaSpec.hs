@@ -12,6 +12,7 @@ fakeRepartija =
     { id = fakeUlid 1
     , nombre = "falso"
     , extra = 0
+    , distribucionDeSobras = SobrasProporcional
     , claims = []
     , items = []
     }

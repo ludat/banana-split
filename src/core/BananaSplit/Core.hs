@@ -31,7 +31,7 @@ import GHC.Generics
 import Protolude
 
 import BananaSplit.Deudas
-import BananaSplit.Monto (Monto)
+import BananaSplit.Monto (Monto, monto2Text, montoDiffText)
 import BananaSplit.Participante (Participante, ParticipanteId)
 import BananaSplit.ULID
 
@@ -84,34 +84,26 @@ calcularNetosPago pago =
 
 getResumenPago :: Pago -> ResumenNetos
 getResumenPago pago =
-  case (resumenPagadores, resumenDeudores) of
-    (NetosIncomputables _ errorPagadores, NetosIncomputables _ errorDeudores) ->
-      NetosIncomputables (Just pago.monto) $ ErrorResumen Nothing [("pagadores", errorPagadores), ("deudores", errorDeudores)]
-    (NetosIncomputables _ errorPagadores, ResumenNetos _ _netosDeudores) ->
-      NetosIncomputables (Just pago.monto) $ ErrorResumen Nothing [("pagadores", errorPagadores)]
-    (ResumenNetos _ _netosPagadores, NetosIncomputables _ errorDeudores) ->
-      NetosIncomputables (Just pago.monto) $ ErrorResumen Nothing [("deudores", errorDeudores)]
-    (ResumenNetos _ netosPagadores, ResumenNetos _ netosDeudores) ->
+  let
+    resumenPagadores = getResumen pago.monto pago.pagadores
+    resumenDeudores = getResumen pago.monto pago.deudores
+  in case (resumenPagadores, resumenDeudores) of
+    (ResumenNetos _ netosPagadores erroresPagadores, ResumenNetos _ netosDeudores erroresDeudores) ->
       let
         netos = netosPagadores <> fmap negate netosDeudores
         total = totalNetos netos
-        totalPagadores = totalNetos netosPagadores
-        totalDeudores = totalNetos $ fmap negate netosDeudores
-      in
-        if
-          | totalPagadores /= negate totalDeudores ->
-              NetosIncomputables (Just pago.monto) $
-                ErrorResumen (Just $ "Las netos no estan balanceadas, el total de pagadores (" <> show totalPagadores <> ") y el total de deudores (" <> show totalDeudores <> ") deberían ser iguales") []
+        extraErrors = if
           | total /= 0 ->
-              NetosIncomputables (Just pago.monto) $
-                ErrorResumen (Just $ "Las netos no estan balanceadas, la suma debería dar 0 pero da: " <> show total) []
-          | pago.monto /= totalPagadores ->
-              NetosIncomputables (Just pago.monto) $
-                ErrorResumen (Just $ "Las netos no estan balanceadas, la suma debería dar 0 pero da: " <> show total) []
-          | otherwise -> ResumenNetos (Just pago.monto) netos
+                [ ErrorResumen mempty ("Las netos no estan balanceados, la suma debería dar 0 pero da: " <> monto2Text total)
+                ]
+          | otherwise -> []
+      in ResumenNetos pago.monto netos $
+        fmap (relabelError "pagadores") erroresPagadores <>
+        fmap (relabelError "deudores") erroresDeudores <>
+        extraErrors
   where
-    resumenPagadores = getResumen pago.monto pago.pagadores
-    resumenDeudores = getResumen pago.monto pago.deudores
+    relabelError :: Text -> ErrorResumen -> ErrorResumen
+    relabelError scope (ErrorResumen objeto mensaje) = ErrorResumen (scope : objeto) mensaje
 
 isValid :: Pago -> Bool
 isValid pago =

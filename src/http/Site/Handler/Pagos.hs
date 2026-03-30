@@ -73,6 +73,7 @@ handlePagoUpdate grupoId pagoId pago = do
 
 handleSaldarTransaccion :: ULID -> ULID -> Pago -> AppHandler Pago
 handleSaldarTransaccion grupoId transaccionId pago = do
-  savedPago <- runBeam $ savePago grupoId pago
-  runBeam $ deleteTransaccionCongelada transaccionId
-  pure savedPago
+  runBeam $ do
+    savedPago <- savePago grupoId pago
+    deleteTransaccionCongelada transaccionId
+    pure savedPago
