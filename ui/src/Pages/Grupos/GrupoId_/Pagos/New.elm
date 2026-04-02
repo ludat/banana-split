@@ -323,7 +323,11 @@ update store msg model =
             ( model, Effect.none )
 
         AddedPagoResponse (Ok pago) ->
-            ( { model | hasUnsavedChanges = False }
+            let
+                newModel =
+                    initializePagoForms participantes (Just pago) model
+            in
+            ( { newModel | hasUnsavedChanges = False }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
