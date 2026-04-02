@@ -343,17 +343,10 @@ update store msg model =
 
         UpdatedPagoResponse (Ok pago) ->
             let
-                claimsToStore =
-                    { pagadores = extractClaimsFromDistribucion pago.pagadores
-                    , deudores = extractClaimsFromDistribucion pago.deudores
-                    }
-
                 newModel =
-                    setFormsFromPago participantes (Just pago) model
+                    initializePagoForms participantes (Just pago) model
             in
-            ( { newModel
-                | storedClaims = Just claimsToStore
-              }
+            ( newModel
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
@@ -605,7 +598,7 @@ update store msg model =
                         Success grupo ->
                             let
                                 newModel =
-                                    setFormsFromPago grupo.participantes Nothing model
+                                    initializePagoForms grupo.participantes Nothing model
                             in
                             ( { newModel
                                 | storedClaims = Nothing
@@ -636,7 +629,11 @@ update store msg model =
                             ( model, Effect.none )
 
                         ( Success grupo, Success pago ) ->
-                            ( setFormsFromPago grupo.participantes (Just pago) model
+                            let
+                                newModel =
+                                    initializePagoForms grupo.participantes (Just pago) model
+                            in
+                            ( newModel
                             , Effect.none
                             )
                                 |> andThenUpdateResumenesFromForms model
@@ -653,8 +650,8 @@ andThenSendWarningOnExit ( model, oldEffects ) =
     )
 
 
-setFormsFromPago : List Participante -> Maybe Pago -> Model -> Model
-setFormsFromPago participantes pago model =
+initializePagoForms : List Participante -> Maybe Pago -> Model -> Model
+initializePagoForms participantes pago model =
     let
         initialFormValues =
             [ Form.setString "id" (pago |> Maybe.map .pagoId |> Maybe.withDefault "")
@@ -665,12 +662,22 @@ setFormsFromPago participantes pago model =
             , Form.setGroup "distribucion_deudores" <|
                 distribucionToForm (distribucionesDeudoresDefault participantes) (Maybe.map .deudores pago)
             ]
+
+        claimsToStore =
+            pago
+                |> Maybe.map
+                    (\p ->
+                        { pagadores = extractClaimsFromDistribucion p.pagadores
+                        , deudores = extractClaimsFromDistribucion p.deudores
+                        }
+                    )
     in
     { model
         | pagoForm = Form.initial initialFormValues (validatePago participantes)
         , pagadoresForm = Form.initial initialFormValues (validatePagoInSection PagadoresSection participantes)
         , deudoresForm = Form.initial initialFormValues (validatePagoInSection DeudoresSection participantes)
         , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData participantes)
+        , storedClaims = claimsToStore
         , hasUnsavedChanges = False
     }
 
