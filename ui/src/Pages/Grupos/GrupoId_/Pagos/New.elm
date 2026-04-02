@@ -15,7 +15,7 @@ import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
 import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), Monto, Netos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), TipoErrorResumen(..), ULID)
 import Html exposing (Html, a, details, div, p, summary, text)
-import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_, value)
+import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_)
 import Html.Events exposing (on, onClick, onSubmit)
 import Http
 import Json.Decode as Decode
@@ -205,19 +205,6 @@ distribucionDeSobrasToString distribucionDeSobras =
 
         SobrasProporcional ->
             "SobrasProporcional"
-
-
-distribucionDeSobrasFromString : String -> Maybe DistribucionDeSobras
-distribucionDeSobrasFromString text =
-    case text of
-        "SobrasNoDistribuir" ->
-            Just SobrasNoDistribuir
-
-        "SobrasProporcional" ->
-            Just SobrasProporcional
-
-        _ ->
-            Nothing
 
 
 validateRepartija : V.Validation CustomFormError Repartija
@@ -1135,7 +1122,7 @@ viewResumenPanel grupo resumenData accessor negateMontos extraContent =
                 Loading ->
                     [ Ui5.busyIndicator [ Attr.attribute "active" "" ] [] ]
 
-                Failure e ->
+                Failure _ ->
                     [ Ui5.messageStrip
                         [ Attr.attribute "design" "Negative"
                         , Attr.attribute "hide-close-button" ""
