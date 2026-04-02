@@ -1,5 +1,6 @@
 module Models.Monto exposing
     ( abs
+    , diffText
     , negate
     , toDecimal
     , toString
@@ -60,3 +61,19 @@ toString monto =
 abs : Monto -> Monto
 abs monto =
     { monto | valor = Basics.abs monto.valor }
+
+
+diffText : Monto -> Monto -> String
+diffText actual expected =
+    let
+        diff =
+            Decimal.subtract (toDecimal actual) (toDecimal expected)
+
+        absDiff =
+            Decimal.abs diff
+    in
+    if Decimal.toInt diff > 0 then
+        "es " ++ Decimal.toString absDiff ++ " de más"
+
+    else
+        "es " ++ Decimal.toString absDiff ++ " de menos"

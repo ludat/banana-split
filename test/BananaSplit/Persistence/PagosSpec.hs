@@ -31,12 +31,15 @@ spec =
       fetchedPago <- runDb $ fetchPago grupo.id savedPago.pagoId
       fetchedPago `shouldBe` savedPago
 
+instance Arbitrary DistribucionDeSobras where
+  arbitrary = elements [SobrasNoDistribuir, SobrasProporcional]
+
 instance Arbitrary TipoDistribucion where
   arbitrary =
     oneof
       [ pure $ TipoDistribucionMontoEquitativo $ DistribucionMontoEquitativo nullUlid []
       , pure $ TipoDistribucionMontosEspecificos $ DistribucionMontosEspecificos nullUlid []
-      , TipoDistribucionRepartija <$> (Repartija nullUlid "nombre" <$> arbitrary <*> pure [] <*> pure [])
+      , TipoDistribucionRepartija <$> (Repartija nullUlid "nombre" <$> arbitrary <*> arbitrary <*> pure [] <*> pure [])
       ]
 
 instance Arbitrary Distribucion where

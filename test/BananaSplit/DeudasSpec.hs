@@ -30,6 +30,190 @@ spec = do
         , deudores = distribucionMontosEspecificos []
         }
 
+  let
+    fakeRepartija =
+      Repartija
+        { id = fakeUlid 50
+        , nombre = "test"
+        , extra = 0
+        , distribucionDeSobras = SobrasNoDistribuir
+        , claims = []
+        , items = []
+        }
+    err objeto tipo = ErrorResumen{objeto = objeto, tipo = tipo}
+
+  describe "getResumen para DistribucionMontosEspecificos" $ do
+    it "sin montos devuelve ErrorMontosEspecificosVacios" $ do
+      (getResumen 100 (distribucionMontosEspecificos [])).errores
+        `shouldBe` [err [] ErrorMontosEspecificosVacios]
+
+    it "con total que no coincide devuelve ErrorMontosEspecificosTotalNoCoincide" $ do
+      (getResumen 500 (distribucionMontosEspecificos [(u1, 300)])).errores
+        `shouldBe` [err [] (ErrorMontosEspecificosTotalNoCoincide 300 500)]
+
+    it "con total que coincide no devuelve errores" $ do
+      (getResumen 500 (distribucionMontosEspecificos [(u1, 300), (u2, 200)])).errores
+        `shouldBe` []
+
+  describe "getResumen para DistribucionMontoEquitativo" $ do
+    it "sin participantes devuelve ErrorEquitativoSinParticipantes" $ do
+      (getResumen 100 (distribucionMontoEquitativo [])).errores
+        `shouldBe` [err [] ErrorEquitativoSinParticipantes]
+
+    it "con participantes no devuelve errores" $ do
+      (getResumen 100 (distribucionMontoEquitativo [u1, u2])).errores
+        `shouldBe` []
+
+  describe "getResumen para Repartija" $ do
+    it "sin items devuelve ErrorRepartijaSinItems" $ do
+      (getResumen 100 (distribucionRepartija fakeRepartija)).errores
+        `shouldBe` [err [] ErrorRepartijaSinItems]
+
+    it "con total de items que no coincide devuelve ErrorRepartijaTotalItemsNoCoincide" $ do
+      let r =
+            fakeRepartija
+              { items = [RepartijaItem (fakeUlid 2) "Item" 300 1]
+              , claims = [RepartijaClaim (fakeUlid 100) u1 (fakeUlid 2) (Just 1)]
+              }
+      (getResumen 500 (distribucionRepartija r)).errores
+        `shouldBe` [err [] (ErrorRepartijaTotalItemsNoCoincide 300 500)]
+
+    it "sin claims devuelve ErrorRepartijaSinClaims" $ do
+      let r =
+            fakeRepartija
+              { items = [RepartijaItem (fakeUlid 2) "Item" 500 1]
+              }
+      (getResumen 500 (distribucionRepartija r)).errores
+        `shouldBe` [err [] ErrorRepartijaSinClaims]
+
+    it "con total reclamado que no coincide devuelve ErrorRepartijaTotalReclamadoNoCoincide" $ do
+      let item1 = fakeUlid 2
+          item2 = fakeUlid 3
+          r =
+            fakeRepartija
+              { items =
+                  [ RepartijaItem item1 "Item1" 300 2
+                  , RepartijaItem item2 "Item2" 200 1
+                  ]
+              , claims =
+                  [ RepartijaClaim (fakeUlid 100) u1 item1 (Just 1)
+                  ]
+              }
+      let res = getResumen 500 (distribucionRepartija r)
+      res.errores
+        `shouldBe` [err [] (ErrorRepartijaTotalReclamadoNoCoincide (totalNetos res.netos) 500)]
+
+    it "con todo bien no devuelve errores" $ do
+      let item1 = fakeUlid 2
+          r =
+            fakeRepartija
+              { items = [RepartijaItem item1 "Item" 500 1]
+              , claims = [RepartijaClaim (fakeUlid 100) u1 item1 (Just 1)]
+              }
+      (getResumen 500 (distribucionRepartija r)).errores
+        `shouldBe` []
+
+    it "SobrasProporcional reparte items no reclamados proporcionalmente" $ do
+      let item1 = fakeUlid 2
+          item2 = fakeUlid 3
+          r =
+            fakeRepartija
+              { distribucionDeSobras = SobrasProporcional
+              , items =
+                  [ RepartijaItem item1 "Birrita" 200 2
+                  , RepartijaItem item2 "Papitas" 300 1
+                  ]
+              , claims =
+                  [ RepartijaClaim (fakeUlid 100) u1 item1 (Just 1)
+                  , RepartijaClaim (fakeUlid 101) u2 item1 (Just 1)
+                  ]
+              }
+      (getResumen 500 (distribucionRepartija r)).errores
+        `shouldBe` []
+
+    it "SobrasNoDistribuir no reparte items no reclamados" $ do
+      let item1 = fakeUlid 2
+          item2 = fakeUlid 3
+          r =
+            fakeRepartija
+              { distribucionDeSobras = SobrasNoDistribuir
+              , items =
+                  [ RepartijaItem item1 "Birrita" 200 2
+                  , RepartijaItem item2 "Papitas" 300 1
+                  ]
+              , claims =
+                  [ RepartijaClaim (fakeUlid 100) u1 item1 (Just 1)
+                  , RepartijaClaim (fakeUlid 101) u2 item1 (Just 1)
+                  ]
+              }
+          res = getResumen 500 (distribucionRepartija r)
+      res.errores
+        `shouldBe` [err [] (ErrorRepartijaTotalReclamadoNoCoincide (totalNetos res.netos) 500)]
+
+    it "SobrasProporcional reparte propina proporcionalmente entre los que reclamaron" $ do
+      let item1 = fakeUlid 2
+          r =
+            fakeRepartija
+              { distribucionDeSobras = SobrasProporcional
+              , extra = 100
+              , items = [RepartijaItem item1 "Birrita" 400 2]
+              , claims =
+                  [ RepartijaClaim (fakeUlid 100) u1 item1 (Just 1)
+                  , RepartijaClaim (fakeUlid 101) u2 item1 (Just 1)
+                  ]
+              }
+          res = getResumen 500 (distribucionRepartija r)
+      res.errores `shouldBe` []
+      totalNetos res.netos `shouldBe` 500
+
+    it "SobrasNoDistribuir reparte solo la propina, no los items sobrantes" $ do
+      let item1 = fakeUlid 2
+          r =
+            fakeRepartija
+              { distribucionDeSobras = SobrasNoDistribuir
+              , extra = 50
+              , items = [RepartijaItem item1 "Birrita" 200 2]
+              , claims =
+                  [ RepartijaClaim (fakeUlid 100) u1 item1 (Just 1)
+                  ]
+              }
+          res = getResumen 250 (distribucionRepartija r)
+      res.errores
+        `shouldBe` [err [] (ErrorRepartijaTotalReclamadoNoCoincide (totalNetos res.netos) 250)]
+
+  describe "getResumenPago" $ do
+    it "con pagadores y deudores que no balancean devuelve errores con objeto correcto" $ do
+      let pago =
+            pagoValido
+              { monto = 500
+              , pagadores = distribucionMontosEspecificos [(u1, 500)]
+              , deudores = distribucionMontosEspecificos [(u2, 300)]
+              }
+          res = getResumenPago pago
+      res.errores
+        `shouldBe` [ err ["deudores"] (ErrorMontosEspecificosTotalNoCoincide 300 500)
+                   ]
+
+    it "con pagadores y deudores que balancean no devuelve errores" $ do
+      let pago =
+            pagoValido
+              { monto = 500
+              , pagadores = distribucionMontosEspecificos [(u1, 500)]
+              , deudores = distribucionMontosEspecificos [(u2, 500)]
+              }
+      (getResumenPago pago).errores
+        `shouldBe` []
+
+    it "errores de pagadores tienen objeto 'pagadores'" $ do
+      let pago =
+            pagoValido
+              { monto = 500
+              , pagadores = distribucionMontosEspecificos []
+              , deudores = distribucionMontosEspecificos [(u2, 500)]
+              }
+      (getResumenPago pago).errores
+        `shouldBe` [err ["pagadores"] ErrorMontosEspecificosVacios]
+
   describe "calcularNetos" $ do
     it "calcula netos de un pago montos especificos en pagadores y deudores" $ do
       calcularNetosPago

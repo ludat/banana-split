@@ -140,38 +140,82 @@ jsonEncResumenPago  val =
 
 
 
-type ResumenNetos  =
-    NetosIncomputables (Maybe Monto) ErrorResumen
-    | ResumenNetos (Maybe Monto) (Netos Monto)
+type alias ResumenNetos  =
+   { total: Monto
+   , netos: (Netos Monto)
+   , errores: (List ErrorResumen)
+   }
 
 jsonDecResumenNetos : Json.Decode.Decoder ( ResumenNetos )
 jsonDecResumenNetos =
-    let jsonDecDictResumenNetos = Dict.fromList
-            [ ("NetosIncomputables", Json.Decode.lazy (\_ -> Json.Decode.map2 NetosIncomputables (Json.Decode.index 0 (Json.Decode.maybe (jsonDecMonto))) (Json.Decode.index 1 (jsonDecErrorResumen))))
-            , ("ResumenNetos", Json.Decode.lazy (\_ -> Json.Decode.map2 ResumenNetos (Json.Decode.index 0 (Json.Decode.maybe (jsonDecMonto))) (Json.Decode.index 1 (jsonDecNetos (jsonDecMonto)))))
-            ]
-    in  decodeSumObjectWithSingleField  "ResumenNetos" jsonDecDictResumenNetos
+   Json.Decode.succeed (\ptotal pnetos perrores -> {total = ptotal, netos = pnetos, errores = perrores})
+   |> required "total" (jsonDecMonto)
+   |> required "netos" (jsonDecNetos (jsonDecMonto))
+   |> required "errores" (Json.Decode.list (jsonDecErrorResumen))
 
 jsonEncResumenNetos : ResumenNetos -> Value
 jsonEncResumenNetos  val =
+   Json.Encode.object
+   [ ("total", jsonEncMonto val.total)
+   , ("netos", (jsonEncNetos (jsonEncMonto)) val.netos)
+   , ("errores", (Json.Encode.list jsonEncErrorResumen) val.errores)
+   ]
+
+
+
+type TipoErrorResumen  =
+    ErrorMontosEspecificosVacios 
+    | ErrorMontosEspecificosTotalNoCoincide Monto Monto
+    | ErrorEquitativoSinParticipantes 
+    | ErrorRepartijaSinItems 
+    | ErrorRepartijaTotalItemsNoCoincide Monto Monto
+    | ErrorRepartijaSinClaims 
+    | ErrorRepartijaTotalReclamadoNoCoincide Monto Monto
+
+jsonDecTipoErrorResumen : Json.Decode.Decoder ( TipoErrorResumen )
+jsonDecTipoErrorResumen =
+    let jsonDecDictTipoErrorResumen = Dict.fromList
+            [ ("ErrorMontosEspecificosVacios", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorMontosEspecificosVacios))
+            , ("ErrorMontosEspecificosTotalNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorMontosEspecificosTotalNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
+            , ("ErrorEquitativoSinParticipantes", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorEquitativoSinParticipantes))
+            , ("ErrorRepartijaSinItems", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorRepartijaSinItems))
+            , ("ErrorRepartijaTotalItemsNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorRepartijaTotalItemsNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
+            , ("ErrorRepartijaSinClaims", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorRepartijaSinClaims))
+            , ("ErrorRepartijaTotalReclamadoNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorRepartijaTotalReclamadoNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
+            ]
+    in  decodeSumObjectWithSingleField  "TipoErrorResumen" jsonDecDictTipoErrorResumen
+
+jsonEncTipoErrorResumen : TipoErrorResumen -> Value
+jsonEncTipoErrorResumen  val =
     let keyval v = case v of
-                    NetosIncomputables v1 v2 -> ("NetosIncomputables", encodeValue (Json.Encode.list identity [(maybeEncode (jsonEncMonto)) v1, jsonEncErrorResumen v2]))
-                    ResumenNetos v1 v2 -> ("ResumenNetos", encodeValue (Json.Encode.list identity [(maybeEncode (jsonEncMonto)) v1, (jsonEncNetos (jsonEncMonto)) v2]))
+                    ErrorMontosEspecificosVacios  -> ("ErrorMontosEspecificosVacios", encodeValue (Json.Encode.list identity []))
+                    ErrorMontosEspecificosTotalNoCoincide v1 v2 -> ("ErrorMontosEspecificosTotalNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
+                    ErrorEquitativoSinParticipantes  -> ("ErrorEquitativoSinParticipantes", encodeValue (Json.Encode.list identity []))
+                    ErrorRepartijaSinItems  -> ("ErrorRepartijaSinItems", encodeValue (Json.Encode.list identity []))
+                    ErrorRepartijaTotalItemsNoCoincide v1 v2 -> ("ErrorRepartijaTotalItemsNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
+                    ErrorRepartijaSinClaims  -> ("ErrorRepartijaSinClaims", encodeValue (Json.Encode.list identity []))
+                    ErrorRepartijaTotalReclamadoNoCoincide v1 v2 -> ("ErrorRepartijaTotalReclamadoNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
     in encodeSumObjectWithSingleField keyval val
 
 
 
-type ErrorResumen  =
-    ErrorResumen (Maybe String) (List (String, ErrorResumen))
+type alias ErrorResumen  =
+   { objeto: (List String)
+   , tipo: TipoErrorResumen
+   }
 
 jsonDecErrorResumen : Json.Decode.Decoder ( ErrorResumen )
 jsonDecErrorResumen =
-    Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorResumen (Json.Decode.index 0 (Json.Decode.maybe (Json.Decode.string))) (Json.Decode.index 1 (Json.Decode.list (Json.Decode.map2 tuple2 (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (jsonDecErrorResumen))))))
-
+   Json.Decode.succeed (\pobjeto ptipo -> {objeto = pobjeto, tipo = ptipo})
+   |> required "objeto" (Json.Decode.list (Json.Decode.string))
+   |> required "tipo" (jsonDecTipoErrorResumen)
 
 jsonEncErrorResumen : ErrorResumen -> Value
-jsonEncErrorResumen (ErrorResumen v1 v2) =
-    Json.Encode.list identity [(maybeEncode (Json.Encode.string)) v1, (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(Json.Encode.string) t1,(jsonEncErrorResumen) t2])) v2]
+jsonEncErrorResumen  val =
+   Json.Encode.object
+   [ ("objeto", (Json.Encode.list Json.Encode.string) val.objeto)
+   , ("tipo", jsonEncTipoErrorResumen val.tipo)
+   ]
 
 
 
@@ -501,20 +545,39 @@ jsonEncDistribucionMontoEquitativo  val =
 
 
 
+type DistribucionDeSobras  =
+    SobrasNoDistribuir 
+    | SobrasProporcional 
+
+jsonDecDistribucionDeSobras : Json.Decode.Decoder ( DistribucionDeSobras )
+jsonDecDistribucionDeSobras = 
+    let jsonDecDictDistribucionDeSobras = Dict.fromList [("SobrasNoDistribuir", SobrasNoDistribuir), ("SobrasProporcional", SobrasProporcional)]
+    in  decodeSumUnaries "DistribucionDeSobras" jsonDecDictDistribucionDeSobras
+
+jsonEncDistribucionDeSobras : DistribucionDeSobras -> Value
+jsonEncDistribucionDeSobras  val =
+    case val of
+        SobrasNoDistribuir -> Json.Encode.string "SobrasNoDistribuir"
+        SobrasProporcional -> Json.Encode.string "SobrasProporcional"
+
+
+
 type alias Repartija  =
    { id: ULID
    , nombre: String
    , extra: Monto
+   , distribucionDeSobras: DistribucionDeSobras
    , items: (List RepartijaItem)
    , claims: (List RepartijaClaim)
    }
 
 jsonDecRepartija : Json.Decode.Decoder ( Repartija )
 jsonDecRepartija =
-   Json.Decode.succeed (\pid pnombre pextra pitems pclaims -> {id = pid, nombre = pnombre, extra = pextra, items = pitems, claims = pclaims})
+   Json.Decode.succeed (\pid pnombre pextra pdistribucionDeSobras pitems pclaims -> {id = pid, nombre = pnombre, extra = pextra, distribucionDeSobras = pdistribucionDeSobras, items = pitems, claims = pclaims})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
    |> required "extra" (jsonDecMonto)
+   |> required "distribucionDeSobras" (jsonDecDistribucionDeSobras)
    |> required "items" (Json.Decode.list (jsonDecRepartijaItem))
    |> required "claims" (Json.Decode.list (jsonDecRepartijaClaim))
 
@@ -524,6 +587,7 @@ jsonEncRepartija  val =
    [ ("id", jsonEncULID val.id)
    , ("nombre", Json.Encode.string val.nombre)
    , ("extra", jsonEncMonto val.extra)
+   , ("distribucionDeSobras", jsonEncDistribucionDeSobras val.distribucionDeSobras)
    , ("items", (Json.Encode.list jsonEncRepartijaItem) val.items)
    , ("claims", (Json.Encode.list jsonEncRepartijaClaim) val.claims)
    ]

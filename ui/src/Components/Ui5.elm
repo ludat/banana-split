@@ -1,4 +1,4 @@
-module Components.Ui5 exposing (busyIndicator, button, dialog, fileUploader, form, formCheckbox, formSelect, label, li, link, list, messageStrip, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
+module Components.Ui5 exposing (busyIndicator, button, dialog, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, label, li, link, list, messageStrip, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
 
 import Form exposing (Msg(..))
 import Form.Field
@@ -258,6 +258,11 @@ checkbox attrs children =
     Html.node "ui5-checkbox" attrs children
 
 
+formGroup : List (Attribute m) -> List (Html m) -> Html m
+formGroup attrs children =
+    Html.node "ui5-form-group" attrs children
+
+
 formItem : List (Attribute m) -> List (Html m) -> Html m
 formItem attrs children =
     Html.node "ui5-form-item" attrs children
@@ -271,8 +276,13 @@ label attrs children =
 form : (Form.Msg -> m) -> List (Attribute m) -> List (Html m) -> Html m
 form f attrs children =
     Html.form [ onSubmit <| f Form.Submit ]
-        [ Html.node "ui5-form" attrs children
+        [ formLayout attrs children
         ]
+
+
+formLayout : List (Attribute m) -> List (Html m) -> Html m
+formLayout attrs children =
+    Html.node "ui5-form" attrs children
 
 
 button : List (Attribute m) -> List (Html m) -> Html m

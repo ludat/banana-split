@@ -1,6 +1,7 @@
 module BananaSplit.TestUtils (
   distribucionMontoEquitativo,
   distribucionMontosEspecificos,
+  distribucionRepartija,
   fakeUlid,
   netos,
   participante,
@@ -36,3 +37,6 @@ distribucionMontosEspecificos ps =
 
 distribucionMontoEquitativo :: [ParticipanteId] -> Distribucion
 distribucionMontoEquitativo ps = Distribucion (fakeUlid 21) $ TipoDistribucionMontoEquitativo $ DistribucionMontoEquitativo (fakeUlid 12) ps
+
+distribucionRepartija :: Repartija -> Distribucion
+distribucionRepartija r = Distribucion (fakeUlid 21) $ TipoDistribucionRepartija r

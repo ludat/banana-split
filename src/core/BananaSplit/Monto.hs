@@ -10,6 +10,7 @@ module BananaSplit.Monto (
   inMonto,
   mkMonto,
   monto2Text,
+  montoDiffText,
   scientificToMonto,
   times,
 ) where
@@ -71,6 +72,15 @@ instance Generic Monto where
 monto2Text :: Monto -> Text
 monto2Text (Monto m) =
   show m
+
+-- | Show the difference between two montos with direction.
+-- montoDiffText actual expected => "es 20 de más" or "es 20 de menos"
+montoDiffText :: Monto -> Monto -> Text
+montoDiffText actual expected =
+  let diff = actual - expected
+  in if diff > 0
+       then "es " <> monto2Text diff <> " de más"
+       else "es " <> monto2Text (abs diff) <> " de menos"
 
 -- | Conseguir decimal de adentro de un monto.
 --
