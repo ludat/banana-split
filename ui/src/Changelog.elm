@@ -22,6 +22,10 @@ changelog =
       , title = "Congelar grupos"
       , description = "Ahora podés congelar un grupo para fijar las deudas. Una vez congelado, no se pueden agregar, editar ni eliminar pagos."
       }
+    , { date = Date.fromCalendarDate 2026 Apr 2
+      , title = "Repartir sobras de una repartija."
+      , description = "Ahora podés elegir que hacer con los items sin reclamar de una repartija, elegí entre repartir proporcionalmente entre todos o esperar a que todos los items sean reclamados antes de repartir."
+      }
     ]
 
 

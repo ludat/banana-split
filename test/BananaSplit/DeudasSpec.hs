@@ -164,7 +164,7 @@ spec = do
               }
           res = getResumen 500 (distribucionRepartija r)
       res.errores `shouldBe` []
-      res.total `shouldBe` 500
+      totalNetos res.netos `shouldBe` 500
 
     it "SobrasNoDistribuir reparte solo la propina, no los items sobrantes" $ do
       let item1 = fakeUlid 2

@@ -13,7 +13,7 @@ import Form.Error as FormError
 import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), Monto, Netos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), TipoErrorResumen(..), ULID)
+import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), DistribucionMontoEquitativo, DistribucionMontosEspecificos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
 import Html exposing (Html, a, details, div, p, summary, text)
 import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_)
 import Html.Events exposing (on, onClick, onSubmit)
@@ -23,6 +23,7 @@ import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.LugarAccionable exposing (LugarParaAccionar(..))
 import Models.Monto as Monto
+import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje, getDeudasFromResumen, getTotalFromResumen)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
@@ -114,11 +115,11 @@ init grupoId store =
         defaultDistribucionValues =
             [ Form.setGroup "distribucion_pagadores"
                 [ Form.setString "tipo" "monto_equitativo"
-                , Form.setString "distribucionDeSobras" "SobrasNoDistribuir"
+                , Form.setString "distribucionDeSobras" <| distribucionDeSobrasToString SobrasNoDistribuir
                 ]
             , Form.setGroup "distribucion_deudores"
                 [ Form.setString "tipo" "monto_equitativo"
-                , Form.setString "distribucionDeSobras" "SobrasNoDistribuir"
+                , Form.setString "distribucionDeSobras" <| distribucionDeSobrasToString SobrasNoDistribuir
                 ]
             ]
     in
@@ -341,7 +342,18 @@ update store msg model =
             )
 
         UpdatedPagoResponse (Ok pago) ->
-            ( setFormsFromPago participantes pago model
+            let
+                claimsToStore =
+                    { pagadores = extractClaimsFromDistribucion pago.pagadores
+                    , deudores = extractClaimsFromDistribucion pago.deudores
+                    }
+
+                newModel =
+                    setFormsFromPago participantes (Just pago) model
+            in
+            ( { newModel
+                | storedClaims = Just claimsToStore
+              }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
@@ -592,84 +604,11 @@ update store msg model =
 
                         Success grupo ->
                             let
-                                initialFormValues =
-                                    [ Form.setString "id" emptyUlid
-                                    , Form.setString "nombre" ""
-                                    , Form.setString "monto" ""
-                                    , Form.setGroup "distribucion_pagadores" <|
-                                        (distribucionToForm
-                                            { id = emptyUlid
-                                            , tipo =
-                                                TipoDistribucionMontosEspecificos
-                                                    { id = emptyUlid
-                                                    , montos =
-                                                        grupo.participantes
-                                                            |> List.map
-                                                                (\p ->
-                                                                    { id = emptyUlid
-                                                                    , participante = p.participanteId
-                                                                    , monto = Monto.zero
-                                                                    }
-                                                                )
-                                                    }
-                                            }
-                                            ++ distribucionToForm
-                                                { id = emptyUlid
-                                                , tipo =
-                                                    TipoDistribucionMontoEquitativo
-                                                        { id = emptyUlid
-                                                        , participantes = []
-                                                        }
-                                                }
-                                        )
-                                    , Form.setGroup "distribucion_deudores"
-                                        (distribucionToForm
-                                            { id = emptyUlid
-                                            , tipo =
-                                                TipoDistribucionMontosEspecificos
-                                                    { id = emptyUlid
-                                                    , montos =
-                                                        grupo.participantes
-                                                            |> List.map
-                                                                (\p ->
-                                                                    { id = emptyUlid
-                                                                    , participante = p.participanteId
-                                                                    , monto = Monto.zero
-                                                                    }
-                                                                )
-                                                    }
-                                            }
-                                            ++ distribucionToForm
-                                                { id = emptyUlid
-                                                , tipo =
-                                                    TipoDistribucionRepartija
-                                                        { id = emptyUlid
-                                                        , nombre = "GENERATED"
-                                                        , items = []
-                                                        , claims = []
-                                                        , extra = Monto.zero
-                                                        , distribucionDeSobras = SobrasNoDistribuir
-                                                        }
-                                                }
-                                            ++ distribucionToForm
-                                                { id = emptyUlid
-                                                , tipo =
-                                                    TipoDistribucionMontoEquitativo
-                                                        { id = emptyUlid
-                                                        , participantes = grupo.participantes |> List.map .participanteId
-                                                        }
-                                                }
-                                        )
-                                    ]
+                                newModel =
+                                    setFormsFromPago grupo.participantes Nothing model
                             in
-                            ( { model
-                                | pagoForm = Form.initial initialFormValues (validatePago grupo.participantes)
-                                , pagadoresForm = Form.initial initialFormValues (validatePagoInSection PagadoresSection grupo.participantes)
-                                , deudoresForm = Form.initial initialFormValues (validatePagoInSection DeudoresSection grupo.participantes)
-                                , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData grupo.participantes)
-                                , resumenPago = Loading
-                                , storedClaims = Nothing
-                                , hasUnsavedChanges = False
+                            ( { newModel
+                                | storedClaims = Nothing
                               }
                             , Effect.none
                             )
@@ -697,7 +636,7 @@ update store msg model =
                             ( model, Effect.none )
 
                         ( Success grupo, Success pago ) ->
-                            ( setFormsFromPago grupo.participantes pago model
+                            ( setFormsFromPago grupo.participantes (Just pago) model
                             , Effect.none
                             )
                                 |> andThenUpdateResumenesFromForms model
@@ -714,28 +653,24 @@ andThenSendWarningOnExit ( model, oldEffects ) =
     )
 
 
-setFormsFromPago : List Participante -> Pago -> Model -> Model
+setFormsFromPago : List Participante -> Maybe Pago -> Model -> Model
 setFormsFromPago participantes pago model =
     let
         initialFormValues =
-            [ Form.setString "id" pago.pagoId
-            , Form.setString "nombre" pago.nombre
-            , Form.setString "monto" (Monto.toString pago.monto)
-            , Form.setGroup "distribucion_pagadores" (distribucionToForm pago.pagadores)
-            , Form.setGroup "distribucion_deudores" (distribucionToForm pago.deudores)
+            [ Form.setString "id" (pago |> Maybe.map .pagoId |> Maybe.withDefault "")
+            , Form.setString "nombre" (pago |> Maybe.map .nombre |> Maybe.withDefault "")
+            , Form.setString "monto" (pago |> Maybe.map (.monto >> Monto.toString) |> Maybe.withDefault "")
+            , Form.setGroup "distribucion_pagadores" <|
+                distribucionToForm (distribucionesPagadoresDefault participantes) (Maybe.map .pagadores pago)
+            , Form.setGroup "distribucion_deudores" <|
+                distribucionToForm (distribucionesDeudoresDefault participantes) (Maybe.map .deudores pago)
             ]
-
-        claimsToStore =
-            { pagadores = extractClaimsFromDistribucion pago.pagadores
-            , deudores = extractClaimsFromDistribucion pago.deudores
-            }
     in
     { model
         | pagoForm = Form.initial initialFormValues (validatePago participantes)
         , pagadoresForm = Form.initial initialFormValues (validatePagoInSection PagadoresSection participantes)
         , deudoresForm = Form.initial initialFormValues (validatePagoInSection DeudoresSection participantes)
         , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData participantes)
-        , storedClaims = Just claimsToStore
         , hasUnsavedChanges = False
     }
 
@@ -822,53 +757,150 @@ mergeClaimsIntoDistribucion claims distribucion =
             distribucion
 
 
-distribucionToForm : Distribucion -> List ( String, FormField.Field )
-distribucionToForm distribucion =
-    Form.setString "id" distribucion.id
-        :: (case distribucion.tipo of
-                TipoDistribucionMontoEquitativo distribucionMontoEquitativo ->
-                    [ Form.setString "monto_equitativo_id" distribucionMontoEquitativo.id
-                    , Form.setString "tipo" "monto_equitativo"
-                    , Form.setGroup "participantes"
-                        (distribucionMontoEquitativo.participantes
-                            |> List.map (\p -> Form.setBool p True)
-                        )
-                    ]
+equitativosToForm : DistribucionMontoEquitativo -> List ( String, FormField.Field )
+equitativosToForm equitativo =
+    [ Form.setString "monto_equitativo_id" equitativo.id
+    , Form.setString "tipo" "monto_equitativo"
+    , Form.setGroup "participantes"
+        (equitativo.participantes
+            |> List.map (\p -> Form.setBool p True)
+        )
+    ]
 
-                TipoDistribucionMontosEspecificos distribucionMontosEspecificos ->
-                    [ Form.setString "montos_especificos_id" distribucionMontosEspecificos.id
-                    , Form.setString "tipo" "montos_especificos"
-                    , Form.setList "montos"
-                        (distribucionMontosEspecificos.montos
-                            |> List.map
-                                (\m ->
-                                    FormField.group
-                                        [ Form.setString "id" m.id
-                                        , Form.setString "participante" <| m.participante
-                                        , Form.setString "monto" <| Monto.toString m.monto
-                                        ]
-                                )
-                        )
-                    ]
 
-                TipoDistribucionRepartija repartija ->
-                    [ Form.setString "repartija_id" repartija.id
-                    , Form.setString "tipo" "repartija"
-                    , Form.setString "extra" (Monto.toString repartija.extra)
-                    , Form.setString "distribucionDeSobras" (distribucionDeSobrasToString repartija.distribucionDeSobras)
-                    , Form.setList "items"
-                        (repartija.items
-                            |> List.map
-                                (\item ->
-                                    FormField.group
-                                        [ Form.setString "id" <| item.id
-                                        , Form.setString "monto" <| Monto.toString item.monto
-                                        , Form.setString "cantidad" <| String.fromInt item.cantidad
-                                        , Form.setString "nombre" item.nombre
-                                        ]
-                                )
-                        )
-                    ]
+especificosToForm : DistribucionMontosEspecificos -> List ( String, FormField.Field )
+especificosToForm especificos =
+    [ Form.setString "montos_especificos_id" especificos.id
+    , Form.setString "tipo" "montos_especificos"
+    , Form.setList "montos"
+        (especificos.montos
+            |> List.map
+                (\m ->
+                    FormField.group
+                        [ Form.setString "id" m.id
+                        , Form.setString "participante" <| m.participante
+                        , Form.setString "monto" <| Monto.toString m.monto
+                        ]
+                )
+        )
+    ]
+
+
+distribucionesPagadoresDefault : List Participante -> DistribucionesFormDefaults
+distribucionesPagadoresDefault participantes =
+    { especificos =
+        { id = emptyUlid
+        , montos =
+            participantes
+                |> List.map
+                    (\p ->
+                        { id = emptyUlid
+                        , participante = p.participanteId
+                        , monto = Monto.zero
+                        }
+                    )
+        }
+    , equitativo =
+        { id = emptyUlid
+        , participantes = []
+        }
+    , repartija =
+        { id = emptyUlid
+        , nombre = "GENERATED"
+        , items = []
+        , claims = []
+        , extra = Monto.zero
+        , distribucionDeSobras = SobrasNoDistribuir
+        }
+    }
+
+
+distribucionesDeudoresDefault : List Participante -> DistribucionesFormDefaults
+distribucionesDeudoresDefault participantes =
+    { especificos =
+        { id = emptyUlid
+        , montos =
+            participantes
+                |> List.map
+                    (\p ->
+                        { id = emptyUlid
+                        , participante = p.participanteId
+                        , monto = Monto.zero
+                        }
+                    )
+        }
+    , equitativo =
+        { id = emptyUlid
+        , participantes =
+            participantes
+                |> List.map .participanteId
+        }
+    , repartija =
+        { id = emptyUlid
+        , nombre = "GENERATED"
+        , items = []
+        , claims = []
+        , extra = Monto.zero
+        , distribucionDeSobras = SobrasNoDistribuir
+        }
+    }
+
+
+repartijaToForm : Repartija -> List ( String, FormField.Field )
+repartijaToForm repartija =
+    [ Form.setString "repartija_id" repartija.id
+    , Form.setString "tipo" "repartija"
+    , Form.setString "extra" (Monto.toString repartija.extra)
+    , Form.setString "distribucionDeSobras"
+        (distribucionDeSobrasToString repartija.distribucionDeSobras)
+    , Form.setList "items"
+        (repartija.items
+            |> List.map
+                (\item ->
+                    FormField.group
+                        [ Form.setString "id" <| item.id
+                        , Form.setString "monto" <| Monto.toString item.monto
+                        , Form.setString "cantidad" <| String.fromInt item.cantidad
+                        , Form.setString "nombre" item.nombre
+                        ]
+                )
+        )
+    ]
+
+
+type alias DistribucionesFormDefaults =
+    { repartija : Repartija
+    , especificos : DistribucionMontosEspecificos
+    , equitativo : DistribucionMontoEquitativo
+    }
+
+
+distribucionToForm :
+    DistribucionesFormDefaults
+    -> Maybe Distribucion
+    -> List ( String, FormField.Field )
+distribucionToForm defaults distribucion =
+    Form.setString "id" (distribucion |> Maybe.map .id |> Maybe.withDefault emptyUlid)
+        :: (case distribucion |> Maybe.map .tipo of
+                Just (TipoDistribucionRepartija repartija) ->
+                    equitativosToForm defaults.equitativo
+                        ++ especificosToForm defaults.especificos
+                        ++ repartijaToForm repartija
+
+                Just (TipoDistribucionMontosEspecificos especificos) ->
+                    equitativosToForm defaults.equitativo
+                        ++ repartijaToForm defaults.repartija
+                        ++ especificosToForm especificos
+
+                Just (TipoDistribucionMontoEquitativo equitativo) ->
+                    especificosToForm defaults.especificos
+                        ++ repartijaToForm defaults.repartija
+                        ++ equitativosToForm equitativo
+
+                Nothing ->
+                    especificosToForm defaults.especificos
+                        ++ repartijaToForm defaults.repartija
+                        ++ equitativosToForm defaults.equitativo
            )
 
 
@@ -941,11 +973,6 @@ subscriptions _ =
 
 
 -- VIEW
-
-
-getTotalFromResumen : ResumenNetos -> Maybe Monto
-getTotalFromResumen resumen =
-    Just resumen.total
 
 
 getParticipantesFromResumen : ResumenNetos -> Maybe (List ParticipanteId)
@@ -1021,61 +1048,6 @@ viewErrorFromResumen lugar resumen =
                 )
 
 
-errorMensaje : TipoErrorResumen -> String
-errorMensaje tipo =
-    case tipo of
-        ErrorMontosEspecificosVacios ->
-            "No hay montos especificados"
-
-        ErrorMontosEspecificosTotalNoCoincide actual esperado ->
-            "El total (" ++ Monto.toString actual ++ ") debería ser igual al monto del pago (" ++ Monto.toString esperado ++ "), " ++ Monto.diffText actual esperado
-
-        ErrorEquitativoSinParticipantes ->
-            "No hay participantes especificados"
-
-        ErrorRepartijaSinItems ->
-            "No hay items para repartir."
-
-        ErrorRepartijaTotalItemsNoCoincide totalItems totalPago ->
-            "El total de items (" ++ Monto.toString totalItems ++ ") debería ser igual al monto del pago (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalItems totalPago
-
-        ErrorRepartijaSinClaims ->
-            "Nadie reclamo ningun item."
-
-        ErrorRepartijaTotalReclamadoNoCoincide totalReclamado totalPago ->
-            "El total reclamado (" ++ Monto.toString totalReclamado ++ ") no coincide con el monto del pago (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalReclamado totalPago
-
-
-errorAccionableEn : TipoErrorResumen -> List LugarParaAccionar
-errorAccionableEn tipo =
-    case tipo of
-        ErrorMontosEspecificosVacios ->
-            [ Lugar_CreacionPago ]
-
-        ErrorMontosEspecificosTotalNoCoincide _ _ ->
-            [ Lugar_CreacionPago ]
-
-        ErrorEquitativoSinParticipantes ->
-            [ Lugar_CreacionPago ]
-
-        ErrorRepartijaSinItems ->
-            [ Lugar_CreacionPago ]
-
-        ErrorRepartijaTotalItemsNoCoincide _ _ ->
-            [ Lugar_CreacionPago ]
-
-        ErrorRepartijaSinClaims ->
-            [ Lugar_PaginaRepartija ]
-
-        ErrorRepartijaTotalReclamadoNoCoincide _ _ ->
-            [ Lugar_PaginaRepartija ]
-
-
-getDeudasFromResumen : ResumenNetos -> Maybe (Netos Monto)
-getDeudasFromResumen resumen =
-    Just resumen.netos
-
-
 viewResumenPanel :
     GrupoLike g
     -> WebData ResumenPago
@@ -1102,7 +1074,7 @@ viewResumenPanel grupo resumenData accessor negateMontos extraContent =
                                         identity
                                    )
                     in
-                    [ p [] [ Ui5.text <| "total: " ++ (Maybe.withDefault "???" <| Maybe.map Monto.toString <| getTotalFromResumen resumenNetos) ]
+                    [ p [] [ Ui5.text <| "total: " ++ (Monto.toString <| getTotalFromResumen resumenNetos) ]
                     , p []
                         [ Ui5.text <|
                             "participantes: "
@@ -1183,7 +1155,7 @@ view store model =
                         , selected (model.currentSection == BasicPagoData)
                         ]
                         [ p [] [ Ui5.text "Ingresá la información básica del pago: un nombre descriptivo y el monto total." ]
-                        , pagoForm model.pagoBasicoForm
+                        , viewPagoForm model.pagoBasicoForm
                         ]
                     , Ui5.wizardStep
                         [ Attr.attribute "title-text" "Pagadores"
@@ -1194,7 +1166,7 @@ view store model =
                             [ div [ style "flex" "1", style "min-width" "300px" ]
                                 [ Html.form [ onSubmit <| SubmitCurrentSection ]
                                     [ p [] [ Ui5.text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
-                                    , distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
+                                    , viewDistribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
                                     , viewErrorFromResumenData model.resumenPagadores .resumenPagadores
                                     , Ui5.button
                                         [ Attr.attribute "design" "Emphasized"
@@ -1216,7 +1188,7 @@ view store model =
                             [ div [ style "flex" "1", style "min-width" "300px" ]
                                 [ Html.form [ onSubmit <| SubmitCurrentSection ]
                                     [ p [] [ Ui5.text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
-                                    , distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
+                                    , viewDistribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
                                     , viewErrorFromResumenData model.resumenDeudores .resumenDeudores
                                     , Ui5.button
                                         [ Attr.attribute "design" "Emphasized"
@@ -1235,8 +1207,7 @@ view store model =
                         , selected (model.currentSection == PagoConfirmation)
                         ]
                         [ Html.form [ onSubmit <| PagoForm Form.Submit ]
-                            [ p [] [ Ui5.text "Revisá el resumen del pago antes de confirmar. Verificá que los montos y participantes sean correctos." ]
-                            , viewResumenPanel grupo
+                            [ viewResumenPanel grupo
                                 model.resumenPago
                                 .resumen
                                 False
@@ -1292,7 +1263,7 @@ view store model =
                                 in
                                 Ui5.button
                                     [ Attr.attribute "design" "Emphasized"
-                                    , disabled (hasActionableErrors Lugar_CreacionPago model.resumenPago .resumen)
+                                    , disabled (Form.getOutput model.pagoForm == Nothing)
                                     , onClick (PagoForm Form.Submit)
                                     , id "pago-submit-button"
                                     ]
@@ -1329,8 +1300,8 @@ view store model =
             }
 
 
-pagoForm : Form CustomFormError Pago -> Html Msg
-pagoForm form =
+viewPagoForm : Form CustomFormError Pago -> Html Msg
+viewPagoForm form =
     let
         nombreField =
             Form.getFieldAsString "nombre" form
@@ -1379,8 +1350,8 @@ fileDecoder =
             )
 
 
-distribucionForm : List Participante -> String -> Form CustomFormError Pago -> Maybe ReceiptReadingState -> Html Msg
-distribucionForm participantes prefix form receiptParseState =
+viewDistribucionForm : List Participante -> String -> Form CustomFormError Pago -> Maybe ReceiptReadingState -> Html Msg
+viewDistribucionForm participantes prefix form receiptParseState =
     let
         tipoField =
             Form.getFieldAsString (prefix ++ ".tipo") form
@@ -1415,7 +1386,7 @@ distribucionForm participantes prefix form receiptParseState =
                     Just "repartija" ->
                         [ p [ style "margin-bottom" "1rem" ]
                             [ Ui5.text "División por items del recibo. Podés subir una foto del ticket para que se complete automáticamente." ]
-                        , repartijaForm prefix form receiptParseState
+                        , viewRepartijaForm prefix form receiptParseState
                         ]
 
                     Just "montos_especificos" ->
@@ -1487,8 +1458,8 @@ distribucionForm participantes prefix form receiptParseState =
                )
 
 
-repartijaForm : String -> Form CustomFormError Pago -> Maybe ReceiptReadingState -> Html Msg
-repartijaForm prefix form receiptParseState =
+viewRepartijaForm : String -> Form CustomFormError Pago -> Maybe ReceiptReadingState -> Html Msg
+viewRepartijaForm prefix form receiptParseState =
     let
         montoField =
             Form.getFieldAsString (prefix ++ ".extra") form
@@ -1551,7 +1522,7 @@ repartijaForm prefix form receiptParseState =
                         , Ui5.tableHeaderCell [ Attr.attribute "min-width" "8rem" ] [ text "Cantidad" ]
                         ]
                         :: List.map
-                            (\i -> repartijaItemForm i prefix form)
+                            (\i -> viewRepartijaItemForm i prefix form)
                             itemsIndexes
                     )
                 , Ui5.button
@@ -1597,8 +1568,8 @@ repartijaForm prefix form receiptParseState =
         ]
 
 
-repartijaItemForm : Int -> String -> Form CustomFormError Pago -> Html Msg
-repartijaItemForm i prefix form =
+viewRepartijaItemForm : Int -> String -> Form CustomFormError Pago -> Html Msg
+viewRepartijaItemForm i prefix form =
     let
         nombreField =
             Form.getFieldAsString (prefix ++ ".items." ++ String.fromInt i ++ ".nombre") form
