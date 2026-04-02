@@ -87,7 +87,7 @@ getResumenPago pago =
   let
     resumenPagadores = getResumen pago.monto pago.pagadores
     resumenDeudores = getResumen pago.monto pago.deudores
-    netos = resumenPagadores.netos <> fmap negate resumenPagadores.netos
+    netos = resumenPagadores.netos <> fmap negate resumenDeudores.netos
     extraErrors = []
   in
     ResumenNetos pago.monto netos $
