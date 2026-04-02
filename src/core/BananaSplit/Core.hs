@@ -87,17 +87,13 @@ getResumenPago pago =
   let
     resumenPagadores = getResumen pago.monto pago.pagadores
     resumenDeudores = getResumen pago.monto pago.deudores
+    netos = resumenPagadores.netos <> fmap negate resumenPagadores.netos
+    extraErrors = []
   in
-    case (resumenPagadores, resumenDeudores) of
-      (ResumenNetos _ netosPagadores erroresPagadores, ResumenNetos _ netosDeudores erroresDeudores) ->
-        let
-          netos = netosPagadores <> fmap negate netosDeudores
-          extraErrors = []
-        in
-          ResumenNetos pago.monto netos $
-            fmap (relabelError "pagadores") erroresPagadores
-              <> fmap (relabelError "deudores") erroresDeudores
-              <> extraErrors
+    ResumenNetos pago.monto netos $
+      fmap (relabelError "pagadores") resumenPagadores.errores
+        <> fmap (relabelError "deudores") resumenDeudores.errores
+        <> extraErrors
 
 isValid :: Pago -> Bool
 isValid pago =
