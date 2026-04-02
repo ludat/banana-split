@@ -328,7 +328,7 @@ update store msg model =
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el pago"
-                , Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = pago.pagoId }
+                , Effect.pushRoutePath <| Path.Grupos_Id_ { id = model.grupoId }
                 ]
             )
                 |> andThenSendWarningOnExit
