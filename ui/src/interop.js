@@ -34,6 +34,7 @@ import "@ui5/webcomponents/dist/Dialog.js";
 import "@ui5/webcomponents/dist/FileUploader.js";
 import "@ui5/webcomponents/dist/FormItem.js";
 import "@ui5/webcomponents/dist/Form.js";
+import "@ui5/webcomponents/dist/FormGroup.js";
 import "@ui5/webcomponents/dist/Input.js";
 import "@ui5/webcomponents/dist/Label.js";
 import "@ui5/webcomponents/dist/Link.js";

@@ -40,6 +40,7 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy (Netos Monto))
     , DefineElm (Proxy :: Proxy ResumenPago)
     , DefineElm (Proxy :: Proxy ResumenNetos)
+    , DefineElm (Proxy :: Proxy TipoErrorResumen)
     , DefineElm (Proxy :: Proxy ErrorResumen)
     , DefineElm (Proxy :: Proxy Grupo)
     , DefineElm (Proxy :: Proxy ShallowGrupo)

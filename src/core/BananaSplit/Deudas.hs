@@ -58,15 +58,35 @@ data DistribucionMontoEquitativo = DistribucionMontoEquitativo
   deriving (Show, Eq, Generic)
 
 data ResumenNetos
-  = ResumenNetos Monto (Netos Monto) [ErrorResumen]
+  = ResumenNetos
+  { total :: Monto
+  , netos :: Netos Monto
+  , errores :: [ErrorResumen]
+  }
+  deriving (Show, Eq, Generic)
+
+data TipoErrorResumen
+  = ErrorMontosEspecificosVacios
+  | -- | actual, esperado
+    ErrorMontosEspecificosTotalNoCoincide Monto Monto
+  | ErrorEquitativoSinParticipantes
+  | ErrorRepartijaSinItems
+  | -- | totalItems, totalPago
+    ErrorRepartijaTotalItemsNoCoincide Monto Monto
+  | ErrorRepartijaSinClaims
+  | -- | totalReclamado, totalPago
+    ErrorRepartijaTotalReclamadoNoCoincide Monto Monto
   deriving (Show, Eq, Generic)
 
 data ErrorResumen = ErrorResumen
   { objeto :: [Text]
-    -- ^ El objeto al que se aplica el error (por ejemplo, pagadores, nombre, items en una repartija)
-  , mensaje :: Text
+  -- ^ El objeto al que se aplica el error (por ejemplo, pagadores, nombre, items en una repartija)
+  , tipo :: TipoErrorResumen
   }
   deriving (Show, Eq, Generic)
+
+relabelError :: Text -> ErrorResumen -> ErrorResumen
+relabelError scope err = err{objeto = scope : err.objeto}
 
 getNetos :: (HasResumen a) => Monto -> a -> Maybe (Netos Monto)
 getNetos totalPago = getNetosResumen . getResumen totalPago
@@ -92,18 +112,12 @@ instance HasResumen Distribucion where
 instance HasResumen DistribucionMontosEspecificos where
   getResumen totalPago distribucion =
     if
-      | null distribucion.montos -> ResumenNetos 0 mempty [ErrorResumen mempty "No hay montos especificados"]
+      | null distribucion.montos -> ResumenNetos 0 mempty [ErrorResumen{objeto = mempty, tipo = ErrorMontosEspecificosVacios}]
       | total /= totalPago ->
-          ResumenNetos total netos
-            [ErrorResumen mempty
-              ("El total ("
-                    <> monto2Text total
-                    <> ") debería ser igual al monto del pago ("
-                    <> monto2Text totalPago
-                    <> "), "
-                    <> montoDiffText total totalPago
-              )
-            ]
+          ResumenNetos
+            total
+            netos
+            [ErrorResumen{objeto = mempty, tipo = ErrorMontosEspecificosTotalNoCoincide total totalPago}]
       | otherwise -> ResumenNetos total netos []
     where
       netos = distribucion.montos <&> (\m -> mkDeuda m.participante m.monto) & mconcat
@@ -112,40 +126,32 @@ instance HasResumen DistribucionMontosEspecificos where
 instance HasResumen DistribucionMontoEquitativo where
   getResumen totalPago distribucion =
     if
-      | null distribucion.participantes -> ResumenNetos 0 mempty [ErrorResumen mempty "No hay participantes especificados"]
+      | null distribucion.participantes -> ResumenNetos 0 mempty [ErrorResumen{objeto = mempty, tipo = ErrorEquitativoSinParticipantes}]
       | otherwise -> ResumenNetos totalPago (calcularNetosMontoEquitativo totalPago distribucion) []
 
 instance HasResumen Repartija where
   getResumen totalPago repartija =
     if
       | null repartija.items ->
-          ResumenNetos 0 mempty $
-            [ErrorResumen mempty ("No hay items para repartir.")]
+          ResumenNetos
+            0
+            mempty
+            [ErrorResumen{objeto = mempty, tipo = ErrorRepartijaSinItems}]
       | totalPorItems /= totalPago ->
-          ResumenNetos (totalPorItems) netosReclamados $
-            [ErrorResumen mempty
-              ( "El total de items ("
-                    <> monto2Text totalPorItems
-                    <> ") debería ser igual al monto del pago ("
-                    <> monto2Text totalPago
-                    <> "), "
-                    <> montoDiffText totalPorItems totalPago
-              )
-            ]
+          ResumenNetos
+            totalPorItems
+            netosReclamados
+            [ErrorResumen{objeto = mempty, tipo = ErrorRepartijaTotalItemsNoCoincide totalPorItems totalPago}]
       | null repartija.claims ->
-          ResumenNetos totalPorItems mempty $
-            [ ErrorResumen mempty "Nadie reclamo ningun item."]
+          ResumenNetos
+            totalPorItems
+            mempty
+            [ErrorResumen{objeto = mempty, tipo = ErrorRepartijaSinClaims}]
       | totalReclamado /= totalPago ->
-          ResumenNetos totalPorItems netosReclamados $
-            [ ErrorResumen mempty
-              (  "El total reclamado ("
-                    <> monto2Text totalReclamado
-                    <> ") no coincide con el monto del pago ("
-                    <> monto2Text totalPago
-                    <> "), "
-                    <> montoDiffText totalReclamado totalPago
-              )
-              ]
+          ResumenNetos
+            totalPorItems
+            netosReclamados
+            [ErrorResumen{objeto = mempty, tipo = ErrorRepartijaTotalReclamadoNoCoincide totalReclamado totalPago}]
       | otherwise ->
           ResumenNetos totalPorItems netosReclamados []
     where
@@ -512,9 +518,9 @@ calcularNetosRepartija repartija =
       extraARepartirPonerado =
         case repartija.distribucionDeSobras of
           SobrasNoDistribuir ->
-              repartija.extra
+            repartija.extra
           SobrasProporcional ->
-              repartija.extra + sum montoNoRepartido
+            repartija.extra + sum montoNoRepartido
       deudasDelExtraPonderado =
         netos
           & mconcat
@@ -532,5 +538,6 @@ Elm.deriveBoth Elm.defaultOptions ''DistribucionMontosEspecificos
 Elm.deriveBoth Elm.defaultOptions ''DistribucionMontoEquitativo
 Elm.deriveBoth Elm.defaultOptions ''TipoDistribucion
 Elm.deriveBoth Elm.defaultOptions ''Distribucion
+Elm.deriveBoth Elm.defaultOptions ''TipoErrorResumen
 Elm.deriveBoth Elm.defaultOptions ''ErrorResumen
 Elm.deriveBoth Elm.defaultOptions ''ResumenNetos

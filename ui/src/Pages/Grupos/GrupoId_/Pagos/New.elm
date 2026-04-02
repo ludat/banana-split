@@ -13,7 +13,7 @@ import Form.Error as FormError
 import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), Monto, Netos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos(..), ResumenPago, TipoDistribucion(..), ULID)
+import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), Monto, Netos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), TipoErrorResumen(..), ULID)
 import Html exposing (Html, a, details, div, p, summary, text)
 import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_, value)
 import Html.Events exposing (on, onClick, onSubmit)
@@ -21,6 +21,7 @@ import Http
 import Json.Decode as Decode
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
+import Models.LugarAccionable exposing (LugarParaAccionar(..))
 import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -957,52 +958,135 @@ subscriptions _ =
 
 getTotalFromResumen : ResumenNetos -> Maybe Monto
 getTotalFromResumen resumen =
-    case resumen of
-        ResumenNetos total _ _ ->
-            Just total
+    Just resumen.total
 
 
 getParticipantesFromResumen : ResumenNetos -> Maybe (List ParticipanteId)
 getParticipantesFromResumen resumen =
-    case resumen of
-        ResumenNetos _ deudas _ ->
-            deudas
-                |> List.map (\( p, _ ) -> p)
-                |> Just
+    resumen.netos
+        |> List.map (\( p, _ ) -> p)
+        |> Just
 
 
-viewErrorFromResumen : ResumenNetos -> Html msg
-viewErrorFromResumen (ResumenNetos _ _ errors) =
-    case errors of
+hasActionableErrors : LugarParaAccionar -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> Bool
+hasActionableErrors lugar resumenData accessor =
+    case resumenData of
+        Success resumen ->
+            List.any (\e -> List.member lugar (errorAccionableEn e.tipo)) (accessor resumen).errores
+
+        _ ->
+            False
+
+
+viewErrorFromResumenData : WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> Html msg
+viewErrorFromResumenData resumenData accessor =
+    case resumenData of
+        Success resumenPago ->
+            let
+                resumen =
+                    accessor resumenPago
+            in
+            viewErrorFromResumen Lugar_CreacionPago resumen
+
+        _ ->
+            text ""
+
+
+viewErrorFromResumen : LugarParaAccionar -> ResumenNetos -> Html msg
+viewErrorFromResumen lugar resumen =
+    case resumen.errores of
         [] ->
             text ""
 
         _ ->
-            Ui5.messageStrip
-                [ Attr.attribute "design" "Negative"
-                , Attr.attribute "hide-close-button" ""
-                ]
-                (errors
+            div []
+                (resumen.errores
                     |> List.map
                         (\error ->
-                            case error.objeto of
-                                [] ->
-                                    text error.mensaje
+                            let
+                                esAccionable =
+                                    List.member lugar (errorAccionableEn error.tipo)
 
-                                _ ->
-                                    div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "baseline" ]
-                                        [ Ui5.label [ Attr.attribute "show-colon" "" ] [ text (String.join " > " error.objeto) ]
-                                        , text error.mensaje
-                                        ]
+                                mensaje =
+                                    errorMensaje error.tipo
+                            in
+                            Ui5.messageStrip
+                                [ Attr.attribute "design"
+                                    (if esAccionable then
+                                        "Negative"
+
+                                     else
+                                        "Information"
+                                    )
+                                , Attr.attribute "hide-close-button" ""
+                                ]
+                                [ case error.objeto of
+                                    [] ->
+                                        text mensaje
+
+                                    _ ->
+                                        div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "baseline" ]
+                                            [ Ui5.label [ Attr.attribute "show-colon" "" ] [ text (String.join " > " error.objeto) ]
+                                            , text mensaje
+                                            ]
+                                ]
                         )
                 )
 
 
+errorMensaje : TipoErrorResumen -> String
+errorMensaje tipo =
+    case tipo of
+        ErrorMontosEspecificosVacios ->
+            "No hay montos especificados"
+
+        ErrorMontosEspecificosTotalNoCoincide actual esperado ->
+            "El total (" ++ Monto.toString actual ++ ") debería ser igual al monto del pago (" ++ Monto.toString esperado ++ "), " ++ Monto.diffText actual esperado
+
+        ErrorEquitativoSinParticipantes ->
+            "No hay participantes especificados"
+
+        ErrorRepartijaSinItems ->
+            "No hay items para repartir."
+
+        ErrorRepartijaTotalItemsNoCoincide totalItems totalPago ->
+            "El total de items (" ++ Monto.toString totalItems ++ ") debería ser igual al monto del pago (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalItems totalPago
+
+        ErrorRepartijaSinClaims ->
+            "Nadie reclamo ningun item."
+
+        ErrorRepartijaTotalReclamadoNoCoincide totalReclamado totalPago ->
+            "El total reclamado (" ++ Monto.toString totalReclamado ++ ") no coincide con el monto del pago (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalReclamado totalPago
+
+
+errorAccionableEn : TipoErrorResumen -> List LugarParaAccionar
+errorAccionableEn tipo =
+    case tipo of
+        ErrorMontosEspecificosVacios ->
+            [ Lugar_CreacionPago ]
+
+        ErrorMontosEspecificosTotalNoCoincide _ _ ->
+            [ Lugar_CreacionPago ]
+
+        ErrorEquitativoSinParticipantes ->
+            [ Lugar_CreacionPago ]
+
+        ErrorRepartijaSinItems ->
+            [ Lugar_CreacionPago ]
+
+        ErrorRepartijaTotalItemsNoCoincide _ _ ->
+            [ Lugar_CreacionPago ]
+
+        ErrorRepartijaSinClaims ->
+            [ Lugar_PaginaRepartija ]
+
+        ErrorRepartijaTotalReclamadoNoCoincide _ _ ->
+            [ Lugar_PaginaRepartija ]
+
+
 getDeudasFromResumen : ResumenNetos -> Maybe (Netos Monto)
 getDeudasFromResumen resumen =
-    case resumen of
-        ResumenNetos _ netos _ ->
-            Just netos
+    Just resumen.netos
 
 
 viewResumenPanel :
@@ -1041,7 +1125,6 @@ viewResumenPanel grupo resumenData accessor negateMontos extraContent =
                                         |> Maybe.withDefault "???"
                                    )
                         ]
-                    , viewErrorFromResumen resumenNetos
                     , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) netos ]
                     ]
                         ++ extraContent
@@ -1125,9 +1208,10 @@ view store model =
                                 [ Html.form [ onSubmit <| SubmitCurrentSection ]
                                     [ p [] [ Ui5.text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
                                     , distribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
+                                    , viewErrorFromResumenData model.resumenPagadores .resumenPagadores
                                     , Ui5.button
                                         [ Attr.attribute "design" "Emphasized"
-                                        , disabled (Form.getOutput model.pagadoresForm == Nothing)
+                                        , disabled (Form.getOutput model.pagadoresForm == Nothing || hasActionableErrors Lugar_CreacionPago model.resumenPagadores .resumenPagadores)
                                         , onClick SubmitCurrentSection
                                         ]
                                         [ text "Siguiente seccion" ]
@@ -1146,9 +1230,10 @@ view store model =
                                 [ Html.form [ onSubmit <| SubmitCurrentSection ]
                                     [ p [] [ Ui5.text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
                                     , distribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
+                                    , viewErrorFromResumenData model.resumenDeudores .resumenDeudores
                                     , Ui5.button
                                         [ Attr.attribute "design" "Emphasized"
-                                        , disabled (Form.getOutput model.deudoresForm == Nothing)
+                                        , disabled (Form.getOutput model.deudoresForm == Nothing || hasActionableErrors Lugar_CreacionPago model.resumenDeudores .resumenDeudores)
                                         , onClick SubmitCurrentSection
                                         ]
                                         [ text "Siguiente seccion" ]
@@ -1162,32 +1247,8 @@ view store model =
                         , Attr.attribute "data-section" "confirmation"
                         , selected (model.currentSection == PagoConfirmation)
                         ]
-                        [ div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
-                            [ div [ style "flex" "1", style "min-width" "300px" ]
-                                [ Html.form [ onSubmit <| PagoForm Form.Submit ]
-                                    [ p [] [ Ui5.text "Revisá el resumen del pago antes de confirmar. Verificá que los montos y participantes sean correctos." ]
-                                    , if model.hasUnsavedChanges then
-                                        let
-                                            textoCTA =
-                                                case model.currentPagoId of
-                                                    Nothing ->
-                                                        text "Crear pago"
-
-                                                    Just _ ->
-                                                        text "Actualizar pago"
-                                        in
-                                        Ui5.button
-                                            [ Attr.attribute "design" "Emphasized"
-                                            , onClick (PagoForm Form.Submit)
-                                            , id "pago-submit-button"
-                                            ]
-                                            [ textoCTA
-                                            ]
-
-                                      else
-                                        text ""
-                                    ]
-                                ]
+                        [ Html.form [ onSubmit <| PagoForm Form.Submit ]
+                            [ p [] [ Ui5.text "Revisá el resumen del pago antes de confirmar. Verificá que los montos y participantes sean correctos." ]
                             , viewResumenPanel grupo
                                 model.resumenPago
                                 .resumen
@@ -1231,6 +1292,28 @@ view store model =
                                     Nothing ->
                                         []
                                 )
+                            , viewErrorFromResumenData model.resumenPago .resumen
+                            , if model.hasUnsavedChanges then
+                                let
+                                    textoCTA =
+                                        case model.currentPagoId of
+                                            Nothing ->
+                                                text "Crear pago"
+
+                                            Just _ ->
+                                                text "Actualizar pago"
+                                in
+                                Ui5.button
+                                    [ Attr.attribute "design" "Emphasized"
+                                    , disabled (hasActionableErrors Lugar_CreacionPago model.resumenPago .resumen)
+                                    , onClick (PagoForm Form.Submit)
+                                    , id "pago-submit-button"
+                                    ]
+                                    [ textoCTA
+                                    ]
+
+                              else
+                                text ""
                             ]
                         ]
                     ]
@@ -1469,81 +1552,60 @@ repartijaForm prefix form receiptParseState =
 
             Nothing ->
                 text ""
-        , Ui5.table
-            [ Attr.attribute "row-action-count" "1" ]
-            (Ui5.tableHeaderRow
-                [ Ui5.slot "headerRow" ]
-                [ Ui5.tableHeaderCell [ Attr.attribute "width" "auto", Attr.attribute "min-width" "12rem" ] [ text "Item" ]
-                , Ui5.tableHeaderCell [ Attr.attribute "min-width" "10rem" ] [ text "Monto total" ]
-                , Ui5.tableHeaderCell [ Attr.attribute "min-width" "8rem" ] [ text "Cantidad" ]
+        , Ui5.formLayout
+            [ Attr.attribute "label-span" "S12 M12 L12 XL12" ]
+            [ Ui5.formGroup [ Attr.attribute "header-text" "Items" ]
+                [ Ui5.table
+                    [ Attr.attribute "row-action-count" "1" ]
+                    (Ui5.tableHeaderRow
+                        [ Ui5.slot "headerRow" ]
+                        [ Ui5.tableHeaderCell [ Attr.attribute "width" "auto", Attr.attribute "min-width" "12rem" ] [ text "Item" ]
+                        , Ui5.tableHeaderCell [ Attr.attribute "min-width" "10rem" ] [ text "Monto total" ]
+                        , Ui5.tableHeaderCell [ Attr.attribute "min-width" "8rem" ] [ text "Cantidad" ]
+                        ]
+                        :: List.map
+                            (\i -> repartijaItemForm i prefix form)
+                            itemsIndexes
+                    )
+                , Ui5.button
+                    [ Attr.attribute "icon" "add"
+                    , onClick <| PagoForm <| Form.Append <| prefix ++ ".items"
+                    , type_ "button"
+                    ]
+                    [ text "Agregar item" ]
                 ]
-                :: List.map
-                    (\i -> repartijaItemForm i prefix form)
-                    itemsIndexes
-            )
-        , div [ style "margin-bottom" "1rem" ]
-            [ Ui5.button
-                [ Attr.attribute "icon" "add"
-                , onClick <| PagoForm <| Form.Append <| prefix ++ ".items"
-                , type_ "button"
-                ]
-                [ text "Agregar item" ]
-            ]
-        , div [ style "margin-bottom" "1rem" ]
-            [ Ui5.label [ Attr.attribute "show-colon" "" ] [ text "Propina" ]
-            , div [ style "margin-top" "0.5rem" ]
+            , Ui5.formGroup [ Attr.attribute "header-text" "Propina" ]
                 [ Html.map PagoForm <|
                     Ui5.textInput montoField
                         [ placeholder "1000" ]
                 ]
             ]
-        , div [ style "margin-bottom" "1rem" ]
-            [ -- TODO agregar separador
-              Ui5.text "CLAUDIO SEPARADOR!"
-            ]
-        , div [ style "margin-bottom" "1rem" ]
-            [ Ui5.label [ Attr.attribute "show-colon" "" ] [ text "Distribución de sobras" ]
-            , p [ style "margin-top" "0.25rem", style "margin-bottom" "0.5rem", style "font-size" "0.875rem", style "color" "var(--sapNeutralTextColor)" ]
-                [ text "Qué hacer con los items que nadie reclamó. Podés cambiar esta opción en cualquier momento." ]
-            , div [ style "margin-top" "0.5rem" ]
-                [ Html.map PagoForm <|
-                    Ui5.select
-                        [ on "change"
-                            (Decode.at [ "detail", "selectedOption", "value" ] Decode.string
+        , Html.hr [ style "border" "none", style "border-top" "1px solid var(--sapGroup_ContentBorderColor)", style "margin" "1rem 0" ] []
+        , Ui5.formLayout
+            [ Attr.attribute "label-span" "S12 M12 L12 XL12" ]
+            [ Ui5.formGroup
+                [ Attr.attribute "header-text" "Distribución de sobras" ]
+                [ p [ style "margin-bottom" "0.5rem", style "font-size" "0.875rem", style "color" "var(--sapNeutralTextColor)" ]
+                    [ text "Qué hacer con los items que nadie reclamó. Podés cambiar esta opción en cualquier momento." ]
+                , Html.map PagoForm <|
+                    Ui5.segmentedButton
+                        [ on "selection-change"
+                            (Decode.at [ "detail", "selectedItems", "0", "dataset", "id" ] Decode.string
                                 |> Decode.map (\v -> Form.Input distribucionDeSobrasField.path Form.Select (FormField.String v))
                             )
                         ]
-                        [ Ui5.option
-                            [ value "SobrasNoDistribuir"
+                        [ Ui5.segmentedButtonItem
+                            [ Attr.attribute "data-id" "SobrasNoDistribuir"
                             , selected (distribucionDeSobrasField.value == Just "SobrasNoDistribuir")
                             ]
                             [ text "No distribuir" ]
-                        , Ui5.option
-                            [ value "SobrasProporcional"
+                        , Ui5.segmentedButtonItem
+                            [ Attr.attribute "data-id" "SobrasProporcional"
                             , selected (distribucionDeSobrasField.value == Just "SobrasProporcional")
                             ]
                             [ text "Proporcional" ]
                         ]
                 ]
-            , case distribucionDeSobrasField.value of
-                Just "SobrasNoDistribuir" ->
-                    Ui5.messageStrip
-                        [ Attr.attribute "design" "Information"
-                        , Attr.attribute "hide-close-button" ""
-                        , style "margin-top" "0.5rem"
-                        ]
-                        [ text "Las sobras no se asignan a nadie. Solo se reparte lo que cada uno reclamó." ]
-
-                Just "SobrasProporcional" ->
-                    Ui5.messageStrip
-                        [ Attr.attribute "design" "Information"
-                        , Attr.attribute "hide-close-button" ""
-                        , style "margin-top" "0.5rem"
-                        ]
-                        [ text "Las sobras se reparten entre todos proporcionalmente según lo que consumieron." ]
-
-                _ ->
-                    text ""
             ]
         ]
 
