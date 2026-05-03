@@ -272,21 +272,21 @@ jsonEncShallowGrupo  val =
 
 
 type alias Participante  =
-   { participanteId: ULID
-   , participanteNombre: String
+   { id: ULID
+   , nombre: String
    }
 
 jsonDecParticipante : Json.Decode.Decoder ( Participante )
 jsonDecParticipante =
-   Json.Decode.succeed (\pparticipanteId pparticipanteNombre -> {participanteId = pparticipanteId, participanteNombre = pparticipanteNombre})
-   |> required "participanteId" (jsonDecULID)
-   |> required "participanteNombre" (Json.Decode.string)
+   Json.Decode.succeed (\pid pnombre -> {id = pid, nombre = pnombre})
+   |> required "id" (jsonDecULID)
+   |> required "nombre" (Json.Decode.string)
 
 jsonEncParticipante : Participante -> Value
 jsonEncParticipante  val =
    Json.Encode.object
-   [ ("participanteId", jsonEncULID val.participanteId)
-   , ("participanteNombre", Json.Encode.string val.participanteNombre)
+   [ ("id", jsonEncULID val.id)
+   , ("nombre", Json.Encode.string val.nombre)
    ]
 
 

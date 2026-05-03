@@ -244,10 +244,10 @@ viewGlobalUserSelector activeUser grupo =
                     |> List.map
                         (\participante ->
                             Ui5.option
-                                [ selected (activeUser == Just participante.participanteId)
-                                , value participante.participanteId
+                                [ selected (activeUser == Just participante.id)
+                                , value participante.id
                                 ]
-                                [ text participante.participanteNombre ]
+                                [ text participante.nombre ]
                         )
                )
         )

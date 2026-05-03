@@ -23,5 +23,5 @@ spec =
         Just fetchedGrupo -> do
           fetchedGrupo.nombre `shouldBe` "Test Grupo"
           fetchedGrupo.id `shouldBe` grupo.id
-          (fetchedGrupo.participantes & fmap (.participanteNombre))
+          (fetchedGrupo.participantes & fmap (.nombre))
             `shouldBe` ["alguien"]

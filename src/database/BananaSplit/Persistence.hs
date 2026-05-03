@@ -89,9 +89,9 @@ instance Beam.Table GrupoT where
   primaryKey = GrupoId . (.id)
 
 data ParticipanteT f = Participante
-  { participanteId :: Columnar f ULID
-  , participanteGrupo :: PrimaryKey GrupoT f
-  , participanteNombre :: Columnar f Text
+  { id :: Columnar f ULID
+  , grupo :: PrimaryKey GrupoT f
+  , nombre :: Columnar f Text
   }
   deriving (Generic, Beamable)
 
@@ -109,7 +109,7 @@ deriving instance Eq Participante
 
 instance Table ParticipanteT where
   data PrimaryKey ParticipanteT f = ParticipanteId (Columnar f ULID) deriving (Generic, Beamable)
-  primaryKey = ParticipanteId . (.participanteId)
+  primaryKey = ParticipanteId . (.id)
 
 data PagoT f = Pago
   { pagoId :: Columnar f ULID
@@ -575,15 +575,15 @@ fetchParticipantes grupoId = do
   participantes <- runSelectReturningList $ select $ do
     p <-
       all_ db.participantes
-        & orderBy_ (asc_ . (.participanteId))
-    guard_ (p.participanteGrupo ==. GrupoId (val_ grupoId))
+        & orderBy_ (asc_ . (.id))
+    guard_ (p.grupo ==. GrupoId (val_ grupoId))
     pure p
   pure
     $ fmap
       ( \p ->
           M.Participante
-            { M.participanteNombre = p.participanteNombre
-            , M.participanteId = p.participanteId
+            { M.id = p.id
+            , M.nombre = p.nombre
             }
       )
       participantes
@@ -599,17 +599,17 @@ addParticipante grupoId name = do
   pure
     $ Right
     $ M.Participante
-      { M.participanteId = newId
-      , M.participanteNombre = name
+      { M.id = newId
+      , M.nombre = name
       }
 
 deleteShallowParticipante :: ULID -> ULID -> Pg M.ParticipanteId
-deleteShallowParticipante _grupoId pId = do
+deleteShallowParticipante _grupoId participanteId = do
   runDelete
     $ delete
       db.participantes
-      (\p -> p.participanteId ==. val_ pId)
-  pure $ M.ParticipanteId pId
+      (\p -> p.id ==. val_ participanteId)
+  pure $ M.ParticipanteId participanteId
 
 participanteId2Persistent :: M.ParticipanteId -> ParticipanteId
 participanteId2Persistent (M.ParticipanteId p) = ParticipanteId p

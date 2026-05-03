@@ -95,7 +95,7 @@ update msg model =
                 [ -- Automatically select the first participante as current user
                   case grupo.participantes of
                     participante :: _ ->
-                        Effect.saveCurrentUser grupo.id participante.participanteId
+                        Effect.saveCurrentUser grupo.id participante.id
 
                     [] ->
                         Effect.none

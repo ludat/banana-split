@@ -279,13 +279,13 @@ validateDistribucion participantes =
                                             (V.sequence
                                                 (participantes
                                                     |> List.map
-                                                        (\p -> V.field p.participanteId V.bool |> V.map (\b -> ( p, b )))
+                                                        (\p -> V.field p.id V.bool |> V.map (\b -> ( p, b )))
                                                 )
                                                 |> V.map
                                                     (List.filterMap
                                                         (\( p, b ) ->
                                                             if b then
-                                                                Just p.participanteId
+                                                                Just p.id
 
                                                             else
                                                                 Nothing
@@ -806,7 +806,7 @@ distribucionesPagadoresDefault participantes =
                 |> List.map
                     (\p ->
                         { id = emptyUlid
-                        , participante = p.participanteId
+                        , participante = p.id
                         , monto = Monto.zero
                         }
                     )
@@ -835,7 +835,7 @@ distribucionesDeudoresDefault participantes =
                 |> List.map
                     (\p ->
                         { id = emptyUlid
-                        , participante = p.participanteId
+                        , participante = p.id
                         , monto = Monto.zero
                         }
                     )
@@ -844,7 +844,7 @@ distribucionesDeudoresDefault participantes =
         { id = emptyUlid
         , participantes =
             participantes
-                |> List.map .participanteId
+                |> List.map .id
         }
     , repartija =
         { id = emptyUlid
@@ -1424,7 +1424,7 @@ viewDistribucionForm participantes prefix form receiptParseState =
                                                     [ placeholder "200.0" ]
                                             , Html.map PagoForm <|
                                                 Ui5.formSelect
-                                                    (( "", "" ) :: List.map (\p -> ( p.participanteId, p.participanteNombre )) participantes)
+                                                    (( "", "" ) :: List.map (\p -> ( p.id, p.nombre )) participantes)
                                                     participanteField
                                                     []
                                             , Ui5.button
@@ -1455,11 +1455,11 @@ viewDistribucionForm participantes prefix form receiptParseState =
                                     (\p ->
                                         let
                                             participanteField =
-                                                Form.getFieldAsBool (prefix ++ ".participantes." ++ p.participanteId) form
+                                                Form.getFieldAsBool (prefix ++ ".participantes." ++ p.id) form
                                         in
                                         Html.map PagoForm <|
                                             Ui5.formCheckbox participanteField
-                                                [ Attr.attribute "text" p.participanteNombre ]
+                                                [ Attr.attribute "text" p.nombre ]
                                     )
                             )
                         ]

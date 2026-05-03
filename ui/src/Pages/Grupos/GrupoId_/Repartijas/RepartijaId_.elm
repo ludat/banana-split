@@ -391,16 +391,16 @@ viewParticipantes grupo repartija =
                     (\participante ->
                         Ui5.button
                             [ Attr.attribute "design"
-                                (if Set.member participante.participanteId participantesConClaims then
+                                (if Set.member participante.id participantesConClaims then
                                     "Positive"
 
                                  else
                                     "Negative"
                                 )
-                            , id ("participante-btn-" ++ participante.participanteId)
-                            , onClick <| OpenParticipanteClaimsPopup participante.participanteId
+                            , id ("participante-btn-" ++ participante.id)
+                            , onClick <| OpenParticipanteClaimsPopup participante.id
                             ]
-                            [ text participante.participanteNombre
+                            [ text participante.nombre
                             ]
                     )
             )

@@ -38,7 +38,7 @@ viewNetosBarras grupo netos =
                             lookupParticipante grupo participanteId
 
                         nombreIzquierda =
-                            div [ class "nombre izquierda", style "margin-right" "0.5rem" ] [ Ui5.text participante.participanteNombre ]
+                            div [ class "nombre izquierda", style "margin-right" "0.5rem" ] [ Ui5.text participante.nombre ]
 
                         barraDerecha =
                             div [ class "monto derecha" ]
@@ -57,7 +57,7 @@ viewNetosBarras grupo netos =
                         LT ->
                             let
                                 nombreDerecha =
-                                    div [ class "nombre derecha", style "margin-left" "0.5rem" ] [ Ui5.text participante.participanteNombre ]
+                                    div [ class "nombre derecha", style "margin-left" "0.5rem" ] [ Ui5.text participante.nombre ]
 
                                 barraIzquierda =
                                     div [ class "monto izquierda" ]

@@ -15,8 +15,8 @@ import BananaSplit.ULID (ULID)
 import BananaSplit.ULID qualified as ULID
 
 data Participante = Participante
-  { participanteId :: ULID
-  , participanteNombre :: Text
+  { id :: ULID
+  , nombre :: Text
   }
   deriving (Show, Eq, Generic)
 

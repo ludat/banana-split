@@ -13,11 +13,11 @@ type alias GrupoLike r =
 lookupParticipante : GrupoLike g -> ParticipanteId -> Participante
 lookupParticipante grupo participanteId =
     grupo.participantes
-        |> List.filter (\p -> p.participanteId == participanteId)
+        |> List.filter (\p -> p.id == participanteId)
         |> List.head
-        |> Maybe.withDefault { participanteId = participanteId, participanteNombre = "Desconocido" }
+        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido" }
 
 
 lookupNombreParticipante : GrupoLike g -> ParticipanteId -> String
 lookupNombreParticipante grupo participanteId =
-    lookupParticipante grupo participanteId |> .participanteNombre
+    lookupParticipante grupo participanteId |> .nombre

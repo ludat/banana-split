@@ -191,8 +191,8 @@ view store model =
                         |> List.map
                             (\p ->
                                 Ui5.li
-                                    [ Attr.attribute "data-id" p.participanteId ]
-                                    [ text p.participanteNombre ]
+                                    [ Attr.attribute "data-id" p.id ]
+                                    [ text p.nombre ]
                             )
                     )
                 , Ui5.form ParticipanteForm
