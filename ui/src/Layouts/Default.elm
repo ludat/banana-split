@@ -34,7 +34,7 @@ layout props shared _ =
     Layout.new
         { init = \() -> init
         , update = update
-        , view = view props.navBarContent props.grupo shared.userId shared.toasties shared.lastReadChangelog (Date.fromPosix shared.zone shared.now)
+        , view = view props.navBarContent props.grupo shared.userId shared.toasties shared.lastReadChangelog shared.today
         , subscriptions = subscriptions
         }
 

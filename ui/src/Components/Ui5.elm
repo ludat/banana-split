@@ -1,4 +1,4 @@
-module Components.Ui5 exposing (busyIndicator, button, dialog, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, formSelectItem, label, li, link, list, messageStrip, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
+module Components.Ui5 exposing (busyIndicator, button, dateFormItem, dialog, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, formSelectItem, label, li, link, list, messageStrip, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
 
 import Form exposing (Msg(..))
 import Form.Field
@@ -74,6 +74,57 @@ formSelectItem field opts =
             ]
             [ Html.text opts.label ]
         , formSelect opts.options field []
+        ]
+
+
+datePicker : List (Attribute m) -> List (Html m) -> Html m
+datePicker attrs children =
+    Html.node "ui5-date-picker" attrs children
+
+
+dateFormItem : Form.FieldState CustomFormError String -> { label : String, required : Bool } -> Html Form.Msg
+dateFormItem state options =
+    formItem []
+        [ label
+            [ slot "labelContent"
+            , for state.path
+            , required options.required
+            , Attr.attribute "show-colon" ""
+            ]
+            [ text options.label ]
+        , datePicker
+            [ case state.value of
+                Just v ->
+                    value v
+
+                Nothing ->
+                    value ""
+            , Attr.attribute "display-format" "yyyy-MM-dd"
+            , Attr.attribute "value-format" "yyyy-MM-dd"
+
+            -- TODO: There is a bug with the ui5 library that causes the input event to fire unreliably
+            -- I expect them to fix it at some point in the future.
+            , on "input"
+                (Json.Decode.at [ "detail", "value" ] Json.Decode.string
+                    |> Json.Decode.map (\v -> Input state.path Form.Text (Form.Field.String v))
+                )
+            , on "change"
+                (Json.Decode.at [ "target", "value" ] Json.Decode.string
+                    |> Json.Decode.map (\v -> Input state.path Form.Text (Form.Field.String v))
+                )
+            , on "focusin" (Json.Decode.succeed (Focus state.path))
+            , on "focusout" (Json.Decode.succeed (Blur state.path))
+            , id state.path
+            , required options.required
+            , Attr.attribute "value-state"
+                (if hasErrorField state then
+                    "Negative"
+
+                 else
+                    "None"
+                )
+            ]
+            [ div [ slot "valueStateMessage" ] [ errorForField state ] ]
         ]
 
 

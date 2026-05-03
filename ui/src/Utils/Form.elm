@@ -8,6 +8,7 @@ import Numeric.ArithmeticError as DecimalError
 
 type CustomFormError
     = DecimalError DecimalError.ArithmeticError
+    | InvalidDate
 
 
 hasErrorField : Form.FieldState CustomFormError String -> Bool
@@ -72,6 +73,9 @@ errorTextForField field =
                         case customError of
                             DecimalError arithmeticError ->
                                 DecimalError.toString arithmeticError
+
+                            InvalidDate ->
+                                "Fecha inválida"
             )
 
 

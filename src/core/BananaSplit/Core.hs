@@ -6,6 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module BananaSplit.Core (
   Grupo (..),
@@ -26,9 +27,20 @@ module BananaSplit.Core (
   isValid,
 ) where
 
+import Preludat
+import Data.Text.Encoding qualified as Text
+import Data.Time (Day, LocalTime (..), TimeOfDay, UTCTime)
+import Data.Time.Zones qualified as TZ
+import Data.Time.Zones.All qualified as TZ
 import Elm.Derive qualified as Elm
-import GHC.Generics
-import Protolude
+import Elm.TyRep (
+  EPrimAlias (..),
+  ETCon (..),
+  EType (..),
+  ETypeDef (..),
+  ETypeName (..),
+  IsElmDefinition (..),
+ )
 
 import BananaSplit.Deudas
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
@@ -60,6 +72,7 @@ data Pago = Pago
   , moneda :: Moneda
   , isValid :: Bool
   , nombre :: Text
+  , fecha :: Day
   , pagadores :: Distribucion
   , deudores :: Distribucion
   }
@@ -71,6 +84,7 @@ data ShallowPago = ShallowPago
   , nombre :: Text
   , monto :: Monto
   , moneda :: Moneda
+  , fecha :: Day
   }
   deriving (Show, Eq, Generic)
 
@@ -113,6 +127,14 @@ data Parte
   = MontoFijo Monto ParticipanteId
   | Ponderado Integer ParticipanteId
   deriving (Show, Eq, Generic)
+
+instance IsElmDefinition UTCTime where
+  compileElmDef _ =
+    ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "UTCTime", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
+
+instance IsElmDefinition Day where
+  compileElmDef _ =
+    ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "Day", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
 
 Elm.deriveBoth Elm.defaultOptions ''Parte
 Elm.deriveBoth Elm.defaultOptions ''Pago

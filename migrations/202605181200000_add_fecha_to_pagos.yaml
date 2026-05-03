@@ -1,0 +1,8 @@
+operations:
+  - add_column:
+      table: pagos
+      column:
+        name: fecha
+        type: date
+        nullable: false
+        default: "NOW()::date"

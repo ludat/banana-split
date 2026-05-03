@@ -26,14 +26,15 @@ import Utils.Toasts as Toast
 
 
 type alias Flags =
-    { now : Int, offset : Int, lastReadChangelog : Maybe Int }
+    { now : Int, offset : Int, timeZone : String, lastReadChangelog : Maybe Int }
 
 
 decoder : Json.Decode.Decoder Flags
 decoder =
-    Json.Decode.map3 Flags
+    Json.Decode.map4 Flags
         (Json.Decode.field "now" Json.Decode.int)
         (Json.Decode.field "offset" Json.Decode.int)
+        (Json.Decode.field "timeZone" Json.Decode.string)
         (Json.Decode.field "lastReadChangelog" (Json.Decode.nullable Json.Decode.int))
 
 
@@ -49,13 +50,14 @@ init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
 init possiblyFlags _ =
     let
         flags =
-            Result.withDefault { now = 0, offset = 0, lastReadChangelog = Nothing } possiblyFlags
+            Result.withDefault { now = 0, offset = 0, timeZone = "UTC", lastReadChangelog = Nothing } possiblyFlags
     in
     ( { toasties = Toast.initialState
       , store = Store.empty
       , userId = Nothing
-      , now = Time.millisToPosix flags.now
-      , zone = Time.customZone flags.offset []
+      , today = Date.fromPosix (Time.customZone flags.offset []) (Time.millisToPosix flags.now)
+      , timezone = flags.timeZone
+      , timezoneOffset = flags.offset
       , lastReadChangelog =
             flags.lastReadChangelog
                 |> Maybe.map (\ms -> Date.fromPosix (Time.customZone flags.offset []) (Time.millisToPosix ms))
@@ -133,8 +135,13 @@ update _ msg model =
             )
 
         MarkChangelogRead ->
-            ( { model | lastReadChangelog = Just (Date.fromPosix model.zone model.now) }
+            ( { model | lastReadChangelog = Just model.today }
             , Effect.saveLastReadChangelog
+            )
+
+        Shared.Msg.Tick date ->
+            ( { model | today = date }
+            , Effect.none
             )
 
 
@@ -143,8 +150,11 @@ update _ msg model =
 
 
 subscriptions : Route () -> Model -> Sub Msg
-subscriptions _ _ =
-    incoming (decodeIncomingPortMessage >> Maybe.withDefault NoOp)
+subscriptions _ model =
+    Sub.batch
+        [ incoming (decodeIncomingPortMessage >> Maybe.withDefault NoOp)
+        , Time.every (60 * 1000) (\posix -> Shared.Msg.Tick (Date.fromPosix (Time.customZone model.timezoneOffset []) posix))
+        ]
 
 
 decodeIncomingPortMessage : { tag : String, data : Json.Encode.Value } -> Maybe Msg

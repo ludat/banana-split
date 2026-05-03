@@ -10,6 +10,9 @@ import Http
 import String
 import Url.Builder
 
+import Utils.Posix exposing (Posix, jsonDecPosix, jsonEncPosix)
+import Date
+import Utils.Date exposing (Day, jsonDecDay, jsonEncDay)
 type alias CreateGrupoParams  =
    { grupoName: String
    , grupoParticipante: String
@@ -387,18 +390,20 @@ type alias Pago  =
    , moneda: Moneda
    , isValid: Bool
    , nombre: String
+   , fecha: Day
    , pagadores: Distribucion
    , deudores: Distribucion
    }
 
 jsonDecPago : Json.Decode.Decoder ( Pago )
 jsonDecPago =
-   Json.Decode.succeed (\ppagoId pmonto pmoneda pisValid pnombre ppagadores pdeudores -> {pagoId = ppagoId, monto = pmonto, moneda = pmoneda, isValid = pisValid, nombre = pnombre, pagadores = ppagadores, deudores = pdeudores})
+   Json.Decode.succeed (\ppagoId pmonto pmoneda pisValid pnombre pfecha ppagadores pdeudores -> {pagoId = ppagoId, monto = pmonto, moneda = pmoneda, isValid = pisValid, nombre = pnombre, fecha = pfecha, pagadores = ppagadores, deudores = pdeudores})
    |> required "pagoId" (jsonDecULID)
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
    |> required "isValid" (Json.Decode.bool)
    |> required "nombre" (Json.Decode.string)
+   |> required "fecha" (jsonDecDay)
    |> required "pagadores" (jsonDecDistribucion)
    |> required "deudores" (jsonDecDistribucion)
 
@@ -410,6 +415,7 @@ jsonEncPago  val =
    , ("moneda", jsonEncMoneda val.moneda)
    , ("isValid", Json.Encode.bool val.isValid)
    , ("nombre", Json.Encode.string val.nombre)
+   , ("fecha", jsonEncDay val.fecha)
    , ("pagadores", jsonEncDistribucion val.pagadores)
    , ("deudores", jsonEncDistribucion val.deudores)
    ]
@@ -422,16 +428,18 @@ type alias ShallowPago  =
    , nombre: String
    , monto: Monto
    , moneda: Moneda
+   , fecha: Day
    }
 
 jsonDecShallowPago : Json.Decode.Decoder ( ShallowPago )
 jsonDecShallowPago =
-   Json.Decode.succeed (\ppagoId pisValid pnombre pmonto pmoneda -> {pagoId = ppagoId, isValid = pisValid, nombre = pnombre, monto = pmonto, moneda = pmoneda})
+   Json.Decode.succeed (\ppagoId pisValid pnombre pmonto pmoneda pfecha -> {pagoId = ppagoId, isValid = pisValid, nombre = pnombre, monto = pmonto, moneda = pmoneda, fecha = pfecha})
    |> required "pagoId" (jsonDecULID)
    |> required "isValid" (Json.Decode.bool)
    |> required "nombre" (Json.Decode.string)
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
+   |> required "fecha" (jsonDecDay)
 
 jsonEncShallowPago : ShallowPago -> Value
 jsonEncShallowPago  val =
@@ -441,6 +449,7 @@ jsonEncShallowPago  val =
    , ("nombre", Json.Encode.string val.nombre)
    , ("monto", jsonEncMonto val.monto)
    , ("moneda", jsonEncMoneda val.moneda)
+   , ("fecha", jsonEncDay val.fecha)
    ]
 
 

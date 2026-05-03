@@ -35,13 +35,12 @@ module BananaSplit.Persistence (
 
 import Data.Decimal qualified as Decimal
 import Data.String (String)
-import Data.Text qualified as Text
+import Data.Time (Day)
 import Database.Beam as Beam
 import Database.Beam.Backend
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full hiding (insert)
 import Database.Beam.Postgres.Syntax
-import Database.PostgreSQL.Simple.FromField (FromField (..), returnError)
 import Protolude.Error
 import Protolude.Partial (read)
 
@@ -125,6 +124,7 @@ data PagoT f = Pago
   , pagoMoneda :: Columnar f M.Moneda
   , distribucion_pagadores :: PrimaryKey DistribucionT f
   , distribucion_deudores :: PrimaryKey DistribucionT f
+  , fecha :: Columnar f Day
   }
   deriving (Generic, Beamable)
 
@@ -436,6 +436,7 @@ fetchPago grupoId pagoId = do
             , M.moneda = dbPago.pagoMoneda
             , M.nombre = p.pagoNombre
             , M.isValid = p.pagoIsValid
+            , M.fecha = p.fecha
             , M.pagadores = pagadores
             , M.deudores = deudores
             }
@@ -577,6 +578,7 @@ fetchShallowPagos grupoId = do
         , M.nombre = pago.pagoNombre
         , M.monto = constructMonto pago.pagoMonto
         , M.moneda = pago.pagoMoneda
+        , M.fecha = pago.fecha
         }
 
 fetchParticipantes :: ULID -> Pg [M.Participante]
@@ -645,6 +647,7 @@ savePago grupoId pagoWithoutId = do
               , pagoMoneda = pago.moneda
               , distribucion_pagadores = DistribucionId distribucionPagadores.id
               , distribucion_deudores = DistribucionId distribucionDeudores.id
+              , fecha = pago.fecha
               }
           ]
       )
@@ -927,7 +930,7 @@ fetchRepartija unRepartijaId = do
       }
 
 saveRepartijaClaim :: ULID -> M.RepartijaClaim -> Pg M.RepartijaClaim
-saveRepartijaClaim unRepartijaId repartijaClaim = do
+saveRepartijaClaim _unRepartijaId repartijaClaim = do
   claimId <-
     if repartijaClaim.id == nullUlid
       then liftIO ULID.getULID

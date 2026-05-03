@@ -26,6 +26,7 @@ import "@ui5/webcomponents-icons/dist/upload.js";
 import "@ui5/webcomponents-icons/dist/user-edit.js";
 import "@ui5/webcomponents-icons/dist/action-settings.js";
 
+import "@ui5/webcomponents/dist/DatePicker.js";
 import "@ui5/webcomponents/dist/Bar.js";
 import "@ui5/webcomponents/dist/BusyIndicator.js";
 import "@ui5/webcomponents/dist/Button.js";
@@ -136,6 +137,7 @@ export const flags = ({ env }) => {
   return {
     now: now.getTime(),
     offset: now.getTimezoneOffset(),
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     lastReadChangelog: lastReadRaw ? parseInt(lastReadRaw, 10) : null,
   };
 };
