@@ -525,6 +525,7 @@ update store msg model =
                         [ Toasts.pushToast Toasts.ToastSuccess "Recibo parseado correctamente"
                         ]
                     )
+                        |> andThenUpdateResumenesFromForms model
                         |> andThenSendWarningOnExit
 
                 Ok (Api.ReceiptImageError { error }) ->
