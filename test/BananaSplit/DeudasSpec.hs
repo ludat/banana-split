@@ -24,6 +24,7 @@ spec = do
       Pago
         { pagoId = fakeUlid 100
         , monto = 1000
+        , moneda = ARS
         , isValid = True
         , nombre = "Pago"
         , pagadores = distribucionMontosEspecificos []

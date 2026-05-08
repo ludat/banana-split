@@ -15,6 +15,7 @@ pagoValido =
     , isValid = True
     , nombre = "Pago"
     , monto = 200
+    , moneda = ARS
     , deudores =
         distribucionMontosEspecificos
           [ (participante 1, 200)
