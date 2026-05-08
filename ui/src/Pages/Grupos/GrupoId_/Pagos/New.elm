@@ -14,7 +14,6 @@ import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
 import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), DistribucionMontoEquitativo, DistribucionMontosEspecificos, Moneda, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
-import Models.Moneda as Moneda
 import Html exposing (Html, a, details, div, p, summary, text)
 import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_)
 import Html.Events exposing (on, onClick, onSubmit)
@@ -23,6 +22,7 @@ import Json.Decode as Decode
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.LugarAccionable exposing (LugarParaAccionar(..))
+import Models.Moneda as Moneda
 import Models.Monto as Monto
 import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje, getDeudasFromResumen, getTotalFromResumen)
 import Models.Store as Store
