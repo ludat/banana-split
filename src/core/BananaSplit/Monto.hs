@@ -34,6 +34,7 @@ newtype Monto = Monto Decimal
   deriving stock (Show, Eq, Ord)
   deriving newtype (Num, Real, Enum)
   deriving anyclass (ToJSON, FromJSON)
+  deriving (Semigroup, Monoid) via (Sum Decimal)
 
 mkMonto :: Word8 -> Integer -> Monto
 mkMonto lugaresDespuesDeLaComa n =

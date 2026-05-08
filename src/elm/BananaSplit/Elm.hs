@@ -33,11 +33,14 @@ generateElmFiles = do
     defElmImports
     "ui/generated-src/"
     [ DefineElm (Proxy :: Proxy CreateGrupoParams)
+    , DefineElm (Proxy :: Proxy UpdateGrupoParams)
     , DefineElm (Proxy :: Proxy ReceiptImageRequest)
     , DefineElm (Proxy :: Proxy ReceiptImageResponse)
     , DefineElm (Proxy :: Proxy ParticipanteAddParams)
     , DefineElm (Proxy :: Proxy ResumenGrupo)
     , DefineElm (Proxy :: Proxy (Netos Monto))
+    , DefineElm (Proxy :: Proxy (PorMoneda (Netos Monto)))
+    , DefineElm (Proxy :: Proxy Moneda)
     , DefineElm (Proxy :: Proxy ResumenPago)
     , DefineElm (Proxy :: Proxy ResumenNetos)
     , DefineElm (Proxy :: Proxy TipoErrorResumen)

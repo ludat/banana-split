@@ -87,6 +87,7 @@ library
     BananaSplit.Core
     BananaSplit.Deudas
     BananaSplit.Monto
+    BananaSplit.Moneda
     BananaSplit.Participante
     BananaSplit.Repartija
     BananaSplit.TestUtils

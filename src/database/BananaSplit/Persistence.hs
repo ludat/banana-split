@@ -27,6 +27,7 @@ module BananaSplit.Persistence (
   saveRepartija,
   saveRepartijaClaim,
   unfreezeGrupo,
+  updateGrupo,
   updateIsValidPago,
   updatePago,
 ) where
@@ -42,6 +43,7 @@ import Database.PostgreSQL.Simple.FromField (FromField (..), returnError)
 import Protolude.Error
 
 import BananaSplit qualified as M
+import BananaSplit.Moneda (monedaFromText)
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
 import Preludat
@@ -69,6 +71,7 @@ data GrupoT f = Grupo
   { id :: Columnar f ULID
   , nombre :: Columnar f Text
   , is_frozen :: Columnar f Bool
+  , moneda_por_defecto :: Columnar f Text
   }
   deriving (Generic, Beamable)
 
@@ -117,6 +120,7 @@ data PagoT f = Pago
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMonto :: MontoT f
+  , pagoMoneda :: Columnar f Text
   , distribucion_pagadores :: PrimaryKey DistribucionT f
   , distribucion_deudores :: PrimaryKey DistribucionT f
   }
@@ -350,6 +354,7 @@ data TransaccionCongeladaT f = TransaccionCongelada
   , participante_from :: PrimaryKey ParticipanteT f
   , participante_to :: PrimaryKey ParticipanteT f
   , monto :: MontoT f
+  , moneda :: Columnar f Text
   }
   deriving (Generic, Beamable)
 
@@ -372,7 +377,7 @@ createGrupo nombre participante = do
   runInsert
     $ insert db.grupos
     $ insertValues
-      [ Grupo newId nombre False
+      [ Grupo newId nombre False (M.monedaToText M.ARS)
       ]
   p <-
     addParticipante newId participante
@@ -384,6 +389,7 @@ createGrupo nombre participante = do
       , M.nombre = nombre
       , M.pagos = []
       , M.participantes = [p]
+      , M.monedaPorDefecto = M.ARS
       }
 
 fetchGrupo :: ULID -> Pg (Maybe M.ShallowGrupo)
@@ -397,6 +403,9 @@ fetchGrupo aGrupoId = do
     Nothing -> pure Nothing
     Just grupo -> do
       participantes <- fetchParticipantes aGrupoId
+      moneda <- case M.monedaFromText grupo.moneda_por_defecto of
+        Right m -> pure m
+        Left e -> error e
       pure
         $ Just
         $ M.ShallowGrupo
@@ -404,6 +413,7 @@ fetchGrupo aGrupoId = do
           , M.nombre = grupo.nombre
           , M.participantes = participantes
           , M.isFrozen = grupo.is_frozen
+          , M.monedaPorDefecto = moneda
           }
 
 fetchPago :: ULID -> ULID -> Pg M.Pago
@@ -419,11 +429,15 @@ fetchPago grupoId pagoId = do
 
   (pagadores :: M.Distribucion) <- fromMaybe (error "Pagadores not found") <$> fetchDistribucion (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
   (deudores :: M.Distribucion) <- fromMaybe (error "deudores not found") <$> fetchDistribucion (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
+  moneda <- case M.monedaFromText dbPago.pagoMoneda of
+    Right m -> pure m
+    Left e -> error e
   dbPago
     & ( \p ->
           M.Pago
             { M.pagoId = p.pagoId
             , M.monto = constructMonto p.pagoMonto
+            , M.moneda = moneda
             , M.nombre = p.pagoNombre
             , M.isValid = p.pagoIsValid
             , M.pagadores = pagadores
@@ -559,16 +573,18 @@ fetchShallowPagos grupoId = do
     guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
     pure pago
 
-  dbPagos
-    <&> ( \pago ->
-            M.ShallowPago
-              { M.pagoId = pago.pagoId
-              , M.isValid = pago.pagoIsValid
-              , M.nombre = pago.pagoNombre
-              , M.monto = constructMonto pago.pagoMonto
-              }
-        )
-    & pure
+  forM dbPagos $ \pago -> do
+    moneda <- case M.monedaFromText pago.pagoMoneda of
+      Right m -> pure m
+      Left e -> error e
+    pure
+      M.ShallowPago
+        { M.pagoId = pago.pagoId
+        , M.isValid = pago.pagoIsValid
+        , M.nombre = pago.pagoNombre
+        , M.monto = constructMonto pago.pagoMonto
+        , M.moneda = moneda
+        }
 
 fetchParticipantes :: ULID -> Pg [M.Participante]
 fetchParticipantes grupoId = do
@@ -633,6 +649,7 @@ savePago grupoId pagoWithoutId = do
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
               , pagoMonto = deconstructMonto pago.monto
+              , pagoMoneda = M.monedaToText pago.moneda
               , distribucion_pagadores = DistribucionId distribucionPagadores.id
               , distribucion_deudores = DistribucionId distribucionDeudores.id
               }
@@ -949,8 +966,8 @@ claimToRow claim =
     , repartijaclaimCantidad = fromIntegral <$> claim.cantidad
     }
 
-freezeGrupo :: ULID -> [M.Transaccion] -> Pg ()
-freezeGrupo grupoId transacciones = do
+freezeGrupo :: ULID -> M.PorMoneda [M.Transaccion] -> Pg ()
+freezeGrupo grupoId transaccionesPorMoneda = do
   runDelete
     $ delete
       db.transacciones_congeladas
@@ -960,19 +977,22 @@ freezeGrupo grupoId transacciones = do
       db.grupos
       (\g -> g.is_frozen <-. val_ True)
       (\g -> g.id ==. val_ grupoId)
-  transaccionIds <- liftIO $ forM transacciones $ \_ -> ULID.getULID
-  runInsert
-    $ insert db.transacciones_congeladas
-    $ insertValues
-      [ TransaccionCongelada
+  transaccionesCongeladas <- liftIO $ M.forMonedaM transaccionesPorMoneda $ \moneda transacciones ->
+    forM transacciones $ \t -> do
+      tid <- ULID.getULID
+      pure
+        $ TransaccionCongelada
           { id = tid
           , grupo = GrupoId grupoId
           , participante_from = ParticipanteId $ M.participanteId2ULID t.from
           , participante_to = ParticipanteId $ M.participanteId2ULID t.to
           , monto = deconstructMonto t.monto
+          , moneda = M.monedaToText moneda
           }
-      | (tid, t) <- zip transaccionIds transacciones
-      ]
+  runInsert
+    $ insert db.transacciones_congeladas
+    $ insertValues
+    $ transaccionesCongeladas
 
 unfreezeGrupo :: ULID -> Pg ()
 unfreezeGrupo grupoId = do
@@ -986,19 +1006,39 @@ unfreezeGrupo grupoId = do
       (\g -> g.is_frozen <-. val_ False)
       (\g -> g.id ==. val_ grupoId)
 
-fetchTransaccionesCongeladas :: ULID -> Pg [M.Transaccion]
+updateGrupo :: ULID -> Text -> M.Moneda -> Pg ()
+updateGrupo grupoId nombre monedaPorDefecto = do
+  runUpdate
+    $ update
+      db.grupos
+      ( \g ->
+          mconcat
+            [ g.nombre <-. val_ nombre
+            , g.moneda_por_defecto <-. val_ (M.monedaToText monedaPorDefecto)
+            ]
+      )
+      (\g -> g.id ==. val_ grupoId)
+
+fetchTransaccionesCongeladas :: ULID -> Pg (M.PorMoneda [M.Transaccion])
 fetchTransaccionesCongeladas grupoId = do
   rows <- runSelectReturningList $ select $ do
     tc <- all_ db.transacciones_congeladas
     guard_ (tc.grupo ==. GrupoId (val_ grupoId))
     pure tc
-  pure $ rows <&> \tc ->
-    M.Transaccion
-      { M.id = Just tc.id
-      , M.from = M.ParticipanteId $ case tc.participante_from of ParticipanteId ulid -> ulid
-      , M.to = M.ParticipanteId $ case tc.participante_to of ParticipanteId ulid -> ulid
-      , M.monto = constructMonto tc.monto
-      }
+  pure
+    $ rows
+    & fmap
+      ( \tc ->
+          [ M.Transaccion
+              { M.id = Just tc.id
+              , M.from = M.ParticipanteId $ case tc.participante_from of ParticipanteId ulid -> ulid
+              , M.to = M.ParticipanteId $ case tc.participante_to of ParticipanteId ulid -> ulid
+              , M.monto = constructMonto tc.monto
+              }
+          ]
+            `M.enMoneda` either error identity (monedaFromText tc.moneda)
+      )
+    & mconcat
 
 deleteTransaccionCongelada :: ULID -> Pg ()
 deleteTransaccionCongelada transaccionId = do

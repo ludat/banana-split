@@ -1,4 +1,4 @@
-module Components.Ui5 exposing (busyIndicator, button, dialog, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, label, li, link, list, messageStrip, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
+module Components.Ui5 exposing (busyIndicator, button, dialog, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, formSelectItem, label, li, link, list, messageStrip, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
 
 import Form exposing (Msg(..))
 import Form.Field
@@ -60,6 +60,20 @@ textFormItem field options =
                     class ""
             , required options.required
             ]
+        ]
+
+
+formSelectItem : Form.FieldState CustomFormError String -> { label : String, required : Bool, options : List ( String, String ) } -> Html Form.Msg
+formSelectItem field opts =
+    formItem []
+        [ label
+            [ slot "labelContent"
+            , for field.path
+            , required opts.required
+            , Attr.attribute "show-colon" ""
+            ]
+            [ Html.text opts.label ]
+        , formSelect opts.options field []
         ]
 
 

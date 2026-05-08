@@ -7,6 +7,7 @@ module Site.Handler.Grupos (
   handleGetNetos,
   handleShowGrupo,
   handleUnfreezeGrupo,
+  handleUpdateGrupo,
 ) where
 
 import Protolude
@@ -23,6 +24,7 @@ import BananaSplit.Persistence (
   fetchTransaccionesCongeladas,
   freezeGrupo,
   unfreezeGrupo,
+  updateGrupo,
   updateIsValidPago,
  )
 import Site.Api
@@ -51,6 +53,7 @@ handleGetNetos grupoId = do
           , participantes = shallowGrupo.participantes
           , nombre = shallowGrupo.nombre
           , pagos = pagos
+          , monedaPorDefecto = shallowGrupo.monedaPorDefecto
           }
   let netos = calcularNetosTotales grupo
 
@@ -71,7 +74,7 @@ handleGetNetos grupoId = do
           { netos = netos
           , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
           , cantidadPagos = length grupo.pagos
-          , transaccionesParaSaldar = minimizeTransactions netos
+          , transaccionesParaSaldar = fmap minimizeTransactions netos
           , isFrozen = False
           }
 
@@ -107,13 +110,14 @@ handleFreezeGrupo grupoId = do
           , participantes = shallowGrupo.participantes
           , nombre = shallowGrupo.nombre
           , pagos = pagos
+          , monedaPorDefecto = shallowGrupo.monedaPorDefecto
           }
   let netos = calcularNetosTotales grupo
-  let transacciones = minimizeTransactions netos
+  let transaccionesPorMoneda = fmap minimizeTransactions netos
 
   runBeam
     ( do
-        freezeGrupo grupoId transacciones
+        freezeGrupo grupoId transaccionesPorMoneda
         fetchGrupo grupoId
     )
     `orElseMay` throwJsonError err404 "Grupo no encontrado"
@@ -123,6 +127,15 @@ handleUnfreezeGrupo grupoId = do
   runBeam
     ( do
         unfreezeGrupo grupoId
+        fetchGrupo grupoId
+    )
+    `orElseMay` throwJsonError err404 "Grupo no encontrado"
+
+handleUpdateGrupo :: ULID -> UpdateGrupoParams -> AppHandler ShallowGrupo
+handleUpdateGrupo grupoId params = do
+  runBeam
+    ( do
+        updateGrupo grupoId params.nombre params.monedaPorDefecto
         fetchGrupo grupoId
     )
     `orElseMay` throwJsonError err404 "Grupo no encontrado"

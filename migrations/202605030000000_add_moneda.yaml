@@ -1,0 +1,24 @@
+operations:
+  - add_column:
+      table: grupos
+      column:
+        name: moneda_por_defecto
+        type: text
+        nullable: false
+        default: "'ARS'"
+
+  - add_column:
+      table: pagos
+      column:
+        name: moneda
+        type: text
+        nullable: false
+        default: "'ARS'"
+
+  - add_column:
+      table: transacciones_congeladas
+      column:
+        name: moneda
+        type: text
+        nullable: false
+        default: "'ARS'"
