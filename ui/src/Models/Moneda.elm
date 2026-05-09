@@ -1,8 +1,10 @@
-module Models.Moneda exposing (fromString, perEach, simbolo, toString, todas, validate)
+module Models.Moneda exposing (nombre, perEach, simbolo, toString, todas, validate)
 
 import Form.Error as FormError
 import Form.Validate as V exposing (Validation)
-import Generated.Api exposing (Moneda(..), PorMoneda)
+import Generated.Api exposing (Moneda(..), PorMoneda, jsonDecMoneda, jsonEncMoneda)
+import Json.Decode
+import Json.Encode
 import Utils.Form exposing (CustomFormError)
 
 
@@ -13,55 +15,42 @@ perEach f monedas =
 
 toString : Moneda -> String
 toString moneda =
-    case moneda of
-        ARS ->
-            "ARS"
-
-        USD ->
-            "USD"
-
-        EUR ->
-            "EUR"
-
-        BRL ->
-            "BRL"
-
-        UYU ->
-            "UYU"
-
-        CLP ->
-            "CLP"
-
-        GBP ->
-            "GBP"
+    Json.Decode.decodeValue Json.Decode.string (jsonEncMoneda moneda)
+        |> Result.withDefault ""
 
 
 fromString : String -> Maybe Moneda
 fromString s =
-    case s of
-        "ARS" ->
-            Just ARS
+    Json.Decode.decodeValue jsonDecMoneda (Json.Encode.string s)
+        |> Result.toMaybe
 
-        "USD" ->
-            Just USD
 
-        "EUR" ->
-            Just EUR
+{-| Conseguir un nombre para el usuario de una moneda el particular
+por ejemplo "Pesos Argentinos" ó "Dólares".
+-}
+nombre : Moneda -> String
+nombre moneda =
+    case moneda of
+        ARS ->
+            "Pesos Argentinos"
 
-        "BRL" ->
-            Just BRL
+        USD ->
+            "Dólares"
 
-        "UYU" ->
-            Just UYU
+        EUR ->
+            "Euros"
 
-        "CLP" ->
-            Just CLP
+        BRL ->
+            "Reales"
 
-        "GBP" ->
-            Just GBP
+        UYU ->
+            "Pesos Uruguayos"
 
-        _ ->
-            Nothing
+        CLP ->
+            "Pesos Chilenos"
+
+        GBP ->
+            "Libras"
 
 
 todas : List Moneda
@@ -69,21 +58,17 @@ todas =
     [ ARS, USD, EUR, BRL, UYU, CLP, GBP ]
 
 
-simbolo : List Moneda -> Moneda -> String
-simbolo contexto moneda =
-    let
-        propio =
-            simboloSimple moneda
-
-        hayColision =
-            contexto
-                |> List.any (\m -> m /= moneda && simboloSimple m == propio)
-    in
-    if hayColision then
-        simboloUnico moneda
+{-| Conseguir un simbolo de una moneda el particular. Si la moneda es la default del grupo
+usamos un simbolo más corto para esa moneda.
+por ejemplo "$" como simbolo corto ó "AR$" como simbolo largo.
+-}
+simbolo : Moneda -> Moneda -> String
+simbolo monedaPorDefecto moneda =
+    if moneda == monedaPorDefecto then
+        simboloSimple moneda
 
     else
-        propio
+        simboloUnico moneda
 
 
 simboloSimple : Moneda -> String
@@ -138,7 +123,7 @@ simboloUnico moneda =
 
 validate : Validation CustomFormError Moneda
 validate =
-    V.customValidation (V.defaultValue (toString ARS) V.string)
+    V.customValidation V.string
         (\s ->
             case fromString s of
                 Just m ->

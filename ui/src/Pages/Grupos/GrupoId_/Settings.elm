@@ -47,7 +47,7 @@ page shared route =
 type alias Model =
     { grupoId : String
     , ajustesForm : Form CustomFormError UpdateGrupoParams
-    , ajustesFormSeeded : Bool
+    , ajustesFormDirty : Bool
     }
 
 
@@ -65,7 +65,7 @@ init : Store -> ULID -> ( Model, Effect Msg )
 init store grupoId =
     ( { grupoId = grupoId
       , ajustesForm = Form.initial [] validateUpdateGrupoParams
-      , ajustesFormSeeded = False
+      , ajustesFormDirty = False
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -163,12 +163,15 @@ update store msg model =
                     )
 
         AjustesForm formMsg ->
-            ( { model | ajustesForm = Form.update validateUpdateGrupoParams formMsg model.ajustesForm }
+            ( { model
+                | ajustesForm = Form.update validateUpdateGrupoParams formMsg model.ajustesForm
+                , ajustesFormDirty = True
+              }
             , Effect.none
             )
 
         UpdateGrupoResponse (Ok _) ->
-            ( model
+            ( { model | ajustesFormDirty = False }
             , Effect.batch
                 [ Store.refreshGrupo model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Grupo actualizado"
@@ -181,27 +184,23 @@ update store msg model =
             )
 
         CheckIfGrupoIsPresent ->
-            if model.ajustesFormSeeded then
-                ( model, Effect.none )
+            case Store.getGrupo model.grupoId store of
+                Success grupo ->
+                    ( { model
+                        | ajustesForm = seedAjustesForm grupo
+                        , ajustesFormDirty = False
+                      }
+                    , Effect.none
+                    )
 
-            else
-                case Store.getGrupo model.grupoId store of
-                    Success grupo ->
-                        ( { model
-                            | ajustesForm = seedAjustesForm grupo
-                            , ajustesFormSeeded = True
-                          }
-                        , Effect.none
-                        )
+                NotAsked ->
+                    ( model, waitAndCheckGrupo )
 
-                    NotAsked ->
-                        ( model, waitAndCheckGrupo )
+                Loading ->
+                    ( model, waitAndCheckGrupo )
 
-                    Loading ->
-                        ( model, waitAndCheckGrupo )
-
-                    Failure _ ->
-                        ( model, Effect.none )
+                Failure _ ->
+                    ( model, Effect.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -237,15 +236,15 @@ view store model =
                     , style "margin-left" "auto"
                     , style "margin-right" "auto"
                     ]
-                    [ viewAjustesSection model.ajustesForm
+                    [ viewAjustesSection model.ajustesFormDirty model.ajustesForm
                     , viewFreezeSection store model
                     ]
                 ]
             }
 
 
-viewAjustesSection : Form CustomFormError UpdateGrupoParams -> Html Msg
-viewAjustesSection form =
+viewAjustesSection : Bool -> Form CustomFormError UpdateGrupoParams -> Html Msg
+viewAjustesSection dirty form =
     let
         nombreField =
             Form.getFieldAsString "nombre" form
@@ -267,11 +266,11 @@ viewAjustesSection form =
                 Ui5.formSelectItem monedaField
                     { label = "Moneda por defecto"
                     , required = True
-                    , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.toString m ))
+                    , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m ))
                     }
             , Ui5.button
                 [ Attr.attribute "design" "Emphasized"
-                , disabled (Form.getOutput form == Nothing)
+                , disabled (not dirty || Form.getOutput form == Nothing)
                 , onClick (AjustesForm Form.Submit)
                 ]
                 [ text "Guardar" ]

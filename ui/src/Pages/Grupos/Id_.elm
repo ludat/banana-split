@@ -4,7 +4,7 @@ import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Components.Ui5 as Ui5
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Moneda, Netos, Pago, PorMoneda, ResumenGrupo, ShallowGrupo, ShallowPago, Transaccion, ULID)
+import Generated.Api as Api exposing (Moneda, Netos, Pago, PorMoneda, ResumenGrupo, ShallowGrupo, ShallowPago, Transaccion, ULID, jsonDecMoneda)
 import Html exposing (Html, a, div, p, section, span, strong, text)
 import Html.Attributes as Attr exposing (class, style)
 import Html.Events exposing (on, onClick)
@@ -264,7 +264,7 @@ view store model =
 
                      else
                         [ viewResumenPanel store model grupo
-                        , viewPagosPanel store model
+                        , viewPagosPanel grupo.monedaPorDefecto store model
                         ]
                     )
                 ]
@@ -374,7 +374,7 @@ viewResumenPanel store model grupo =
 
                         Nothing ->
                             text ""
-                    , viewTransferencias grupo { resumen | transaccionesParaSaldar = transForActive }
+                    , viewTransferencias grupo.monedaPorDefecto grupo { resumen | transaccionesParaSaldar = transForActive }
                     ]
 
             NotAsked ->
@@ -388,8 +388,8 @@ viewResumenPanel store model grupo =
         )
 
 
-viewPagosPanel : Store -> Model -> Html Msg
-viewPagosPanel store model =
+viewPagosPanel : Moneda -> Store -> Model -> Html Msg
+viewPagosPanel monedaPorDefecto store model =
     case store |> Store.getPagos model.grupoId of
         Success pagos ->
             let
@@ -401,9 +401,6 @@ viewPagosPanel store model =
                                     |> List.filter (\pg -> pg.pagoId == pagoId)
                                     |> List.head
                             )
-
-                monedasEnPagos =
-                    pagos |> List.map .moneda
             in
             div []
                 [ Ui5.list
@@ -433,7 +430,7 @@ viewPagosPanel store model =
                                     (\pago ->
                                         Ui5.li
                                             [ Attr.attribute "data-id" pago.pagoId
-                                            , Attr.attribute "additional-text" (Moneda.simbolo monedasEnPagos pago.moneda ++ " " ++ Monto.toString pago.monto)
+                                            , Attr.attribute "additional-text" (Moneda.simbolo monedaPorDefecto pago.moneda ++ " " ++ Monto.toString pago.monto)
                                             , Attr.attribute "type" "Navigation"
                                             , Attr.attribute "icon"
                                                 (if pago.isValid then
@@ -504,16 +501,8 @@ viewMonedaSelector : List Moneda -> Maybe Moneda -> Html Msg
 viewMonedaSelector monedas activeMoneda =
     Ui5.select
         [ on "change"
-            (Json.Decode.at [ "target", "value" ] Json.Decode.string
-                |> Json.Decode.andThen
-                    (\v ->
-                        case Moneda.fromString v of
-                            Just m ->
-                                Json.Decode.succeed (SelectMoneda m)
-
-                            Nothing ->
-                                Json.Decode.fail ("moneda inválida: " ++ v)
-                    )
+            (Json.Decode.at [ "target", "value" ] jsonDecMoneda
+                |> Json.Decode.map (\m -> SelectMoneda m)
             )
         , style "margin-bottom" "1rem"
         ]
@@ -524,13 +513,13 @@ viewMonedaSelector monedas activeMoneda =
                         [ Attr.value (Moneda.toString m)
                         , Attr.selected (activeMoneda == Just m)
                         ]
-                        [ text (Moneda.toString m) ]
+                        [ text (Moneda.nombre m) ]
                 )
         )
 
 
-viewTransferencias : GrupoLike g -> ResumenGrupo -> Html Msg
-viewTransferencias grupo resumen =
+viewTransferencias : Moneda -> GrupoLike g -> ResumenGrupo -> Html Msg
+viewTransferencias monedaPorDefecto grupo resumen =
     div []
         (if List.isEmpty resumen.transaccionesParaSaldar then
             [ Ui5.messageStrip
@@ -552,7 +541,7 @@ viewTransferencias grupo resumen =
                                         [ div [ style "text-align" "right" ]
                                             [ div [] [ Ui5.text <| lookupNombreParticipante grupo t.from ]
                                             , div [ style "color" "var(--sapNegativeTextColor)" ]
-                                                [ text <| Moneda.simbolo [] moneda
+                                                [ text <| Moneda.simbolo monedaPorDefecto moneda
                                                 , text " "
                                                 , text <| Monto.toString t.monto
                                                 ]
