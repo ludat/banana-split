@@ -1,4 +1,4 @@
-module Pages.Grupos.Id_ exposing (Model, Msg, page)
+module Pages.Grupos.Id_ exposing (Model, MonedaSeleccionada, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
@@ -48,15 +48,20 @@ page shared route =
 type alias Model =
     { grupoId : String
     , deletingPagoId : Maybe ULID
-    , selectedMoneda : Maybe Moneda
+    , monedaSeleccionada : MonedaSeleccionada
     }
+
+
+type MonedaSeleccionada
+    = MonedaDefaultDelGrupo
+    | MonedaSeleccionadaPorUsuario Moneda
 
 
 init : ULID -> Store -> ( Model, Effect Msg )
 init grupoId store =
     ( { grupoId = grupoId
       , deletingPagoId = Nothing
-      , selectedMoneda = Nothing
+      , monedaSeleccionada = MonedaDefaultDelGrupo
       }
     , Effect.batch
         [ Store.ensureResumen grupoId store
@@ -170,7 +175,7 @@ update store msg model =
             ( model, Toasts.pushToast Toasts.ToastDanger "Falle al borrar el pago" )
 
         SelectMoneda moneda ->
-            ( { model | selectedMoneda = Just moneda }
+            ( { model | monedaSeleccionada = MonedaSeleccionadaPorUsuario moneda }
             , Effect.none
             )
 
@@ -295,47 +300,26 @@ viewResumenPanel store model grupo =
                         monedasDisponibles =
                             resumen.netos |> List.map Tuple.first
 
-                        activeMoneda : Maybe Moneda
-                        activeMoneda =
-                            let
-                                fallback =
-                                    if List.member grupo.monedaPorDefecto monedasDisponibles then
-                                        Just grupo.monedaPorDefecto
+                        monedaSeleccionada : Moneda
+                        monedaSeleccionada =
+                            case model.monedaSeleccionada of
+                                MonedaDefaultDelGrupo ->
+                                    grupo.monedaPorDefecto
 
-                                    else
-                                        List.head monedasDisponibles
-                            in
-                            case model.selectedMoneda of
-                                Just m ->
-                                    if List.member m monedasDisponibles then
-                                        Just m
-
-                                    else
-                                        fallback
-
-                                Nothing ->
-                                    fallback
+                                MonedaSeleccionadaPorUsuario moneda ->
+                                    moneda
 
                         netosForActive : Maybe (Netos Api.Monto)
                         netosForActive =
-                            activeMoneda
-                                |> Maybe.andThen
-                                    (\m ->
-                                        resumen.netos
-                                            |> List.filter (\( mn, _ ) -> mn == m)
-                                            |> List.head
-                                            |> Maybe.map Tuple.second
-                                    )
+                            resumen.netos
+                                |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
+                                |> List.head
+                                |> Maybe.map Tuple.second
 
                         transForActive : PorMoneda (List Transaccion)
                         transForActive =
-                            case activeMoneda of
-                                Just m ->
-                                    resumen.transaccionesParaSaldar
-                                        |> List.filter (\( mn, _ ) -> mn == m)
-
-                                Nothing ->
-                                    []
+                            resumen.transaccionesParaSaldar
+                                |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
                     in
                     [ if resumen.cantidadPagosInvalidos > 0 then
                         Ui5.messageStrip
@@ -363,7 +347,7 @@ viewResumenPanel store model grupo =
                       else
                         text ""
                     , if List.length monedasDisponibles > 1 then
-                        viewMonedaSelector monedasDisponibles activeMoneda
+                        viewMonedaSelector monedasDisponibles monedaSeleccionada
 
                       else
                         text ""
@@ -497,8 +481,8 @@ deleteConfirmationDialog deletingPagoId maybePago =
         ]
 
 
-viewMonedaSelector : List Moneda -> Maybe Moneda -> Html Msg
-viewMonedaSelector monedas activeMoneda =
+viewMonedaSelector : List Moneda -> Moneda -> Html Msg
+viewMonedaSelector monedas monedaSeleccionada =
     Ui5.select
         [ on "change"
             (Json.Decode.at [ "target", "value" ] jsonDecMoneda
@@ -511,7 +495,7 @@ viewMonedaSelector monedas activeMoneda =
                 (\m ->
                     Ui5.option
                         [ Attr.value (Moneda.toString m)
-                        , Attr.selected (activeMoneda == Just m)
+                        , Attr.selected (monedaSeleccionada == m)
                         ]
                         [ text (Moneda.nombre m) ]
                 )
