@@ -6,7 +6,7 @@ import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Init as Form
 import Form.Validate as V exposing (Validation)
-import Generated.Api as Api exposing (ResumenGrupo, ShallowGrupo, ULID, UpdateGrupoParams)
+import Generated.Api as Api exposing (ShallowGrupo, ULID, UpdateGrupoParams)
 import Html exposing (Html, div, text)
 import Html.Attributes as Attr exposing (disabled, style)
 import Html.Events exposing (onClick)
@@ -22,6 +22,7 @@ import Route exposing (Route)
 import Shared
 import Task
 import Utils.Form exposing (CustomFormError)
+import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import View exposing (View)
@@ -47,7 +48,6 @@ page shared route =
 type alias Model =
     { grupoId : String
     , ajustesForm : Form CustomFormError UpdateGrupoParams
-    , ajustesFormDirty : Bool
     }
 
 
@@ -65,7 +65,6 @@ init : Store -> ULID -> ( Model, Effect Msg )
 init store grupoId =
     ( { grupoId = grupoId
       , ajustesForm = Form.initial [] validateUpdateGrupoParams
-      , ajustesFormDirty = False
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -165,13 +164,12 @@ update store msg model =
         AjustesForm formMsg ->
             ( { model
                 | ajustesForm = Form.update validateUpdateGrupoParams formMsg model.ajustesForm
-                , ajustesFormDirty = True
               }
             , Effect.none
             )
 
         UpdateGrupoResponse (Ok _) ->
-            ( { model | ajustesFormDirty = False }
+            ( model
             , Effect.batch
                 [ Store.refreshGrupo model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Grupo actualizado"
@@ -188,7 +186,6 @@ update store msg model =
                 Success grupo ->
                     ( { model
                         | ajustesForm = seedAjustesForm grupo
-                        , ajustesFormDirty = False
                       }
                     , Effect.none
                     )
@@ -223,9 +220,11 @@ view store model =
                 ]
             }
 
-        Failure _ ->
+        Failure e ->
             { title = "Fallo"
-            , body = []
+            , body =
+                [ viewHttpError e
+                ]
             }
 
         Success grupo ->
@@ -236,78 +235,70 @@ view store model =
                     , style "margin-left" "auto"
                     , style "margin-right" "auto"
                     ]
-                    [ viewAjustesSection model.ajustesFormDirty model.ajustesForm
-                    , viewFreezeSection store model
+                    [ viewAjustesSection grupo model.ajustesForm
+                    , viewFreezeSection grupo
                     ]
                 ]
             }
 
 
-viewAjustesSection : Bool -> Form CustomFormError UpdateGrupoParams -> Html Msg
-viewAjustesSection dirty form =
+viewAjustesSection : ShallowGrupo -> Form CustomFormError UpdateGrupoParams -> Html Msg
+viewAjustesSection currentGrupo form =
     let
+        dirty =
+            Form.getOutput form /= Just { nombre = currentGrupo.nombre, monedaPorDefecto = currentGrupo.monedaPorDefecto }
+
         nombreField =
             Form.getFieldAsString "nombre" form
 
         monedaField =
             Form.getFieldAsString "moneda" form
     in
-    div [ style "margin-bottom" "2rem" ]
+    Ui5.form (always <| AjustesForm Form.Submit)
+        [ Attr.attribute "label-span" "S12 M12 L12 XL12"
+        , style "margin-bottom" "2rem"
+        ]
         [ Ui5.title [ Attr.attribute "level" "H4", style "margin-bottom" "1rem" ] [ text "Ajustes generales" ]
-        , Ui5.form (always <| AjustesForm Form.Submit)
-            [ Attr.attribute "label-span" "S12 M12 L12 XL12" ]
-            [ Html.map AjustesForm <|
-                Ui5.textFormItem nombreField
-                    { label = "Nombre"
-                    , placeholder = Just "Mi grupo"
-                    , required = True
-                    }
-            , Html.map AjustesForm <|
-                Ui5.formSelectItem monedaField
-                    { label = "Moneda por defecto"
-                    , required = True
-                    , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m ))
-                    }
-            , Ui5.button
-                [ Attr.attribute "design" "Emphasized"
-                , disabled (not dirty || Form.getOutput form == Nothing)
-                , onClick (AjustesForm Form.Submit)
-                ]
-                [ text "Guardar" ]
+        , Html.map AjustesForm <|
+            Ui5.textFormItem nombreField
+                { label = "Nombre"
+                , placeholder = Just "Mi grupo"
+                , required = True
+                }
+        , Html.map AjustesForm <|
+            Ui5.formSelectItem monedaField
+                { label = "Moneda por defecto"
+                , required = True
+                , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m ))
+                }
+        , Ui5.button
+            [ Attr.attribute "design" "Emphasized"
+            , disabled (not dirty || Form.getOutput form == Nothing)
+            , onClick (AjustesForm Form.Submit)
             ]
+            [ text "Guardar" ]
         ]
 
 
-viewFreezeSection : Store -> Model -> Html Msg
-viewFreezeSection store model =
-    case store |> Store.getResumen model.grupoId of
-        Success resumen ->
-            div []
-                [ Ui5.title [ Attr.attribute "level" "H4", style "margin-bottom" "1rem" ] [ text "Congelar grupo" ]
-                , div [ style "margin-bottom" "1rem" ]
-                    [ Ui5.text <|
-                        if resumen.isFrozen then
-                            "Este grupo está congelado. Las deudas están fijas y no se pueden agregar, editar ni eliminar pagos."
+viewFreezeSection : ShallowGrupo -> Html Msg
+viewFreezeSection grupo =
+    Ui5.formLayout []
+        [ Ui5.title [ Attr.attribute "level" "H4", style "margin-bottom" "1rem" ] [ text "Congelar grupo" ]
+        , div [ style "margin-bottom" "1rem" ]
+            [ Ui5.text <|
+                if grupo.isFrozen then
+                    "Este grupo está congelado. Las deudas están fijas y no se pueden agregar, editar ni eliminar pagos."
 
-                        else
-                            "Congelar el grupo fija las deudas actuales. No se podrán agregar, editar ni eliminar pagos mientras esté congelado."
-                    ]
-                , viewFreezeButton resumen
-                ]
-
-        Loading ->
-            div [] [ Ui5.text "Cargando..." ]
-
-        NotAsked ->
-            div [] [ Ui5.text "Cargando..." ]
-
-        Failure _ ->
-            div [] [ Ui5.text "Error cargando los datos del grupo" ]
+                else
+                    "Congelar el grupo fija las deudas actuales. No se podrán agregar, editar ni eliminar pagos mientras esté congelado."
+            ]
+        , viewFreezeButton grupo
+        ]
 
 
-viewFreezeButton : ResumenGrupo -> Html Msg
-viewFreezeButton resumen =
-    if resumen.isFrozen then
+viewFreezeButton : ShallowGrupo -> Html Msg
+viewFreezeButton grupo =
+    if grupo.isFrozen then
         Ui5.button
             [ Attr.attribute "design" "Default"
             , Attr.attribute "icon" "unlocked"

@@ -34,7 +34,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Task
-import Utils.Form exposing (CustomFormError)
+import Utils.Form exposing (CustomFormError, isDataModifyingEvent)
 import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
@@ -407,43 +407,13 @@ update store msg model =
                     )
 
         PagoForm formMsg ->
-            let
-                isDataModifyingEvent =
-                    case formMsg of
-                        Form.Input _ _ _ ->
-                            True
-
-                        Form.Append _ ->
-                            True
-
-                        Form.RemoveItem _ _ ->
-                            True
-
-                        Form.Reset _ ->
-                            True
-
-                        Form.NoOp ->
-                            False
-
-                        Form.Focus _ ->
-                            False
-
-                        Form.Blur _ ->
-                            False
-
-                        Form.Submit ->
-                            False
-
-                        Form.Validate ->
-                            False
-            in
             ( { model
                 | pagoForm = Form.update (validatePago participantes) formMsg model.pagoForm
                 , pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) formMsg model.pagoBasicoForm
                 , pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) formMsg model.pagadoresForm
                 , deudoresForm = Form.update (validatePagoInSection DeudoresSection participantes) formMsg model.deudoresForm
                 , hasUnsavedChanges =
-                    if isDataModifyingEvent then
+                    if isDataModifyingEvent formMsg then
                         True
 
                     else
