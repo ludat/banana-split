@@ -403,9 +403,7 @@ fetchGrupo aGrupoId = do
     Nothing -> pure Nothing
     Just grupo -> do
       participantes <- fetchParticipantes aGrupoId
-      moneda <- case M.monedaFromText grupo.moneda_por_defecto of
-        Right m -> pure m
-        Left e -> error e
+      moneda <- pure (M.monedaFromText grupo.moneda_por_defecto) `orElse` error
       pure
         $ Just
         $ M.ShallowGrupo
@@ -429,9 +427,7 @@ fetchPago grupoId pagoId = do
 
   (pagadores :: M.Distribucion) <- fromMaybe (error "Pagadores not found") <$> fetchDistribucion (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
   (deudores :: M.Distribucion) <- fromMaybe (error "deudores not found") <$> fetchDistribucion (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
-  moneda <- case M.monedaFromText dbPago.pagoMoneda of
-    Right m -> pure m
-    Left e -> error e
+  moneda <- pure (M.monedaFromText dbPago.pagoMoneda) `orElse` error
   dbPago
     & ( \p ->
           M.Pago
@@ -574,9 +570,7 @@ fetchShallowPagos grupoId = do
     pure pago
 
   forM dbPagos $ \pago -> do
-    moneda <- case M.monedaFromText pago.pagoMoneda of
-      Right m -> pure m
-      Left e -> error e
+    moneda <- pure (M.monedaFromText pago.pagoMoneda) `orElse` error
     pure
       M.ShallowPago
         { M.pagoId = pago.pagoId
