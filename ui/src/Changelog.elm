@@ -30,6 +30,10 @@ changelog =
       , title = "Mr Worldwide: AR$, US$ ó R$."
       , description = "Ahora podés elegir una moneda para cada uno de tus gastos."
       }
+    , { date = Date.fromCalendarDate 2026 May 16
+      , title = "Cambiá el nombre del grupo."
+      , description = "Ahora podés cambiar el nombre de un grupo desde la configuración del grupo."
+      }
     ]
 
 
