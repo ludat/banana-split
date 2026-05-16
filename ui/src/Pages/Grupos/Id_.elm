@@ -298,7 +298,10 @@ viewResumenPanel store model grupo =
                     let
                         monedasDisponibles : List Moneda
                         monedasDisponibles =
-                            resumen.netos |> List.map Tuple.first
+                            resumen.netos
+                                |> List.map Tuple.first
+                                |> List.filter (\m -> m /= grupo.monedaPorDefecto)
+                                |> (::) grupo.monedaPorDefecto
 
                         monedaSeleccionada : Moneda
                         monedaSeleccionada =
