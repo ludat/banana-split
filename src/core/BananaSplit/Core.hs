@@ -31,7 +31,8 @@ import GHC.Generics
 import Protolude
 
 import BananaSplit.Deudas
-import BananaSplit.Monto (Monto, monto2Text, montoDiffText)
+import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
+import BananaSplit.Monto (Monto)
 import BananaSplit.Participante (Participante, ParticipanteId)
 import BananaSplit.ULID
 
@@ -40,6 +41,7 @@ data Grupo = Grupo
   , nombre :: Text
   , pagos :: [Pago]
   , participantes :: [Participante]
+  , monedaPorDefecto :: Moneda
   }
   deriving (Show, Eq, Generic)
 
@@ -48,12 +50,14 @@ data ShallowGrupo = ShallowGrupo
   , nombre :: Text
   , participantes :: [Participante]
   , isFrozen :: Bool
+  , monedaPorDefecto :: Moneda
   }
   deriving (Show, Eq, Generic)
 
 data Pago = Pago
   { pagoId :: ULID
   , monto :: Monto
+  , moneda :: Moneda
   , isValid :: Bool
   , nombre :: Text
   , pagadores :: Distribucion
@@ -66,16 +70,15 @@ data ShallowPago = ShallowPago
   , isValid :: Bool
   , nombre :: Text
   , monto :: Monto
-  -- ^ this is total amount of money involved but its a bit of a cache
-  -- from the Distribuciones to be able to show it on the UI.
+  , moneda :: Moneda
   }
   deriving (Show, Eq, Generic)
 
-calcularNetosTotales :: Grupo -> Netos Monto
+calcularNetosTotales :: Grupo -> PorMoneda (Netos Monto)
 calcularNetosTotales grupo =
   grupo.pagos
     & filter isValid
-    & fmap calcularNetosPago
+    & fmap (\pago -> (calcularNetosPago pago) `enMoneda` pago.moneda)
     & mconcat
 
 calcularNetosPago :: Pago -> Netos Monto

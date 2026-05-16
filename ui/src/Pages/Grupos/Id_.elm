@@ -1,10 +1,10 @@
-module Pages.Grupos.Id_ exposing (Model, Msg, page)
+module Pages.Grupos.Id_ exposing (Model, MonedaSeleccionada, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Components.Ui5 as Ui5
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Pago, ResumenGrupo, ShallowGrupo, ShallowPago, Transaccion, ULID)
+import Generated.Api as Api exposing (Moneda, Netos, Pago, PorMoneda, ResumenGrupo, ShallowGrupo, ShallowPago, Transaccion, ULID, jsonDecMoneda)
 import Html exposing (Html, a, div, p, section, span, strong, text)
 import Html.Attributes as Attr exposing (class, style)
 import Html.Events exposing (on, onClick)
@@ -13,6 +13,7 @@ import Json.Decode
 import Json.Encode as Encode
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
+import Models.Moneda as Moneda
 import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -47,13 +48,20 @@ page shared route =
 type alias Model =
     { grupoId : String
     , deletingPagoId : Maybe ULID
+    , monedaSeleccionada : MonedaSeleccionada
     }
+
+
+type MonedaSeleccionada
+    = MonedaDefaultDelGrupo
+    | MonedaSeleccionadaPorUsuario Moneda
 
 
 init : ULID -> Store -> ( Model, Effect Msg )
 init grupoId store =
     ( { grupoId = grupoId
       , deletingPagoId = Nothing
+      , monedaSeleccionada = MonedaDefaultDelGrupo
       }
     , Effect.batch
         [ Store.ensureResumen grupoId store
@@ -75,6 +83,7 @@ type Msg
     | ConfirmDeletePago ULID
     | CancelDeletePago
     | DeletePagoResponse (Result Http.Error ULID)
+    | SelectMoneda Moneda
 
 
 update : Store -> Msg -> Model -> ( Model, Effect Msg )
@@ -165,12 +174,18 @@ update store msg model =
         DeletePagoResponse (Err _) ->
             ( model, Toasts.pushToast Toasts.ToastDanger "Falle al borrar el pago" )
 
+        SelectMoneda moneda ->
+            ( { model | monedaSeleccionada = MonedaSeleccionadaPorUsuario moneda }
+            , Effect.none
+            )
 
-pagoFromTransaccion : Transaccion -> Pago
-pagoFromTransaccion transaction =
+
+pagoFromTransaccion : Moneda -> Transaccion -> Pago
+pagoFromTransaccion moneda transaction =
     { pagoId = emptyUlid
     , isValid = False
     , nombre = "Pago saldado"
+    , moneda = moneda
     , monto = transaction.monto
     , pagadores =
         { id = emptyUlid
@@ -254,7 +269,7 @@ view store model =
 
                      else
                         [ viewResumenPanel store model grupo
-                        , viewPagosPanel store model
+                        , viewPagosPanel grupo.monedaPorDefecto store model
                         ]
                     )
                 ]
@@ -280,6 +295,32 @@ viewResumenPanel store model grupo =
                     ]
 
                 else
+                    let
+                        monedasDisponibles : List Moneda
+                        monedasDisponibles =
+                            resumen.netos |> List.map Tuple.first
+
+                        monedaSeleccionada : Moneda
+                        monedaSeleccionada =
+                            case model.monedaSeleccionada of
+                                MonedaDefaultDelGrupo ->
+                                    grupo.monedaPorDefecto
+
+                                MonedaSeleccionadaPorUsuario moneda ->
+                                    moneda
+
+                        netosForActive : Maybe (Netos Api.Monto)
+                        netosForActive =
+                            resumen.netos
+                                |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
+                                |> List.head
+                                |> Maybe.map Tuple.second
+
+                        transForActive : PorMoneda (List Transaccion)
+                        transForActive =
+                            resumen.transaccionesParaSaldar
+                                |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
+                    in
                     [ if resumen.cantidadPagosInvalidos > 0 then
                         Ui5.messageStrip
                             [ Attr.attribute "design" "Negative", style "margin-bottom" "1rem" ]
@@ -305,9 +346,19 @@ viewResumenPanel store model grupo =
 
                       else
                         text ""
-                    , div [ style "width" "100%", style "margin-bottom" "1.5rem" ]
-                        [ viewNetosBarras grupo resumen.netos ]
-                    , viewTransferencias grupo resumen
+                    , if List.length monedasDisponibles > 1 then
+                        viewMonedaSelector monedasDisponibles monedaSeleccionada
+
+                      else
+                        text ""
+                    , case netosForActive of
+                        Just netos ->
+                            div [ style "width" "100%", style "margin-bottom" "1.5rem" ]
+                                [ viewNetosBarras grupo netos ]
+
+                        Nothing ->
+                            text ""
+                    , viewTransferencias grupo.monedaPorDefecto grupo { resumen | transaccionesParaSaldar = transForActive }
                     ]
 
             NotAsked ->
@@ -321,8 +372,8 @@ viewResumenPanel store model grupo =
         )
 
 
-viewPagosPanel : Store -> Model -> Html Msg
-viewPagosPanel store model =
+viewPagosPanel : Moneda -> Store -> Model -> Html Msg
+viewPagosPanel monedaPorDefecto store model =
     case store |> Store.getPagos model.grupoId of
         Success pagos ->
             let
@@ -363,7 +414,7 @@ viewPagosPanel store model =
                                     (\pago ->
                                         Ui5.li
                                             [ Attr.attribute "data-id" pago.pagoId
-                                            , Attr.attribute "additional-text" ("$ " ++ Monto.toString pago.monto)
+                                            , Attr.attribute "additional-text" (Moneda.simbolo monedaPorDefecto pago.moneda ++ " " ++ Monto.toString pago.monto)
                                             , Attr.attribute "type" "Navigation"
                                             , Attr.attribute "icon"
                                                 (if pago.isValid then
@@ -430,8 +481,29 @@ deleteConfirmationDialog deletingPagoId maybePago =
         ]
 
 
-viewTransferencias : GrupoLike g -> ResumenGrupo -> Html Msg
-viewTransferencias grupo resumen =
+viewMonedaSelector : List Moneda -> Moneda -> Html Msg
+viewMonedaSelector monedas monedaSeleccionada =
+    Ui5.select
+        [ on "change"
+            (Json.Decode.at [ "target", "value" ] jsonDecMoneda
+                |> Json.Decode.map (\m -> SelectMoneda m)
+            )
+        , style "margin-bottom" "1rem"
+        ]
+        (monedas
+            |> List.map
+                (\m ->
+                    Ui5.option
+                        [ Attr.value (Moneda.toString m)
+                        , Attr.selected (monedaSeleccionada == m)
+                        ]
+                        [ text (Moneda.nombre m) ]
+                )
+        )
+
+
+viewTransferencias : Moneda -> GrupoLike g -> ResumenGrupo -> Html Msg
+viewTransferencias monedaPorDefecto grupo resumen =
     div []
         (if List.isEmpty resumen.transaccionesParaSaldar then
             [ Ui5.messageStrip
@@ -444,33 +516,39 @@ viewTransferencias grupo resumen =
 
          else
             resumen.transaccionesParaSaldar
-                |> List.map
-                    (\t ->
-                        div [ style "display" "grid", style "grid-template-columns" "1fr auto 1fr", style "align-items" "center", style "margin-bottom" "0.5rem" ]
-                            [ div [ style "text-align" "right" ]
-                                [ div [] [ Ui5.text <| lookupNombreParticipante grupo t.from ]
-                                , div [ style "color" "var(--sapNegativeTextColor)" ]
-                                    [ text "$"
-                                    , text <| Monto.toString t.monto
-                                    ]
-                                ]
-                            , Ui5.button
-                                [ Attr.attribute "design" "Transparent"
-                                , Attr.attribute "icon" "arrow-right"
-                                , Attr.attribute "tooltip" "Crear pago para saldar esta deuda"
-                                , onClick <|
-                                    case t.id of
-                                        Just transaccionId ->
-                                            SaldarTransaccion transaccionId (pagoFromTransaccion t)
+                |> Moneda.perEach
+                    (\moneda ts ->
+                        ts
+                            |> List.map
+                                (\t ->
+                                    div [ style "display" "grid", style "grid-template-columns" "1fr auto 1fr", style "align-items" "center", style "margin-bottom" "0.5rem" ]
+                                        [ div [ style "text-align" "right" ]
+                                            [ div [] [ Ui5.text <| lookupNombreParticipante grupo t.from ]
+                                            , div [ style "color" "var(--sapNegativeTextColor)" ]
+                                                [ text <| Moneda.simbolo monedaPorDefecto moneda
+                                                , text " "
+                                                , text <| Monto.toString t.monto
+                                                ]
+                                            ]
+                                        , Ui5.button
+                                            [ Attr.attribute "design" "Transparent"
+                                            , Attr.attribute "icon" "arrow-right"
+                                            , Attr.attribute "tooltip" "Crear pago para saldar esta deuda"
+                                            , onClick <|
+                                                case t.id of
+                                                    Just transaccionId ->
+                                                        SaldarTransaccion transaccionId (pagoFromTransaccion moneda t)
 
-                                        Nothing ->
-                                            CrearPago (pagoFromTransaccion t)
-                                , style "margin" "0 0.5rem"
-                                ]
-                                []
-                            , span []
-                                [ Ui5.text <| lookupNombreParticipante grupo t.to
-                                ]
-                            ]
+                                                    Nothing ->
+                                                        CrearPago (pagoFromTransaccion moneda t)
+                                            , style "margin" "0 0.5rem"
+                                            ]
+                                            []
+                                        , span []
+                                            [ Ui5.text <| lookupNombreParticipante grupo t.to
+                                            ]
+                                        ]
+                                )
                     )
+                |> List.concat
         )

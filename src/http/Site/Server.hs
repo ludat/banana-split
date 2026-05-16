@@ -30,6 +30,7 @@ serverT =
       { _routeGrupoGet = handleShowGrupo
       , _routeGrupoPost = handleCreateGrupo
       , _routeGrupoGetNetos = handleGetNetos
+      , _routeGrupoUpdate = handleUpdateGrupo
       , _routeGrupoParticipanteAdd = handleCreateParticipante
       , _routeGrupoParticipanteDelete = handleDeleteParticipante
       , _routeGrupoPagoDelete = handleDeletePago

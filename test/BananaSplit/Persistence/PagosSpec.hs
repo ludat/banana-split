@@ -10,6 +10,7 @@ import Test.QuickCheck
 
 import BananaSplit.Core
 import BananaSplit.Deudas
+import BananaSplit.Moneda
 import BananaSplit.Monto
 import BananaSplit.Persistence
 import BananaSplit.Persistence.SpecHook
@@ -53,6 +54,7 @@ instance Arbitrary Pago where
   arbitrary =
     Pago nullUlid
       <$> arbitrary
+      <*> (elements [minBound .. maxBound])
       <*> pure False
       <*> pure "nombre"
       <*> arbitrary

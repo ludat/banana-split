@@ -3,6 +3,7 @@
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoFieldSelectors #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -27,11 +28,13 @@ module BananaSplit.Persistence (
   saveRepartija,
   saveRepartijaClaim,
   unfreezeGrupo,
+  updateGrupo,
   updateIsValidPago,
   updatePago,
 ) where
 
 import Data.Decimal qualified as Decimal
+import Data.String (String)
 import Data.Text qualified as Text
 import Database.Beam as Beam
 import Database.Beam.Backend
@@ -40,6 +43,7 @@ import Database.Beam.Postgres.Full hiding (insert)
 import Database.Beam.Postgres.Syntax
 import Database.PostgreSQL.Simple.FromField (FromField (..), returnError)
 import Protolude.Error
+import Protolude.Partial (read)
 
 import BananaSplit qualified as M
 import BananaSplit.ULID (ULID, nullUlid)
@@ -69,6 +73,7 @@ data GrupoT f = Grupo
   { id :: Columnar f ULID
   , nombre :: Columnar f Text
   , is_frozen :: Columnar f Bool
+  , moneda_por_defecto :: Columnar f M.Moneda
   }
   deriving (Generic, Beamable)
 
@@ -117,6 +122,7 @@ data PagoT f = Pago
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMonto :: MontoT f
+  , pagoMoneda :: Columnar f M.Moneda
   , distribucion_pagadores :: PrimaryKey DistribucionT f
   , distribucion_deudores :: PrimaryKey DistribucionT f
   }
@@ -350,6 +356,7 @@ data TransaccionCongeladaT f = TransaccionCongelada
   , participante_from :: PrimaryKey ParticipanteT f
   , participante_to :: PrimaryKey ParticipanteT f
   , monto :: MontoT f
+  , moneda :: Columnar f M.Moneda
   }
   deriving (Generic, Beamable)
 
@@ -372,7 +379,7 @@ createGrupo nombre participante = do
   runInsert
     $ insert db.grupos
     $ insertValues
-      [ Grupo newId nombre False
+      [ Grupo newId nombre False (M.ARS)
       ]
   p <-
     addParticipante newId participante
@@ -384,6 +391,7 @@ createGrupo nombre participante = do
       , M.nombre = nombre
       , M.pagos = []
       , M.participantes = [p]
+      , M.monedaPorDefecto = M.ARS
       }
 
 fetchGrupo :: ULID -> Pg (Maybe M.ShallowGrupo)
@@ -404,6 +412,7 @@ fetchGrupo aGrupoId = do
           , M.nombre = grupo.nombre
           , M.participantes = participantes
           , M.isFrozen = grupo.is_frozen
+          , M.monedaPorDefecto = grupo.moneda_por_defecto
           }
 
 fetchPago :: ULID -> ULID -> Pg M.Pago
@@ -424,6 +433,7 @@ fetchPago grupoId pagoId = do
           M.Pago
             { M.pagoId = p.pagoId
             , M.monto = constructMonto p.pagoMonto
+            , M.moneda = dbPago.pagoMoneda
             , M.nombre = p.pagoNombre
             , M.isValid = p.pagoIsValid
             , M.pagadores = pagadores
@@ -559,16 +569,15 @@ fetchShallowPagos grupoId = do
     guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
     pure pago
 
-  dbPagos
-    <&> ( \pago ->
-            M.ShallowPago
-              { M.pagoId = pago.pagoId
-              , M.isValid = pago.pagoIsValid
-              , M.nombre = pago.pagoNombre
-              , M.monto = constructMonto pago.pagoMonto
-              }
-        )
-    & pure
+  forM dbPagos $ \pago -> do
+    pure
+      M.ShallowPago
+        { M.pagoId = pago.pagoId
+        , M.isValid = pago.pagoIsValid
+        , M.nombre = pago.pagoNombre
+        , M.monto = constructMonto pago.pagoMonto
+        , M.moneda = pago.pagoMoneda
+        }
 
 fetchParticipantes :: ULID -> Pg [M.Participante]
 fetchParticipantes grupoId = do
@@ -633,6 +642,7 @@ savePago grupoId pagoWithoutId = do
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
               , pagoMonto = deconstructMonto pago.monto
+              , pagoMoneda = pago.moneda
               , distribucion_pagadores = DistribucionId distribucionPagadores.id
               , distribucion_deudores = DistribucionId distribucionDeudores.id
               }
@@ -949,8 +959,8 @@ claimToRow claim =
     , repartijaclaimCantidad = fromIntegral <$> claim.cantidad
     }
 
-freezeGrupo :: ULID -> [M.Transaccion] -> Pg ()
-freezeGrupo grupoId transacciones = do
+freezeGrupo :: ULID -> M.PorMoneda [M.Transaccion] -> Pg ()
+freezeGrupo grupoId transaccionesPorMoneda = do
   runDelete
     $ delete
       db.transacciones_congeladas
@@ -960,19 +970,22 @@ freezeGrupo grupoId transacciones = do
       db.grupos
       (\g -> g.is_frozen <-. val_ True)
       (\g -> g.id ==. val_ grupoId)
-  transaccionIds <- liftIO $ forM transacciones $ \_ -> ULID.getULID
-  runInsert
-    $ insert db.transacciones_congeladas
-    $ insertValues
-      [ TransaccionCongelada
+  transaccionesCongeladas <- liftIO $ M.forMonedaM transaccionesPorMoneda $ \moneda transacciones ->
+    forM transacciones $ \t -> do
+      tid <- ULID.getULID
+      pure
+        $ TransaccionCongelada
           { id = tid
           , grupo = GrupoId grupoId
           , participante_from = ParticipanteId $ M.participanteId2ULID t.from
           , participante_to = ParticipanteId $ M.participanteId2ULID t.to
           , monto = deconstructMonto t.monto
+          , moneda = moneda
           }
-      | (tid, t) <- zip transaccionIds transacciones
-      ]
+  runInsert
+    $ insert db.transacciones_congeladas
+    $ insertValues
+    $ transaccionesCongeladas
 
 unfreezeGrupo :: ULID -> Pg ()
 unfreezeGrupo grupoId = do
@@ -986,19 +999,39 @@ unfreezeGrupo grupoId = do
       (\g -> g.is_frozen <-. val_ False)
       (\g -> g.id ==. val_ grupoId)
 
-fetchTransaccionesCongeladas :: ULID -> Pg [M.Transaccion]
+updateGrupo :: ULID -> Text -> M.Moneda -> Pg ()
+updateGrupo grupoId nombre monedaPorDefecto = do
+  runUpdate
+    $ update
+      db.grupos
+      ( \g ->
+          mconcat
+            [ g.nombre <-. val_ nombre
+            , g.moneda_por_defecto <-. val_ monedaPorDefecto
+            ]
+      )
+      (\g -> g.id ==. val_ grupoId)
+
+fetchTransaccionesCongeladas :: ULID -> Pg (M.PorMoneda [M.Transaccion])
 fetchTransaccionesCongeladas grupoId = do
   rows <- runSelectReturningList $ select $ do
     tc <- all_ db.transacciones_congeladas
     guard_ (tc.grupo ==. GrupoId (val_ grupoId))
     pure tc
-  pure $ rows <&> \tc ->
-    M.Transaccion
-      { M.id = Just tc.id
-      , M.from = M.ParticipanteId $ case tc.participante_from of ParticipanteId ulid -> ulid
-      , M.to = M.ParticipanteId $ case tc.participante_to of ParticipanteId ulid -> ulid
-      , M.monto = constructMonto tc.monto
-      }
+  pure
+    $ rows
+    & fmap
+      ( \tc ->
+          [ M.Transaccion
+              { M.id = Just tc.id
+              , M.from = M.ParticipanteId $ case tc.participante_from of ParticipanteId ulid -> ulid
+              , M.to = M.ParticipanteId $ case tc.participante_to of ParticipanteId ulid -> ulid
+              , M.monto = constructMonto tc.monto
+              }
+          ]
+            `M.enMoneda` tc.moneda
+      )
+    & mconcat
 
 deleteTransaccionCongelada :: ULID -> Pg ()
 deleteTransaccionCongelada transaccionId = do
@@ -1045,16 +1078,17 @@ distribucionDeSobrasFromText = \case
   other -> error $ "Unknown DistribucionDeSobras: " <> other
 
 instance HasSqlValueSyntax PgValueSyntax ULID where
-  sqlValueSyntax :: ULID -> PgValueSyntax
-  sqlValueSyntax ulid = sqlValueSyntax $ Text.pack $ show ulid
+  sqlValueSyntax = autoSqlValueSyntax
 
-instance FromBackendRow Postgres ULID
-
-instance FromField ULID where
-  fromField f bs = do
-    s <- fromField @Text f bs
-    case readEither @ULID s of
-      Left _ -> returnError ConversionFailed f $ "invalid ulid: " <> toS s
-      Right ulid -> pure ulid
+instance FromBackendRow Postgres ULID where
+  fromBackendRow = Protolude.Partial.read <$> fromBackendRow
 
 instance HasSqlEqualityCheck Postgres ULID
+
+instance (HasSqlValueSyntax be String) => HasSqlValueSyntax be M.Moneda where
+  sqlValueSyntax = autoSqlValueSyntax
+
+instance FromBackendRow Postgres M.Moneda where
+  fromBackendRow = Protolude.Partial.read <$> fromBackendRow
+
+instance HasSqlEqualityCheck Postgres M.Moneda

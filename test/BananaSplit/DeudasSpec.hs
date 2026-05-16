@@ -24,6 +24,7 @@ spec = do
       Pago
         { pagoId = fakeUlid 100
         , monto = 1000
+        , moneda = ARS
         , isValid = True
         , nombre = "Pago"
         , pagadores = distribucionMontosEspecificos []
@@ -238,29 +239,27 @@ spec = do
       getNetos
         300
         (distribucionMontoEquitativo [u1, u2, u3])
-        `shouldBe` Just
-          ( netos
-              [ (u1, 100)
-              , (u2, 100)
-              , (u3, 100)
-              ]
-          )
+        `shouldBe` netos
+          [ (u1, 100)
+          , (u2, 100)
+          , (u3, 100)
+          ]
     it "calcular netos de un monto equitativo siempre suma el total de nuevo" $ property $ \(Positive m :: Positive Int) (NonEmpty us :: NonEmptyList (Positive Integer)) -> do
       let monto = fromIntegral @_ @Monto m
       let participants = us <&> participante . getPositive
       ( getNetos
           monto
           (distribucionMontoEquitativo participants)
-          & fmap totalNetos
+          & totalNetos
         )
-        `shouldBe` Just monto
+        `shouldBe` monto
 
     it "con monto cero devuelve netos vacias" $ do
       pendingWith "Not sure if this is the right default right now"
       getNetos
         0
         (distribucionMontoEquitativo [u1, u2, u3])
-        `shouldBe` Just (netos [])
+        `shouldBe` netos []
 
   describe "simplify transactions" $ do
     it "simplifica ningun transaccion trivialmente" $ do

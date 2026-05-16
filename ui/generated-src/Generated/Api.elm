@@ -30,6 +30,26 @@ jsonEncCreateGrupoParams  val =
 
 
 
+type alias UpdateGrupoParams  =
+   { nombre: String
+   , monedaPorDefecto: Moneda
+   }
+
+jsonDecUpdateGrupoParams : Json.Decode.Decoder ( UpdateGrupoParams )
+jsonDecUpdateGrupoParams =
+   Json.Decode.succeed (\pnombre pmonedaPorDefecto -> {nombre = pnombre, monedaPorDefecto = pmonedaPorDefecto})
+   |> required "nombre" (Json.Decode.string)
+   |> required "monedaPorDefecto" (jsonDecMoneda)
+
+jsonEncUpdateGrupoParams : UpdateGrupoParams -> Value
+jsonEncUpdateGrupoParams  val =
+   Json.Encode.object
+   [ ("nombre", Json.Encode.string val.nombre)
+   , ("monedaPorDefecto", jsonEncMoneda val.monedaPorDefecto)
+   ]
+
+
+
 type alias ReceiptImageRequest  =
    { imageBase64: String
    }
@@ -78,8 +98,8 @@ jsonEncParticipanteAddParams  val =
 
 
 type alias ResumenGrupo  =
-   { transaccionesParaSaldar: (List Transaccion)
-   , netos: (Netos Monto)
+   { transaccionesParaSaldar: (PorMoneda (List Transaccion))
+   , netos: (PorMoneda (Netos Monto))
    , cantidadPagosInvalidos: Int
    , cantidadPagos: Int
    , isFrozen: Bool
@@ -88,8 +108,8 @@ type alias ResumenGrupo  =
 jsonDecResumenGrupo : Json.Decode.Decoder ( ResumenGrupo )
 jsonDecResumenGrupo =
    Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos pcantidadPagos pisFrozen -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos, cantidadPagos = pcantidadPagos, isFrozen = pisFrozen})
-   |> required "transaccionesParaSaldar" (Json.Decode.list (jsonDecTransaccion))
-   |> required "netos" (jsonDecNetos (jsonDecMonto))
+   |> required "transaccionesParaSaldar" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransaccion)))
+   |> required "netos" (jsonDecPorMoneda (jsonDecNetos (jsonDecMonto)))
    |> required "cantidadPagosInvalidos" (Json.Decode.int)
    |> required "cantidadPagos" (Json.Decode.int)
    |> required "isFrozen" (Json.Decode.bool)
@@ -97,8 +117,8 @@ jsonDecResumenGrupo =
 jsonEncResumenGrupo : ResumenGrupo -> Value
 jsonEncResumenGrupo  val =
    Json.Encode.object
-   [ ("transaccionesParaSaldar", (Json.Encode.list jsonEncTransaccion) val.transaccionesParaSaldar)
-   , ("netos", (jsonEncNetos (jsonEncMonto)) val.netos)
+   [ ("transaccionesParaSaldar", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransaccion))) val.transaccionesParaSaldar)
+   , ("netos", (jsonEncPorMoneda ((jsonEncNetos (jsonEncMonto)))) val.netos)
    , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
    , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
    , ("isFrozen", Json.Encode.bool val.isFrozen)
@@ -114,6 +134,44 @@ jsonDecNetos localDecoder_a =
 
 jsonEncNetos : (a -> Value) -> Netos a -> Value
 jsonEncNetos localEncoder_a val = (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(jsonEncParticipanteId) t1,(localEncoder_a) t2])) val
+
+
+
+type alias PorMoneda a = (List (Moneda, a))
+
+jsonDecPorMoneda : Json.Decode.Decoder a -> Json.Decode.Decoder ( PorMoneda a )
+jsonDecPorMoneda localDecoder_a =
+    Json.Decode.list (Json.Decode.map2 tuple2 (Json.Decode.index 0 (jsonDecMoneda)) (Json.Decode.index 1 (localDecoder_a)))
+
+jsonEncPorMoneda : (a -> Value) -> PorMoneda a -> Value
+jsonEncPorMoneda localEncoder_a val = (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(jsonEncMoneda) t1,(localEncoder_a) t2])) val
+
+
+
+type Moneda  =
+    ARS 
+    | USD 
+    | EUR 
+    | BRL 
+    | UYU 
+    | CLP 
+    | GBP 
+
+jsonDecMoneda : Json.Decode.Decoder ( Moneda )
+jsonDecMoneda = 
+    let jsonDecDictMoneda = Dict.fromList [("ARS", ARS), ("USD", USD), ("EUR", EUR), ("BRL", BRL), ("UYU", UYU), ("CLP", CLP), ("GBP", GBP)]
+    in  decodeSumUnaries "Moneda" jsonDecDictMoneda
+
+jsonEncMoneda : Moneda -> Value
+jsonEncMoneda  val =
+    case val of
+        ARS -> Json.Encode.string "ARS"
+        USD -> Json.Encode.string "USD"
+        EUR -> Json.Encode.string "EUR"
+        BRL -> Json.Encode.string "BRL"
+        UYU -> Json.Encode.string "UYU"
+        CLP -> Json.Encode.string "CLP"
+        GBP -> Json.Encode.string "GBP"
 
 
 
@@ -224,15 +282,17 @@ type alias Grupo  =
    , nombre: String
    , pagos: (List Pago)
    , participantes: (List Participante)
+   , monedaPorDefecto: Moneda
    }
 
 jsonDecGrupo : Json.Decode.Decoder ( Grupo )
 jsonDecGrupo =
-   Json.Decode.succeed (\pid pnombre ppagos pparticipantes -> {id = pid, nombre = pnombre, pagos = ppagos, participantes = pparticipantes})
+   Json.Decode.succeed (\pid pnombre ppagos pparticipantes pmonedaPorDefecto -> {id = pid, nombre = pnombre, pagos = ppagos, participantes = pparticipantes, monedaPorDefecto = pmonedaPorDefecto})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
    |> required "pagos" (Json.Decode.list (jsonDecPago))
    |> required "participantes" (Json.Decode.list (jsonDecParticipante))
+   |> required "monedaPorDefecto" (jsonDecMoneda)
 
 jsonEncGrupo : Grupo -> Value
 jsonEncGrupo  val =
@@ -241,6 +301,7 @@ jsonEncGrupo  val =
    , ("nombre", Json.Encode.string val.nombre)
    , ("pagos", (Json.Encode.list jsonEncPago) val.pagos)
    , ("participantes", (Json.Encode.list jsonEncParticipante) val.participantes)
+   , ("monedaPorDefecto", jsonEncMoneda val.monedaPorDefecto)
    ]
 
 
@@ -250,15 +311,17 @@ type alias ShallowGrupo  =
    , nombre: String
    , participantes: (List Participante)
    , isFrozen: Bool
+   , monedaPorDefecto: Moneda
    }
 
 jsonDecShallowGrupo : Json.Decode.Decoder ( ShallowGrupo )
 jsonDecShallowGrupo =
-   Json.Decode.succeed (\pid pnombre pparticipantes pisFrozen -> {id = pid, nombre = pnombre, participantes = pparticipantes, isFrozen = pisFrozen})
+   Json.Decode.succeed (\pid pnombre pparticipantes pisFrozen pmonedaPorDefecto -> {id = pid, nombre = pnombre, participantes = pparticipantes, isFrozen = pisFrozen, monedaPorDefecto = pmonedaPorDefecto})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
    |> required "participantes" (Json.Decode.list (jsonDecParticipante))
    |> required "isFrozen" (Json.Decode.bool)
+   |> required "monedaPorDefecto" (jsonDecMoneda)
 
 jsonEncShallowGrupo : ShallowGrupo -> Value
 jsonEncShallowGrupo  val =
@@ -267,6 +330,7 @@ jsonEncShallowGrupo  val =
    , ("nombre", Json.Encode.string val.nombre)
    , ("participantes", (Json.Encode.list jsonEncParticipante) val.participantes)
    , ("isFrozen", Json.Encode.bool val.isFrozen)
+   , ("monedaPorDefecto", jsonEncMoneda val.monedaPorDefecto)
    ]
 
 
@@ -320,6 +384,7 @@ jsonEncTransaccion  val =
 type alias Pago  =
    { pagoId: ULID
    , monto: Monto
+   , moneda: Moneda
    , isValid: Bool
    , nombre: String
    , pagadores: Distribucion
@@ -328,9 +393,10 @@ type alias Pago  =
 
 jsonDecPago : Json.Decode.Decoder ( Pago )
 jsonDecPago =
-   Json.Decode.succeed (\ppagoId pmonto pisValid pnombre ppagadores pdeudores -> {pagoId = ppagoId, monto = pmonto, isValid = pisValid, nombre = pnombre, pagadores = ppagadores, deudores = pdeudores})
+   Json.Decode.succeed (\ppagoId pmonto pmoneda pisValid pnombre ppagadores pdeudores -> {pagoId = ppagoId, monto = pmonto, moneda = pmoneda, isValid = pisValid, nombre = pnombre, pagadores = ppagadores, deudores = pdeudores})
    |> required "pagoId" (jsonDecULID)
    |> required "monto" (jsonDecMonto)
+   |> required "moneda" (jsonDecMoneda)
    |> required "isValid" (Json.Decode.bool)
    |> required "nombre" (Json.Decode.string)
    |> required "pagadores" (jsonDecDistribucion)
@@ -341,6 +407,7 @@ jsonEncPago  val =
    Json.Encode.object
    [ ("pagoId", jsonEncULID val.pagoId)
    , ("monto", jsonEncMonto val.monto)
+   , ("moneda", jsonEncMoneda val.moneda)
    , ("isValid", Json.Encode.bool val.isValid)
    , ("nombre", Json.Encode.string val.nombre)
    , ("pagadores", jsonEncDistribucion val.pagadores)
@@ -354,15 +421,17 @@ type alias ShallowPago  =
    , isValid: Bool
    , nombre: String
    , monto: Monto
+   , moneda: Moneda
    }
 
 jsonDecShallowPago : Json.Decode.Decoder ( ShallowPago )
 jsonDecShallowPago =
-   Json.Decode.succeed (\ppagoId pisValid pnombre pmonto -> {pagoId = ppagoId, isValid = pisValid, nombre = pnombre, monto = pmonto})
+   Json.Decode.succeed (\ppagoId pisValid pnombre pmonto pmoneda -> {pagoId = ppagoId, isValid = pisValid, nombre = pnombre, monto = pmonto, moneda = pmoneda})
    |> required "pagoId" (jsonDecULID)
    |> required "isValid" (Json.Decode.bool)
    |> required "nombre" (Json.Decode.string)
    |> required "monto" (jsonDecMonto)
+   |> required "moneda" (jsonDecMoneda)
 
 jsonEncShallowPago : ShallowPago -> Value
 jsonEncShallowPago  val =
@@ -371,6 +440,7 @@ jsonEncShallowPago  val =
    , ("isValid", Json.Encode.bool val.isValid)
    , ("nombre", Json.Encode.string val.nombre)
    , ("monto", jsonEncMonto val.monto)
+   , ("moneda", jsonEncMoneda val.moneda)
    ]
 
 
@@ -769,6 +839,35 @@ getGrupoByIdResumen capture_id toMsg =
                 Http.emptyBody
             , expect =
                 Http.expectJson toMsg jsonDecResumenGrupo
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+putGrupoById : ULID -> UpdateGrupoParams -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
+putGrupoById capture_id body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncUpdateGrupoParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecShallowGrupo
             , timeout =
                 Nothing
             , tracker =

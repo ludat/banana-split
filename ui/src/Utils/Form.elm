@@ -1,4 +1,4 @@
-module Utils.Form exposing (CustomFormError(..), errorForField, hasErrorField)
+module Utils.Form exposing (CustomFormError(..), errorForField, hasErrorField, isDataModifyingEvent)
 
 import Form
 import Form.Error as FormError
@@ -73,6 +73,37 @@ errorTextForField field =
                             DecimalError arithmeticError ->
                                 DecimalError.toString arithmeticError
             )
+
+
+isDataModifyingEvent : Form.Msg -> Bool
+isDataModifyingEvent formMsg =
+    case formMsg of
+        Form.Input _ _ _ ->
+            True
+
+        Form.Append _ ->
+            True
+
+        Form.RemoveItem _ _ ->
+            True
+
+        Form.Reset _ ->
+            True
+
+        Form.NoOp ->
+            False
+
+        Form.Focus _ ->
+            False
+
+        Form.Blur _ ->
+            False
+
+        Form.Submit ->
+            False
+
+        Form.Validate ->
+            False
 
 
 errorForField : Form.FieldState CustomFormError String -> Html msg

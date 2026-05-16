@@ -26,6 +26,10 @@ changelog =
       , title = "Repartir sobras de una repartija."
       , description = "Ahora podés elegir que hacer con los items sin reclamar de una repartija, elegí entre repartir proporcionalmente entre todos o esperar a que todos los items sean reclamados antes de repartir."
       }
+    , { date = Date.fromCalendarDate 2026 May 16
+      , title = "Mr Worldwide: AR$, US$ ó R$."
+      , description = "Ahora podés elegir una moneda para cada uno de tus gastos."
+      }
     ]
 
 

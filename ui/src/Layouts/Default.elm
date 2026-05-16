@@ -307,6 +307,7 @@ viewChangelogEntry : Changelog.Entry -> Html Msg
 viewChangelogEntry entry =
     Ui5.li
         [ Attr.attribute "description" entry.description
-        , Attr.attribute "additional-text" (Date.toIsoString entry.date)
+        , Attr.attribute "wrapping-type" "Normal"
         ]
-        [ text entry.title ]
+        [ div [] [ Ui5.text entry.title ]
+        ]

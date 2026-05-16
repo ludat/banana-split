@@ -13,7 +13,7 @@ import Form.Error as FormError
 import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), DistribucionMontoEquitativo, DistribucionMontosEspecificos, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
+import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), DistribucionMontoEquitativo, DistribucionMontosEspecificos, Moneda, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
 import Html exposing (Html, a, details, div, p, summary, text)
 import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_)
 import Html.Events exposing (on, onClick, onSubmit)
@@ -22,6 +22,7 @@ import Json.Decode as Decode
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.LugarAccionable exposing (LugarParaAccionar(..))
+import Models.Moneda as Moneda
 import Models.Monto as Monto
 import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje, getDeudasFromResumen, getTotalFromResumen)
 import Models.Store as Store
@@ -33,7 +34,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Task
-import Utils.Form exposing (CustomFormError)
+import Utils.Form exposing (CustomFormError, isDataModifyingEvent)
 import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
@@ -158,6 +159,7 @@ validatePagoInSection section participantes =
                 V.maybe (V.field "monto" Monto.validateMonto) |> V.map (Maybe.withDefault Monto.zero)
              --V.succeed Monto.zero
             )
+        |> V.andMap (V.field "moneda" Moneda.validate)
         |> V.andMap (V.succeed False)
         |> V.andMap
             (if section == PagoConfirmation || section == BasicPagoData then
@@ -187,6 +189,7 @@ validatePago participantes =
     V.succeed Pago
         |> V.andMap (V.field "id" validateId)
         |> V.andMap (V.field "monto" Monto.validateMonto)
+        |> V.andMap (V.field "moneda" Moneda.validate)
         |> V.andMap (V.succeed False)
         |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
         |> V.andMap (V.field "distribucion_pagadores" <| validateDistribucion participantes)
@@ -325,7 +328,7 @@ update store msg model =
         AddedPagoResponse (Ok pago) ->
             let
                 newModel =
-                    initializePagoForms participantes (Just pago) model
+                    initializePagoForms pago.moneda participantes (Just pago) model
             in
             ( { newModel | hasUnsavedChanges = False }
             , Effect.batch
@@ -348,7 +351,7 @@ update store msg model =
         UpdatedPagoResponse (Ok pago) ->
             let
                 newModel =
-                    initializePagoForms participantes (Just pago) model
+                    initializePagoForms pago.moneda participantes (Just pago) model
             in
             ( newModel
             , Effect.batch
@@ -404,43 +407,13 @@ update store msg model =
                     )
 
         PagoForm formMsg ->
-            let
-                isDataModifyingEvent =
-                    case formMsg of
-                        Form.Input _ _ _ ->
-                            True
-
-                        Form.Append _ ->
-                            True
-
-                        Form.RemoveItem _ _ ->
-                            True
-
-                        Form.Reset _ ->
-                            True
-
-                        Form.NoOp ->
-                            False
-
-                        Form.Focus _ ->
-                            False
-
-                        Form.Blur _ ->
-                            False
-
-                        Form.Submit ->
-                            False
-
-                        Form.Validate ->
-                            False
-            in
             ( { model
                 | pagoForm = Form.update (validatePago participantes) formMsg model.pagoForm
                 , pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) formMsg model.pagoBasicoForm
                 , pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) formMsg model.pagadoresForm
                 , deudoresForm = Form.update (validatePagoInSection DeudoresSection participantes) formMsg model.deudoresForm
                 , hasUnsavedChanges =
-                    if isDataModifyingEvent then
+                    if isDataModifyingEvent formMsg then
                         True
 
                     else
@@ -603,7 +576,7 @@ update store msg model =
                         Success grupo ->
                             let
                                 newModel =
-                                    initializePagoForms grupo.participantes Nothing model
+                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes Nothing model
                             in
                             ( { newModel
                                 | storedClaims = Nothing
@@ -636,7 +609,7 @@ update store msg model =
                         ( Success grupo, Success pago ) ->
                             let
                                 newModel =
-                                    initializePagoForms grupo.participantes (Just pago) model
+                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes (Just pago) model
                             in
                             ( newModel
                             , Effect.none
@@ -655,13 +628,17 @@ andThenSendWarningOnExit ( model, oldEffects ) =
     )
 
 
-initializePagoForms : List Participante -> Maybe Pago -> Model -> Model
-initializePagoForms participantes pago model =
+initializePagoForms : Moneda -> List Participante -> Maybe Pago -> Model -> Model
+initializePagoForms monedaPorDefecto participantes pago model =
     let
+        monedaInicial =
+            pago |> Maybe.map .moneda |> Maybe.withDefault monedaPorDefecto
+
         initialFormValues =
             [ Form.setString "id" (pago |> Maybe.map .pagoId |> Maybe.withDefault "")
             , Form.setString "nombre" (pago |> Maybe.map .nombre |> Maybe.withDefault "")
             , Form.setString "monto" (pago |> Maybe.map (.monto >> Monto.toString) |> Maybe.withDefault "")
+            , Form.setString "moneda" (Moneda.toString monedaInicial)
             , Form.setGroup "distribucion_pagadores" <|
                 distribucionToForm (distribucionesPagadoresDefault participantes) (Maybe.map .pagadores pago)
             , Form.setGroup "distribucion_deudores" <|
@@ -1320,6 +1297,9 @@ viewPagoForm form =
 
         montoField =
             Form.getFieldAsString "monto" form
+
+        monedaField =
+            Form.getFieldAsString "moneda" form
     in
     Ui5.form (always SubmitCurrentSection)
         [ Attr.attribute "label-span" "S12 M12 L12 XL12"
@@ -1335,6 +1315,12 @@ viewPagoForm form =
                 { label = "Monto"
                 , placeholder = Just "2000"
                 , required = True
+                }
+        , Html.map PagoForm <|
+            Ui5.formSelectItem monedaField
+                { label = "Moneda"
+                , required = True
+                , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m ))
                 }
         , Ui5.button
             [ Attr.attribute "design" "Emphasized"

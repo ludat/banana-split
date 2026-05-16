@@ -30,6 +30,8 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> Get '[JSON] ShallowGrupo
   , _routeGrupoGetNetos ::
       routes :- "grupo" :> Capture "id" ULID :> "resumen" :> Get '[JSON] ResumenGrupo
+  , _routeGrupoUpdate ::
+      routes :- "grupo" :> Capture "id" ULID :> ReqBody '[JSON] UpdateGrupoParams :> Put '[JSON] ShallowGrupo
   , _routeGrupoParticipanteAdd ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
   , _routePagoPost ::
@@ -85,9 +87,15 @@ data CreateGrupoParams = CreateGrupoParams
   }
   deriving (Show, Eq, Generic)
 
+data UpdateGrupoParams = UpdateGrupoParams
+  { nombre :: Text
+  , monedaPorDefecto :: Moneda
+  }
+  deriving (Show, Eq, Generic)
+
 data ResumenGrupo = ResumenGrupo
-  { transaccionesParaSaldar :: [Transaccion]
-  , netos :: Netos Monto
+  { transaccionesParaSaldar :: PorMoneda [Transaccion]
+  , netos :: PorMoneda (Netos Monto)
   , cantidadPagosInvalidos :: Int
   , cantidadPagos :: Int
   , isFrozen :: Bool
@@ -117,6 +125,7 @@ data ReceiptImageResponse
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
+Elm.deriveBoth Elm.defaultOptions ''UpdateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
 Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest

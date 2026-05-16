@@ -87,6 +87,7 @@ library
     BananaSplit.Core
     BananaSplit.Deudas
     BananaSplit.Monto
+    BananaSplit.Moneda
     BananaSplit.Participante
     BananaSplit.Repartija
     BananaSplit.TestUtils
@@ -163,6 +164,7 @@ test-suite spec
   main-is: Spec.hs
   other-modules:
     BananaSplit.DeudasSpec
+    BananaSplit.MonedaSpec
     BananaSplit.Persistence.GrupoSpec
     BananaSplit.Persistence.PagosSpec
     BananaSplit.Persistence.SpecHook
