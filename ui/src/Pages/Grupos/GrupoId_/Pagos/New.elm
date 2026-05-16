@@ -1320,7 +1320,7 @@ viewPagoForm form =
             Ui5.formSelectItem monedaField
                 { label = "Moneda"
                 , required = True
-                , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.toString m ))
+                , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m ))
                 }
         , Ui5.button
             [ Attr.attribute "design" "Emphasized"

@@ -1,11 +1,11 @@
 {-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE TemplateHaskell #-}
 
 module BananaSplit.Moneda (
   Moneda (..),
   PorMoneda (..),
-  monedaFromText,
-  monedaToText,
   todasLasMonedas,
   enMoneda,
   forMonedaM,
@@ -14,7 +14,7 @@ module BananaSplit.Moneda (
 import Data.Aeson
 import Data.Map.Strict qualified as Map
 import Elm.Derive qualified as Elm
-import Servant (FromHttpApiData (..))
+import GHC.Generics (Generically (..))
 
 import Preludat
 
@@ -26,7 +26,9 @@ data Moneda
   | UYU
   | CLP
   | GBP
-  deriving (Show, Eq, Ord, Generic, Enum, Bounded)
+  deriving stock (Show, Read, Eq, Ord, Generic, Enum, Bounded)
+  deriving anyclass (ToJSONKey, FromJSONKey)
+  deriving (ToJSON, FromJSON) via (Generically Moneda)
 
 newtype PorMoneda a
   = PorMoneda (Map Moneda a)
@@ -48,37 +50,6 @@ enMoneda a moneda =
 
 todasLasMonedas :: [Moneda]
 todasLasMonedas = [minBound .. maxBound]
-
-monedaToText :: Moneda -> Text
-monedaToText = show
-
-monedaFromText :: Text -> Either Text Moneda
-monedaFromText = \case
-  "ARS" -> Right ARS
-  "USD" -> Right USD
-  "EUR" -> Right EUR
-  "BRL" -> Right BRL
-  "UYU" -> Right UYU
-  "CLP" -> Right CLP
-  "GBP" -> Right GBP
-  other -> Left $ "moneda invalida: " <> other
-
-instance ToJSONKey Moneda
-
-instance FromJSONKey Moneda
-
-instance ToJSON Moneda where
-  toJSON = toJSON . monedaToText
-
-instance FromJSON Moneda where
-  parseJSON = withText "Moneda" $ \t ->
-    case monedaFromText t of
-      Right m -> pure m
-      Left e -> fail $ toS e
-
-instance FromHttpApiData Moneda where
-  parseUrlPiece = monedaFromText
-  parseQueryParam = monedaFromText
 
 Elm.deriveBoth Elm.defaultOptions ''PorMoneda
 Elm.deriveElmDef Elm.defaultOptions ''Moneda

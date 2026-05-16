@@ -3,6 +3,7 @@
 {-# LANGUAGE StrictData #-}
 {-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE NoFieldSelectors #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
@@ -33,6 +34,7 @@ module BananaSplit.Persistence (
 ) where
 
 import Data.Decimal qualified as Decimal
+import Data.String (String)
 import Data.Text qualified as Text
 import Database.Beam as Beam
 import Database.Beam.Backend
@@ -41,9 +43,9 @@ import Database.Beam.Postgres.Full hiding (insert)
 import Database.Beam.Postgres.Syntax
 import Database.PostgreSQL.Simple.FromField (FromField (..), returnError)
 import Protolude.Error
+import Protolude.Partial (read)
 
 import BananaSplit qualified as M
-import BananaSplit.Moneda (monedaFromText)
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
 import Preludat
@@ -71,7 +73,7 @@ data GrupoT f = Grupo
   { id :: Columnar f ULID
   , nombre :: Columnar f Text
   , is_frozen :: Columnar f Bool
-  , moneda_por_defecto :: Columnar f Text
+  , moneda_por_defecto :: Columnar f M.Moneda
   }
   deriving (Generic, Beamable)
 
@@ -120,7 +122,7 @@ data PagoT f = Pago
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMonto :: MontoT f
-  , pagoMoneda :: Columnar f Text
+  , pagoMoneda :: Columnar f M.Moneda
   , distribucion_pagadores :: PrimaryKey DistribucionT f
   , distribucion_deudores :: PrimaryKey DistribucionT f
   }
@@ -354,7 +356,7 @@ data TransaccionCongeladaT f = TransaccionCongelada
   , participante_from :: PrimaryKey ParticipanteT f
   , participante_to :: PrimaryKey ParticipanteT f
   , monto :: MontoT f
-  , moneda :: Columnar f Text
+  , moneda :: Columnar f M.Moneda
   }
   deriving (Generic, Beamable)
 
@@ -377,7 +379,7 @@ createGrupo nombre participante = do
   runInsert
     $ insert db.grupos
     $ insertValues
-      [ Grupo newId nombre False (M.monedaToText M.ARS)
+      [ Grupo newId nombre False (M.ARS)
       ]
   p <-
     addParticipante newId participante
@@ -403,7 +405,6 @@ fetchGrupo aGrupoId = do
     Nothing -> pure Nothing
     Just grupo -> do
       participantes <- fetchParticipantes aGrupoId
-      moneda <- pure (M.monedaFromText grupo.moneda_por_defecto) `orElse` error
       pure
         $ Just
         $ M.ShallowGrupo
@@ -411,7 +412,7 @@ fetchGrupo aGrupoId = do
           , M.nombre = grupo.nombre
           , M.participantes = participantes
           , M.isFrozen = grupo.is_frozen
-          , M.monedaPorDefecto = moneda
+          , M.monedaPorDefecto = grupo.moneda_por_defecto
           }
 
 fetchPago :: ULID -> ULID -> Pg M.Pago
@@ -427,13 +428,12 @@ fetchPago grupoId pagoId = do
 
   (pagadores :: M.Distribucion) <- fromMaybe (error "Pagadores not found") <$> fetchDistribucion (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
   (deudores :: M.Distribucion) <- fromMaybe (error "deudores not found") <$> fetchDistribucion (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
-  moneda <- pure (M.monedaFromText dbPago.pagoMoneda) `orElse` error
   dbPago
     & ( \p ->
           M.Pago
             { M.pagoId = p.pagoId
             , M.monto = constructMonto p.pagoMonto
-            , M.moneda = moneda
+            , M.moneda = dbPago.pagoMoneda
             , M.nombre = p.pagoNombre
             , M.isValid = p.pagoIsValid
             , M.pagadores = pagadores
@@ -570,14 +570,13 @@ fetchShallowPagos grupoId = do
     pure pago
 
   forM dbPagos $ \pago -> do
-    moneda <- pure (M.monedaFromText pago.pagoMoneda) `orElse` error
     pure
       M.ShallowPago
         { M.pagoId = pago.pagoId
         , M.isValid = pago.pagoIsValid
         , M.nombre = pago.pagoNombre
         , M.monto = constructMonto pago.pagoMonto
-        , M.moneda = moneda
+        , M.moneda = pago.pagoMoneda
         }
 
 fetchParticipantes :: ULID -> Pg [M.Participante]
@@ -643,7 +642,7 @@ savePago grupoId pagoWithoutId = do
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
               , pagoMonto = deconstructMonto pago.monto
-              , pagoMoneda = M.monedaToText pago.moneda
+              , pagoMoneda = pago.moneda
               , distribucion_pagadores = DistribucionId distribucionPagadores.id
               , distribucion_deudores = DistribucionId distribucionDeudores.id
               }
@@ -981,7 +980,7 @@ freezeGrupo grupoId transaccionesPorMoneda = do
           , participante_from = ParticipanteId $ M.participanteId2ULID t.from
           , participante_to = ParticipanteId $ M.participanteId2ULID t.to
           , monto = deconstructMonto t.monto
-          , moneda = M.monedaToText moneda
+          , moneda = moneda
           }
   runInsert
     $ insert db.transacciones_congeladas
@@ -1008,7 +1007,7 @@ updateGrupo grupoId nombre monedaPorDefecto = do
       ( \g ->
           mconcat
             [ g.nombre <-. val_ nombre
-            , g.moneda_por_defecto <-. val_ (M.monedaToText monedaPorDefecto)
+            , g.moneda_por_defecto <-. val_ monedaPorDefecto
             ]
       )
       (\g -> g.id ==. val_ grupoId)
@@ -1030,7 +1029,7 @@ fetchTransaccionesCongeladas grupoId = do
               , M.monto = constructMonto tc.monto
               }
           ]
-            `M.enMoneda` either error identity (monedaFromText tc.moneda)
+            `M.enMoneda` tc.moneda
       )
     & mconcat
 
@@ -1079,16 +1078,17 @@ distribucionDeSobrasFromText = \case
   other -> error $ "Unknown DistribucionDeSobras: " <> other
 
 instance HasSqlValueSyntax PgValueSyntax ULID where
-  sqlValueSyntax :: ULID -> PgValueSyntax
-  sqlValueSyntax ulid = sqlValueSyntax $ Text.pack $ show ulid
+  sqlValueSyntax = autoSqlValueSyntax
 
-instance FromBackendRow Postgres ULID
-
-instance FromField ULID where
-  fromField f bs = do
-    s <- fromField @Text f bs
-    case readEither @ULID s of
-      Left _ -> returnError ConversionFailed f $ "invalid ulid: " <> toS s
-      Right ulid -> pure ulid
+instance FromBackendRow Postgres ULID where
+  fromBackendRow = Protolude.Partial.read <$> fromBackendRow
 
 instance HasSqlEqualityCheck Postgres ULID
+
+instance (HasSqlValueSyntax be String) => HasSqlValueSyntax be M.Moneda where
+  sqlValueSyntax = autoSqlValueSyntax
+
+instance FromBackendRow Postgres M.Moneda where
+  fromBackendRow = Protolude.Partial.read <$> fromBackendRow
+
+instance HasSqlEqualityCheck Postgres M.Moneda

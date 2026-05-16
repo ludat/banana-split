@@ -32,7 +32,7 @@ import Protolude
 
 import BananaSplit.Deudas
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
-import BananaSplit.Monto (Monto, monto2Text, montoDiffText)
+import BananaSplit.Monto (Monto)
 import BananaSplit.Participante (Participante, ParticipanteId)
 import BananaSplit.ULID
 

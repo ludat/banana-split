@@ -3,7 +3,26 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE NoFieldSelectors #-}
 
-module BananaSplit.Deudas where
+module BananaSplit.Deudas (
+  calcularNetosRepartija,
+  Distribucion (..),
+  DistribucionMontoEquitativo (..),
+  DistribucionMontosEspecificos (..),
+  ErrorResumen (..),
+  getNetosResumen,
+  HasResumen (..),
+  minimizeTransactions,
+  mkDeuda,
+  MontoEspecifico (..),
+  Netos (..),
+  relabelError,
+  Repartija (..),
+  ResumenNetos (..),
+  TipoDistribucion (..),
+  TipoErrorResumen (..),
+  totalNetos,
+  Transaccion (..),
+) where
 
 import Data.Decimal (Decimal)
 import Data.Decimal qualified as Decimal
@@ -11,7 +30,6 @@ import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific)
 import Data.Scientific qualified as Scientific
-import Data.Text qualified as Text
 import Elm.Derive qualified as Elm
 import Numeric.Optimization.MIP qualified as MIP
 import Numeric.Optimization.MIP.Solver qualified as MIP
@@ -87,9 +105,6 @@ data ErrorResumen = ErrorResumen
 
 relabelError :: Text -> ErrorResumen -> ErrorResumen
 relabelError scope err = err{objeto = scope : err.objeto}
-
-getNetos :: (HasResumen a) => Monto -> a -> Maybe (Netos Monto)
-getNetos totalPago = getNetosResumen . getResumen totalPago
 
 getNetosResumen :: ResumenNetos -> Maybe (Netos Monto)
 getNetosResumen resumen =

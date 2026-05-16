@@ -5,8 +5,10 @@ module BananaSplit.TestUtils (
   fakeUlid,
   netos,
   participante,
+  getNetos,
 ) where
 
+import Data.Maybe (fromJust)
 import Protolude
 import Protolude.Error
 
@@ -20,6 +22,9 @@ fakeUlid integer =
   case ulidFromInteger integer of
     Right ulid -> ulid
     Left e -> error e
+
+getNetos :: (HasResumen a) => Monto -> a -> Netos Monto
+getNetos totalPago = fromJust . getNetosResumen . getResumen totalPago
 
 netos :: [(ParticipanteId, Monto)] -> Netos Monto
 netos l =
