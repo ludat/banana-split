@@ -3,6 +3,7 @@ module BananaSplit.DeudasSpec (
 ) where
 
 import Data.Decimal qualified as Decimal
+import Data.Time (fromGregorian)
 import Protolude
 import Test.Hspec
 import Test.QuickCheck
@@ -27,6 +28,7 @@ spec = do
         , moneda = ARS
         , isValid = True
         , nombre = "Pago"
+        , fecha = fromGregorian 2025 1 1
         , pagadores = distribucionMontosEspecificos []
         , deudores = distribucionMontosEspecificos []
         }
@@ -302,7 +304,7 @@ spec = do
                   ]
               )
           )
-          `shouldThrow` errorCall "Balance is not 0, instead is: -1.0"
+          `shouldThrow` fatalError "Balance is not 0, instead is: -1.0"
 
       it "con una deuda compleja no crashea" $ do
         evaluate
@@ -317,7 +319,7 @@ spec = do
                   ]
               )
           )
-          `shouldThrow` errorCall "Balance is not 0, instead is: 1.0"
+          `shouldThrow` fatalError "Balance is not 0, instead is: 1.0"
 
       it "cuando una sola persona tiene plata a favor" $ do
         pendingWith "this crashes the solver"

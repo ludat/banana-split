@@ -4,6 +4,7 @@ module BananaSplit.Persistence.PagosSpec (
   spec,
 ) where
 
+import Data.Time (fromGregorian)
 import Protolude
 import Test.Hspec
 import Test.QuickCheck
@@ -57,6 +58,7 @@ instance Arbitrary Pago where
       <*> (elements [minBound .. maxBound])
       <*> pure False
       <*> pure "nombre"
+      <*> pure (fromGregorian 2025 1 1)
       <*> arbitrary
       <*> arbitrary
 

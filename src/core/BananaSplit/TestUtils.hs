@@ -6,6 +6,7 @@ module BananaSplit.TestUtils (
   netos,
   participante,
   getNetos,
+  fatalError,
 ) where
 
 import Data.Maybe (fromJust)
@@ -14,6 +15,9 @@ import Protolude.Error
 
 import BananaSplit
 
+fatalError :: Text -> FatalError -> Bool
+fatalError msg e = fatalErrorMessage e == msg
+
 participante :: Integer -> ParticipanteId
 participante = ParticipanteId . fakeUlid
 
@@ -21,7 +25,7 @@ fakeUlid :: Integer -> ULID
 fakeUlid integer =
   case ulidFromInteger integer of
     Right ulid -> ulid
-    Left e -> error e
+    Left e -> panic e
 
 getNetos :: (HasResumen a) => Monto -> a -> Netos Monto
 getNetos totalPago = fromJust . getNetosResumen . getResumen totalPago
