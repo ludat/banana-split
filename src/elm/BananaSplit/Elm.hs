@@ -29,11 +29,14 @@ generateElmFiles = do
     [ "Generated"
     , "Api"
     ]
-    ([ defElmImports
-    , "import Utils.Posix exposing (Posix, jsonDecPosix, jsonEncPosix)"
-    , "import Date"
-    , "import Utils.Date exposing (Day, jsonDecDay, jsonEncDay)"
-    ] & intersperse "\n" & mconcat)
+    ( [ defElmImports
+      , "import Utils.Posix exposing (Posix, jsonDecPosix, jsonEncPosix)"
+      , "import Date"
+      , "import Utils.Date exposing (Day, jsonDecDay, jsonEncDay)"
+      ]
+        & intersperse "\n"
+        & mconcat
+    )
     "ui/generated-src/"
     [ DefineElm (Proxy :: Proxy CreateGrupoParams)
     , DefineElm (Proxy :: Proxy UpdateGrupoParams)

@@ -27,11 +27,7 @@ module BananaSplit.Core (
   isValid,
 ) where
 
-import Preludat
-import Data.Text.Encoding qualified as Text
-import Data.Time (Day, LocalTime (..), TimeOfDay, UTCTime)
-import Data.Time.Zones qualified as TZ
-import Data.Time.Zones.All qualified as TZ
+import Data.Time (Day, UTCTime)
 import Elm.Derive qualified as Elm
 import Elm.TyRep (
   EPrimAlias (..),
@@ -47,6 +43,7 @@ import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
 import BananaSplit.Monto (Monto)
 import BananaSplit.Participante (Participante, ParticipanteId)
 import BananaSplit.ULID
+import Preludat
 
 data Grupo = Grupo
   { id :: ULID
@@ -107,10 +104,10 @@ getResumenPago pago =
     netos = resumenPagadores.netos <> fmap negate resumenDeudores.netos
     extraErrors = []
   in
-    ResumenNetos pago.monto netos $
-      fmap (relabelError "pagadores") resumenPagadores.errores
-        <> fmap (relabelError "deudores") resumenDeudores.errores
-        <> extraErrors
+    ResumenNetos pago.monto netos
+      $ fmap (relabelError "pagadores") resumenPagadores.errores
+      <> fmap (relabelError "deudores") resumenDeudores.errores
+      <> extraErrors
 
 isValid :: Pago -> Bool
 isValid pago =
