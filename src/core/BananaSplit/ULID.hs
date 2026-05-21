@@ -18,7 +18,6 @@ import Elm.TyRep (
   IsElmDefinition (..),
  )
 import Protolude
-import Protolude.Error
 import Servant.API
 
 instance ToJSON ULID where
@@ -53,4 +52,4 @@ instance IsElmDefinition ULID where
     ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "ULID", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
 
 nullUlid :: ULID
-nullUlid = fromRight (error "impossible") $ ulidFromInteger 0
+nullUlid = fromRight (panic "impossible") $ ulidFromInteger 0

@@ -11,7 +11,6 @@ module BananaSplit.TestUtils (
 
 import Data.Maybe (fromJust)
 import Protolude
-import Protolude.Error
 
 import BananaSplit
 

@@ -35,7 +35,6 @@ import Numeric.Optimization.MIP qualified as MIP
 import Numeric.Optimization.MIP.Solver qualified as MIP
 import Numeric.Optimization.MIP.Solver.CBC qualified as CBC
 import Protolude
-import Protolude.Error (error)
 import System.IO.Unsafe (unsafePerformIO)
 
 import BananaSplit.Monto
@@ -184,7 +183,7 @@ solveOptimalTransactions :: Netos Monto -> [Transaccion]
 solveOptimalTransactions deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
-    Left err -> error err
+    Left err -> panic err
 
 resolverNetosRecursivo :: Netos Monto -> [Transaccion]
 resolverNetosRecursivo netBalances =
