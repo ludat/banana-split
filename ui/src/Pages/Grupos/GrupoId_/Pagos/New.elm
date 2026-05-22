@@ -35,8 +35,8 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Task
-import Utils.Date exposing (Day)
-import Utils.Form exposing (CustomFormError(..), isDataModifyingEvent)
+import Utils.Day exposing (validateDay)
+import Utils.Form exposing (CustomFormError, isDataModifyingEvent)
 import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
@@ -171,7 +171,7 @@ validatePagoInSection section participantes =
              else
                 V.succeed ""
             )
-        |> V.andMap (V.field "fecha" validateFecha)
+        |> V.andMap (V.field "fecha" validateDay)
         |> V.andMap
             (if section == PagoConfirmation || section == PagadoresSection then
                 V.field "distribucion_pagadores" <| validateDistribucion participantes
@@ -196,7 +196,7 @@ validatePago participantes =
         |> V.andMap (V.field "moneda" Moneda.validate)
         |> V.andMap (V.succeed False)
         |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
-        |> V.andMap (V.field "fecha" validateFecha)
+        |> V.andMap (V.field "fecha" validateDay)
         |> V.andMap (V.field "distribucion_pagadores" <| validateDistribucion participantes)
         |> V.andMap (V.field "distribucion_deudores" <| validateDistribucion participantes)
 
@@ -204,20 +204,6 @@ validatePago participantes =
 validateId : Validation CustomFormError ULID
 validateId =
     V.defaultValue emptyUlid V.string
-
-
-validateFecha : Validation CustomFormError Day
-validateFecha =
-    V.string
-        |> V.andThen
-            (\s ->
-                case Date.fromIsoString s of
-                    Ok date ->
-                        V.succeed date
-
-                    Err _ ->
-                        V.fail (V.customError InvalidDate)
-            )
 
 
 distribucionDeSobrasToString : DistribucionDeSobras -> String

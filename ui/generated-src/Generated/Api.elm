@@ -12,7 +12,7 @@ import Url.Builder
 
 import Utils.Posix exposing (Posix, jsonDecPosix, jsonEncPosix)
 import Date
-import Utils.Date exposing (Day, jsonDecDay, jsonEncDay)
+import Utils.Day exposing (Day, jsonDecDay, jsonEncDay)
 type alias CreateGrupoParams  =
    { grupoName: String
    , grupoParticipante: String

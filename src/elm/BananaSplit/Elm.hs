@@ -32,7 +32,7 @@ generateElmFiles = do
     ( [ defElmImports
       , "import Utils.Posix exposing (Posix, jsonDecPosix, jsonEncPosix)"
       , "import Date"
-      , "import Utils.Date exposing (Day, jsonDecDay, jsonEncDay)"
+      , "import Utils.Day exposing (Day, jsonDecDay, jsonEncDay)"
       ]
         & intersperse "\n"
         & mconcat
