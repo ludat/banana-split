@@ -5,4 +5,4 @@ operations:
         name: fecha
         type: date
         nullable: false
-        default: "NOW()::date"
+        default: "'2020-01-01'::date"
