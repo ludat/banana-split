@@ -8,10 +8,10 @@ own file, so they can be imported by `Effect.elm`
 
 -}
 
-import Date exposing (Date)
 import Generated.Api exposing (ULID)
 import Models.Store.Types exposing (StoreMsg)
 import Route.Path as Route
+import Time exposing (Posix)
 import Utils.Toasts.Types exposing (Toast, ToastMsg)
 
 
@@ -24,4 +24,4 @@ type Msg
     | SetCurrentUser { grupoId : ULID, userId : ULID }
     | CurrentUserLoaded { grupoId : ULID, userId : Maybe ULID }
     | MarkChangelogRead
-    | Tick Date
+    | Tick Posix

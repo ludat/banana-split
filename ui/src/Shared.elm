@@ -51,16 +51,24 @@ init possiblyFlags _ =
     let
         flags =
             Result.withDefault { now = 0, offset = 0, timeZone = "UTC", lastReadChangelog = Nothing } possiblyFlags
+
+        now =
+            Time.millisToPosix flags.now
+
+        timezone =
+            Time.customZone flags.offset []
     in
     ( { toasties = Toast.initialState
       , store = Store.empty
       , userId = Nothing
-      , today = Date.fromPosix (Time.customZone flags.offset []) (Time.millisToPosix flags.now)
-      , timezone = flags.timeZone
+      , now = now
+      , today = Date.fromPosix timezone now
+      , timezoneName = flags.timeZone
       , timezoneOffset = flags.offset
+      , timezone = timezone
       , lastReadChangelog =
             flags.lastReadChangelog
-                |> Maybe.map (\ms -> Date.fromPosix (Time.customZone flags.offset []) (Time.millisToPosix ms))
+                |> Maybe.map (\ms -> Date.fromPosix timezone (Time.millisToPosix ms))
       }
     , Effect.none
     )
@@ -135,12 +143,12 @@ update _ msg model =
             )
 
         MarkChangelogRead ->
-            ( { model | lastReadChangelog = Just model.today }
+            ( { model | lastReadChangelog = Just <| Date.fromPosix model.timezone model.now }
             , Effect.saveLastReadChangelog
             )
 
-        Shared.Msg.Tick date ->
-            ( { model | today = date }
+        Shared.Msg.Tick datetime ->
+            ( { model | now = datetime, today = Date.fromPosix model.timezone datetime }
             , Effect.none
             )
 
@@ -150,10 +158,10 @@ update _ msg model =
 
 
 subscriptions : Route () -> Model -> Sub Msg
-subscriptions _ model =
+subscriptions _ _ =
     Sub.batch
         [ incoming (decodeIncomingPortMessage >> Maybe.withDefault NoOp)
-        , Time.every (60 * 1000) (\posix -> Shared.Msg.Tick (Date.fromPosix (Time.customZone model.timezoneOffset []) posix))
+        , Time.every (60 * 1000) Shared.Msg.Tick
         ]
 
 

@@ -11,6 +11,7 @@ own file, so they can be imported by `Effect.elm`
 import Date exposing (Date)
 import Generated.Api exposing (ULID)
 import Models.Store.Types exposing (Store)
+import Time exposing (Posix, Zone)
 import Utils.Toasts.Types exposing (Toasts)
 
 
@@ -18,8 +19,10 @@ type alias Model =
     { toasties : Toasts
     , store : Store
     , userId : Maybe ULID
+    , now : Posix
     , today : Date
-    , timezone : String
+    , timezone : Zone
+    , timezoneName : String
     , timezoneOffset : Int
     , lastReadChangelog : Maybe Date
     }
