@@ -1,5 +1,3 @@
-{-# LANGUAGE DeriveAnyClass #-}
-{-# LANGUAGE DerivingStrategies #-}
 {-# LANGUAGE QuasiQuotes #-}
 
 module RunServer (
@@ -9,10 +7,7 @@ module RunServer (
 import Conferer qualified
 import Conferer.FromConfig.Warp ()
 import Data.Pool qualified as Pool
-import Data.String (String)
 import Data.String.Interpolate (i)
-import Database.Beam.Postgres
-import Database.PostgreSQL.Simple
 import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.Wai.Handler.Warp (Settings)
@@ -21,7 +16,7 @@ import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Protolude
 import System.Posix (Handler (..), installHandler, sigTERM)
 
-import BananaSplit.PgRoll qualified as PgRoll
+import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.Receipts (ReceiptsReaderConfig (..))
 import Site.Config (createConfig)
 import Site.Server qualified
@@ -31,29 +26,10 @@ runBackend :: IO ()
 runBackend = do
   config <- createConfig "dev"
 
-  connString <- Conferer.fetchFromConfig "database.url" config
   openRouterKey <- Conferer.fetchFromConfig "openrouter.apikey" config
   openRouterModels <- Conferer.fetchFromConfig "openrouter.models" config
 
-  schema <- PgRoll.getLatestSchema
-
-  beamPool <-
-    Pool.newPool $
-      Pool.defaultPoolConfig
-        ( do
-            conn <- connectPostgreSQL connString
-            _ <- execute conn "SET search_path TO ?" (Only schema)
-            pure conn
-        )
-        close
-        60
-        60
-
-  _ <- Pool.withResource beamPool $ \conn -> do
-    actualSchema <- query @_ @(Only Text) conn "SELECT schema_name FROM information_schema.schemata WHERE schema_name = ?;" (Only schema)
-    when (length actualSchema /= 1) $
-      throwIO $
-        MissingPGRollSchema schema
+  beamPool <- Persistence.makePool config
 
   httpManager <- newManager tlsManagerSettings
 
@@ -68,8 +44,7 @@ runBackend = do
                 }
           }
 
-  let shutdownAction = do
-        Pool.destroyAllResources beamPool
+  let shutdownAction = Pool.destroyAllResources beamPool
   let shutdownHandler closeSocket = void $ installHandler sigTERM (Catch $ shutdownAction >> closeSocket) Nothing
   settings <-
     liftIO $
@@ -83,9 +58,3 @@ runBackend = do
 
   putText [i|Listening on port #{Warp.getPort settings}...|]
   Warp.runSettings settings $ logStdoutDev $ Site.Server.app appState
-
-newtype MissingPGRollSchema = MissingPGRollSchema
-  { schemaName :: String
-  }
-  deriving stock (Show)
-  deriving anyclass (Exception)

@@ -99,6 +99,8 @@ library database
   hs-source-dirs: src/database/
   exposed-modules:
     BananaSplit.Persistence
+    BananaSplit.Persistence.Migration_2026_05_26_FixDates
+    BananaSplit.Persistence.Schema
     BananaSplit.PgRoll
 
   build-depends:

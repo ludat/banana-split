@@ -4,10 +4,12 @@ module Preludat (
   orElse,
   orElseMay,
   orElse_,
+  read,
 ) where
 
 import Control.Monad.Fail (MonadFail (fail))
 import Protolude hiding (orElse)
+import Protolude.Partial (read)
 
 orElse :: (Monad m) => m (Either error a) -> (error -> m a) -> m a
 orElse action recovery = action >>= either recovery pure
