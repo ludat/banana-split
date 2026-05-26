@@ -6,6 +6,7 @@
 {-# LANGUAGE TemplateHaskell #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE NoFieldSelectors #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
 
 module BananaSplit.Core (
   Grupo (..),
@@ -26,15 +27,23 @@ module BananaSplit.Core (
   isValid,
 ) where
 
+import Data.Time (Day, UTCTime)
 import Elm.Derive qualified as Elm
-import GHC.Generics
-import Protolude
+import Elm.TyRep (
+  EPrimAlias (..),
+  ETCon (..),
+  EType (..),
+  ETypeDef (..),
+  ETypeName (..),
+  IsElmDefinition (..),
+ )
 
 import BananaSplit.Deudas
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
 import BananaSplit.Monto (Monto)
 import BananaSplit.Participante (Participante, ParticipanteId)
 import BananaSplit.ULID
+import Preludat
 
 data Grupo = Grupo
   { id :: ULID
@@ -60,6 +69,7 @@ data Pago = Pago
   , moneda :: Moneda
   , isValid :: Bool
   , nombre :: Text
+  , fecha :: Day
   , pagadores :: Distribucion
   , deudores :: Distribucion
   }
@@ -71,6 +81,7 @@ data ShallowPago = ShallowPago
   , nombre :: Text
   , monto :: Monto
   , moneda :: Moneda
+  , fecha :: Day
   }
   deriving (Show, Eq, Generic)
 
@@ -93,10 +104,10 @@ getResumenPago pago =
     netos = resumenPagadores.netos <> fmap negate resumenDeudores.netos
     extraErrors = []
   in
-    ResumenNetos pago.monto netos $
-      fmap (relabelError "pagadores") resumenPagadores.errores
-        <> fmap (relabelError "deudores") resumenDeudores.errores
-        <> extraErrors
+    ResumenNetos pago.monto netos
+      $ fmap (relabelError "pagadores") resumenPagadores.errores
+      <> fmap (relabelError "deudores") resumenDeudores.errores
+      <> extraErrors
 
 isValid :: Pago -> Bool
 isValid pago =
@@ -113,6 +124,14 @@ data Parte
   = MontoFijo Monto ParticipanteId
   | Ponderado Integer ParticipanteId
   deriving (Show, Eq, Generic)
+
+instance IsElmDefinition UTCTime where
+  compileElmDef _ =
+    ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "UTCTime", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
+
+instance IsElmDefinition Day where
+  compileElmDef _ =
+    ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "Day", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
 
 Elm.deriveBoth Elm.defaultOptions ''Parte
 Elm.deriveBoth Elm.defaultOptions ''Pago

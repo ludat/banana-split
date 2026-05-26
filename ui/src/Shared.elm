@@ -26,14 +26,15 @@ import Utils.Toasts as Toast
 
 
 type alias Flags =
-    { now : Int, offset : Int, lastReadChangelog : Maybe Int }
+    { now : Int, offset : Int, timeZone : String, lastReadChangelog : Maybe Int }
 
 
 decoder : Json.Decode.Decoder Flags
 decoder =
-    Json.Decode.map3 Flags
+    Json.Decode.map4 Flags
         (Json.Decode.field "now" Json.Decode.int)
         (Json.Decode.field "offset" Json.Decode.int)
+        (Json.Decode.field "timeZone" Json.Decode.string)
         (Json.Decode.field "lastReadChangelog" (Json.Decode.nullable Json.Decode.int))
 
 
@@ -49,16 +50,25 @@ init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
 init possiblyFlags _ =
     let
         flags =
-            Result.withDefault { now = 0, offset = 0, lastReadChangelog = Nothing } possiblyFlags
+            Result.withDefault { now = 0, offset = 0, timeZone = "UTC", lastReadChangelog = Nothing } possiblyFlags
+
+        now =
+            Time.millisToPosix flags.now
+
+        timezone =
+            Time.customZone flags.offset []
     in
     ( { toasties = Toast.initialState
       , store = Store.empty
       , userId = Nothing
-      , now = Time.millisToPosix flags.now
-      , zone = Time.customZone flags.offset []
+      , now = now
+      , today = Date.fromPosix timezone now
+      , timezoneName = flags.timeZone
+      , timezoneOffset = flags.offset
+      , timezone = timezone
       , lastReadChangelog =
             flags.lastReadChangelog
-                |> Maybe.map (\ms -> Date.fromPosix (Time.customZone flags.offset []) (Time.millisToPosix ms))
+                |> Maybe.map (\ms -> Date.fromPosix timezone (Time.millisToPosix ms))
       }
     , Effect.none
     )
@@ -133,8 +143,13 @@ update _ msg model =
             )
 
         MarkChangelogRead ->
-            ( { model | lastReadChangelog = Just (Date.fromPosix model.zone model.now) }
+            ( { model | lastReadChangelog = Just <| Date.fromPosix model.timezone model.now }
             , Effect.saveLastReadChangelog
+            )
+
+        Shared.Msg.Tick datetime ->
+            ( { model | now = datetime, today = Date.fromPosix model.timezone datetime }
+            , Effect.none
             )
 
 
@@ -144,7 +159,10 @@ update _ msg model =
 
 subscriptions : Route () -> Model -> Sub Msg
 subscriptions _ _ =
-    incoming (decodeIncomingPortMessage >> Maybe.withDefault NoOp)
+    Sub.batch
+        [ incoming (decodeIncomingPortMessage >> Maybe.withDefault NoOp)
+        , Time.every (60 * 1000) Shared.Msg.Tick
+        ]
 
 
 decodeIncomingPortMessage : { tag : String, data : Json.Encode.Value } -> Maybe Msg

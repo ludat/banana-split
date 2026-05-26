@@ -6,6 +6,7 @@ import Bytes exposing (Bytes)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar
 import Components.Ui5 as Ui5
+import Date exposing (Date)
 import Effect exposing (Effect)
 import File exposing (File)
 import Form exposing (Form)
@@ -34,6 +35,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Task
+import Utils.Day exposing (validateDay)
 import Utils.Form exposing (CustomFormError, isDataModifyingEvent)
 import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toasts
@@ -45,7 +47,7 @@ import View exposing (View)
 page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route.params.grupoId shared.store
+        { init = \() -> init route.params.grupoId shared.today shared.store
         , update = update shared.store
         , subscriptions = subscriptions
         , view = view shared.store
@@ -110,11 +112,12 @@ type alias Model =
     }
 
 
-init : ULID -> Store -> ( Model, Effect Msg )
-init grupoId store =
+init : ULID -> Date -> Store -> ( Model, Effect Msg )
+init grupoId today store =
     let
         defaultDistribucionValues =
-            [ Form.setGroup "distribucion_pagadores"
+            [ Form.setString "fecha" (Date.toIsoString today)
+            , Form.setGroup "distribucion_pagadores"
                 [ Form.setString "tipo" "monto_equitativo"
                 , Form.setString "distribucionDeSobras" <| distribucionDeSobrasToString SobrasNoDistribuir
                 ]
@@ -168,6 +171,7 @@ validatePagoInSection section participantes =
              else
                 V.succeed ""
             )
+        |> V.andMap (V.field "fecha" validateDay)
         |> V.andMap
             (if section == PagoConfirmation || section == PagadoresSection then
                 V.field "distribucion_pagadores" <| validateDistribucion participantes
@@ -192,6 +196,7 @@ validatePago participantes =
         |> V.andMap (V.field "moneda" Moneda.validate)
         |> V.andMap (V.succeed False)
         |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
+        |> V.andMap (V.field "fecha" validateDay)
         |> V.andMap (V.field "distribucion_pagadores" <| validateDistribucion participantes)
         |> V.andMap (V.field "distribucion_deudores" <| validateDistribucion participantes)
 
@@ -639,6 +644,11 @@ initializePagoForms monedaPorDefecto participantes pago model =
             , Form.setString "nombre" (pago |> Maybe.map .nombre |> Maybe.withDefault "")
             , Form.setString "monto" (pago |> Maybe.map (.monto >> Monto.toString) |> Maybe.withDefault "")
             , Form.setString "moneda" (Moneda.toString monedaInicial)
+            , Form.setString "fecha"
+                (pago
+                    |> Maybe.map (.fecha >> Date.toIsoString)
+                    |> Maybe.withDefault (Form.getFieldAsString "fecha" model.pagoForm |> .value |> Maybe.withDefault "")
+                )
             , Form.setGroup "distribucion_pagadores" <|
                 distribucionToForm (distribucionesPagadoresDefault participantes) (Maybe.map .pagadores pago)
             , Form.setGroup "distribucion_deudores" <|
@@ -1300,6 +1310,9 @@ viewPagoForm form =
 
         monedaField =
             Form.getFieldAsString "moneda" form
+
+        fechaField =
+            Form.getFieldAsString "fecha" form
     in
     Ui5.form (always SubmitCurrentSection)
         [ Attr.attribute "label-span" "S12 M12 L12 XL12"
@@ -1321,6 +1334,11 @@ viewPagoForm form =
                 { label = "Moneda"
                 , required = True
                 , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m ))
+                }
+        , Html.map PagoForm <|
+            Ui5.dateFormItem fechaField
+                { label = "Fecha"
+                , required = True
                 }
         , Ui5.button
             [ Attr.attribute "design" "Emphasized"

@@ -35,7 +35,6 @@ import Numeric.Optimization.MIP qualified as MIP
 import Numeric.Optimization.MIP.Solver qualified as MIP
 import Numeric.Optimization.MIP.Solver.CBC qualified as CBC
 import Protolude
-import Protolude.Error (error)
 import System.IO.Unsafe (unsafePerformIO)
 
 import BananaSplit.Monto
@@ -184,7 +183,7 @@ solveOptimalTransactions :: Netos Monto -> [Transaccion]
 solveOptimalTransactions deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
-    Left err -> error err
+    Left err -> panic err
 
 resolverNetosRecursivo :: Netos Monto -> [Transaccion]
 resolverNetosRecursivo netBalances =
@@ -327,7 +326,7 @@ removerDeudor participanteId (Netos deudasMap) =
 resolverNetosNaif :: Netos Monto -> [Transaccion]
 resolverNetosNaif deudas
   | deudoresNoNulos deudas == 0 = []
-  | deudoresNoNulos deudas == 1 = error $ show deudas
+  | deudoresNoNulos deudas == 1 = panic $ show deudas
   | otherwise =
       let (mayorDeudor, mayorDeuda) = extraerMaximoDeudor deudas
           deudas' = removerDeudor mayorDeudor deudas
@@ -364,7 +363,7 @@ solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
 
   -- If no debts, no transactions needed
   if
-    | balanceSum /= 0 -> error $ "Balance is not 0, instead is: " <> show balanceSum
+    | balanceSum /= 0 -> panic $ "Balance is not 0, instead is: " <> show balanceSum
     | Map.null debtorMap -> pure $ Right []
     | otherwise -> do
         -- A "big M" value, larger than any possible transaction
@@ -505,7 +504,7 @@ calcularNetosRepartija repartija =
                                claims
                                  & fmap
                                    ( \claim ->
-                                       mkDeuda claim.participante (fromMaybe (error "tieneCantidad") claim.cantidad)
+                                       mkDeuda claim.participante (fromMaybe (panic "tieneCantidad") claim.cantidad)
                                    )
                              claimsSobrante = item.cantidad - totalNetos (mconcat claimsExplicitos)
                          in claimsExplicitos

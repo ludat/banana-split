@@ -23,16 +23,20 @@ changelog =
       , description = "Ahora podés congelar un grupo para fijar las deudas. Una vez congelado, no se pueden agregar, editar ni eliminar pagos."
       }
     , { date = Date.fromCalendarDate 2026 Apr 2
-      , title = "Repartir sobras de una repartija."
+      , title = "Repartir sobras de una repartija"
       , description = "Ahora podés elegir que hacer con los items sin reclamar de una repartija, elegí entre repartir proporcionalmente entre todos o esperar a que todos los items sean reclamados antes de repartir."
       }
     , { date = Date.fromCalendarDate 2026 May 16
-      , title = "Mr Worldwide: AR$, US$ ó R$."
+      , title = "Mr Worldwide: AR$, US$ ó R$"
       , description = "Ahora podés elegir una moneda para cada uno de tus gastos."
       }
     , { date = Date.fromCalendarDate 2026 May 16
-      , title = "Cambiá el nombre del grupo."
+      , title = "Cambiá el nombre de tu grupo"
       , description = "Ahora podés cambiar el nombre de un grupo desde la configuración del grupo."
+      }
+    , { date = Date.fromCalendarDate 2026 May 20
+      , title = "Identificá mejor los pagos usando fechas"
+      , description = "Ahora podés agregar a tus pagos la fecha en la que ocurrieron para poder identificar mejor entre ellos."
       }
     ]
 

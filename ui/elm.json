@@ -25,6 +25,7 @@
             "krisajenkins/remotedata": "6.1.0",
             "obiloud/numeric-decimal": "3.0.1",
             "pablen/toasty": "1.2.0",
+            "rtfeldman/elm-iso8601-date-strings": "1.1.4",
             "scrive/elm-form": "1.0.0"
         },
         "indirect": {

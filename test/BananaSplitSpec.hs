@@ -2,6 +2,7 @@ module BananaSplitSpec (
   spec,
 ) where
 
+import Data.Time (fromGregorian)
 import Protolude
 import Test.Hspec
 
@@ -16,6 +17,7 @@ pagoValido =
     , nombre = "Pago"
     , monto = 200
     , moneda = ARS
+    , fecha = fromGregorian 2025 1 1
     , deudores =
         distribucionMontosEspecificos
           [ (participante 1, 200)

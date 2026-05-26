@@ -3,6 +3,7 @@ module Pages.Grupos.Id_ exposing (Model, MonedaSeleccionada, Msg, page)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Components.Ui5 as Ui5
+import Date
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Moneda, Netos, Pago, PorMoneda, ResumenGrupo, ShallowGrupo, ShallowPago, Transaccion, ULID, jsonDecMoneda)
 import Html exposing (Html, a, div, p, section, span, strong, text)
@@ -22,6 +23,7 @@ import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
+import Utils.Day exposing (Day)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import Utils.Ulid exposing (emptyUlid)
@@ -34,7 +36,7 @@ page shared route =
         { init = \() -> init route.params.id shared.store
         , update = update shared.store
         , subscriptions = subscriptions
-        , view = view shared.store
+        , view = view shared.today shared.store
         }
         |> Page.withLayout
             (\m ->
@@ -180,36 +182,31 @@ update store msg model =
             )
 
 
-pagoFromTransaccion : Moneda -> Transaccion -> Pago
-pagoFromTransaccion moneda transaction =
+pagoFromTransaccion : Day -> Moneda -> Transaccion -> Pago
+pagoFromTransaccion hoy moneda transaction =
     { pagoId = emptyUlid
     , isValid = False
+    , fecha = hoy
     , nombre = "Pago saldado"
     , moneda = moneda
     , monto = transaction.monto
     , pagadores =
         { id = emptyUlid
         , tipo =
-            Api.TipoDistribucionMontosEspecificos <|
+            Api.TipoDistribucionMontoEquitativo <|
                 { id = emptyUlid
-                , montos =
-                    [ { id = emptyUlid
-                      , participante = transaction.from
-                      , monto = transaction.monto
-                      }
+                , participantes =
+                    [ transaction.from
                     ]
                 }
         }
     , deudores =
         { id = emptyUlid
         , tipo =
-            Api.TipoDistribucionMontosEspecificos <|
+            Api.TipoDistribucionMontoEquitativo <|
                 { id = emptyUlid
-                , montos =
-                    [ { id = emptyUlid
-                      , participante = transaction.to
-                      , monto = transaction.monto
-                      }
+                , participantes =
+                    [ transaction.to
                     ]
                 }
         }
@@ -221,8 +218,8 @@ subscriptions _ =
     Sub.none
 
 
-view : Store -> Model -> View Msg
-view store model =
+view : Day -> Store -> Model -> View Msg
+view hoy store model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Loading..."
@@ -268,7 +265,7 @@ view store model =
                         ]
 
                      else
-                        [ viewResumenPanel store model grupo
+                        [ viewResumenPanel hoy store model grupo
                         , viewPagosPanel grupo.monedaPorDefecto store model
                         ]
                     )
@@ -276,8 +273,8 @@ view store model =
             }
 
 
-viewResumenPanel : Store -> Model -> ShallowGrupo -> Html Msg
-viewResumenPanel store model grupo =
+viewResumenPanel : Day -> Store -> Model -> ShallowGrupo -> Html Msg
+viewResumenPanel hoy store model grupo =
     Ui5.panel
         [ Attr.attribute "header-text" "Resumen"
         , Attr.attribute "fixed" ""
@@ -361,7 +358,7 @@ viewResumenPanel store model grupo =
 
                         Nothing ->
                             text ""
-                    , viewTransferencias grupo.monedaPorDefecto grupo { resumen | transaccionesParaSaldar = transForActive }
+                    , viewTransferencias hoy grupo.monedaPorDefecto grupo { resumen | transaccionesParaSaldar = transForActive }
                     ]
 
             NotAsked ->
@@ -428,7 +425,7 @@ viewPagosPanel monedaPorDefecto store model =
                                                 )
                                             , onClick (Navigate <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = model.grupoId, pagoId = pago.pagoId })
                                             ]
-                                            [ text pago.nombre ]
+                                            [ text (pago.nombre ++ " — " ++ Date.toIsoString pago.fecha) ]
                                     )
                            )
                     )
@@ -505,8 +502,8 @@ viewMonedaSelector monedas monedaSeleccionada =
         )
 
 
-viewTransferencias : Moneda -> GrupoLike g -> ResumenGrupo -> Html Msg
-viewTransferencias monedaPorDefecto grupo resumen =
+viewTransferencias : Day -> Moneda -> GrupoLike g -> ResumenGrupo -> Html Msg
+viewTransferencias hoy monedaPorDefecto grupo resumen =
     div []
         (if List.isEmpty resumen.transaccionesParaSaldar then
             [ Ui5.messageStrip
@@ -540,10 +537,10 @@ viewTransferencias monedaPorDefecto grupo resumen =
                                             , onClick <|
                                                 case t.id of
                                                     Just transaccionId ->
-                                                        SaldarTransaccion transaccionId (pagoFromTransaccion moneda t)
+                                                        SaldarTransaccion transaccionId (pagoFromTransaccion hoy moneda t)
 
                                                     Nothing ->
-                                                        CrearPago (pagoFromTransaccion moneda t)
+                                                        CrearPago (pagoFromTransaccion hoy moneda t)
                                             , style "margin" "0 0.5rem"
                                             ]
                                             []

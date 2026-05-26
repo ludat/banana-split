@@ -35,14 +35,12 @@ module BananaSplit.Persistence (
 
 import Data.Decimal qualified as Decimal
 import Data.String (String)
-import Data.Text qualified as Text
+import Data.Time (Day)
 import Database.Beam as Beam
 import Database.Beam.Backend
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full hiding (insert)
 import Database.Beam.Postgres.Syntax
-import Database.PostgreSQL.Simple.FromField (FromField (..), returnError)
-import Protolude.Error
 import Protolude.Partial (read)
 
 import BananaSplit qualified as M
@@ -125,6 +123,7 @@ data PagoT f = Pago
   , pagoMoneda :: Columnar f M.Moneda
   , distribucion_pagadores :: PrimaryKey DistribucionT f
   , distribucion_deudores :: PrimaryKey DistribucionT f
+  , fecha :: Columnar f Day
   }
   deriving (Generic, Beamable)
 
@@ -418,7 +417,7 @@ fetchGrupo aGrupoId = do
 fetchPago :: ULID -> ULID -> Pg M.Pago
 fetchPago grupoId pagoId = do
   (dbPago :: Pago) <-
-    fromMaybe (error "Pago not found")
+    fromMaybe (panic "Pago not found")
       <$> runSelectReturningOne
         ( select $ do
             pago <- all_ db.pagos
@@ -426,8 +425,8 @@ fetchPago grupoId pagoId = do
             pure pago
         )
 
-  (pagadores :: M.Distribucion) <- fromMaybe (error "Pagadores not found") <$> fetchDistribucion (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
-  (deudores :: M.Distribucion) <- fromMaybe (error "deudores not found") <$> fetchDistribucion (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
+  (pagadores :: M.Distribucion) <- fromMaybe (panic "Pagadores not found") <$> fetchDistribucion (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
+  (deudores :: M.Distribucion) <- fromMaybe (panic "deudores not found") <$> fetchDistribucion (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
   dbPago
     & ( \p ->
           M.Pago
@@ -436,6 +435,7 @@ fetchPago grupoId pagoId = do
             , M.moneda = dbPago.pagoMoneda
             , M.nombre = p.pagoNombre
             , M.isValid = p.pagoIsValid
+            , M.fecha = p.fecha
             , M.pagadores = pagadores
             , M.deudores = deudores
             }
@@ -501,7 +501,7 @@ fetchDistribucionMontosEspecificosItems distribucionMontosEspecificosId = do
 
 fetchDistribucion :: ULID -> Pg (Maybe M.Distribucion)
 fetchDistribucion distribucionId = do
-  dbDistribucion :: Distribucion <- fmap (fromMaybe (error "Pago not found")) $ runSelectReturningOne $ select $ do
+  dbDistribucion :: Distribucion <- fmap (fromMaybe (panic "Pago not found")) $ runSelectReturningOne $ select $ do
     distribucion <- all_ db.distribuciones
     guard_ (distribucion.id ==. val_ distribucionId)
     pure distribucion
@@ -542,7 +542,7 @@ fetchDistribucion distribucionId = do
               , M.montos = montos
               }
     "Repartija" -> do
-      repartijaId <- fmap (fromMaybe (error "Repartija not found")) $ runSelectReturningOne $ select $ do
+      repartijaId <- fmap (fromMaybe (panic "Repartija not found")) $ runSelectReturningOne $ select $ do
         r <- all_ db.repartijas
         guard_ (r.distribucion ==. DistribucionId (val_ dbDistribucion.id))
         pure r.id
@@ -577,6 +577,7 @@ fetchShallowPagos grupoId = do
         , M.nombre = pago.pagoNombre
         , M.monto = constructMonto pago.pagoMonto
         , M.moneda = pago.pagoMoneda
+        , M.fecha = pago.fecha
         }
 
 fetchParticipantes :: ULID -> Pg [M.Participante]
@@ -645,6 +646,7 @@ savePago grupoId pagoWithoutId = do
               , pagoMoneda = pago.moneda
               , distribucion_pagadores = DistribucionId distribucionPagadores.id
               , distribucion_deudores = DistribucionId distribucionDeudores.id
+              , fecha = pago.fecha
               }
           ]
       )
@@ -872,7 +874,7 @@ saveRepartijaItems repartijaId repartijaItemsWithoutId = do
 
 fetchRepartija :: ULID -> Pg M.RepartijaForFrontend
 fetchRepartija unRepartijaId = do
-  (repartija, pagoNombre, pagoId) :: (DistribucionRepartija, Text, ULID) <- fmap (fromMaybe (error "Repartija not found")) $ runSelectReturningOne $ select $ do
+  (repartija, pagoNombre, pagoId) :: (DistribucionRepartija, Text, ULID) <- fmap (fromMaybe (panic "Repartija not found")) $ runSelectReturningOne $ select $ do
     repartija <- all_ db.repartijas
     guard_ (repartija.id ==. val_ unRepartijaId)
 
@@ -927,7 +929,7 @@ fetchRepartija unRepartijaId = do
       }
 
 saveRepartijaClaim :: ULID -> M.RepartijaClaim -> Pg M.RepartijaClaim
-saveRepartijaClaim unRepartijaId repartijaClaim = do
+saveRepartijaClaim _unRepartijaId repartijaClaim = do
   claimId <-
     if repartijaClaim.id == nullUlid
       then liftIO ULID.getULID
@@ -1075,7 +1077,7 @@ distribucionDeSobrasFromText :: Text -> M.DistribucionDeSobras
 distribucionDeSobrasFromText = \case
   "SobrasNoDistribuir" -> M.SobrasNoDistribuir
   "SobrasProporcional" -> M.SobrasProporcional
-  other -> error $ "Unknown DistribucionDeSobras: " <> other
+  other -> panic $ "Unknown DistribucionDeSobras: " <> other
 
 instance HasSqlValueSyntax PgValueSyntax ULID where
   sqlValueSyntax = autoSqlValueSyntax

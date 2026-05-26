@@ -5,7 +5,6 @@ module BananaSplit.Elm (
 import Data.Data
 import Elm.TyRep
 import Protolude
-import Protolude.Error
 import Servant
 import Servant.Elm
 
@@ -23,14 +22,21 @@ generateElmFiles = do
             ETyCon (ETCon "Char") -> "String.fromChar"
             ETyApp (ETyCon (ETCon "Maybe")) v -> "(Maybe.map " <> defaultElmToString v <> " >> Maybe.withDefault \"\")"
             ETyCon (ETCon "ULID") -> ""
-            e -> error $ show e
+            e -> panic $ show e
         , urlPrefix = Static "/api"
         }
     )
     [ "Generated"
     , "Api"
     ]
-    defElmImports
+    ( [ defElmImports
+      , "import Utils.Posix exposing (Posix, jsonDecPosix, jsonEncPosix)"
+      , "import Date"
+      , "import Utils.Day exposing (Day, jsonDecDay, jsonEncDay)"
+      ]
+        & intersperse "\n"
+        & mconcat
+    )
     "ui/generated-src/"
     [ DefineElm (Proxy :: Proxy CreateGrupoParams)
     , DefineElm (Proxy :: Proxy UpdateGrupoParams)
