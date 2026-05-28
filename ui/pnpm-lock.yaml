@@ -23,6 +23,9 @@ importers:
       '@ui5/webcomponents-icons':
         specifier: ^2.19.1
         version: 2.19.1
+      autonumeric:
+        specifier: ^4.10.10
+        version: 4.10.10
       concurrently:
         specifier: ^9.2.0
         version: 9.2.0
@@ -515,6 +518,9 @@ packages:
 
   asynckit@0.4.0:
     resolution: {integrity: sha512-Oei9OH4tRh0YqU3GxhX79dM/mwVgvbZJaSNaRk+bshkj0S5cfHcgYakreBjrHwatXKbz+IoIdYLxrKim2MjW0Q==}
+
+  autonumeric@4.10.10:
+    resolution: {integrity: sha512-fLzZikIpN/hNvQPBrffI2RAw2y4n/dH4RAf4XBOKcuznKyiJmCk1WMRFa99LivRqTN1uYNHdaaCMeYAvNynGmg==}
 
   aws-sign2@0.7.0:
     resolution: {integrity: sha512-08kcGqnYf/YmjoRhfxyu+CLxBjUtHLXLXX/vUfx9l2LYzG3c1m61nrpyFUZI6zeS+Li/wWMMidD9KgrqtGq3mA==}
@@ -1779,6 +1785,8 @@ snapshots:
   assert-plus@1.0.0: {}
 
   asynckit@0.4.0: {}
+
+  autonumeric@4.10.10: {}
 
   aws-sign2@0.7.0: {}
 

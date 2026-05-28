@@ -7,7 +7,6 @@ import Html exposing (Html, div, p)
 import Html.Attributes exposing (class, style)
 import Models.Grupo exposing (GrupoLike, lookupParticipante)
 import Models.Monto as Monto
-import Numeric.Decimal as Decimal
 
 
 viewNetosBarras : GrupoLike g -> Netos Monto -> Html msg
@@ -19,7 +18,7 @@ viewNetosBarras grupo netos =
                     (\( _, m ) ->
                         Monto.abs m
                     )
-                |> List.map (Monto.toDecimal >> Decimal.toFloat)
+                |> List.map Monto.toFloat
                 |> List.maximum
                 |> Maybe.withDefault 0
     in
@@ -29,11 +28,8 @@ viewNetosBarras grupo netos =
                 (\( _, m ) -> m.valor)
             |> List.reverse
             |> List.concatMap
-                (\( participanteId, m ) ->
+                (\( participanteId, monto ) ->
                     let
-                        monto =
-                            Monto.toDecimal m
-
                         participante =
                             lookupParticipante grupo participanteId
 
@@ -44,16 +40,16 @@ viewNetosBarras grupo netos =
                             div [ class "monto derecha" ]
                                 [ p
                                     [ style "margin-left" "0.5rem" ]
-                                    [ Ui5.text <| Decimal.toString monto ]
+                                    [ Ui5.text <| Monto.toString monto ]
                                 , div
-                                    [ style "width" <| String.fromFloat (Decimal.toFloat monto * 100 / maximo) ++ "%"
+                                    [ style "width" <| String.fromFloat (Monto.toFloat monto * 100 / maximo) ++ "%"
                                     , class "barra"
                                     , style "background-color" "var(--sapPositiveColor, rgb(255, 102, 133))"
                                     ]
                                     []
                                 ]
                     in
-                    case compare m.valor 0 of
+                    case compare monto.valor 0 of
                         LT ->
                             let
                                 nombreDerecha =
@@ -63,9 +59,9 @@ viewNetosBarras grupo netos =
                                     div [ class "monto izquierda" ]
                                         [ p
                                             [ style "margin-right" "0.5rem" ]
-                                            [ Ui5.text <| Decimal.toString monto ]
+                                            [ Ui5.text <| Monto.toString monto ]
                                         , div
-                                            [ style "width" <| String.fromFloat (abs (Decimal.toFloat monto) * 100 / maximo) ++ "%"
+                                            [ style "width" <| String.fromFloat (abs (Monto.toFloat monto) * 100 / maximo) ++ "%"
                                             , class "barra"
                                             , style "background-color" "var(--sapErrorColor, rgb(72, 199, 142))"
                                             ]

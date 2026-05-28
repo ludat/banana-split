@@ -1,4 +1,5 @@
 import "./styles.css";
+import "./js/MontoInput";
 
 import { setTheme } from "@ui5/webcomponents-base/dist/config/Theme.js";
 import { setLanguage } from "@ui5/webcomponents-base/dist/config/Language.js";
@@ -186,7 +187,7 @@ export const onReady = ({ app, env }) => {
 
         case "SAVE_LAST_READ_CHANGELOG":
           // data: null
-          localStorage.setItem("banana-split:lastReadChangelog", new Date().getTime());
+          localStorage.setItem("banana-split:lastReadChangelog", new Date().getTime().toString());
           break;
 
         default:

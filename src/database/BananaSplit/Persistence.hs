@@ -36,7 +36,7 @@ import Data.String (String)
 import Database.Beam as Beam
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full hiding (insert)
-import Database.PostgreSQL.Simple (Connection, Only (..), close, connectPostgreSQL, execute, query)
+import Database.PostgreSQL.Simple (Only (..), execute, query)
 
 import BananaSplit qualified as M
 import BananaSplit.Persistence.Migration_2026_05_26_FixDates qualified as FixDates

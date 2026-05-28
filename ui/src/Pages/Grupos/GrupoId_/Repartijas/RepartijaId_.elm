@@ -16,9 +16,6 @@ import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
-import Numeric.Decimal as Decimal
-import Numeric.Decimal.Rounding as Decimal
-import Numeric.Nat as Nat
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
@@ -426,7 +423,7 @@ viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
             ++ [ Ui5.tableRow
                     []
                     [ Ui5.tableCell [] [ text "Propina" ]
-                    , Ui5.tableCell [] [ text "$", text <| Decimal.toString <| Monto.toDecimal repartija.extra ]
+                    , Ui5.tableCell [] [ text "$", text <| Monto.toString repartija.extra ]
                     , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
                     , Ui5.tableCell [] []
@@ -438,10 +435,10 @@ viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
                         []
                         [ text "$"
                         , repartija.items
-                            |> List.map (\i -> Monto.toDecimal i.monto)
-                            |> List.foldl Decimal.add (Decimal.fromInt Decimal.RoundTowardsZero Nat.nat2 0)
-                            |> Decimal.add (Monto.toDecimal repartija.extra)
-                            |> Decimal.toString
+                            |> List.map .monto
+                            |> List.foldl Monto.add Monto.zero
+                            |> Monto.add repartija.extra
+                            |> Monto.toString
                             |> text
                         ]
                     , Ui5.tableCell [] []
@@ -557,7 +554,7 @@ viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
     Ui5.tableRow
         []
         [ Ui5.tableCell [] [ text <| item.nombre ]
-        , Ui5.tableCell [] [ text <| "$" ++ Decimal.toString (Monto.toDecimal item.monto) ]
+        , Ui5.tableCell [] [ text <| "$" ++ Monto.toString item.monto ]
         , Ui5.tableCell [] [ text <| String.fromInt item.cantidad ]
         , Ui5.tableCell
             []
