@@ -642,7 +642,7 @@ initializePagoForms monedaPorDefecto participantes pago model =
         initialFormValues =
             [ Form.setString "id" (pago |> Maybe.map .pagoId |> Maybe.withDefault "")
             , Form.setString "nombre" (pago |> Maybe.map .nombre |> Maybe.withDefault "")
-            , Form.setString "monto" (pago |> Maybe.map (.monto >> Monto.toString) |> Maybe.withDefault "")
+            , Form.setString "monto" (pago |> Maybe.map (.monto >> Monto.toRawString) |> Maybe.withDefault "")
             , Form.setString "moneda" (Moneda.toString monedaInicial)
             , Form.setString "fecha"
                 (pago
@@ -1324,7 +1324,7 @@ viewPagoForm form =
                 , required = True
                 }
         , Html.map PagoForm <|
-            Ui5.textFormItem montoField
+            Ui5.montoTextFormItem montoField
                 { label = "Monto"
                 , placeholder = Just "2000"
                 , required = True
@@ -1425,8 +1425,8 @@ viewDistribucionForm participantes prefix form receiptParseState =
                                         in
                                         div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "end", style "margin-bottom" "0.5rem" ]
                                             [ Html.map PagoForm <|
-                                                Ui5.textInput montoField
-                                                    [ placeholder "200.0" ]
+                                                Ui5.montoInput montoField
+                                                    [ placeholder "200" ]
                                             , Html.map PagoForm <|
                                                 Ui5.formSelect
                                                     (( "", "" ) :: List.map (\p -> ( p.id, p.nombre )) participantes)
@@ -1550,7 +1550,7 @@ viewRepartijaForm prefix form receiptParseState =
                 ]
             , Ui5.formGroup [ Attr.attribute "header-text" "Propina" ]
                 [ Html.map PagoForm <|
-                    Ui5.textInput montoField
+                    Ui5.montoInput montoField
                         [ placeholder "1000" ]
                 ]
             ]
@@ -1607,8 +1607,8 @@ viewRepartijaItemForm i prefix form =
         , Ui5.tableCell
             []
             [ Html.map PagoForm <|
-                Ui5.textInput montoField
-                    [ placeholder "20000" ]
+                Ui5.montoInput montoField
+                    [ placeholder "20.000" ]
             ]
         , Ui5.tableCell
             []

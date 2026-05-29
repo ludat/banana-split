@@ -1,8 +1,10 @@
 module Models.Monto exposing
     ( abs
+    , add
     , diffText
     , negate
-    , toDecimal
+    , toFloat
+    , toRawString
     , toString
     , validateMonto
     , zero
@@ -17,6 +19,8 @@ import Numeric.Nat as Nat
 import Utils.Form exposing (CustomFormError(..))
 
 
+{-| Form validation that accepts display-format input ("1.000,50") and produces a Monto.
+-}
 validateMonto : Validation CustomFormError Monto
 validateMonto =
     V.string
@@ -38,9 +42,23 @@ validateMonto =
             )
 
 
+{-| Lift a Monto into the Decimal type for arithmetic.
+-}
 toDecimal : Monto -> Decimal.Decimal s Int
 toDecimal monto =
     Decimal.succeed Decimal.RoundTowardsZero (Nat.fromIntAbs monto.lugaresDespuesDeLaComa) monto.valor
+
+
+{-| Convert a Decimal result back to a Monto. Useful after arithmetic to get back to display.
+-}
+fromDecimal : Decimal.Decimal s Int -> Monto
+fromDecimal d =
+    Monto (Nat.toInt (Decimal.getPrecision d)) (Decimal.toInt d)
+
+
+toFloat : Monto -> Float
+toFloat monto =
+    monto |> toDecimal |> Decimal.toFloat
 
 
 zero : Monto
@@ -53,27 +71,108 @@ negate monto =
     { lugaresDespuesDeLaComa = monto.lugaresDespuesDeLaComa, valor = monto.valor * -1 }
 
 
+{-| Add two Montos, scaling both to the larger precision so no decimal places are lost.
+-}
+add : Monto -> Monto -> Monto
+add a b =
+    let
+        precision =
+            max a.lugaresDespuesDeLaComa b.lugaresDespuesDeLaComa
+    in
+    { lugaresDespuesDeLaComa = precision
+    , valor = scaleTo precision a + scaleTo precision b
+    }
+
+
+{-| Format string for programatic usage, as 1000.00. Don't use this for the ui
+-}
+toRawString : Monto -> String
+toRawString monto =
+    monto |> toDecimal |> Decimal.toString
+
+
+{-| Display-formatted string, e.g. "1.000,50". Period = thousands separator, comma = decimal.
+-}
 toString : Monto -> String
-toString monto =
-    Decimal.toString (toDecimal monto)
+toString { lugaresDespuesDeLaComa, valor } =
+    let
+        absValor =
+            Basics.abs valor
+
+        factor =
+            10 ^ lugaresDespuesDeLaComa
+
+        sign =
+            if valor < 0 then
+                "-"
+
+            else
+                ""
+
+        intPart =
+            groupThousands (String.fromInt (absValor // factor))
+
+        decimalPart =
+            if lugaresDespuesDeLaComa == 0 then
+                ""
+
+            else
+                "," ++ String.padLeft lugaresDespuesDeLaComa '0' (String.fromInt (modBy factor absValor))
+    in
+    sign ++ intPart ++ decimalPart
 
 
 abs : Monto -> Monto
 abs monto =
-    { monto | valor = Basics.abs monto.valor }
+    { lugaresDespuesDeLaComa = monto.lugaresDespuesDeLaComa, valor = Basics.abs monto.valor }
 
 
+{-| Human-readable description of how `actual` differs from `expected`,
+e.g. "es 50,00 de más".
+-}
 diffText : Monto -> Monto -> String
 diffText actual expected =
     let
         diff =
             Decimal.subtract (toDecimal actual) (toDecimal expected)
-
-        absDiff =
-            Decimal.abs diff
     in
     if Decimal.toInt diff > 0 then
-        "es " ++ Decimal.toString absDiff ++ " de más"
+        "es " ++ toString (abs (fromDecimal diff)) ++ " de más"
 
     else
-        "es " ++ Decimal.toString absDiff ++ " de menos"
+        "es " ++ toString (abs (fromDecimal diff)) ++ " de menos"
+
+
+
+-- Internal
+
+
+scaleTo : Int -> Monto -> Int
+scaleTo precision { lugaresDespuesDeLaComa, valor } =
+    valor * 10 ^ (precision - lugaresDespuesDeLaComa)
+
+
+groupThousands : String -> String
+groupThousands s =
+    let
+        len =
+            String.length s
+
+        firstLen =
+            if modBy 3 len == 0 then
+                3
+
+            else
+                modBy 3 len
+
+        firstGroup =
+            String.left firstLen s
+
+        rest =
+            String.dropLeft firstLen s
+    in
+    if String.isEmpty rest then
+        firstGroup
+
+    else
+        firstGroup ++ "." ++ groupThousands rest

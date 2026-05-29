@@ -1,4 +1,4 @@
-module Components.Ui5 exposing (busyIndicator, button, dateFormItem, dialog, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, formSelectItem, label, li, link, list, messageStrip, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
+module Components.Ui5 exposing (busyIndicator, button, dateFormItem, dialog, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, formSelectItem, label, li, link, list, messageStrip, montoInput, montoTextFormItem, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
 
 import Form exposing (Msg(..))
 import Form.Field
@@ -33,6 +33,58 @@ textInput state attrs =
             ++ attrs
         )
         [ div [ slot "valueStateMessage" ] [ errorForField state ] ]
+
+
+montoInput : Form.FieldState CustomFormError String -> List (Attribute Form.Msg) -> Html Form.Msg
+montoInput state attrs =
+    Html.node "monto-input"
+        ([ case state.value of
+            Just v ->
+                Attr.attribute "raw-value" v
+
+            Nothing ->
+                class ""
+         , on "autoNumeric:rawValueModified"
+            (Json.Decode.at [ "detail", "newRawValue" ] Json.Decode.string
+                |> Json.Decode.map (\v -> Input state.path Form.Text (Form.Field.String v))
+            )
+         , on "focusin" (Json.Decode.succeed (Focus state.path))
+         , on "focusout" (Json.Decode.succeed (Blur state.path))
+         , id state.path
+         , Attr.attribute "value-state"
+            (if hasErrorField state then
+                "Negative"
+
+             else
+                "None"
+            )
+         ]
+            ++ attrs
+        )
+        []
+
+
+montoTextFormItem : Form.FieldState CustomFormError String -> { placeholder : Maybe String, required : Bool, label : String } -> Html Form.Msg
+montoTextFormItem field options =
+    formItem []
+        [ label
+            [ slot "labelContent"
+            , for field.path
+            , required options.required
+            , Attr.attribute "show-colon" ""
+            ]
+            [ text options.label ]
+        , montoInput
+            field
+            [ case options.placeholder of
+                Just p ->
+                    placeholder p
+
+                Nothing ->
+                    class ""
+            , required options.required
+            ]
+        ]
 
 
 slot : String -> Attribute msg
