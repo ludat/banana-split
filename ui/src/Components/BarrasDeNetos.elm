@@ -1,9 +1,8 @@
 module Components.BarrasDeNetos exposing (viewNetosBarras)
 
-import Components.Ui5 as Ui5
 import Css
 import Generated.Api exposing (Monto, Netos)
-import Html exposing (Html, div, p)
+import Html exposing (Html, div, p, text)
 import Html.Attributes exposing (class, style)
 import Models.Grupo exposing (GrupoLike, lookupParticipante)
 import Models.Monto as Monto
@@ -34,17 +33,17 @@ viewNetosBarras grupo netos =
                             lookupParticipante grupo participanteId
 
                         nombreIzquierda =
-                            div [ class "nombre izquierda", style "margin-right" "0.5rem" ] [ Ui5.text participante.nombre ]
+                            div [ class "nombre izquierda", style "margin-right" "0.5rem" ] [ text participante.nombre ]
 
                         barraDerecha =
                             div [ class "monto derecha" ]
                                 [ p
                                     [ style "margin-left" "0.5rem" ]
-                                    [ Ui5.text <| Monto.toString monto ]
+                                    [ text <| Monto.toString monto ]
                                 , div
                                     [ style "width" <| String.fromFloat (Monto.toFloat monto * 100 / maximo) ++ "%"
                                     , class "barra"
-                                    , style "background-color" "var(--sapPositiveColor, rgb(255, 102, 133))"
+                                    , style "background-color" "var(--bs-success)"
                                     ]
                                     []
                                 ]
@@ -53,17 +52,17 @@ viewNetosBarras grupo netos =
                         LT ->
                             let
                                 nombreDerecha =
-                                    div [ class "nombre derecha", style "margin-left" "0.5rem" ] [ Ui5.text participante.nombre ]
+                                    div [ class "nombre derecha", style "margin-left" "0.5rem" ] [ text participante.nombre ]
 
                                 barraIzquierda =
                                     div [ class "monto izquierda" ]
                                         [ p
                                             [ style "margin-right" "0.5rem" ]
-                                            [ Ui5.text <| Monto.toString monto ]
+                                            [ text <| Monto.toString monto ]
                                         , div
                                             [ style "width" <| String.fromFloat (abs (Monto.toFloat monto) * 100 / maximo) ++ "%"
                                             , class "barra"
-                                            , style "background-color" "var(--sapErrorColor, rgb(72, 199, 142))"
+                                            , style "background-color" "var(--bs-danger)"
                                             ]
                                             []
                                         ]

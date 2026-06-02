@@ -1,4 +1,4 @@
-module Components.Ui5 exposing (busyIndicator, button, dateFormItem, dialog, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, formSelectItem, label, li, link, list, messageStrip, montoInput, montoTextFormItem, navigationLayout, option, panel, responsivePopover, segmentedButton, segmentedButtonItem, select, shellBar, shellbarBranding, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
+module Components.Ui5 exposing (busyIndicator, button, dateFormItem, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, formSelectItem, label, li, link, list, messageStrip, montoInput, montoTextFormItem, panel, responsivePopover, segmentedButton, segmentedButtonItem, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
 
 import Form exposing (Msg(..))
 import Form.Field
@@ -235,11 +235,6 @@ option attrs children =
     Html.node "ui5-option" attrs children
 
 
-navigationLayout : List (Attribute m) -> List (Html m) -> Html m
-navigationLayout attrs children =
-    Html.node "ui5-navigation-layout" attrs children
-
-
 sideNavigation : List (Attribute m) -> List (Html m) -> Html m
 sideNavigation attrs children =
     Html.node "ui5-side-navigation" attrs children
@@ -260,16 +255,6 @@ sideNavigationSubItem attrs children =
     Html.node "ui5-side-navigation-sub-item" attrs children
 
 
-shellBar : List (Attribute m) -> List (Html m) -> Html m
-shellBar attrs children =
-    Html.node "ui5-shellbar" attrs children
-
-
-shellbarBranding : List (Attribute m) -> List (Html m) -> Html m
-shellbarBranding attrs children =
-    Html.node "ui5-shellbar-branding" attrs children
-
-
 messageStrip : List (Attribute m) -> List (Html m) -> Html m
 messageStrip attrs children =
     Html.node "ui5-message-strip" attrs children
@@ -283,11 +268,6 @@ list attrs children =
 li : List (Attribute m) -> List (Html m) -> Html m
 li attrs children =
     Html.node "ui5-li" attrs children
-
-
-dialog : List (Attribute m) -> List (Html m) -> Html m
-dialog attrs children =
-    Html.node "ui5-dialog" attrs children
 
 
 table : List (Attribute m) -> List (Html m) -> Html m

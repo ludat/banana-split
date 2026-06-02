@@ -2,6 +2,10 @@
 
 :root {
     --alto-barra: 11px;
+    /* SAP → Bootstrap CSS var aliases (used while UI5 and Bootstrap coexist) */
+    --sapNegativeTextColor: var(--bs-danger);
+    --sapPositiveColor: var(--bs-success);
+    --sapBreakpoint_L_Min: 1024px;
 }
 
 .barras-precio {
