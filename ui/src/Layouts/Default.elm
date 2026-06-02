@@ -257,23 +257,25 @@ viewNavbar model remoteGrupo unread currentUserName activeUser =
 
               else
                 text ""
-            , Bs.dropdown
-                { isOpen = model.openDropdown == Just "user"
-                , onToggle = ToggleDropdown "user"
-                , label = [ text (Maybe.withDefault "Usuario" currentUserName) ]
-                , items =
-                    case remoteGrupo of
-                        Success grupo ->
-                            [ Html.li [ class "px-3 py-2" ]
-                                [ small [ class "text-muted d-block mb-1" ] [ text "Ver como:" ]
-                                , viewGlobalUserSelector activeUser grupo
-                                ]
-                            ]
 
-                        _ ->
-                            []
-                , attrs = []
-                }
+            -- TODO(ludat) this is useless until we have proper users
+            --, Bs.dropdown
+            --    { isOpen = model.openDropdown == Just "user"
+            --    , onToggle = ToggleDropdown "user"
+            --    , label = [ text (Maybe.withDefault "Usuario" currentUserName) ]
+            --    , items =
+            --        case remoteGrupo of
+            --            Success grupo ->
+            --                [ Html.li [ class "px-3 py-2" ]
+            --                    [ small [ class "text-muted d-block mb-1" ] [ text "Ver como:" ]
+            --                    , viewGlobalUserSelector activeUser grupo
+            --                    ]
+            --                ]
+            --
+            --            _ ->
+            --                []
+            --    , attrs = []
+            --    }
             ]
         ]
 
