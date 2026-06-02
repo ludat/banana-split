@@ -1,4 +1,4 @@
-module Components.Ui5 exposing (busyIndicator, button, dateFormItem, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, formSelectItem, label, li, link, list, messageStrip, montoInput, montoTextFormItem, panel, responsivePopover, segmentedButton, segmentedButtonItem, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, title, wizard, wizardStep)
+module Components.Ui5 exposing (busyIndicator, button, dateFormItem, fileUploader, form, formCheckbox, formGroup, formLayout, formSelect, formSelectItem, label, li, link, list, messageStrip, montoInput, montoTextFormItem, panel, responsivePopover, segmentedButton, segmentedButtonItem, sideNavigation, sideNavigationGroup, sideNavigationItem, sideNavigationSubItem, slot, table, tableCell, tableHeaderCell, tableHeaderRow, tableRow, tableRowAction, text, textFormItem, textInput, wizard, wizardStep)
 
 import Form exposing (Msg(..))
 import Form.Field
@@ -223,11 +223,6 @@ formCheckbox state attrs =
 
 
 -- Simple wrappers
-
-
-title : List (Attribute m) -> List (Html m) -> Html m
-title attrs children =
-    Html.node "ui5-title" attrs children
 
 
 option : List (Attribute m) -> List (Html m) -> Html m
