@@ -6,7 +6,7 @@ import Css
 import Date exposing (Date)
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
-import Html exposing (Html, button, div, h2, h5, i, node, option, p, select, small, span, strong, text)
+import Html exposing (Html, button, div, h2, h5, i, li, node, option, p, select, small, span, strong, text)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
 import Html.Events exposing (on, onClick)
 import Json.Decode as Decode
@@ -162,17 +162,6 @@ view props currentPath activeUser toasts lastReadChangelog now { toContentMsg, m
 
         remoteGrupo =
             props.grupo
-
-        currentUserName =
-            case ( activeUser, remoteGrupo ) of
-                ( Just uid, Success grupo ) ->
-                    grupo.participantes
-                        |> List.filter (\p -> p.id == uid)
-                        |> List.head
-                        |> Maybe.map .nombre
-
-                _ ->
-                    Nothing
     in
     { title =
         if content.title == "" then
@@ -192,7 +181,7 @@ view props currentPath activeUser toasts lastReadChangelog now { toContentMsg, m
             _ ->
                 text ""
         , Html.map toContentMsg <|
-            viewNavbar model remoteGrupo unread currentUserName activeUser
+            viewNavbar unread
         , case remoteGrupo of
             Success grupo ->
                 Html.map toContentMsg <|
@@ -226,8 +215,8 @@ view props currentPath activeUser toasts lastReadChangelog now { toContentMsg, m
     }
 
 
-viewNavbar : Model -> WebData ShallowGrupo -> Int -> Maybe String -> Maybe ULID -> Html Msg
-viewNavbar model remoteGrupo unread currentUserName activeUser =
+viewNavbar : Int -> Html Msg
+viewNavbar unread =
     Bs.navbar []
         [ button
             [ type_ "button"
@@ -290,10 +279,57 @@ viewGroupHeader model currentPath activeUser grupo =
                     , h2 [ class "mb-0 fw-bold" ] [ text grupo.nombre ]
                     ]
                 , div [ class "d-flex flex-wrap align-items-center gap-2" ]
-                    [ div [ class "d-flex align-items-center gap-2" ]
-                        [ small [ class "text-muted" ] [ text "Ver como:" ]
-                        , viewGlobalUserSelector activeUser grupo
-                        ]
+                    [ Bs.dropdown
+                        { isOpen = model.openDropdown == Just "ver-como"
+                        , onToggle = ToggleDropdown "ver-como"
+                        , label =
+                            [ text "Ver como: "
+                            , strong []
+                                [ text
+                                    (activeUser
+                                        |> Maybe.andThen
+                                            (\uid ->
+                                                grupo.participantes
+                                                    |> List.filter (\p -> p.id == uid)
+                                                    |> List.head
+                                                    |> Maybe.map .nombre
+                                            )
+                                        |> Maybe.withDefault "—"
+                                    )
+                                ]
+                            ]
+                        , items =
+                            li [ class "px-2 py-1" ]
+                                [ button
+                                    [ type_ "button"
+                                    , class "dropdown-item rounded"
+                                    , classList [ ( "active", activeUser == Nothing ) ]
+                                    , onClick
+                                        (ForwardSharedMessage HideNavbarAfterEvent <|
+                                            Shared.SetCurrentUser { grupoId = grupo.id, userId = "" }
+                                        )
+                                    ]
+                                    [ text "—" ]
+                                ]
+                                :: (grupo.participantes
+                                        |> List.map
+                                            (\p ->
+                                                li [ class "px-2 py-1" ]
+                                                    [ button
+                                                        [ type_ "button"
+                                                        , class "dropdown-item rounded"
+                                                        , classList [ ( "active", activeUser == Just p.id ) ]
+                                                        , onClick
+                                                            (ForwardSharedMessage HideNavbarAfterEvent <|
+                                                                Shared.SetCurrentUser { grupoId = grupo.id, userId = p.id }
+                                                            )
+                                                        ]
+                                                        [ text p.nombre ]
+                                                    ]
+                                            )
+                                   )
+                        , attrs = []
+                        }
                     , Bs.dropdown
                         { isOpen = model.openDropdown == Just "mas"
                         , onToggle = ToggleDropdown "mas"
@@ -340,8 +376,8 @@ viewTabNav currentPath grupo =
             }
             [ text "Pagos" ]
         , Bs.navTab
-            { active = False
-            , attrs = [ Path.href <| Path.Grupos_Id_ { id = grupo.id } ]
+            { active = currentPath == Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id }
+            , attrs = [ Path.href <| Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id } ]
             }
             [ text "Liquidaciones" ]
         , Bs.navTab

@@ -1,16 +1,16 @@
-module Pages.Grupos.Id_ exposing (Model, MonedaSeleccionada, Msg, page)
+module Pages.Grupos.Id_ exposing (Model, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
+import Components.MonedaSelector as MonedaSelector exposing (MonedaSeleccionada(..))
 import Components.NavBar as NavBar exposing (modelFromShared)
 import Date
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Moneda, Netos, Pago, PorMoneda, ResumenGrupo, ShallowGrupo, ShallowPago, Transaccion, ULID, jsonDecMoneda)
-import Html exposing (Html, a, button, div, i, option, p, select, span, strong, text)
-import Html.Attributes as Attr exposing (class, selected, style, type_, value)
-import Html.Events exposing (on, onClick)
+import Generated.Api as Api exposing (Moneda, Netos, ShallowGrupo, ShallowPago, ULID)
+import Html exposing (Html, a, button, div, i, p, strong, text)
+import Html.Attributes exposing (class, style, type_)
+import Html.Events exposing (onClick)
 import Http
-import Json.Decode
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Moneda as Moneda
@@ -22,10 +22,8 @@ import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
-import Utils.Day exposing (Day)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
-import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
 
@@ -35,7 +33,7 @@ page shared route =
         { init = \() -> init route.params.id shared.store
         , update = update shared.store
         , subscriptions = subscriptions
-        , view = view shared.today shared.store
+        , view = view shared.store shared.userId
         }
         |> Page.withLayout
             (\m ->
@@ -51,11 +49,6 @@ type alias Model =
     , deletingPagoId : Maybe ULID
     , monedaSeleccionada : MonedaSeleccionada
     }
-
-
-type MonedaSeleccionada
-    = MonedaDefaultDelGrupo
-    | MonedaSeleccionadaPorUsuario Moneda
 
 
 init : ULID -> Store -> ( Model, Effect Msg )
@@ -75,11 +68,7 @@ init grupoId store =
 
 
 type Msg
-    = CrearPago Pago
-    | AddedPagoResponse (Result Http.Error Pago)
-    | SaldarTransaccion ULID Pago
-    | SaldadaTransaccionResponse (Result Http.Error Pago)
-    | Navigate Path.Path
+    = Navigate Path.Path
     | DeletePago ULID
     | ConfirmDeletePago ULID
     | CancelDeletePago
@@ -90,55 +79,6 @@ type Msg
 update : Store -> Msg -> Model -> ( Model, Effect Msg )
 update store msg model =
     case msg of
-        AddedPagoResponse (Ok _) ->
-            ( model
-            , Effect.batch
-                [ Store.refreshResumen model.grupoId
-                , Store.refreshGrupo model.grupoId
-                , Store.refreshPagos model.grupoId
-                , Toasts.pushToast Toasts.ToastSuccess "Se completó el pago"
-                ]
-            )
-
-        AddedPagoResponse (Err _) ->
-            ( model
-            , Toasts.pushToast Toasts.ToastDanger "No se pudo completar el pago"
-            )
-
-        CrearPago pago ->
-            ( model
-            , Effect.sendCmd <|
-                Api.postGrupoByIdPagos
-                    model.grupoId
-                    pago
-                    AddedPagoResponse
-            )
-
-        SaldarTransaccion transaccionId pago ->
-            ( model
-            , Effect.sendCmd <|
-                Api.postGrupoByIdTransaccionescongeladasByTransaccionIdSaldar
-                    model.grupoId
-                    transaccionId
-                    pago
-                    SaldadaTransaccionResponse
-            )
-
-        SaldadaTransaccionResponse (Ok _) ->
-            ( model
-            , Effect.batch
-                [ Store.refreshResumen model.grupoId
-                , Store.refreshGrupo model.grupoId
-                , Store.refreshPagos model.grupoId
-                , Toasts.pushToast Toasts.ToastSuccess "Se completó el pago"
-                ]
-            )
-
-        SaldadaTransaccionResponse (Err _) ->
-            ( model
-            , Toasts.pushToast Toasts.ToastDanger "No se pudo completar el pago"
-            )
-
         Navigate path ->
             ( model, Effect.pushRoutePath path )
 
@@ -181,44 +121,13 @@ update store msg model =
             )
 
 
-pagoFromTransaccion : Day -> Moneda -> Transaccion -> Pago
-pagoFromTransaccion hoy moneda transaction =
-    { pagoId = emptyUlid
-    , isValid = False
-    , fecha = hoy
-    , nombre = "Pago saldado"
-    , moneda = moneda
-    , monto = transaction.monto
-    , pagadores =
-        { id = emptyUlid
-        , tipo =
-            Api.TipoDistribucionMontoEquitativo <|
-                { id = emptyUlid
-                , participantes =
-                    [ transaction.from
-                    ]
-                }
-        }
-    , deudores =
-        { id = emptyUlid
-        , tipo =
-            Api.TipoDistribucionMontoEquitativo <|
-                { id = emptyUlid
-                , participantes =
-                    [ transaction.to
-                    ]
-                }
-        }
-    }
-
-
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
 
 
-view : Day -> Store -> Model -> View Msg
-view hoy store model =
+view : Store -> Maybe String -> Model -> View Msg
+view store userId model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Loading...", body = [] }
@@ -261,7 +170,7 @@ view hoy store model =
                     div [ class "container-fluid py-3" ]
                         [ div [ class "row g-4" ]
                             [ div [ class "col-lg-8" ]
-                                [ viewLeftColumn hoy store model grupo ]
+                                [ viewLeftColumn store userId model grupo ]
                             , div [ class "col-lg-4" ]
                                 [ viewUltimosPagosCard store model grupo ]
                             ]
@@ -301,8 +210,8 @@ view hoy store model =
             }
 
 
-viewLeftColumn : Day -> Store -> Model -> ShallowGrupo -> Html Msg
-viewLeftColumn hoy store model grupo =
+viewLeftColumn : Store -> Maybe String -> Model -> ShallowGrupo -> Html Msg
+viewLeftColumn store userId model grupo =
     case store |> Store.getResumen model.grupoId of
         NotAsked ->
             div [ class "text-muted" ] [ text "Cargando..." ]
@@ -333,12 +242,7 @@ viewLeftColumn hoy store model grupo =
 
                     monedaSeleccionada : Moneda
                     monedaSeleccionada =
-                        case model.monedaSeleccionada of
-                            MonedaDefaultDelGrupo ->
-                                grupo.monedaPorDefecto
-
-                            MonedaSeleccionadaPorUsuario moneda ->
-                                moneda
+                        MonedaSelector.resolve model.monedaSeleccionada grupo.monedaPorDefecto
 
                     netosForActive : Maybe (Netos Api.Monto)
                     netosForActive =
@@ -346,11 +250,6 @@ viewLeftColumn hoy store model grupo =
                             |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
                             |> List.head
                             |> Maybe.map Tuple.second
-
-                    transForActive : PorMoneda (List Transaccion)
-                    transForActive =
-                        resumen.transaccionesParaSaldar
-                            |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
                 in
                 div []
                     [ if resumen.cantidadPagosInvalidos > 0 then
@@ -377,17 +276,37 @@ viewLeftColumn hoy store model grupo =
                         text ""
                     , div [ class "mb-4" ]
                         [ div [ class "fw-bold mb-3" ] [ text "Netos" ]
-                        , div [ class "row g-3" ]
-                            [ div [ class "col-4" ] [ div [ class "card bg-secondary-subtle", style "height" "100px" ] [] ]
-                            , div [ class "col-4" ] [ div [ class "card bg-secondary-subtle", style "height" "100px" ] [] ]
-                            , div [ class "col-4" ] [ div [ class "card bg-secondary-subtle", style "height" "100px" ] [] ]
-                            ]
+                        , case netosForActive of
+                            Just netos ->
+                                div [ class "row g-3" ]
+                                    [ div [ class "col-4" ]
+                                        [ viewNetoCard "Mayor pagador"
+                                            (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.reverse |> List.head)
+                                            grupo
+                                            grupo.monedaPorDefecto
+                                            monedaSeleccionada
+                                            False
+                                        ]
+                                    , div [ class "col-4" ]
+                                        [ viewNetoCard "Mayor deudor"
+                                            (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.head)
+                                            grupo
+                                            grupo.monedaPorDefecto
+                                            monedaSeleccionada
+                                            False
+                                        ]
+                                    , div [ class "col-4" ]
+                                        [ viewTuEstadoCard userId netos grupo grupo.monedaPorDefecto monedaSeleccionada ]
+                                    ]
+
+                            Nothing ->
+                                text ""
                         ]
                     , Bs.card [ class "mb-4" ]
                         [ Bs.cardHeader [] [ text "Estado del grupo" ]
                         , Bs.cardBody []
                             [ if List.length monedasDisponibles > 1 then
-                                viewMonedaSelector monedasDisponibles monedaSeleccionada
+                                MonedaSelector.view monedasDisponibles monedaSeleccionada SelectMoneda
 
                               else
                                 text ""
@@ -399,7 +318,6 @@ viewLeftColumn hoy store model grupo =
                                     text ""
                             ]
                         ]
-                    , viewTransferencias hoy grupo.monedaPorDefecto grupo { resumen | transaccionesParaSaldar = transForActive }
                     ]
 
 
@@ -501,71 +419,77 @@ mesAbreviado date =
             ""
 
 
-viewMonedaSelector : List Moneda -> Moneda -> Html Msg
-viewMonedaSelector monedas monedaSeleccionada =
-    select
-        [ class "form-select form-select-sm mb-3"
-        , on "change"
-            (Json.Decode.at [ "target", "value" ] jsonDecMoneda
-                |> Json.Decode.map SelectMoneda
-            )
+viewNetoCard : String -> Maybe ( String, Api.Monto ) -> GrupoLike g -> Moneda -> Moneda -> Bool -> Html Msg
+viewNetoCard label maybeEntry grupo monedaPorDefecto monedaSeleccionada isCurrentUser =
+    div
+        [ class "card h-100"
+        , if isCurrentUser then
+            style "border-color" "var(--bs-primary)"
+
+          else
+            style "" ""
         ]
-        (monedas
-            |> List.map
-                (\m ->
-                    option
-                        [ value (Moneda.toString m)
-                        , selected (monedaSeleccionada == m)
+        [ div [ class "card-body d-flex flex-column justify-content-between p-3" ]
+            [ div [ class "text-muted text-uppercase fw-semibold", style "font-size" "0.65rem", style "letter-spacing" "0.05em" ] [ text label ]
+            , case maybeEntry of
+                Just ( participanteId, monto ) ->
+                    div []
+                        [ div [ class "fw-semibold text-truncate" ]
+                            [ text (lookupNombreParticipante grupo participanteId) ]
+                        , div
+                            [ class "fw-bold"
+                            , if monto.valor < 0 then
+                                class "text-danger"
+
+                              else
+                                class "text-success"
+                            ]
+                            [ text (Moneda.simbolo monedaPorDefecto monedaSeleccionada ++ " " ++ Monto.toString monto) ]
                         ]
-                        [ text (Moneda.nombre m) ]
-                )
-        )
+
+                Nothing ->
+                    text ""
+            ]
+        ]
 
 
-viewTransferencias : Day -> Moneda -> GrupoLike g -> ResumenGrupo -> Html Msg
-viewTransferencias hoy monedaPorDefecto grupo resumen =
-    if List.isEmpty resumen.transaccionesParaSaldar then
-        Bs.alert Bs.AlertSuccess
-            [ class "text-center" ]
-            [ text "¡No hay deudas pendientes! Todos están al día." ]
-
-    else
-        div []
-            (resumen.transaccionesParaSaldar
-                |> Moneda.perEach
-                    (\moneda ts ->
-                        ts
-                            |> List.map
-                                (\t ->
-                                    div
-                                        [ style "display" "grid"
-                                        , style "grid-template-columns" "1fr auto 1fr"
-                                        , style "align-items" "center"
-                                        , style "margin-bottom" "0.5rem"
-                                        ]
-                                        [ div [ class "text-end" ]
-                                            [ div [] [ text <| lookupNombreParticipante grupo t.from ]
-                                            , div [ class "text-danger small" ]
-                                                [ text <| Moneda.simbolo monedaPorDefecto moneda
-                                                , text " "
-                                                , text <| Monto.toString t.monto
-                                                ]
-                                            ]
-                                        , Bs.btn Bs.Transparent
-                                            [ Attr.title "Crear pago para saldar esta deuda"
-                                            , onClick <|
-                                                case t.id of
-                                                    Just transaccionId ->
-                                                        SaldarTransaccion transaccionId (pagoFromTransaccion hoy moneda t)
-
-                                                    Nothing ->
-                                                        CrearPago (pagoFromTransaccion hoy moneda t)
-                                            , style "margin" "0 0.5rem"
-                                            ]
-                                            [ i [ class "bi bi-arrow-right" ] [] ]
-                                        , span [] [ text <| lookupNombreParticipante grupo t.to ]
-                                        ]
-                                )
+viewTuEstadoCard : Maybe String -> Api.Netos Api.Monto -> GrupoLike g -> Moneda -> Moneda -> Html Msg
+viewTuEstadoCard userId netos grupo monedaPorDefecto monedaSeleccionada =
+    let
+        maybeEntry =
+            userId
+                |> Maybe.andThen
+                    (\uid ->
+                        netos |> List.filter (\( id, _ ) -> id == uid) |> List.head
                     )
-                |> List.concat
-            )
+    in
+    div [ class "card h-100", style "border-color" "var(--bs-primary)" ]
+        [ div [ class "card-body d-flex flex-column justify-content-between p-3" ]
+            [ div [ class "text-muted text-uppercase fw-semibold", style "font-size" "0.65rem", style "letter-spacing" "0.05em" ] [ text "Tu estado actual" ]
+            , case maybeEntry of
+                Just ( _, monto ) ->
+                    div []
+                        [ div
+                            [ class "fw-bold fs-5"
+                            , if monto.valor < 0 then
+                                class "text-danger"
+
+                              else
+                                class "text-success"
+                            ]
+                            [ text (Moneda.simbolo monedaPorDefecto monedaSeleccionada ++ " " ++ Monto.toString monto) ]
+                        , if monto.valor < 0 then
+                            a
+                                [ Path.href <| Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id }
+                                , class "small text-muted"
+                                ]
+                                [ text "Saldar deudas" ]
+
+                          else
+                            text ""
+                        ]
+
+                Nothing ->
+                    div [ class "text-muted small" ] [ text "Seleccioná tu usuario" ]
+            ]
+        ]
