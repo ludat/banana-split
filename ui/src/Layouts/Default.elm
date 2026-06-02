@@ -193,7 +193,7 @@ view props currentPath activeUser toasts lastReadChangelog now { toContentMsg, m
             viewOffcanvas model props.navBarContent
         , Html.map toContentMsg <|
             viewChangelogModal model.changelogOpen recentEntries
-        , div [ Css.toasts_container ]
+        , div [ class "position-fixed bottom-0 start-50 translate-middle-x p-3" ]
             [ Html.map toContentMsg <|
                 Toasts.view Toasts.config renderToast ToastMsg toasts
             ]
@@ -498,15 +498,19 @@ viewGlobalUserSelector activeUser grupo =
 
 renderToast : Toast -> Html Msg
 renderToast toast =
-    div [ Css.toast ]
-        [ Bs.alert
-            (case toast.level of
+    let
+        bgClass =
+            case toast.level of
                 ToastSuccess ->
-                    Bs.AlertSuccess
+                    "text-bg-success"
 
                 ToastDanger ->
-                    Bs.AlertDanger
-            )
-            []
-            [ text toast.content ]
+                    "text-bg-danger"
+    in
+    div
+        [ class ("toast show align-items-center border-0 " ++ bgClass)
+        , Attr.attribute "role" "alert"
+        , Attr.attribute "aria-live" "assertive"
+        , Attr.attribute "aria-atomic" "true"
         ]
+        [ div [ class "toast-body" ] [ text toast.content ] ]
