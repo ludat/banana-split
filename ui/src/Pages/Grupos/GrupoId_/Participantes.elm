@@ -1,15 +1,16 @@
 module Pages.Grupos.GrupoId_.Participantes exposing (Model, Msg, page)
 
 import Browser.Dom
+import Components.Bootstrap as Bs
 import Components.NavBar as NavBar
-import Components.Ui5 as Ui5
 import Effect exposing (Effect)
-import Form exposing (Form)
+import Form exposing (Form, Msg(..))
+import Form.Field
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
 import Generated.Api as Api exposing (Participante, ParticipanteAddParams, ParticipanteId, ULID)
-import Html exposing (div, text)
-import Html.Attributes as Attr
-import Html.Events exposing (on, onClick)
+import Html exposing (Html, div, input, label, text)
+import Html.Attributes as Attr exposing (class, classList, for, id, type_, value)
+import Html.Events exposing (on, onClick, onInput, onSubmit)
 import Http
 import Json.Decode
 import Layouts
@@ -20,7 +21,7 @@ import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Shared
 import Task
-import Utils.Form exposing (CustomFormError)
+import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import Utils.Toasts exposing (pushToast)
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
@@ -167,7 +168,7 @@ view store model =
         Loading ->
             { title = "Cargando"
             , body =
-                [ div [] [ Ui5.text "Cargando..." ]
+                [ div [ class "container py-4 text-muted" ] [ text "Cargando..." ]
                 ]
             }
 
@@ -179,37 +180,64 @@ view store model =
         Success grupo ->
             { title = grupo.nombre
             , body =
-                [ Ui5.list
-                    [ Attr.attribute "header-text" "Participantes"
-                    , Attr.attribute "selection-mode" "Delete"
-                    , on "item-delete"
-                        (Json.Decode.at [ "detail", "item", "dataset", "id" ] Json.Decode.string
-                            |> Json.Decode.map DeleteParticipante
-                        )
-                    ]
-                    (grupo.participantes
-                        |> List.map
-                            (\p ->
-                                Ui5.li
-                                    [ Attr.attribute "data-id" p.id ]
-                                    [ text p.nombre ]
-                            )
-                    )
-                , Ui5.form ParticipanteForm
-                    [ Attr.attribute "header-text" "Agregar Participante"
-                    , Attr.attribute "labelSpan" "S12 M12 L12 XL12"
-                    ]
-                    [ Html.map ParticipanteForm <|
-                        Ui5.textFormItem (Form.getFieldAsString "nombre" model.participanteForm)
-                            { placeholder = Just "Juan"
-                            , label = "Nombre"
-                            , required = True
-                            }
-                    , Ui5.button
-                        [ Attr.attribute "design" "Emphasized"
-                        , onClick <| ParticipanteForm Form.Submit
+                [ div [ class "container py-4" ]
+                    [ div [ class "row justify-content-center" ]
+                        [ div [ class "col-lg-6" ]
+                            [ div [ class "card mb-4" ]
+                                [ div [ class "card-header" ] [ text "Participantes" ]
+                                , Bs.listGroup [ class "list-group-flush" ]
+                                    (grupo.participantes
+                                        |> List.map
+                                            (\p ->
+                                                Bs.listGroupItem [ class "d-flex justify-content-between align-items-center" ]
+                                                    [ text p.nombre
+                                                    , Bs.btn Bs.Danger
+                                                        [ onClick (DeleteParticipante p.id) ]
+                                                        [ text "Borrar" ]
+                                                    ]
+                                            )
+                                    )
+                                ]
+                            , Html.form
+                                [ onSubmit (ParticipanteForm Form.Submit)
+                                , class "card"
+                                ]
+                                [ div [ class "card-header" ] [ text "Agregar Participante" ]
+                                , div [ class "card-body" ]
+                                    [ Html.map ParticipanteForm <|
+                                        viewNombreField (Form.getFieldAsString "nombre" model.participanteForm)
+                                    , Bs.btn Bs.Primary
+                                        [ onClick (ParticipanteForm Form.Submit) ]
+                                        [ text "Agregar" ]
+                                    ]
+                                ]
+                            ]
                         ]
-                        [ text "Agregar" ]
                     ]
                 ]
             }
+
+
+viewNombreField : Form.FieldState CustomFormError String -> Html Form.Msg
+viewNombreField nombreField =
+    div [ class "mb-3" ]
+        [ label [ for nombreField.path, class "form-label" ] [ text "Nombre" ]
+        , input
+            [ type_ "text"
+            , id nombreField.path
+            , class "form-control"
+            , classList [ ( "is-invalid", hasErrorField nombreField ) ]
+            , value (Maybe.withDefault "" nombreField.value)
+            , Attr.placeholder "Juan"
+            , onInput (\v -> Input nombreField.path Form.Text (Form.Field.String v))
+            , on "focus" (Json.Decode.succeed (Focus nombreField.path))
+            , on "blur" (Json.Decode.succeed (Blur nombreField.path))
+            , Attr.required True
+            ]
+            []
+        , if hasErrorField nombreField then
+            div [ class "invalid-feedback" ] [ errorForField nombreField ]
+
+          else
+            text ""
+        ]
