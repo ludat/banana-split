@@ -708,7 +708,7 @@ addItemsToForm prefix items form validation =
                         [ Form.Append (prefix ++ ".items")
                         , Form.Input (itemPrefix ++ ".id") Form.Text (FormField.String emptyUlid)
                         , Form.Input (itemPrefix ++ ".nombre") Form.Text (FormField.String item.nombre)
-                        , Form.Input (itemPrefix ++ ".monto") Form.Text (FormField.String (Monto.toString item.monto))
+                        , Form.Input (itemPrefix ++ ".monto") Form.Text (FormField.String (Monto.toRawString item.monto))
                         , Form.Input (itemPrefix ++ ".cantidad") Form.Text (FormField.String (String.fromInt item.cantidad))
                         ]
                     )
@@ -778,7 +778,7 @@ especificosToForm especificos =
                     FormField.group
                         [ Form.setString "id" m.id
                         , Form.setString "participante" <| m.participante
-                        , Form.setString "monto" <| Monto.toString m.monto
+                        , Form.setString "monto" <| Monto.toRawString m.monto
                         ]
                 )
         )
@@ -849,7 +849,7 @@ repartijaToForm : Repartija -> List ( String, FormField.Field )
 repartijaToForm repartija =
     [ Form.setString "repartija_id" repartija.id
     , Form.setString "tipo" "repartija"
-    , Form.setString "extra" (Monto.toString repartija.extra)
+    , Form.setString "extra" (Monto.toRawString repartija.extra)
     , Form.setString "distribucionDeSobras"
         (distribucionDeSobrasToString repartija.distribucionDeSobras)
     , Form.setList "items"
@@ -858,7 +858,7 @@ repartijaToForm repartija =
                 (\item ->
                     FormField.group
                         [ Form.setString "id" <| item.id
-                        , Form.setString "monto" <| Monto.toString item.monto
+                        , Form.setString "monto" <| Monto.toRawString item.monto
                         , Form.setString "cantidad" <| String.fromInt item.cantidad
                         , Form.setString "nombre" item.nombre
                         ]
