@@ -1,4 +1,4 @@
-module Utils.Day exposing (Day, jsonDecDay, jsonEncDay, validateDay)
+module Utils.Day exposing (Day, jsonDecDay, jsonEncDay, mesAbreviado, validateDay)
 
 import Date exposing (Date)
 import Form.Validate as V exposing (Validation)
@@ -42,3 +42,46 @@ jsonDecDay =
 jsonEncDay : Day -> Json.Encode.Value
 jsonEncDay date =
     Json.Encode.string (Date.toIsoString date)
+
+
+mesAbreviado : Date -> String
+mesAbreviado date =
+    case Date.monthNumber date of
+        1 ->
+            "ENE"
+
+        2 ->
+            "FEB"
+
+        3 ->
+            "MAR"
+
+        4 ->
+            "ABR"
+
+        5 ->
+            "MAY"
+
+        6 ->
+            "JUN"
+
+        7 ->
+            "JUL"
+
+        8 ->
+            "AGO"
+
+        9 ->
+            "SEP"
+
+        10 ->
+            "OCT"
+
+        11 ->
+            "NOV"
+
+        12 ->
+            "DIC"
+
+        _ ->
+            ""

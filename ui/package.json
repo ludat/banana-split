@@ -29,10 +29,9 @@
   },
   "dependencies": {
     "@ryannhg/css-in-elm": "^1.0.0",
-    "@ui5/webcomponents": "^2.19.1",
-    "@ui5/webcomponents-fiori": "^2.19.1",
-    "@ui5/webcomponents-icons": "^2.19.1",
     "autonumeric": "^4.10.10",
+    "bootstrap": "^5.3.8",
+    "bootstrap-icons": "^1.13.1",
     "concurrently": "^9.2.0",
     "elm": "0.19.1-6",
     "elm-format": "^0.8.8",

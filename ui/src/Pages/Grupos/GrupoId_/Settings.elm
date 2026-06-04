@@ -1,16 +1,18 @@
 module Pages.Grupos.GrupoId_.Settings exposing (Model, Msg, page)
 
+import Components.Bootstrap as Bs
 import Components.NavBar as NavBar
-import Components.Ui5 as Ui5
 import Effect exposing (Effect)
-import Form exposing (Form)
+import Form exposing (Form, Msg(..))
+import Form.Field
 import Form.Init as Form
 import Form.Validate as V exposing (Validation)
 import Generated.Api as Api exposing (ShallowGrupo, ULID, UpdateGrupoParams)
-import Html exposing (Html, div, text)
-import Html.Attributes as Attr exposing (disabled, style)
-import Html.Events exposing (onClick)
+import Html exposing (Html, button, div, input, label, option, select, text)
+import Html.Attributes as Attr exposing (class, classList, disabled, for, id, selected, type_, value)
+import Html.Events exposing (on, onClick, onInput, onSubmit)
 import Http
+import Json.Decode
 import Layouts
 import Models.Moneda as Moneda
 import Models.Store as Store
@@ -21,7 +23,7 @@ import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Shared
 import Task
-import Utils.Form exposing (CustomFormError)
+import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import Utils.Http exposing (viewHttpError)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
@@ -37,10 +39,9 @@ page shared route =
         , view = view shared.store
         }
         |> Page.withLayout
-            (\m ->
+            (\_ ->
                 Layouts.Default
                     { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    , grupo = Store.getGrupo m.grupoId shared.store
                     }
             )
 
@@ -216,27 +217,27 @@ view store model =
         Loading ->
             { title = "Cargando"
             , body =
-                [ div [] [ Ui5.text "Cargando..." ]
+                [ div [ class "container py-4 text-muted" ] [ text "Cargando..." ]
                 ]
             }
 
         Failure e ->
             { title = "Fallo"
             , body =
-                [ viewHttpError e
+                [ div [ class "container py-4" ] [ viewHttpError e ]
                 ]
             }
 
         Success grupo ->
             { title = grupo.nombre ++ " - Configuración"
             , body =
-                [ div
-                    [ style "max-width" "var(--sapBreakpoint_L_Min)"
-                    , style "margin-left" "auto"
-                    , style "margin-right" "auto"
-                    ]
-                    [ viewAjustesSection grupo model.ajustesForm
-                    , viewFreezeSection grupo
+                [ div [ class "container py-4" ]
+                    [ div [ class "row justify-content-center" ]
+                        [ div [ class "col-lg-8" ]
+                            [ viewAjustesSection grupo model.ajustesForm
+                            , viewFreezeSection grupo
+                            ]
+                        ]
                     ]
                 ]
             }
@@ -254,62 +255,112 @@ viewAjustesSection currentGrupo form =
         monedaField =
             Form.getFieldAsString "moneda" form
     in
-    Ui5.form (always <| AjustesForm Form.Submit)
-        [ Attr.attribute "label-span" "S12 M12 L12 XL12"
-        , style "margin-bottom" "2rem"
+    Html.form
+        [ onSubmit (AjustesForm Form.Submit)
+        , class "card mb-4"
         ]
-        [ Ui5.title [ Attr.attribute "level" "H4", style "margin-bottom" "1rem" ] [ text "Ajustes generales" ]
-        , Html.map AjustesForm <|
-            Ui5.textFormItem nombreField
-                { label = "Nombre"
-                , placeholder = Just "Mi grupo"
-                , required = True
-                }
-        , Html.map AjustesForm <|
-            Ui5.formSelectItem monedaField
-                { label = "Moneda por defecto"
-                , required = True
-                , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m ))
-                }
-        , Ui5.button
-            [ Attr.attribute "design" "Emphasized"
-            , disabled (not dirty || Form.getOutput form == Nothing)
-            , onClick (AjustesForm Form.Submit)
+        [ div [ class "card-header" ] [ text "Ajustes generales" ]
+        , div [ class "card-body" ]
+            [ Html.map AjustesForm <|
+                viewTextFormItem "Nombre" True nombreField
+            , Html.map AjustesForm <|
+                viewSelectFormItem "Moneda por defecto"
+                    True
+                    (Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m )))
+                    monedaField
+            , Bs.btn Bs.Primary
+                [ disabled (not dirty || Form.getOutput form == Nothing)
+                , onClick (AjustesForm Form.Submit)
+                ]
+                [ text "Guardar" ]
             ]
-            [ text "Guardar" ]
         ]
 
 
 viewFreezeSection : ShallowGrupo -> Html Msg
 viewFreezeSection grupo =
-    Ui5.formLayout []
-        [ Ui5.title [ Attr.attribute "level" "H4", style "margin-bottom" "1rem" ] [ text "Congelar grupo" ]
-        , div [ style "margin-bottom" "1rem" ]
-            [ Ui5.text <|
-                if grupo.isFrozen then
-                    "Este grupo está congelado. Las deudas están fijas y no se pueden agregar, editar ni eliminar pagos."
+    div [ class "card" ]
+        [ div [ class "card-header" ] [ text "Congelar grupo" ]
+        , div [ class "card-body" ]
+            [ div [ class "mb-3" ]
+                [ text <|
+                    if grupo.isFrozen then
+                        "Este grupo está congelado. Las deudas están fijas y no se pueden agregar, editar ni eliminar pagos."
 
-                else
-                    "Congelar el grupo fija las deudas actuales. No se podrán agregar, editar ni eliminar pagos mientras esté congelado."
+                    else
+                        "Congelar el grupo fija las deudas actuales. No se podrán agregar, editar ni eliminar pagos mientras esté congelado."
+                ]
+            , viewFreezeButton grupo
             ]
-        , viewFreezeButton grupo
         ]
 
 
 viewFreezeButton : ShallowGrupo -> Html Msg
 viewFreezeButton grupo =
     if grupo.isFrozen then
-        Ui5.button
-            [ Attr.attribute "design" "Default"
-            , Attr.attribute "icon" "unlocked"
+        button
+            [ type_ "button"
+            , class "btn btn-outline-secondary"
             , onClick UnfreezeGrupo
             ]
             [ text "Descongelar" ]
 
     else
-        Ui5.button
-            [ Attr.attribute "design" "Emphasized"
-            , Attr.attribute "icon" "locked"
-            , onClick FreezeGrupo
-            ]
+        Bs.btn Bs.Primary
+            [ onClick FreezeGrupo ]
             [ text "Congelar" ]
+
+
+viewTextFormItem : String -> Bool -> Form.FieldState CustomFormError String -> Html Form.Msg
+viewTextFormItem labelText isRequired field =
+    div [ class "mb-3" ]
+        [ label [ for field.path, class "form-label" ] [ text labelText ]
+        , input
+            [ type_ "text"
+            , id field.path
+            , class "form-control"
+            , classList [ ( "is-invalid", hasErrorField field ) ]
+            , value (Maybe.withDefault "" field.value)
+            , onInput (\v -> Input field.path Form.Text (Form.Field.String v))
+            , on "focus" (Json.Decode.succeed (Focus field.path))
+            , on "blur" (Json.Decode.succeed (Blur field.path))
+            , Attr.required isRequired
+            ]
+            []
+        , if hasErrorField field then
+            div [ class "invalid-feedback" ] [ errorForField field ]
+
+          else
+            text ""
+        ]
+
+
+viewSelectFormItem : String -> Bool -> List ( String, String ) -> Form.FieldState CustomFormError String -> Html Form.Msg
+viewSelectFormItem labelText isRequired options field =
+    div [ class "mb-3" ]
+        [ label [ for field.path, class "form-label" ] [ text labelText ]
+        , select
+            [ id field.path
+            , class "form-select"
+            , classList [ ( "is-invalid", hasErrorField field ) ]
+            , onInput (\v -> Input field.path Form.Select (Form.Field.String v))
+            , on "focus" (Json.Decode.succeed (Focus field.path))
+            , on "blur" (Json.Decode.succeed (Blur field.path))
+            , Attr.required isRequired
+            ]
+            (options
+                |> List.map
+                    (\( val, labelStr ) ->
+                        option
+                            [ value val
+                            , selected (field.value == Just val)
+                            ]
+                            [ text labelStr ]
+                    )
+            )
+        , if hasErrorField field then
+            div [ class "invalid-feedback" ] [ errorForField field ]
+
+          else
+            text ""
+        ]

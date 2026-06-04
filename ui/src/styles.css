@@ -2,6 +2,14 @@
 
 :root {
     --alto-barra: 11px;
+    /* SAP → Bootstrap CSS var aliases (used while UI5 and Bootstrap coexist) */
+    --sapNegativeTextColor: var(--bs-danger);
+    --sapPositiveColor: var(--bs-success);
+    --sapBreakpoint_L_Min: 1024px;
+}
+
+monto-input {
+    display: block;
 }
 
 .barras-precio {
@@ -50,40 +58,4 @@
     transform: translate(-50%, -8px);
     width: 2px;
     z-index: 1;
-}
-
-/*TODO get someone who knows css to review this*/
-.toasts-container {
-    position: fixed;
-    z-index: 9999;
-    bottom: 0;
-    width: 100%;
-
-    ol {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-}
-
-.toast {
-    max-width: 50rem;
-    padding-bottom: 1rem;
-    margin: auto;
-}
-
-ui5-side-navigation-group > ui5-side-navigation-item {
-    padding-left: 1rem;
-}
-
-ui5-side-navigation-item > ui5-side-navigation-sub-item {
-    padding-left: 2rem;
-}
-
-/*@media (max-width: var(--sapBreakpoint_XS_Min)) {*/
-@media (min-width: 600px) {
-    ui5-shellbar > ui5-button {
-        opacity: 0;
-        pointer-events: none;
-    }
 }

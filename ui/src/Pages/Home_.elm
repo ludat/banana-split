@@ -1,20 +1,20 @@
 module Pages.Home_ exposing (Model, Msg, page)
 
-import Components.Ui5 as Ui5
+import Components.Bootstrap as Bs
 import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form, Msg(..))
+import Form.Field
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
 import Generated.Api as Api exposing (CreateGrupoParams)
-import Html exposing (text)
-import Html.Attributes as Attr
+import Html exposing (div, input, label, text)
+import Html.Attributes as Attr exposing (class, classList, for, id, placeholder, required, type_)
 import Html.Events exposing (onClick)
 import Layouts
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
-import Utils.Form exposing (CustomFormError)
+import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import View exposing (View)
 
 
@@ -26,7 +26,7 @@ page _ _ =
         , subscriptions = subscriptions
         , view = view
         }
-        |> Page.withLayout (\_ -> Layouts.Default { navBarContent = Nothing, grupo = NotAsked })
+        |> Page.withLayout (\_ -> Layouts.Default { navBarContent = Nothing })
 
 
 type alias Model =
@@ -120,30 +120,49 @@ view model =
     in
     { title = "Banana split"
     , body =
-        [ Ui5.form UpdateForm
-            [ Attr.attribute "header-text" "Crear grupo"
-            , Attr.attribute "layout" "S1 M1 L1 XL1"
-            , Attr.attribute "label-span" "S12 M12 L12 XL12"
-            ]
-            [ Html.map UpdateForm <|
-                Ui5.textFormItem
-                    nombreField
-                    { required = True
-                    , label = "Nombre"
-                    , placeholder = Just "After del viernes, Vacaciones a Calamuchita"
-                    }
-            , Html.map UpdateForm <|
-                Ui5.textFormItem
-                    participanteField
-                    { required = True
-                    , label = "Participante"
-                    , placeholder = Just "Juan"
-                    }
-            , Ui5.button
-                [ Attr.attribute "design" "Emphasized"
-                , onClick <| UpdateForm Submit
+        [ div [ class "container py-4" ]
+            [ div [ class "row justify-content-center" ]
+                [ div [ class "col-12 col-md-6" ]
+                    [ Bs.card []
+                        [ Bs.cardHeader [] [ text "Crear grupo" ]
+                        , Bs.cardBody []
+                            [ div [ class "mb-3" ]
+                                [ label [ for "nombre", class "form-label" ] [ text "Nombre" ]
+                                , Html.map UpdateForm <|
+                                    input
+                                        [ id "nombre"
+                                        , type_ "text"
+                                        , classList [ ( "form-control", True ), ( "is-invalid", hasErrorField nombreField ) ]
+                                        , placeholder "After del viernes, Vacaciones a Calamuchita"
+                                        , required True
+                                        , Attr.value (Maybe.withDefault "" nombreField.value)
+                                        , Html.Events.onInput (Form.Input nombreField.path Form.Text << Form.Field.String)
+                                        ]
+                                        []
+                                , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField nombreField ]
+                                ]
+                            , div [ class "mb-3" ]
+                                [ label [ for "participante", class "form-label" ] [ text "Participante" ]
+                                , Html.map UpdateForm <|
+                                    input
+                                        [ id "participante"
+                                        , type_ "text"
+                                        , classList [ ( "form-control", True ), ( "is-invalid", hasErrorField participanteField ) ]
+                                        , placeholder "Juan"
+                                        , required True
+                                        , Attr.value (Maybe.withDefault "" participanteField.value)
+                                        , Html.Events.onInput (Form.Input participanteField.path Form.Text << Form.Field.String)
+                                        ]
+                                        []
+                                , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField participanteField ]
+                                ]
+                            , Bs.btn Bs.Primary
+                                [ onClick <| UpdateForm Submit ]
+                                [ text "Crear" ]
+                            ]
+                        ]
+                    ]
                 ]
-                [ text "Crear" ]
             ]
         ]
     }

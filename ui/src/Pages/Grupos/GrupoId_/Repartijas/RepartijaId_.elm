@@ -1,15 +1,13 @@
 module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Model, Msg, page)
 
 import Components.NavBar as NavBar
-import Components.Ui5 as Ui5
 import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Validate as V
-import Generated.Api as Api exposing (ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
-import Html exposing (Html, div, text)
-import Html.Attributes as Attr exposing (id, style)
-import Html.Events exposing (on, onClick)
-import Json.Decode
+import Generated.Api as Api exposing (Repartija, RepartijaClaim, RepartijaItem, ULID)
+import Html exposing (Html, button, div, i, span, text)
+import Html.Attributes as Attr exposing (class, id, style, type_)
+import Html.Events exposing (onClick)
 import Layouts
 import List.Extra exposing (find)
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
@@ -36,10 +34,9 @@ page shared route =
         , view = view shared.userId shared.store
         }
         |> Page.withLayout
-            (\m ->
+            (\_ ->
                 Layouts.Default
                     { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    , grupo = Store.getGrupo m.grupoId shared.store
                     }
             )
 
@@ -52,10 +49,7 @@ type alias Model =
     { grupoId : ULID
     , repartijaId : ULID
     , claimForm : Form CustomFormError RepartijaClaim
-    , participanteClaimsModal : Maybe ParticipanteId
     , pendingItemOperation : Maybe ULID
-    , openPopoverItemId : Maybe ULID
-    , pickSchemeItemId : Maybe ULID
     }
 
 
@@ -64,10 +58,7 @@ init grupoId repartijaId store =
     ( { grupoId = grupoId
       , repartijaId = repartijaId
       , claimForm = Form.initial [] validateClaim
-      , participanteClaimsModal = Nothing
       , pendingItemOperation = Nothing
-      , openPopoverItemId = Nothing
-      , pickSchemeItemId = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -105,12 +96,6 @@ type Msg
     | LeaveCurrentClaim RepartijaClaim
     | CreateRepartijaClaimResponded (WebData RepartijaClaim)
     | DeleteRepartijaClaimResponded ULID (WebData String)
-    | OpenParticipanteClaimsPopup ParticipanteId
-    | CloseParticipanteClaimsPopup
-    | ToggleItemPopover ULID
-    | CloseItemPopover
-    | TogglePickScheme ULID
-    | ClosePickScheme
 
 
 update : Maybe ULID -> Store -> Msg -> Model -> ( Model, Effect Msg )
@@ -166,50 +151,6 @@ update maybeParticipanteId store msg model =
                     , Effect.batch [ Store.refreshRepartija model.repartijaId ]
                     )
 
-        OpenParticipanteClaimsPopup participanteId ->
-            ( { model | participanteClaimsModal = Just participanteId }
-            , Effect.none
-            )
-
-        CloseParticipanteClaimsPopup ->
-            ( { model | participanteClaimsModal = Nothing }
-            , Effect.none
-            )
-
-        ToggleItemPopover itemId ->
-            ( { model
-                | openPopoverItemId =
-                    if model.openPopoverItemId == Just itemId then
-                        Nothing
-
-                    else
-                        Just itemId
-              }
-            , Effect.none
-            )
-
-        CloseItemPopover ->
-            ( { model | openPopoverItemId = Nothing }
-            , Effect.none
-            )
-
-        TogglePickScheme itemId ->
-            ( { model
-                | pickSchemeItemId =
-                    if model.pickSchemeItemId == Just itemId then
-                        Nothing
-
-                    else
-                        Just itemId
-              }
-            , Effect.none
-            )
-
-        ClosePickScheme ->
-            ( { model | pickSchemeItemId = Nothing }
-            , Effect.none
-            )
-
         ChangeCurrentClaim item deltaCantidad ->
             case store |> Store.getRepartija model.repartijaId |> RemoteData.toMaybe of
                 Just repartijaPage ->
@@ -237,7 +178,7 @@ update maybeParticipanteId store msg model =
                                                 |> (\x -> x + deltaCantidad)
                                                 |> Basics.max 0
                                     in
-                                    ( { model | pendingItemOperation = Just item.id, pickSchemeItemId = Nothing }
+                                    ( { model | pendingItemOperation = Just item.id }
                                     , if newCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
@@ -255,7 +196,7 @@ update maybeParticipanteId store msg model =
                                     )
 
                                 Nothing ->
-                                    ( { model | pendingItemOperation = Just item.id, pickSchemeItemId = Nothing }
+                                    ( { model | pendingItemOperation = Just item.id }
                                     , if deltaCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
@@ -279,7 +220,7 @@ update maybeParticipanteId store msg model =
         JoinCurrentClaim item ->
             case maybeParticipanteId of
                 Just participanteId ->
-                    ( { model | pendingItemOperation = Just item.id, pickSchemeItemId = Nothing }
+                    ( { model | pendingItemOperation = Just item.id }
                     , Effect.sendCmd <|
                         Api.putRepartijasByRepartijaId model.repartijaId
                             { id = emptyUlid
@@ -330,21 +271,14 @@ view userId store model =
             { title = grupo.nombre ++ ": " ++ repartija.nombre
             , body =
                 [ viewParticipantes grupo repartija
-                , viewRepartijaItems userId grupo repartija model.openPopoverItemId model.pickSchemeItemId
-                , viewParticipanteClaimsModal model grupo repartija
-
-                -- , button
-                --     [ class "button is-primary"
-                --     , onClick CreatePago
-                --     ]
-                --     [ text "Crear Pago" ]
+                , viewRepartijaItems userId grupo repartija
                 ]
             }
 
         ( Failure e1, Failure e2 ) ->
             { title = ""
             , body =
-                [ Ui5.text "falle"
+                [ text "falle"
                 , viewHttpError e1
                 , viewHttpError e2
                 ]
@@ -353,7 +287,7 @@ view userId store model =
         ( Failure e, _ ) ->
             { title = ""
             , body =
-                [ Ui5.text "falle"
+                [ text "falle"
                 , viewHttpError e
                 ]
             }
@@ -361,7 +295,7 @@ view userId store model =
         ( _, Failure e ) ->
             { title = ""
             , body =
-                [ Ui5.text "falle"
+                [ text "falle"
                 , viewHttpError e
                 ]
             }
@@ -369,7 +303,7 @@ view userId store model =
         _ ->
             { title = ""
             , body =
-                [ Ui5.text "cargando" ]
+                [ text "cargando" ]
             }
 
 
@@ -378,75 +312,115 @@ viewParticipantes grupo repartija =
     let
         participantesConClaims =
             repartija.claims
-                |> List.map (\claim -> claim.participante)
+                |> List.map .participante
                 |> Set.fromList
+
+        lookupItemName : ULID -> String
+        lookupItemName itemId =
+            repartija.items
+                |> List.filter (\item -> item.id == itemId)
+                |> List.head
+                |> Maybe.map .nombre
+                |> Maybe.withDefault "Item desconocido"
     in
-    div []
-        [ div [ style "display" "flex", style "gap" "0.5rem", style "flex-wrap" "wrap", style "margin" "1.25rem 0" ]
-            (grupo.participantes
-                |> List.map
-                    (\participante ->
-                        Ui5.button
-                            [ Attr.attribute "design"
-                                (if Set.member participante.id participantesConClaims then
-                                    "Positive"
+    div [ class "d-flex flex-wrap gap-2 my-3" ]
+        (grupo.participantes
+            |> List.map
+                (\participante ->
+                    let
+                        variantClass =
+                            if Set.member participante.id participantesConClaims then
+                                "btn-success"
 
-                                 else
-                                    "Negative"
-                                )
+                            else
+                                "btn-outline-secondary"
+
+                        claims =
+                            repartija.claims
+                                |> List.filter (\c -> c.participante == participante.id)
+
+                        menuItems =
+                            if List.isEmpty claims then
+                                [ Html.li []
+                                    [ span [ class "dropdown-item-text text-muted small" ] [ text "Sin asignaciones" ] ]
+                                ]
+
+                            else
+                                claims
+                                    |> List.map
+                                        (\claim ->
+                                            Html.li []
+                                                [ div [ class "dropdown-item-text d-flex justify-content-between gap-3" ]
+                                                    [ span [] [ text <| lookupItemName claim.itemId ]
+                                                    , span [ class "text-muted small" ]
+                                                        [ text
+                                                            (claim.cantidad
+                                                                |> Maybe.map (\c -> String.fromInt c ++ " unidad")
+                                                                |> Maybe.withDefault "Equitativo"
+                                                            )
+                                                        ]
+                                                    ]
+                                                ]
+                                        )
+                    in
+                    div [ class "dropdown" ]
+                        [ button
+                            [ type_ "button"
+                            , class ("btn dropdown-toggle " ++ variantClass)
                             , id ("participante-btn-" ++ participante.id)
-                            , onClick <| OpenParticipanteClaimsPopup participante.id
+                            , Attr.attribute "data-bs-toggle" "dropdown"
+                            , Attr.attribute "aria-expanded" "false"
                             ]
-                            [ text participante.nombre
-                            ]
-                    )
-            )
-        ]
-
-
-viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Maybe ULID -> Maybe ULID -> Html Msg
-viewRepartijaItems userId grupo repartija openPopoverItemId pickSchemeItemId =
-    Ui5.table
-        [ Attr.attribute "alternate-row-colors" ""
-        ]
-        (Ui5.tableHeaderRow
-            [ Ui5.slot "headerRow" ]
-            [ Ui5.tableHeaderCell [ Attr.attribute "width" "auto", Attr.attribute "min-width" "12rem" ] [ text "Descripcion" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", Attr.attribute "min-width" "10rem" ] [ text "Monto total" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", Attr.attribute "min-width" "8rem" ] [ text "Cantidad" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "Center", Attr.attribute "min-width" "14rem" ] [ text "Repartido" ]
-            , Ui5.tableHeaderCell [ Attr.attribute "horizontal-align" "End", Attr.attribute "width" "8rem" ] [ text "" ]
-            ]
-            :: (repartija.items
-                    |> List.map (\item -> viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId)
-               )
-            ++ [ Ui5.tableRow
-                    []
-                    [ Ui5.tableCell [] [ text "Propina" ]
-                    , Ui5.tableCell [] [ text "$", text <| Monto.toString repartija.extra ]
-                    , Ui5.tableCell [] []
-                    , Ui5.tableCell [] []
-                    , Ui5.tableCell [] []
-                    ]
-               , Ui5.tableRow
-                    []
-                    [ Ui5.tableCell [] [ text "Total" ]
-                    , Ui5.tableCell
-                        []
-                        [ text "$"
-                        , repartija.items
-                            |> List.map .monto
-                            |> List.foldl Monto.add Monto.zero
-                            |> Monto.add repartija.extra
-                            |> Monto.toString
-                            |> text
+                            [ text participante.nombre ]
+                        , Html.ul [ class "dropdown-menu shadow", style "min-width" "16rem" ] menuItems
                         ]
-                    , Ui5.tableCell [] []
-                    , Ui5.tableCell [] []
-                    , Ui5.tableCell [] []
-                    ]
-               ]
+                )
         )
+
+
+viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Html Msg
+viewRepartijaItems userId grupo repartija =
+    div [ class "table-responsive" ]
+        [ Html.table [ class "table table-striped align-middle" ]
+            [ Html.thead []
+                [ Html.tr []
+                    [ Html.th [ style "min-width" "12rem" ] [ text "Descripcion" ]
+                    , Html.th [ class "text-end", style "min-width" "10rem" ] [ text "Monto total" ]
+                    , Html.th [ class "text-end", style "min-width" "8rem" ] [ text "Cantidad" ]
+                    , Html.th [ class "text-center", style "min-width" "14rem" ] [ text "Repartido" ]
+                    , Html.th [ class "text-end", style "width" "8rem" ] []
+                    ]
+                ]
+            , Html.tbody []
+                ((repartija.items
+                    |> List.map (\item -> viewClaimsLine userId grupo repartija item)
+                 )
+                    ++ [ Html.tr []
+                            [ Html.td [] [ text "Propina" ]
+                            , Html.td [ class "text-end" ] [ text <| "$" ++ Monto.toString repartija.extra ]
+                            , Html.td [] []
+                            , Html.td [] []
+                            , Html.td [] []
+                            ]
+                       , Html.tr [ class "fw-bold" ]
+                            [ Html.td [] [ text "Total" ]
+                            , Html.td [ class "text-end" ]
+                                [ text "$"
+                                , repartija.items
+                                    |> List.map .monto
+                                    |> List.foldl Monto.add Monto.zero
+                                    |> Monto.add repartija.extra
+                                    |> Monto.toString
+                                    |> text
+                                ]
+                            , Html.td [] []
+                            , Html.td [] []
+                            , Html.td [] []
+                            ]
+                       ]
+                )
+            ]
+        ]
 
 
 interpretClaims : List RepartijaClaim -> ItemClaimsState
@@ -479,8 +453,8 @@ interpretClaims originalClaims =
     List.foldl folder NoClaims originalClaims
 
 
-viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Maybe ULID -> Maybe ULID -> Html Msg
-viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
+viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Html Msg
+viewClaimsLine userId grupo repartija item =
     let
         claimsForItem =
             repartija.claims
@@ -526,87 +500,98 @@ viewClaimsLine userId grupo repartija item openPopoverItemId pickSchemeItemId =
                 ( Just _, SinRepartir, _ ) ->
                     { allHidden | repartir = True }
 
-        pickSchemeButtonId =
-            "pick-scheme-" ++ item.id
-
-        actionButton iconName textLabel maybeId msg isVisible =
+        iconButton iconClass tooltip msg isVisible =
             if isVisible then
-                [ Ui5.button
-                    ([ Attr.attribute "icon" iconName
-                     , Attr.attribute "tooltip" textLabel
-                     , Attr.attribute "design" "Transparent"
-                     , on "click" (Json.Decode.succeed msg)
-                     ]
-                        ++ (case maybeId of
-                                Just id_ ->
-                                    [ id id_ ]
+                [ button
+                    [ type_ "button"
+                    , class "btn btn-sm btn-outline-secondary border-0"
+                    , Attr.title tooltip
+                    , onClick msg
+                    ]
+                    [ i [ class ("bi " ++ iconClass) ] [] ]
+                ]
 
-                                Nothing ->
-                                    []
-                           )
-                    )
-                    []
+            else
+                []
+
+        repartirDropdown =
+            if visibility.repartir then
+                [ div [ class "dropdown d-inline-block" ]
+                    [ button
+                        [ type_ "button"
+                        , class "btn btn-sm btn-outline-secondary border-0"
+                        , Attr.title "Repartir"
+                        , Attr.attribute "data-bs-toggle" "dropdown"
+                        , Attr.attribute "aria-expanded" "false"
+                        ]
+                        [ i [ class "bi bi-pencil" ] [] ]
+                    , viewPickSchemeMenu item
+                    ]
                 ]
 
             else
                 []
     in
-    Ui5.tableRow
-        []
-        [ Ui5.tableCell [] [ text <| item.nombre ]
-        , Ui5.tableCell [] [ text <| "$" ++ Monto.toString item.monto ]
-        , Ui5.tableCell [] [ text <| String.fromInt item.cantidad ]
-        , Ui5.tableCell
-            []
-            [ viewClaimProgressAndDropdown grupo item claimsForItem itemRepartidoState openPopoverItemId
-            , Ui5.responsivePopover
-                ([ Attr.attribute "opener" pickSchemeButtonId
-                 , Attr.attribute "placement" "Bottom"
-                 , on "close" (Json.Decode.succeed ClosePickScheme)
-                 ]
-                    ++ (if pickSchemeItemId == Just item.id then
-                            [ Attr.attribute "open" "" ]
+    Html.tr []
+        [ Html.td [] [ text item.nombre ]
+        , Html.td [ class "text-end" ] [ text <| "$" ++ Monto.toString item.monto ]
+        , Html.td [ class "text-end" ] [ text <| String.fromInt item.cantidad ]
+        , Html.td [ class "text-center" ]
+            [ viewClaimProgressAndDropdown grupo claimsForItem itemRepartidoState
+            ]
+        , Html.td [ class "text-end" ]
+            [ div [ class "d-inline-flex align-items-center gap-1" ]
+                (List.concat
+                    [ repartirDropdown
+                    , iconButton "bi-plus-lg" "+1" (ChangeCurrentClaim item 1) visibility.plus1
+                    , iconButton "bi-dash-lg" "-1" (ChangeCurrentClaim item -1) visibility.minus1
+                    , iconButton "bi-check-lg" "Participé" (JoinCurrentClaim item) visibility.participe
+                    , iconButton "bi-x-lg"
+                        "Salirse"
+                        (case userClaim of
+                            Just claim ->
+                                LeaveCurrentClaim claim
 
-                        else
-                            []
-                       )
+                            Nothing ->
+                                NoOp
+                        )
+                        visibility.salirse
+                    ]
                 )
-                [ Ui5.list
-                    [ Attr.attribute "header-text" "Elegí cómo repartir" ]
-                    [ Ui5.li
-                        [ Attr.attribute "icon" "add"
-                        , Attr.attribute "description" "Indicás cuántas unidades consumió cada persona"
-                        , on "click" (Json.Decode.succeed (ChangeCurrentClaim item 1))
-                        ]
-                        [ text "Por cantidad" ]
-                    , Ui5.li
-                        [ Attr.attribute "icon" "accept"
-                        , Attr.attribute "description" "Se divide en partes iguales entre los que participaron"
-                        , on "click" (Json.Decode.succeed (JoinCurrentClaim item))
-                        ]
-                        [ text "Equitativo" ]
+            ]
+        ]
+
+
+viewPickSchemeMenu : RepartijaItem -> Html Msg
+viewPickSchemeMenu item =
+    Html.ul [ class "dropdown-menu dropdown-menu-end shadow" ]
+        [ Html.li [] [ Html.h6 [ class "dropdown-header" ] [ text "Elegí cómo repartir" ] ]
+        , Html.li []
+            [ button
+                [ type_ "button"
+                , class "dropdown-item d-flex align-items-start gap-2"
+                , onClick (ChangeCurrentClaim item 1)
+                ]
+                [ i [ class "bi bi-plus-lg mt-1" ] []
+                , div []
+                    [ div [ class "fw-semibold" ] [ text "Por cantidad" ]
+                    , div [ class "small text-muted" ] [ text "Indicás cuántas unidades consumió cada persona" ]
                     ]
                 ]
             ]
-        , Ui5.tableCell []
-            (List.concat
-                [ actionButton "edit" "Repartir" (Just pickSchemeButtonId) (TogglePickScheme item.id) visibility.repartir
-                , actionButton "add" "+1" Nothing (ChangeCurrentClaim item 1) visibility.plus1
-                , actionButton "sys-minus" "-1" Nothing (ChangeCurrentClaim item -1) visibility.minus1
-                , actionButton "accept" "Participé" Nothing (JoinCurrentClaim item) visibility.participe
-                , actionButton "decline"
-                    "Salirse"
-                    Nothing
-                    (case userClaim of
-                        Just claim ->
-                            LeaveCurrentClaim claim
-
-                        Nothing ->
-                            NoOp
-                    )
-                    visibility.salirse
+        , Html.li []
+            [ button
+                [ type_ "button"
+                , class "dropdown-item d-flex align-items-start gap-2"
+                , onClick (JoinCurrentClaim item)
                 ]
-            )
+                [ i [ class "bi bi-check-lg mt-1" ] []
+                , div []
+                    [ div [ class "fw-semibold" ] [ text "Equitativo" ]
+                    , div [ class "small text-muted" ] [ text "Se divide en partes iguales entre los que participaron" ]
+                    ]
+                ]
+            ]
         ]
 
 
@@ -666,78 +651,65 @@ calculateItemRepartidoState item itemsClaimed =
             SinRepartir
 
 
-viewClaimProgressAndDropdown : GrupoLike g -> RepartijaItem -> List RepartijaClaim -> ItemRepartidoState -> Maybe ULID -> Html Msg
-viewClaimProgressAndDropdown grupo item claimsForItem itemRepartidoState openPopoverItemId =
-    let
-        statusButtonId =
-            "repartido-status-" ++ item.id
+viewClaimProgressAndDropdown : GrupoLike g -> List RepartijaClaim -> ItemRepartidoState -> Html Msg
+viewClaimProgressAndDropdown grupo claimsForItem itemRepartidoState =
+    div [ class "dropdown d-inline-block" ]
+        [ viewRepartidoState itemRepartidoState
+        , Html.ul [ class "dropdown-menu shadow" ]
+            (if List.isEmpty claimsForItem then
+                [ Html.li [] [ span [ class "dropdown-item-text text-muted small" ] [ text "Sin reparto" ] ] ]
 
-        isPopoverOpen =
-            openPopoverItemId == Just item.id
-    in
-    div [ style "display" "flex" ]
-        [ viewRepartidoState itemRepartidoState statusButtonId item.id
-        , Ui5.responsivePopover
-            ([ Attr.attribute "opener" statusButtonId
-             , Attr.attribute "placement" "Bottom"
-             , on "close" (Json.Decode.succeed CloseItemPopover)
-             ]
-                ++ (if isPopoverOpen then
-                        [ Attr.attribute "open" "" ]
-
-                    else
-                        []
-                   )
-            )
-            [ Ui5.list
-                []
-                (claimsForItem
+             else
+                claimsForItem
                     |> List.map
                         (\claim ->
-                            Ui5.li
-                                [ Attr.attribute "description"
-                                    (case claim.cantidad of
-                                        Just cantidad ->
-                                            String.fromInt cantidad ++ " unidad"
+                            Html.li []
+                                [ div [ class "dropdown-item-text d-flex justify-content-between gap-3" ]
+                                    [ span [] [ text (lookupNombreParticipante grupo claim.participante) ]
+                                    , span [ class "text-muted small" ]
+                                        [ text
+                                            (case claim.cantidad of
+                                                Just cantidad ->
+                                                    String.fromInt cantidad ++ " unidad"
 
-                                        Nothing ->
-                                            "Equitativo"
-                                    )
-                                ]
-                                [ text (lookupNombreParticipante grupo claim.participante)
+                                                Nothing ->
+                                                    "Equitativo"
+                                            )
+                                        ]
+                                    ]
                                 ]
                         )
-                )
-            ]
+            )
         ]
 
 
-viewRepartidoState : ItemRepartidoState -> String -> ULID -> Html Msg
-viewRepartidoState itemRepartidoState buttonId itemId =
+viewRepartidoState : ItemRepartidoState -> Html Msg
+viewRepartidoState itemRepartidoState =
     let
-        designForRepartido : String
-        designForRepartido =
+        variantClass : String
+        variantClass =
             case itemRepartidoState of
                 SinRepartir ->
-                    "Default"
+                    "btn-outline-secondary"
 
                 RepartidoIncorrectamente ->
-                    "Negative"
+                    "btn-danger"
 
                 RepartidoExactamente { deltaDeCantidad } ->
                     if deltaDeCantidad == 0 then
-                        "Positive"
+                        "btn-success"
 
                     else
-                        "Attention"
+                        "btn-warning"
 
                 RepartidoEquitativamenteEntre _ ->
-                    "Positive"
+                    "btn-success"
     in
-    Ui5.button
-        [ Attr.attribute "design" designForRepartido
-        , id buttonId
-        , onClick (ToggleItemPopover itemId)
+    button
+        [ type_ "button"
+        , class ("btn btn-sm " ++ variantClass)
+        , Attr.attribute "data-bs-toggle" "dropdown"
+        , Attr.attribute "aria-expanded" "false"
         ]
         [ case itemRepartidoState of
             SinRepartir ->
@@ -760,53 +732,3 @@ viewRepartidoState itemRepartidoState buttonId itemId =
             RepartidoEquitativamenteEntre { cantidadDeParticipantes } ->
                 text <| "Equitativo entre " ++ String.fromInt cantidadDeParticipantes
         ]
-
-
-viewParticipanteClaimsModal : Model -> GrupoLike g -> Repartija -> Html Msg
-viewParticipanteClaimsModal model grupo repartija =
-    case model.participanteClaimsModal of
-        Just participanteId ->
-            let
-                claims : List RepartijaClaim
-                claims =
-                    repartija.claims
-                        |> List.filter (\c -> c.participante == participanteId)
-
-                participanteNombre : String
-                participanteNombre =
-                    lookupNombreParticipante grupo participanteId
-
-                lookupItemName : ULID -> String
-                lookupItemName itemId =
-                    repartija.items
-                        |> List.filter (\item -> item.id == itemId)
-                        |> List.head
-                        |> Maybe.map .nombre
-                        |> Maybe.withDefault "Item desconocido"
-            in
-            Ui5.responsivePopover
-                [ Attr.attribute "open" ""
-                , Attr.attribute "opener" ("participante-btn-" ++ participanteId)
-                , Attr.attribute "header-text" ("Asignaciones para " ++ participanteNombre)
-                , Attr.attribute "placement" "Bottom"
-                , on "close" (Json.Decode.succeed CloseParticipanteClaimsPopup)
-                ]
-                [ Ui5.list
-                    []
-                    (claims
-                        |> List.map
-                            (\claim ->
-                                Ui5.li
-                                    [ Attr.attribute "description"
-                                        (claim.cantidad
-                                            |> Maybe.map (\c -> String.fromInt c ++ " unidad")
-                                            |> Maybe.withDefault "Equitativo"
-                                        )
-                                    ]
-                                    [ text <| lookupItemName claim.itemId ]
-                            )
-                    )
-                ]
-
-        Nothing ->
-            text ""

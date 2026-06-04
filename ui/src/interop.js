@@ -1,84 +1,15 @@
+import "bootstrap/dist/css/bootstrap.min.css";
+import "bootstrap-icons/font/bootstrap-icons.css";
+import "bootstrap";
 import "./styles.css";
 import "./js/MontoInput";
 
-import { setTheme } from "@ui5/webcomponents-base/dist/config/Theme.js";
-import { setLanguage } from "@ui5/webcomponents-base/dist/config/Language.js";
-
-import "@ui5/webcomponents/dist/Assets.js";
-import "@ui5/webcomponents-fiori/dist/Assets.js";
-
-import "@ui5/webcomponents-icons/dist/accept.js";
-import "@ui5/webcomponents-icons/dist/activity-2.js";
-import "@ui5/webcomponents-icons/dist/add.js";
-import "@ui5/webcomponents-icons/dist/add-activity-2.js";
-import "@ui5/webcomponents-icons/dist/alert.js";
-import "@ui5/webcomponents-icons/dist/arrow-right.js";
-import "@ui5/webcomponents-icons/dist/Assets.js";
-import "@ui5/webcomponents-icons/dist/bell.js"
-import "@ui5/webcomponents-icons/dist/decline.js";
-import "@ui5/webcomponents-icons/dist/delete.js";
-import "@ui5/webcomponents-icons/dist/edit.js";
-import "@ui5/webcomponents-icons/dist/home.js";
-import "@ui5/webcomponents-icons/dist/receipt.js";
-import "@ui5/webcomponents-icons/dist/menu.js";
-import "@ui5/webcomponents-icons/dist/money-bills.js";
-import "@ui5/webcomponents-icons/dist/sys-minus.js";
-import "@ui5/webcomponents-icons/dist/upload.js";
-import "@ui5/webcomponents-icons/dist/user-edit.js";
-import "@ui5/webcomponents-icons/dist/action-settings.js";
-
-import "@ui5/webcomponents/dist/DatePicker.js";
-import "@ui5/webcomponents/dist/Bar.js";
-import "@ui5/webcomponents/dist/BusyIndicator.js";
-import "@ui5/webcomponents/dist/Button.js";
-import "@ui5/webcomponents/dist/CheckBox.js";
-import "@ui5/webcomponents/dist/Dialog.js";
-import "@ui5/webcomponents/dist/FileUploader.js";
-import "@ui5/webcomponents/dist/FormItem.js";
-import "@ui5/webcomponents/dist/Form.js";
-import "@ui5/webcomponents/dist/FormGroup.js";
-import "@ui5/webcomponents/dist/Input.js";
-import "@ui5/webcomponents/dist/Label.js";
-import "@ui5/webcomponents/dist/Link.js";
-import "@ui5/webcomponents/dist/ListItemStandard.js";
-import "@ui5/webcomponents/dist/List.js";
-import "@ui5/webcomponents/dist/MessageStrip.js";
-import "@ui5/webcomponents/dist/Option.js";
-import "@ui5/webcomponents/dist/ResponsivePopover.js";
-import "@ui5/webcomponents/dist/SegmentedButton.js";
-import "@ui5/webcomponents/dist/Select.js";
-import "@ui5/webcomponents/dist/TableCell.js";
-import "@ui5/webcomponents/dist/TableHeaderCell.js";
-import "@ui5/webcomponents/dist/TableHeaderRow.js";
-import "@ui5/webcomponents/dist/Table.js";
-import "@ui5/webcomponents/dist/TableRowAction.js";
-import "@ui5/webcomponents/dist/TableRow.js";
-import "@ui5/webcomponents/dist/Text.js";
-import "@ui5/webcomponents/dist/Title.js";
-import "@ui5/webcomponents-fiori/dist/NavigationLayout.js";
-import "@ui5/webcomponents-fiori/dist/Page.js";
-import "@ui5/webcomponents-fiori/dist/ShellBarBranding.js";
-import "@ui5/webcomponents-fiori/dist/ShellBarItem.js";
-import "@ui5/webcomponents-fiori/dist/ShellBar.js";
-import "@ui5/webcomponents-fiori/dist/SideNavigationGroup.js";
-import "@ui5/webcomponents-fiori/dist/SideNavigationItem.js";
-import "@ui5/webcomponents-fiori/dist/SideNavigation.js";
-import "@ui5/webcomponents-fiori/dist/SideNavigationSubItem.js";
-import "@ui5/webcomponents-fiori/dist/Wizard.js";
-
-setLanguage("es");
-
-const defaultTheme = "sap_horizon";
-// const defaultTheme = "sap_fiori_3"
-const defaultDarkTheme = defaultTheme + "_dark";
-
 const darkModeQuery = window.matchMedia("(prefers-color-scheme: dark)");
-console.log(darkModeQuery);
-setTheme(darkModeQuery.matches ? defaultDarkTheme : defaultTheme);
-darkModeQuery.addEventListener("change", (e) => {
-  // setTheme(e.matches ? "sap_horizon_dark" : "sap_horizon");
-  setTheme(e.matches ? defaultDarkTheme : defaultTheme);
-});
+const applyTheme = (dark) => {
+  document.documentElement.setAttribute("data-bs-theme", dark ? "dark" : "light");
+};
+applyTheme(darkModeQuery.matches);
+darkModeQuery.addEventListener("change", (e) => applyTheme(e.matches));
 
 // Storage key format: "banana-split:grupo:{grupoId}:currentUser"
 const makeStorageKey = (grupoId) => `banana-split:grupo:${grupoId}:currentUser`;
