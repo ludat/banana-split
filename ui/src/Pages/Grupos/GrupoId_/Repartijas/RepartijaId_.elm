@@ -1,11 +1,10 @@
 module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Model, Msg, page)
 
-import Components.Bootstrap as Bs
 import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Validate as V
-import Generated.Api as Api exposing (ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
+import Generated.Api as Api exposing (Repartija, RepartijaClaim, RepartijaItem, ULID)
 import Html exposing (Html, button, div, i, span, text)
 import Html.Attributes as Attr exposing (class, id, style, type_)
 import Html.Events exposing (onClick)
@@ -35,10 +34,9 @@ page shared route =
         , view = view shared.userId shared.store
         }
         |> Page.withLayout
-            (\m ->
+            (\_ ->
                 Layouts.Default
                     { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    , grupo = Store.getGrupo m.grupoId shared.store
                     }
             )
 
@@ -51,7 +49,6 @@ type alias Model =
     { grupoId : ULID
     , repartijaId : ULID
     , claimForm : Form CustomFormError RepartijaClaim
-    , participanteClaimsModal : Maybe ParticipanteId
     , pendingItemOperation : Maybe ULID
     }
 
@@ -61,7 +58,6 @@ init grupoId repartijaId store =
     ( { grupoId = grupoId
       , repartijaId = repartijaId
       , claimForm = Form.initial [] validateClaim
-      , participanteClaimsModal = Nothing
       , pendingItemOperation = Nothing
       }
     , Effect.batch
@@ -100,8 +96,6 @@ type Msg
     | LeaveCurrentClaim RepartijaClaim
     | CreateRepartijaClaimResponded (WebData RepartijaClaim)
     | DeleteRepartijaClaimResponded ULID (WebData String)
-    | OpenParticipanteClaimsPopup ParticipanteId
-    | CloseParticipanteClaimsPopup
 
 
 update : Maybe ULID -> Store -> Msg -> Model -> ( Model, Effect Msg )
@@ -156,16 +150,6 @@ update maybeParticipanteId store msg model =
                     ( { model | pendingItemOperation = Nothing }
                     , Effect.batch [ Store.refreshRepartija model.repartijaId ]
                     )
-
-        OpenParticipanteClaimsPopup participanteId ->
-            ( { model | participanteClaimsModal = Just participanteId }
-            , Effect.none
-            )
-
-        CloseParticipanteClaimsPopup ->
-            ( { model | participanteClaimsModal = Nothing }
-            , Effect.none
-            )
 
         ChangeCurrentClaim item deltaCantidad ->
             case store |> Store.getRepartija model.repartijaId |> RemoteData.toMaybe of
@@ -288,7 +272,6 @@ view userId store model =
             , body =
                 [ viewParticipantes grupo repartija
                 , viewRepartijaItems userId grupo repartija
-                , viewParticipanteClaimsModal model grupo repartija
                 ]
             }
 
@@ -329,8 +312,16 @@ viewParticipantes grupo repartija =
     let
         participantesConClaims =
             repartija.claims
-                |> List.map (\claim -> claim.participante)
+                |> List.map .participante
                 |> Set.fromList
+
+        lookupItemName : ULID -> String
+        lookupItemName itemId =
+            repartija.items
+                |> List.filter (\item -> item.id == itemId)
+                |> List.head
+                |> Maybe.map .nombre
+                |> Maybe.withDefault "Item desconocido"
     in
     div [ class "d-flex flex-wrap gap-2 my-3" ]
         (grupo.participantes
@@ -343,14 +334,46 @@ viewParticipantes grupo repartija =
 
                             else
                                 "btn-outline-secondary"
+
+                        claims =
+                            repartija.claims
+                                |> List.filter (\c -> c.participante == participante.id)
+
+                        menuItems =
+                            if List.isEmpty claims then
+                                [ Html.li []
+                                    [ span [ class "dropdown-item-text text-muted small" ] [ text "Sin asignaciones" ] ]
+                                ]
+
+                            else
+                                claims
+                                    |> List.map
+                                        (\claim ->
+                                            Html.li []
+                                                [ div [ class "dropdown-item-text d-flex justify-content-between gap-3" ]
+                                                    [ span [] [ text <| lookupItemName claim.itemId ]
+                                                    , span [ class "text-muted small" ]
+                                                        [ text
+                                                            (claim.cantidad
+                                                                |> Maybe.map (\c -> String.fromInt c ++ " unidad")
+                                                                |> Maybe.withDefault "Equitativo"
+                                                            )
+                                                        ]
+                                                    ]
+                                                ]
+                                        )
                     in
-                    button
-                        [ type_ "button"
-                        , class ("btn " ++ variantClass)
-                        , id ("participante-btn-" ++ participante.id)
-                        , onClick <| OpenParticipanteClaimsPopup participante.id
+                    div [ class "dropdown" ]
+                        [ button
+                            [ type_ "button"
+                            , class ("btn dropdown-toggle " ++ variantClass)
+                            , id ("participante-btn-" ++ participante.id)
+                            , Attr.attribute "data-bs-toggle" "dropdown"
+                            , Attr.attribute "aria-expanded" "false"
+                            ]
+                            [ text participante.nombre ]
+                        , Html.ul [ class "dropdown-menu shadow", style "min-width" "16rem" ] menuItems
                         ]
-                        [ text participante.nombre ]
                 )
         )
 
@@ -709,62 +732,3 @@ viewRepartidoState itemRepartidoState =
             RepartidoEquitativamenteEntre { cantidadDeParticipantes } ->
                 text <| "Equitativo entre " ++ String.fromInt cantidadDeParticipantes
         ]
-
-
-viewParticipanteClaimsModal : Model -> GrupoLike g -> Repartija -> Html Msg
-viewParticipanteClaimsModal model grupo repartija =
-    case model.participanteClaimsModal of
-        Just participanteId ->
-            let
-                claims : List RepartijaClaim
-                claims =
-                    repartija.claims
-                        |> List.filter (\c -> c.participante == participanteId)
-
-                participanteNombre : String
-                participanteNombre =
-                    lookupNombreParticipante grupo participanteId
-
-                lookupItemName : ULID -> String
-                lookupItemName itemId =
-                    repartija.items
-                        |> List.filter (\item -> item.id == itemId)
-                        |> List.head
-                        |> Maybe.map .nombre
-                        |> Maybe.withDefault "Item desconocido"
-
-                body =
-                    if List.isEmpty claims then
-                        [ Html.p [ class "text-muted mb-0" ] [ text "Sin asignaciones" ] ]
-
-                    else
-                        [ Bs.listGroup []
-                            (claims
-                                |> List.map
-                                    (\claim ->
-                                        Bs.listGroupItem
-                                            [ class "d-flex justify-content-between align-items-center" ]
-                                            [ span [] [ text <| lookupItemName claim.itemId ]
-                                            , span [ class "text-muted small" ]
-                                                [ text
-                                                    (claim.cantidad
-                                                        |> Maybe.map (\c -> String.fromInt c ++ " unidad")
-                                                        |> Maybe.withDefault "Equitativo"
-                                                    )
-                                                ]
-                                            ]
-                                    )
-                            )
-                        ]
-            in
-            Bs.modal
-                { isOpen = True
-                , onClose = CloseParticipanteClaimsPopup
-                , title = "Asignaciones para " ++ participanteNombre
-                , body = body
-                , footer =
-                    [ Bs.btn Bs.Transparent [ onClick CloseParticipanteClaimsPopup ] [ text "Cerrar" ] ]
-                }
-
-        Nothing ->
-            text ""

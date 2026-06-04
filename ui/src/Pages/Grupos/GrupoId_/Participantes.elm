@@ -36,10 +36,9 @@ page shared route =
         , view = view shared.store
         }
         |> Page.withLayout
-            (\m ->
+            (\_ ->
                 Layouts.Default
                     { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    , grupo = Store.getGrupo m.grupoId shared.store
                     }
             )
 

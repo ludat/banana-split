@@ -5,13 +5,15 @@ import Components.Bootstrap as Bs
 import Date exposing (Date)
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
-import Html exposing (Html, button, div, h2, h5, i, li, node, option, p, select, small, span, strong, text, ul)
+import Html exposing (Html, button, div, h2, h5, i, li, node, ol, option, p, select, span, strong, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
 import Html.Events exposing (on, onClick)
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Models.Grupo exposing (GrupoLike)
-import RemoteData exposing (RemoteData(..), WebData)
+import Models.Store as Store
+import Models.Store.Types exposing (Store)
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared.Model as Shared
@@ -23,7 +25,6 @@ import View exposing (View)
 
 type alias Props =
     { navBarContent : Maybe (Bool -> Html Msg)
-    , grupo : WebData ShallowGrupo
     }
 
 
@@ -32,7 +33,7 @@ layout props shared route =
     Layout.new
         { init = \() -> init
         , update = update
-        , view = view props route.path shared.userId shared.toasties shared.lastReadChangelog shared.today
+        , view = view props shared.store route.path shared.userId shared.toasties shared.lastReadChangelog shared.today
         , subscriptions = subscriptions
         }
 
@@ -144,6 +145,7 @@ subscriptions _ =
 
 view :
     Props
+    -> Store
     -> Path.Path
     -> Maybe ULID
     -> Toasts
@@ -151,7 +153,7 @@ view :
     -> Date
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view props currentPath activeUser toasts lastReadChangelog now { toContentMsg, model, content } =
+view props store currentPath activeUser toasts lastReadChangelog now { toContentMsg, model, content } =
     let
         recentEntries =
             Changelog.recentChangelog lastReadChangelog now
@@ -160,7 +162,9 @@ view props currentPath activeUser toasts lastReadChangelog now { toContentMsg, m
             List.length recentEntries
 
         remoteGrupo =
-            props.grupo
+            grupoIdFromPath currentPath
+                |> Maybe.map (\grupoId -> Store.getGrupo grupoId store)
+                |> Maybe.withDefault NotAsked
     in
     { title =
         if content.title == "" then
@@ -184,7 +188,7 @@ view props currentPath activeUser toasts lastReadChangelog now { toContentMsg, m
         , case remoteGrupo of
             Success grupo ->
                 Html.map toContentMsg <|
-                    viewGroupHeader model currentPath activeUser grupo
+                    viewGroupHeader model currentPath activeUser store grupo
 
             _ ->
                 text ""
@@ -268,14 +272,18 @@ viewNavbar unread =
         ]
 
 
-viewGroupHeader : Model -> Path.Path -> Maybe ULID -> ShallowGrupo -> Html Msg
-viewGroupHeader model currentPath activeUser grupo =
+viewGroupHeader : Model -> Path.Path -> Maybe ULID -> Store -> ShallowGrupo -> Html Msg
+viewGroupHeader model currentPath activeUser store grupo =
+    let
+        info =
+            headerInfo currentPath store grupo
+    in
     div [ class "border-bottom" ]
         [ div [ class "container-fluid py-3" ]
             [ div [ class "d-flex flex-wrap align-items-start justify-content-between gap-3" ]
                 [ div []
-                    [ small [ class "text-muted" ] [ text "Grupo" ]
-                    , h2 [ class "mb-0 fw-bold" ] [ text grupo.nombre ]
+                    [ viewBreadcrumb info.crumbs
+                    , h2 [ class "mb-0 fw-bold" ] [ text info.title ]
                     ]
                 , div [ class "d-flex flex-column align-items-end gap-2" ]
                     [ div
@@ -350,14 +358,7 @@ viewGroupHeader model currentPath activeUser grupo =
                             )
                         ]
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
-                        [ Bs.dropdown
-                            { isOpen = model.openDropdown == Just "compartir"
-                            , onToggle = ToggleDropdown "compartir"
-                            , label = [ text "Compartir grupo" ]
-                            , items = []
-                            , attrs = []
-                            }
-                        , Bs.btn Bs.Primary
+                        [ Bs.btn Bs.Primary
                             [ onClick
                                 (ForwardSharedMessage HideNavbarAfterEvent <|
                                     Shared.NavigateTo <|
@@ -371,8 +372,203 @@ viewGroupHeader model currentPath activeUser grupo =
                     ]
                 ]
             ]
-        , div [ class "container-fluid" ]
-            [ viewTabNav currentPath grupo ]
+        , if info.showTabs then
+            div [ class "container-fluid" ]
+                [ viewTabNav currentPath grupo ]
+
+          else
+            text ""
+        ]
+
+
+{-| Extracts the grupo id carried by a route, if any. Used to look up the grupo
+shown in the header straight from the store.
+-}
+grupoIdFromPath : Path.Path -> Maybe ULID
+grupoIdFromPath currentPath =
+    case currentPath of
+        Path.Grupos_Id_ params ->
+            Just params.id
+
+        Path.Grupos_GrupoId__Pagos params ->
+            Just params.grupoId
+
+        Path.Grupos_GrupoId__Pagos_New params ->
+            Just params.grupoId
+
+        Path.Grupos_GrupoId__Pagos_PagoId_ params ->
+            Just params.grupoId
+
+        Path.Grupos_GrupoId__Liquidaciones params ->
+            Just params.grupoId
+
+        Path.Grupos_GrupoId__Participantes params ->
+            Just params.grupoId
+
+        Path.Grupos_GrupoId__Settings params ->
+            Just params.grupoId
+
+        Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
+            Just params.grupoId
+
+        _ ->
+            Nothing
+
+
+{-| A single breadcrumb segment. `path` is `Just` when the segment should be a
+client-side link, `Nothing` when it is rendered as plain text.
+-}
+type alias Crumb =
+    { label : String, path : Maybe Path.Path }
+
+
+{-| Computes everything the group header needs from the current path and store:
+the breadcrumb trail, the big `h2` title, and whether the section tabs should be
+shown (only on top-level sections).
+
+Entity names are resolved from the store, falling back to `"Cargando"` while the
+data is still loading.
+
+-}
+headerInfo :
+    Path.Path
+    -> Store
+    -> ShallowGrupo
+    -> { crumbs : List Crumb, title : String, showTabs : Bool }
+headerInfo currentPath store grupo =
+    let
+        grupoCrumb =
+            { label = grupo.nombre, path = Just (Path.Grupos_Id_ { id = grupo.id }) }
+
+        pagosCrumb =
+            { label = "Pagos", path = Just (Path.Grupos_GrupoId__Pagos { grupoId = grupo.id }) }
+
+        prefix crumbs =
+            { label = "Grupo", path = Nothing } :: crumbs
+
+        topLevel sectionLabel =
+            { crumbs =
+                prefix
+                    [ grupoCrumb
+                    , { label = sectionLabel, path = Nothing }
+                    ]
+            , title = grupo.nombre
+            , showTabs = True
+            }
+    in
+    case currentPath of
+        Path.Grupos_GrupoId__Pagos _ ->
+            topLevel "Pagos"
+
+        Path.Grupos_GrupoId__Liquidaciones _ ->
+            topLevel "Liquidaciones"
+
+        Path.Grupos_GrupoId__Participantes _ ->
+            topLevel "Participantes"
+
+        Path.Grupos_GrupoId__Settings _ ->
+            topLevel "Ajustes"
+
+        Path.Grupos_GrupoId__Pagos_New _ ->
+            { crumbs =
+                prefix
+                    [ grupoCrumb
+                    , { label = "Nuevo Pago", path = Nothing }
+                    ]
+            , title = "Nuevo pago"
+            , showTabs = False
+            }
+
+        Path.Grupos_GrupoId__Pagos_PagoId_ params ->
+            let
+                pagoNombre =
+                    Store.getPago params.pagoId store
+                        |> RemoteData.toMaybe
+                        |> Maybe.map .nombre
+                        |> Maybe.withDefault "Cargando"
+            in
+            { crumbs =
+                prefix
+                    [ grupoCrumb
+                    , pagosCrumb
+                    , { label = pagoNombre, path = Nothing }
+                    ]
+            , title = pagoNombre
+            , showTabs = False
+            }
+
+        Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
+            let
+                maybeRepartija =
+                    Store.getRepartija params.repartijaId store
+                        |> RemoteData.toMaybe
+
+                pagoNombre =
+                    maybeRepartija
+                        |> Maybe.map .pagoNombre
+                        |> Maybe.withDefault "Cargando"
+
+                pagoCrumbPath =
+                    maybeRepartija
+                        |> Maybe.map (\r -> Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = grupo.id, pagoId = r.pagoId })
+            in
+            { crumbs =
+                prefix
+                    [ grupoCrumb
+                    , pagosCrumb
+                    , { label = pagoNombre, path = pagoCrumbPath }
+                    , { label = "Deudores", path = Nothing }
+                    ]
+            , title = pagoNombre
+            , showTabs = False
+            }
+
+        Path.Grupos_Id_ _ ->
+            { crumbs = prefix [ grupoCrumb ]
+            , title = grupo.nombre
+            , showTabs = True
+            }
+
+        Path.NotFound_ ->
+            { crumbs = prefix [ grupoCrumb ]
+            , title = grupo.nombre
+            , showTabs = True
+            }
+
+        Path.Home_ ->
+            { crumbs = []
+            , title = "Banana split"
+            , showTabs = False
+            }
+
+
+viewBreadcrumb : List Crumb -> Html Msg
+viewBreadcrumb crumbs =
+    let
+        lastIndex =
+            List.length crumbs - 1
+
+        viewCrumb index crumb =
+            if index == lastIndex then
+                li
+                    [ class "breadcrumb-item active"
+                    , Attr.attribute "aria-current" "page"
+                    ]
+                    [ text crumb.label ]
+
+            else
+                li [ class "breadcrumb-item" ]
+                    [ case crumb.path of
+                        Just path ->
+                            Html.a [ Path.href path ] [ text crumb.label ]
+
+                        Nothing ->
+                            text crumb.label
+                    ]
+    in
+    Html.nav [ Attr.attribute "aria-label" "breadcrumb" ]
+        [ ol [ class "breadcrumb mb-1 small" ]
+            (List.indexedMap viewCrumb crumbs)
         ]
 
 
@@ -385,7 +581,7 @@ viewTabNav currentPath grupo =
             }
             [ text "Resumen" ]
         , Bs.navTab
-            { active = isPayosPath currentPath grupo.id
+            { active = currentPath == Path.Grupos_GrupoId__Pagos { grupoId = grupo.id }
             , attrs = [ Path.href <| Path.Grupos_GrupoId__Pagos { grupoId = grupo.id } ]
             }
             [ text "Pagos" ]
@@ -405,22 +601,6 @@ viewTabNav currentPath grupo =
             }
             [ text "Ajustes" ]
         ]
-
-
-isPayosPath : Path.Path -> ULID -> Bool
-isPayosPath path grupoId =
-    case path of
-        Path.Grupos_GrupoId__Pagos params ->
-            params.grupoId == grupoId
-
-        Path.Grupos_GrupoId__Pagos_PagoId_ params ->
-            params.grupoId == grupoId
-
-        Path.Grupos_GrupoId__Pagos_New params ->
-            params.grupoId == grupoId
-
-        _ ->
-            False
 
 
 viewOffcanvas : Model -> Maybe (Bool -> Html Msg) -> Html Msg

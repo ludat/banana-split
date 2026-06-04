@@ -11,7 +11,6 @@ import Html.Attributes as Attr exposing (class, classList, for, id, placeholder,
 import Html.Events exposing (onClick)
 import Layouts
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
@@ -27,7 +26,7 @@ page _ _ =
         , subscriptions = subscriptions
         , view = view
         }
-        |> Page.withLayout (\_ -> Layouts.Default { navBarContent = Nothing, grupo = NotAsked })
+        |> Page.withLayout (\_ -> Layouts.Default { navBarContent = Nothing })
 
 
 type alias Model =

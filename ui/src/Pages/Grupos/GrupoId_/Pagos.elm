@@ -30,10 +30,9 @@ page shared route =
         , view = view shared.store
         }
         |> Page.withLayout
-            (\m ->
+            (\_ ->
                 Layouts.Default
                     { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    , grupo = Store.getGrupo m.grupoId shared.store
                     }
             )
 
@@ -54,15 +53,13 @@ init grupoId store =
     )
 
 
-type Msg
-    = NoOp
+type alias Msg =
+    ()
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
-    case msg of
-        NoOp ->
-            ( model, Effect.none )
+update _ model =
+    ( model, Effect.none )
 
 
 subscriptions : Model -> Sub Msg
