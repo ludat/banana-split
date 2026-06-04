@@ -196,7 +196,7 @@ view props store currentPath activeUser toasts lastReadChangelog now { toContent
             viewOffcanvas model props.navBarContent
         , Html.map toContentMsg <|
             viewChangelogModal model.changelogOpen recentEntries
-        , div [ class "position-fixed bottom-0 start-50 translate-middle-x p-3" ]
+        , div [ class "position-fixed bottom-0 start-50 translate-middle-x p-3", Attr.style "z-index" "1090" ]
             [ Html.map toContentMsg <|
                 Toasts.view Toasts.config renderToast ToastMsg toasts
             ]

@@ -2,6 +2,7 @@ module Utils.Toasts exposing (addToast, config, initialState, pushToast, update,
 
 import Effect exposing (Effect)
 import Html exposing (Html)
+import Html.Attributes exposing (class)
 import Toasty
 import Utils.Toasts.Types exposing (ToastContent, ToastLevel, Toasts)
 
@@ -9,6 +10,8 @@ import Utils.Toasts.Types exposing (ToastContent, ToastLevel, Toasts)
 config : Toasty.Config msg
 config =
     Toasty.config
+        |> Toasty.containerAttrs [ class "list-unstyled p-0 m-0" ]
+        |> Toasty.itemAttrs [ class "mb-2" ]
 
 
 initialState : Toasts

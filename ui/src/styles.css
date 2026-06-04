@@ -59,12 +59,3 @@ monto-input {
     width: 2px;
     z-index: 1;
 }
-
-@scope (.toast-container) {
-    & > ol {
-        list-style: none;
-        padding: 0;
-        margin: 0;
-    }
-}
-
