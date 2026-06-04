@@ -10,7 +10,7 @@ const AUTONUMERIC_OPTIONS = {
     modifyValueOnUpDownArrow: true,
     modifyValueOnWheel: true,
     emptyInputBehavior: "null",
-    eventBubbles: true,
+    eventBubbles: false,
     eventIsCancelable: true,
     formulaMode: true
 };
@@ -39,7 +39,7 @@ class MontoInputElement extends HTMLElement {
 
         this._input.addEventListener("autoNumeric:rawValueModified", (e) => {
             if (Number(this._autoNumeric.getNumericString()) === Number(this.getAttribute("raw-value"))) return;
-            this.dispatchEvent(new CustomEvent(e.type, e));
+            this.dispatchEvent(new CustomEvent(e.type, { detail: e.detail }));
         });
     }
 
