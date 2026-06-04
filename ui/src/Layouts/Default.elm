@@ -5,7 +5,7 @@ import Components.Bootstrap as Bs
 import Date exposing (Date)
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
-import Html exposing (Html, button, div, h2, h5, i, li, node, option, p, select, small, span, strong, text)
+import Html exposing (Html, button, div, h2, h5, i, li, node, option, p, select, small, span, strong, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
 import Html.Events exposing (on, onClick)
 import Json.Decode as Decode
@@ -277,11 +277,25 @@ viewGroupHeader model currentPath activeUser grupo =
                     [ small [ class "text-muted" ] [ text "Grupo" ]
                     , h2 [ class "mb-0 fw-bold" ] [ text grupo.nombre ]
                     ]
-                , div [ class "d-flex flex-wrap align-items-center gap-2" ]
-                    [ Bs.dropdown
-                        { isOpen = model.openDropdown == Just "ver-como"
-                        , onToggle = ToggleDropdown "ver-como"
-                        , label =
+                , div [ class "d-flex flex-column align-items-end gap-2" ]
+                    [ div
+                        [ classList
+                            [ ( "dropdown", True )
+                            , ( "show", model.openDropdown == Just "ver-como" )
+                            ]
+                        ]
+                        [ button
+                            [ type_ "button"
+                            , class "btn btn-link btn-sm text-muted text-decoration-none p-0 dropdown-toggle"
+                            , Attr.attribute "aria-expanded"
+                                (if model.openDropdown == Just "ver-como" then
+                                    "true"
+
+                                 else
+                                    "false"
+                                )
+                            , onClick (ToggleDropdown "ver-como")
+                            ]
                             [ text "Ver como: "
                             , strong []
                                 [ text
@@ -297,8 +311,14 @@ viewGroupHeader model currentPath activeUser grupo =
                                     )
                                 ]
                             ]
-                        , items =
-                            li [ class "px-2 py-1" ]
+                        , ul
+                            [ classList
+                                [ ( "dropdown-menu", True )
+                                , ( "dropdown-menu-end", True )
+                                , ( "show", model.openDropdown == Just "ver-como" )
+                                ]
+                            ]
+                            (li [ class "px-2 py-1" ]
                                 [ button
                                     [ type_ "button"
                                     , class "dropdown-item rounded"
@@ -327,31 +347,26 @@ viewGroupHeader model currentPath activeUser grupo =
                                                     ]
                                             )
                                    )
-                        , attrs = []
-                        }
-                    , Bs.dropdown
-                        { isOpen = model.openDropdown == Just "mas"
-                        , onToggle = ToggleDropdown "mas"
-                        , label = [ text "Más" ]
-                        , items = []
-                        , attrs = []
-                        }
-                    , Bs.dropdown
-                        { isOpen = model.openDropdown == Just "compartir"
-                        , onToggle = ToggleDropdown "compartir"
-                        , label = [ text "Compartir grupo" ]
-                        , items = []
-                        , attrs = []
-                        }
-                    , Bs.btn Bs.Primary
-                        [ onClick
-                            (ForwardSharedMessage HideNavbarAfterEvent <|
-                                Shared.NavigateTo <|
-                                    Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id }
                             )
                         ]
-                        [ i [ class "bi bi-plus-lg me-1" ] []
-                        , text "Agregar pago"
+                    , div [ class "d-flex flex-wrap align-items-center gap-2" ]
+                        [ Bs.dropdown
+                            { isOpen = model.openDropdown == Just "compartir"
+                            , onToggle = ToggleDropdown "compartir"
+                            , label = [ text "Compartir grupo" ]
+                            , items = []
+                            , attrs = []
+                            }
+                        , Bs.btn Bs.Primary
+                            [ onClick
+                                (ForwardSharedMessage HideNavbarAfterEvent <|
+                                    Shared.NavigateTo <|
+                                        Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id }
+                                )
+                            ]
+                            [ i [ class "bi bi-plus-lg me-1" ] []
+                            , text "Agregar pago"
+                            ]
                         ]
                     ]
                 ]
@@ -371,7 +386,7 @@ viewTabNav currentPath grupo =
             [ text "Resumen" ]
         , Bs.navTab
             { active = isPayosPath currentPath grupo.id
-            , attrs = [ Path.href <| Path.Grupos_Id_ { id = grupo.id } ]
+            , attrs = [ Path.href <| Path.Grupos_GrupoId__Pagos { grupoId = grupo.id } ]
             }
             [ text "Pagos" ]
         , Bs.navTab
@@ -395,6 +410,9 @@ viewTabNav currentPath grupo =
 isPayosPath : Path.Path -> ULID -> Bool
 isPayosPath path grupoId =
     case path of
+        Path.Grupos_GrupoId__Pagos params ->
+            params.grupoId == grupoId
+
         Path.Grupos_GrupoId__Pagos_PagoId_ params ->
             params.grupoId == grupoId
 

@@ -22,6 +22,7 @@ import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
+import Utils.Day
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import View exposing (View)
@@ -350,7 +351,7 @@ viewUltimoPago grupoId monedaPorDefecto pago =
                 , style "min-width" "2.5rem"
                 ]
                 [ div [ class "text-muted text-uppercase lh-1", style "font-size" "0.6em" ]
-                    [ text (mesAbreviado pago.fecha) ]
+                    [ text (Utils.Day.mesAbreviado pago.fecha) ]
                 , div [ class "fw-bold lh-1" ] [ text (String.fromInt (Date.day pago.fecha)) ]
                 ]
             , if not pago.isValid then
@@ -374,49 +375,6 @@ viewUltimoPago grupoId monedaPorDefecto pago =
                 [ i [ class "bi bi-trash" ] [] ]
             ]
         ]
-
-
-mesAbreviado : Date.Date -> String
-mesAbreviado date =
-    case Date.monthNumber date of
-        1 ->
-            "ENE"
-
-        2 ->
-            "FEB"
-
-        3 ->
-            "MAR"
-
-        4 ->
-            "ABR"
-
-        5 ->
-            "MAY"
-
-        6 ->
-            "JUN"
-
-        7 ->
-            "JUL"
-
-        8 ->
-            "AGO"
-
-        9 ->
-            "SEP"
-
-        10 ->
-            "OCT"
-
-        11 ->
-            "NOV"
-
-        12 ->
-            "DIC"
-
-        _ ->
-            ""
 
 
 viewNetoCard : String -> Maybe ( String, Api.Monto ) -> GrupoLike g -> Moneda -> Moneda -> Bool -> Html Msg
