@@ -209,7 +209,8 @@ view props store currentPath activeUser toasts lastReadChangelog now { toContent
                     Html.map toContentMsg <|
                         div [ class "container-fluid py-5 text-center" ]
                             [ p [ class "mb-3" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
-                            , viewGlobalUserSelector activeUser grupo
+                            , div [ class "mx-auto", style "max-width" "20rem" ]
+                                [ viewGlobalUserSelector activeUser grupo ]
                             ]
 
             _ ->
