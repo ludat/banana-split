@@ -9,7 +9,6 @@ module Components.Bootstrap exposing
     , cardHeader
     , checkbox
     , dateFormItem
-    , dropdown
     , fileInput
     , listGroup
     , listGroupItem
@@ -84,36 +83,6 @@ spinner attrs =
             :: attrs
         )
         [ span [ class "visually-hidden" ] [ Html.text "Cargando..." ] ]
-
-
-dropdown :
-    { isOpen : Bool
-    , onToggle : msg
-    , label : List (Html msg)
-    , items : List (Html msg)
-    , attrs : List (Attribute msg)
-    }
-    -> Html msg
-dropdown { isOpen, onToggle, label, items, attrs } =
-    div
-        (classList [ ( "dropdown", True ), ( "show", isOpen ) ] :: attrs)
-        [ button
-            [ type_ "button"
-            , class "btn btn-outline-secondary dropdown-toggle"
-            , attribute "aria-expanded"
-                (if isOpen then
-                    "true"
-
-                 else
-                    "false"
-                )
-            , onClick onToggle
-            ]
-            label
-        , ul
-            [ classList [ ( "dropdown-menu", True ), ( "show", isOpen ) ] ]
-            items
-        ]
 
 
 card : List (Attribute msg) -> List (Html msg) -> Html msg
