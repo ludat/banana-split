@@ -16,55 +16,29 @@ const AUTONUMERIC_OPTIONS = {
 };
 
 class MontoInputElement extends HTMLElement {
-    static observedAttributes = ["raw-value", "placeholder", "required", "value-state"];
+    static observedAttributes = ["raw-value", "placeholder", "required", "input-id", "class"];
 
     constructor() {
         super();
-        this.attachShadow({ mode: "open" });
         this._autoNumeric = null;
         this._input = null;
     }
 
     connectedCallback() {
-        this.shadowRoot.innerHTML = `
-          <style>
-            :host { display: inline-flex; width: 100%; }
-            input {
-              all: unset;
-              width: 100%;
-              box-sizing: border-box;
-              height: var(--_ui5_input_height, 2.25rem);
-              padding: 0 var(--_ui5_input_padding_right, 0.6875rem) 0 var(--_ui5_input_padding_left, 0.6875rem);
-              border: var(--_ui5_input_border, 0.0625rem solid var(--sapField_BorderColor));
-              border-radius: var(--_ui5_input_border_radius, 0.25rem);
-              background: var(--sapField_Background, #fff);
-              color: var(--sapTextColor, #32363a);
-              font-family: var(--sapFontFamily, "72");
-              font-size: var(--sapFontSize, 0.875rem);
-              outline: none;
-            }
-            input:focus {
-              border-color: var(--sapField_Focus_BorderColor, #0064d9);
-              box-shadow: inset 0 0 0 var(--_ui5_input_focus_outline_width, 0.0625rem) var(--sapField_Focus_BorderColor, #0064d9);
-            }
-            :host([value-state="Negative"]) input {
-              border-color: var(--sapField_InvalidColor, #aa0808);
-            }
-          </style>
-          <input type="text" inputmode="decimal"/>
-        `;
+        if (this._input) return;
 
-        this._input = this.shadowRoot.querySelector("input");
+        this._input = document.createElement("input");
+        this._input.type = "text";
+        this._input.inputMode = "decimal";
+        this._input.className = this._computeInputClass();
         this._syncNonValueAttrs();
-
         this._input.value = AutoNumeric.format(this.getAttribute("raw-value"), AUTONUMERIC_OPTIONS);
+        this.appendChild(this._input);
 
         this._autoNumeric = new AutoNumeric(this._input, AUTONUMERIC_OPTIONS);
 
         this._input.addEventListener("autoNumeric:rawValueModified", (e) => {
-            // Ignore event if the raw-value is already the current value
-            if(Number(this._autoNumeric.getNumericString()) === Number(this.getAttribute('raw-value'))) return;
-
+            if (Number(this._autoNumeric.getNumericString()) === Number(this.getAttribute("raw-value"))) return;
             this.dispatchEvent(new CustomEvent(e.type, e));
         });
     }
@@ -72,9 +46,22 @@ class MontoInputElement extends HTMLElement {
     attributeChangedCallback(name, _old, newVal) {
         if (name === "raw-value") {
             this._setFromDisplay(newVal);
+        } else if (name === "class") {
+            if (this._input) this._input.className = this._computeInputClass();
         } else {
             this._syncNonValueAttrs();
         }
+    }
+
+    focus(options) {
+        if (this._input) this._input.focus(options);
+        else super.focus(options);
+    }
+
+    _computeInputClass() {
+        return this.classList.contains("is-invalid")
+            ? "form-control is-invalid"
+            : "form-control";
     }
 
     _setFromDisplay(s) {
@@ -88,6 +75,8 @@ class MontoInputElement extends HTMLElement {
         if (!this._input) return;
         this._input.placeholder = this.getAttribute("placeholder") ?? "";
         this._input.required = this.hasAttribute("required");
+        const inputId = this.getAttribute("input-id");
+        if (inputId !== null) this._input.id = inputId;
     }
 }
 

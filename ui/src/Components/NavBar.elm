@@ -1,12 +1,10 @@
 module Components.NavBar exposing (NavBarModel, modelFromShared, navBar)
 
-import Components.Ui5 as Ui5
 import Generated.Api exposing (Distribucion, Pago, TipoDistribucion(..), ULID)
-import Html exposing (Attribute, Html, text)
-import Html.Attributes as Attr exposing (class)
+import Html exposing (Attribute, Html, button, div, i, li, small, span, text, ul)
+import Html.Attributes exposing (class, classList, type_)
 import Html.Events as Events
 import Json.Decode as Decode
-import Json.Encode as Encode
 import Layouts.Default as Layout exposing (ShouldHideNavbar(..), viewGlobalUserSelector)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -29,60 +27,92 @@ modelFromShared shared grupoId =
 
 navBar : NavBarModel -> Store -> Path -> Bool -> Html Layout.Msg
 navBar navBarModel store path _ =
-    Ui5.sideNavigation
-        [ Ui5.slot "sideContent"
-        ]
-        [ Ui5.sideNavigationItem
-            [ Attr.attribute "text" <|
-                case store |> Store.getGrupo navBarModel.grupoId of
-                    NotAsked ->
-                        "Cargando..."
+    let
+        grupoLabel =
+            case store |> Store.getGrupo navBarModel.grupoId of
+                NotAsked ->
+                    "Cargando..."
 
-                    Loading ->
-                        "Cargando..."
+                Loading ->
+                    "Cargando..."
 
-                    Failure _ ->
-                        "Error"
+                Failure _ ->
+                    "Error"
 
-                    Success grupo ->
-                        grupo.nombre
-            , Attr.attribute "icon" "home"
-            , Attr.property "unselectable" (Encode.bool True)
-            , Ui5.slot "header"
+                Success grupo ->
+                    grupo.nombre
+    in
+    div [ class "d-flex flex-column h-100" ]
+        [ div [ class "px-2 pb-2 mb-2 border-bottom" ]
+            [ small [ class "text-muted d-block" ] [ text "Grupo" ]
+            , span [ class "fw-bold" ] [ text grupoLabel ]
             ]
-            []
-        , navBarItem
-            { currentPath = path
-            , path = Grupos_Id_ { id = navBarModel.grupoId }
-            , icon = Just "activity-2"
-            , text = "Resumen"
-            , attrs = []
-            }
-            []
-        , pagoNavSection navBarModel store path
-        , navBarItem
-            { currentPath = path
-            , path = Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }
-            , icon = Just "user-edit"
-            , text = "Participantes"
-            , attrs = []
-            }
-            []
-        , navBarItem
-            { currentPath = path
-            , path = Grupos_GrupoId__Settings { grupoId = navBarModel.grupoId }
-            , icon = Just "action-settings"
-            , text = "Ajustes"
-            , attrs = []
-            }
-            []
+        , ul [ class "nav nav-pills flex-column" ]
+            [ navBarItem
+                { currentPath = path
+                , path = Grupos_Id_ { id = navBarModel.grupoId }
+                , icon = Just "bi-bar-chart"
+                , text = "Resumen"
+                , attrs = []
+                }
+            , pagoNavSection navBarModel store path
+            , navBarItem
+                { currentPath = path
+                , path = Grupos_GrupoId__Participantes { grupoId = navBarModel.grupoId }
+                , icon = Just "bi-person-gear"
+                , text = "Participantes"
+                , attrs = []
+                }
+            , navBarItem
+                { currentPath = path
+                , path = Grupos_GrupoId__Settings { grupoId = navBarModel.grupoId }
+                , icon = Just "bi-gear"
+                , text = "Ajustes"
+                , attrs = []
+                }
+            ]
         , case Store.getGrupo navBarModel.grupoId store |> RemoteData.toMaybe of
             Just grupo ->
-                viewGlobalUserSelector navBarModel.userId grupo
+                div [ class "mt-auto pt-3 border-top" ]
+                    [ small [ class "text-muted d-block mb-1 px-2" ] [ text "Ver como:" ]
+                    , viewGlobalUserSelector navBarModel.userId grupo
+                    ]
 
             Nothing ->
                 text ""
         ]
+
+
+navLinkAttrs :
+    { active : Bool
+    , path : Path
+    , extra : List (Attribute Layout.Msg)
+    }
+    -> List (Attribute Layout.Msg)
+navLinkAttrs opts =
+    [ type_ "button"
+    , classList
+        [ ( "nav-link text-start w-100 d-flex align-items-center gap-2", True )
+        , ( "active", opts.active )
+        ]
+    , Events.stopPropagationOn "click"
+        (Decode.succeed
+            ( Layout.ForwardSharedMessage HideNavbarAfterEvent <| Shared.NavigateTo opts.path
+            , True
+            )
+        )
+    ]
+        ++ opts.extra
+
+
+iconSpan : Maybe String -> Html msg
+iconSpan maybeIcon =
+    case maybeIcon of
+        Just iconClass ->
+            i [ class ("bi " ++ iconClass) ] []
+
+        Nothing ->
+            text ""
 
 
 navBarItem :
@@ -92,18 +122,20 @@ navBarItem :
     , text : String
     , icon : Maybe String
     }
-    -> List (Html Layout.Msg)
     -> Html Layout.Msg
-navBarItem props children =
-    Ui5.sideNavigationItem
-        ([ Events.stopPropagationOn "click" (Decode.succeed ( Layout.ForwardSharedMessage HideNavbarAfterEvent <| Shared.NavigateTo props.path, True ))
-         , Attr.attribute "text" props.text
-         , props.icon |> Maybe.map (Attr.attribute "icon") |> Maybe.withDefault (class "")
-         , Attr.property "selected" (Encode.bool <| props.currentPath == props.path)
-         ]
-            |> List.append props.attrs
-        )
-        children
+navBarItem props =
+    li [ class "nav-item" ]
+        [ button
+            (navLinkAttrs
+                { active = props.currentPath == props.path
+                , path = props.path
+                , extra = props.attrs
+                }
+            )
+            [ iconSpan props.icon
+            , span [] [ text props.text ]
+            ]
+        ]
 
 
 pagoNavSection : NavBarModel -> Store -> Path -> Html Layout.Msg
@@ -113,21 +145,29 @@ pagoNavSection navBarModel store path =
             navBarItem
                 { currentPath = path
                 , path = Grupos_GrupoId__Pagos_New { grupoId = navBarModel.grupoId }
-                , icon = Just "add"
+                , icon = Just "bi-plus-lg"
                 , text = "Nuevo Pago"
-                , attrs = [ Attr.attribute "design" "Action" ]
+                , attrs = []
                 }
-                []
 
         pagoItem pagoPath pagoNombre repartijaChildren =
-            navBarItem
-                { path = pagoPath
-                , currentPath = path
-                , attrs = [ Attr.property "expanded" (Encode.bool True) ]
-                , text = pagoNombre
-                , icon = Just "receipt"
-                }
-                repartijaChildren
+            li [ class "nav-item" ]
+                [ button
+                    (navLinkAttrs
+                        { active = path == pagoPath
+                        , path = pagoPath
+                        , extra = []
+                        }
+                    )
+                    [ iconSpan (Just "bi-receipt")
+                    , span [] [ text pagoNombre ]
+                    ]
+                , if List.isEmpty repartijaChildren then
+                    text ""
+
+                  else
+                    ul [ class "nav nav-pills flex-column ms-3" ] repartijaChildren
+                ]
 
         currentPagoItems =
             case path of
@@ -151,9 +191,9 @@ pagoNavSection navBarModel store path =
                                 [ navBarSubItem
                                     { path = path
                                     , currentPath = path
-                                    , attrs = [ Attr.property "unselectable" (Encode.bool True) ]
+                                    , attrs = []
                                     , text = "Repartija"
-                                    , icon = Just "add-activity-2"
+                                    , icon = Just "bi-list-check"
                                     }
                                 ]
                             ]
@@ -164,12 +204,13 @@ pagoNavSection navBarModel store path =
                 _ ->
                     []
     in
-    Ui5.sideNavigationGroup
-        [ Attr.attribute "text" "Pagos"
-        , Attr.attribute "icon" "money-bills"
-        , Attr.property "expanded" (Encode.bool True)
+    li [ class "nav-item mt-2" ]
+        [ div [ class "px-2 pb-1 text-uppercase small text-muted d-flex align-items-center gap-2" ]
+            [ i [ class "bi bi-cash-stack" ] []
+            , span [] [ text "Pagos" ]
+            ]
+        , ul [ class "nav nav-pills flex-column" ] (currentPagoItems ++ [ nuevoPagoItem ])
         ]
-        (currentPagoItems ++ [ nuevoPagoItem ])
 
 
 repartijaSubItemsFromPago : NavBarModel -> Path -> Pago -> List (Html Layout.Msg)
@@ -185,7 +226,7 @@ repartijaSubItemsFromPago navBarModel currentPath pago =
                             , currentPath = currentPath
                             , attrs = []
                             , text = "Repartija"
-                            , icon = Just "add-activity-2"
+                            , icon = Just "bi-list-check"
                             }
                         )
 
@@ -204,12 +245,15 @@ navBarSubItem :
     }
     -> Html Layout.Msg
 navBarSubItem props =
-    Ui5.sideNavigationSubItem
-        ([ Events.stopPropagationOn "click" (Decode.succeed ( Layout.ForwardSharedMessage HideNavbarAfterEvent <| Shared.NavigateTo props.path, True ))
-         , Attr.attribute "text" props.text
-         , props.icon |> Maybe.map (Attr.attribute "icon") |> Maybe.withDefault (class "")
-         , Attr.property "selected" (Encode.bool <| props.currentPath == props.path)
-         ]
-            |> List.append props.attrs
-        )
-        []
+    li [ class "nav-item" ]
+        [ button
+            (navLinkAttrs
+                { active = props.currentPath == props.path
+                , path = props.path
+                , extra = props.attrs
+                }
+            )
+            [ iconSpan props.icon
+            , span [] [ text props.text ]
+            ]
+        ]

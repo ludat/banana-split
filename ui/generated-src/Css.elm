@@ -1,4 +1,4 @@
-module Css exposing (barras_precio, eje_vertical, toast_container)
+module Css exposing (barras_precio, eje_vertical)
 
 import Html
 import Html.Attributes
@@ -12,8 +12,3 @@ barras_precio =
 eje_vertical : Html.Attribute msg
 eje_vertical =
     Html.Attributes.class "eje-vertical"
-
-
-toast_container : Html.Attribute msg
-toast_container =
-    Html.Attributes.class "toast-container"

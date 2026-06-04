@@ -8,6 +8,10 @@
     --sapBreakpoint_L_Min: 1024px;
 }
 
+monto-input {
+    display: block;
+}
+
 .barras-precio {
     gap: 20px 0;
     position: relative;
@@ -56,24 +60,11 @@
     z-index: 1;
 }
 
-.toast-container > ol {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-}
-
-ui5-side-navigation-group > ui5-side-navigation-item {
-    padding-left: 1rem;
-}
-
-ui5-side-navigation-item > ui5-side-navigation-sub-item {
-    padding-left: 2rem;
-}
-
-/*@media (max-width: var(--sapBreakpoint_XS_Min)) {*/
-@media (min-width: 600px) {
-    ui5-shellbar > ui5-button {
-        opacity: 0;
-        pointer-events: none;
+@scope (.toast-container) {
+    & > ol {
+        list-style: none;
+        padding: 0;
+        margin: 0;
     }
 }
+

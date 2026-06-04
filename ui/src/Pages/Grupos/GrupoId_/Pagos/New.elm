@@ -4,8 +4,8 @@ import Base64.Encode
 import Browser.Dom
 import Bytes exposing (Bytes)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
+import Components.Bootstrap as Bs
 import Components.NavBar as NavBar
-import Components.Ui5 as Ui5
 import Date exposing (Date)
 import Effect exposing (Effect)
 import File exposing (File)
@@ -15,8 +15,8 @@ import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
 import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), DistribucionMontoEquitativo, DistribucionMontosEspecificos, Moneda, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
-import Html exposing (Html, a, details, div, p, summary, text)
-import Html.Attributes as Attr exposing (accept, disabled, id, placeholder, selected, style, target, type_)
+import Html exposing (Html, a, button, details, div, i, li, p, span, summary, text, ul)
+import Html.Attributes as Attr exposing (accept, class, classList, disabled, id, placeholder, style, target, type_)
 import Html.Events exposing (on, onClick, onSubmit)
 import Http
 import Json.Decode as Decode
@@ -1023,23 +1023,21 @@ viewErrorFromResumen lugar resumen =
                                 mensaje =
                                     errorMensaje error.tipo
                             in
-                            Ui5.messageStrip
-                                [ Attr.attribute "design"
-                                    (if esAccionable then
-                                        "Negative"
+                            Bs.alert
+                                (if esAccionable then
+                                    Bs.AlertDanger
 
-                                     else
-                                        "Information"
-                                    )
-                                , Attr.attribute "hide-close-button" ""
-                                ]
+                                 else
+                                    Bs.AlertInfo
+                                )
+                                [ style "margin-bottom" "0.5rem" ]
                                 [ case error.objeto of
                                     [] ->
                                         text mensaje
 
                                     _ ->
                                         div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "baseline" ]
-                                            [ Ui5.label [ Attr.attribute "show-colon" "" ] [ text (String.join " > " error.objeto) ]
+                                            [ Html.strong [] [ text (String.join " > " error.objeto ++ ":") ]
                                             , text mensaje
                                             ]
                                 ]
@@ -1056,61 +1054,77 @@ viewResumenPanel :
     -> Html Msg
 viewResumenPanel grupo resumenData accessor negateMontos extraContent =
     div [ style "flex" "1", style "min-width" "300px" ]
-        [ Ui5.panel
-            [ Attr.attribute "header-text" "Resumen" ]
-            (case resumenData of
-                Success resumen ->
-                    let
-                        resumenNetos =
-                            accessor resumen
+        [ Bs.card []
+            [ Bs.cardHeader [] [ text "Resumen" ]
+            , Bs.cardBody []
+                (case resumenData of
+                    Success resumen ->
+                        let
+                            resumenNetos =
+                                accessor resumen
 
-                        netos =
-                            getDeudasFromResumen resumenNetos
-                                |> (if negateMontos then
-                                        Maybe.map (List.map (\( pp, m ) -> ( pp, Monto.negate m )))
+                            netos =
+                                getDeudasFromResumen resumenNetos
+                                    |> (if negateMontos then
+                                            Maybe.map (List.map (\( pp, m ) -> ( pp, Monto.negate m )))
 
-                                    else
-                                        identity
-                                   )
-                    in
-                    [ p [] [ Ui5.text <| "total: " ++ (Monto.toString <| getTotalFromResumen resumenNetos) ]
-                    , p []
-                        [ Ui5.text <|
-                            "participantes: "
-                                ++ (resumenNetos
-                                        |> getParticipantesFromResumen
-                                        |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                        |> Maybe.withDefault "???"
-                                   )
+                                        else
+                                            identity
+                                       )
+                        in
+                        [ p [] [ text <| "total: " ++ (Monto.toString <| getTotalFromResumen resumenNetos) ]
+                        , p []
+                            [ text <|
+                                "participantes: "
+                                    ++ (resumenNetos
+                                            |> getParticipantesFromResumen
+                                            |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
+                                            |> Maybe.withDefault "???"
+                                       )
+                            ]
+                        , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) netos ]
                         ]
-                    , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) netos ]
-                    ]
-                        ++ extraContent
+                            ++ extraContent
 
-                NotAsked ->
-                    []
+                    NotAsked ->
+                        []
 
-                Loading ->
-                    [ Ui5.busyIndicator [ Attr.attribute "active" "" ] [] ]
+                    Loading ->
+                        [ Bs.spinner [] ]
 
-                Failure _ ->
-                    [ Ui5.messageStrip
-                        [ Attr.attribute "design" "Negative"
-                        , Attr.attribute "hide-close-button" ""
-                        ]
-                        [ text "Error al cargar el resumen" ]
-                    ]
-            )
+                    Failure _ ->
+                        [ Bs.alert Bs.AlertDanger [] [ text "Error al cargar el resumen" ] ]
+                )
+            ]
         ]
 
 
 viewUnsavedChangesBanner : Html Msg
 viewUnsavedChangesBanner =
-    Ui5.messageStrip
-        [ Attr.attribute "design" "Critical"
-        , style "margin-bottom" "1rem"
-        ]
+    Bs.alert Bs.AlertWarning
+        [ style "margin-bottom" "1rem" ]
         [ text "Hay cambios sin guardar" ]
+
+
+viewWizardNav : Section -> Html Msg
+viewWizardNav current =
+    let
+        tab section title =
+            li [ class "nav-item" ]
+                [ button
+                    [ type_ "button"
+                    , classList [ ( "nav-link", True ), ( "active", current == section ) ]
+                    , onClick (SelectSection section)
+                    ]
+                    [ text title ]
+                ]
+    in
+    ul [ class "nav nav-tabs mb-3" ]
+        [ tab BasicPagoData "Datos básicos"
+        , tab PagadoresSection "Pagadores"
+        , tab DeudoresSection "Deudores"
+        , tab PagoConfirmation "Detalles"
+        ]
 
 
 view : Store -> Model -> View Msg
@@ -1124,52 +1138,23 @@ view store model =
 
                   else
                     text ""
-                , Ui5.wizard
-                    [ Attr.attribute "content-layout" "SingleStep"
-                    , on "step-change"
-                        (Decode.at [ "detail", "step", "dataset", "section" ] Decode.string
-                            |> Decode.andThen
-                                (\s ->
-                                    case s of
-                                        "basic" ->
-                                            Decode.succeed (SelectSection BasicPagoData)
+                , viewWizardNav model.currentSection
+                , case model.currentSection of
+                    BasicPagoData ->
+                        div []
+                            [ p [] [ text "Ingresá la información básica del pago: un nombre descriptivo y el monto total." ]
+                            , viewPagoForm model.pagoBasicoForm
+                            ]
 
-                                        "pagadores" ->
-                                            Decode.succeed (SelectSection PagadoresSection)
-
-                                        "deudores" ->
-                                            Decode.succeed (SelectSection DeudoresSection)
-
-                                        "confirmation" ->
-                                            Decode.succeed (SelectSection PagoConfirmation)
-
-                                        _ ->
-                                            Decode.fail "unknown section"
-                                )
-                        )
-                    ]
-                    [ Ui5.wizardStep
-                        [ Attr.attribute "title-text" "Datos básicos"
-                        , Attr.attribute "data-section" "basic"
-                        , selected (model.currentSection == BasicPagoData)
-                        ]
-                        [ p [] [ Ui5.text "Ingresá la información básica del pago: un nombre descriptivo y el monto total." ]
-                        , viewPagoForm model.pagoBasicoForm
-                        ]
-                    , Ui5.wizardStep
-                        [ Attr.attribute "title-text" "Pagadores"
-                        , Attr.attribute "data-section" "pagadores"
-                        , selected (model.currentSection == PagadoresSection)
-                        ]
-                        [ div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
+                    PagadoresSection ->
+                        div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
                             [ div [ style "flex" "1", style "min-width" "300px" ]
                                 [ Html.form [ onSubmit <| SubmitCurrentSection ]
-                                    [ p [] [ Ui5.text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
+                                    [ p [] [ text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
                                     , viewDistribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
                                     , viewErrorFromResumenData model.resumenPagadores .resumenPagadores
-                                    , Ui5.button
-                                        [ Attr.attribute "design" "Emphasized"
-                                        , disabled (Form.getOutput model.pagadoresForm == Nothing || hasActionableErrors Lugar_CreacionPago model.resumenPagadores .resumenPagadores)
+                                    , Bs.btn Bs.Primary
+                                        [ disabled (Form.getOutput model.pagadoresForm == Nothing || hasActionableErrors Lugar_CreacionPago model.resumenPagadores .resumenPagadores)
                                         , onClick SubmitCurrentSection
                                         ]
                                         [ text "Siguiente seccion" ]
@@ -1177,21 +1162,16 @@ view store model =
                                 ]
                             , viewResumenPanel grupo model.resumenPagadores .resumenPagadores False []
                             ]
-                        ]
-                    , Ui5.wizardStep
-                        [ Attr.attribute "title-text" "Deudores"
-                        , Attr.attribute "data-section" "deudores"
-                        , selected (model.currentSection == DeudoresSection)
-                        ]
-                        [ div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
+
+                    DeudoresSection ->
+                        div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
                             [ div [ style "flex" "1", style "min-width" "300px" ]
                                 [ Html.form [ onSubmit <| SubmitCurrentSection ]
-                                    [ p [] [ Ui5.text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
+                                    [ p [] [ text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
                                     , viewDistribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
                                     , viewErrorFromResumenData model.resumenDeudores .resumenDeudores
-                                    , Ui5.button
-                                        [ Attr.attribute "design" "Emphasized"
-                                        , disabled (Form.getOutput model.deudoresForm == Nothing || hasActionableErrors Lugar_CreacionPago model.resumenDeudores .resumenDeudores)
+                                    , Bs.btn Bs.Primary
+                                        [ disabled (Form.getOutput model.deudoresForm == Nothing || hasActionableErrors Lugar_CreacionPago model.resumenDeudores .resumenDeudores)
                                         , onClick SubmitCurrentSection
                                         ]
                                         [ text "Siguiente seccion" ]
@@ -1199,13 +1179,9 @@ view store model =
                                 ]
                             , viewResumenPanel grupo model.resumenDeudores .resumenDeudores True []
                             ]
-                        ]
-                    , Ui5.wizardStep
-                        [ Attr.attribute "title-text" "Detalles"
-                        , Attr.attribute "data-section" "confirmation"
-                        , selected (model.currentSection == PagoConfirmation)
-                        ]
-                        [ Html.form [ onSubmit <| PagoForm Form.Submit ]
+
+                    PagoConfirmation ->
+                        Html.form [ onSubmit <| PagoForm Form.Submit ]
                             [ viewResumenPanel grupo
                                 model.resumenPago
                                 .resumen
@@ -1215,9 +1191,10 @@ view store model =
                                         [ case pago.pagadores.tipo of
                                             TipoDistribucionRepartija repartija ->
                                                 if repartija.id /= emptyUlid then
-                                                    p [] <|
-                                                        [ Ui5.link
-                                                            [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
+                                                    p []
+                                                        [ a
+                                                            [ class "link-primary"
+                                                            , Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
                                                             , target "_blank"
                                                             ]
                                                             [ text "repartija pagadores" ]
@@ -1231,9 +1208,10 @@ view store model =
                                         , case pago.deudores.tipo of
                                             TipoDistribucionRepartija repartija ->
                                                 if repartija.id /= emptyUlid then
-                                                    p [] <|
+                                                    p []
                                                         [ a
-                                                            [ Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
+                                                            [ class "link-primary"
+                                                            , Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
                                                             , target "_blank"
                                                             ]
                                                             [ text "repartija deudores" ]
@@ -1260,31 +1238,27 @@ view store model =
                                             Just _ ->
                                                 text "Actualizar pago"
                                 in
-                                Ui5.button
-                                    [ Attr.attribute "design" "Emphasized"
-                                    , disabled (Form.getOutput model.pagoForm == Nothing)
+                                Bs.btn Bs.Primary
+                                    [ disabled (Form.getOutput model.pagoForm == Nothing)
                                     , onClick (PagoForm Form.Submit)
                                     , id "pago-submit-button"
                                     ]
-                                    [ textoCTA
-                                    ]
+                                    [ textoCTA ]
 
                               else
                                 text ""
                             ]
-                        ]
-                    ]
                 ]
             }
 
         NotAsked ->
             { title = "BananaSplit"
-            , body = [ Ui5.text "Cargando" ]
+            , body = [ text "Cargando" ]
             }
 
         Loading ->
             { title = "BananaSplit"
-            , body = [ Ui5.text "Cargando" ]
+            , body = [ text "Cargando" ]
             }
 
         Failure e ->
@@ -1292,7 +1266,7 @@ view store model =
             , body =
                 [ details []
                     [ summary []
-                        [ Ui5.text "Algo salio mal" ]
+                        [ text "Algo salio mal" ]
                     , viewHttpError e
                     ]
                 ]
@@ -1314,35 +1288,32 @@ viewPagoForm form =
         fechaField =
             Form.getFieldAsString "fecha" form
     in
-    Ui5.form (always SubmitCurrentSection)
-        [ Attr.attribute "label-span" "S12 M12 L12 XL12"
-        ]
+    Html.form [ onSubmit SubmitCurrentSection ]
         [ Html.map PagoForm <|
-            Ui5.textFormItem nombreField
+            Bs.textFormItem nombreField
                 { label = "Nombre"
                 , placeholder = Just "Pago de deudas"
                 , required = True
                 }
         , Html.map PagoForm <|
-            Ui5.montoTextFormItem montoField
+            Bs.montoFormItem montoField
                 { label = "Monto"
                 , placeholder = Just "2000"
                 , required = True
                 }
         , Html.map PagoForm <|
-            Ui5.formSelectItem monedaField
+            Bs.selectFormItem monedaField
                 { label = "Moneda"
                 , required = True
                 , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m ))
                 }
         , Html.map PagoForm <|
-            Ui5.dateFormItem fechaField
+            Bs.dateFormItem fechaField
                 { label = "Fecha"
                 , required = True
                 }
-        , Ui5.button
-            [ Attr.attribute "design" "Emphasized"
-            , disabled (Form.getOutput form == Nothing)
+        , Bs.btn Bs.Primary
+            [ disabled (Form.getOutput form == Nothing)
             , onClick SubmitCurrentSection
             ]
             [ text "Siguiente seccion" ]
@@ -1371,37 +1342,37 @@ viewDistribucionForm participantes prefix form receiptParseState =
     let
         tipoField =
             Form.getFieldAsString (prefix ++ ".tipo") form
+
+        selectTipo v =
+            PagoForm <| Form.Input tipoField.path Form.Select (FormField.String v)
     in
     div [] <|
         div [ style "margin-bottom" "1rem" ]
-            [ Html.map PagoForm <|
-                Ui5.segmentedButton
-                    [ on "selection-change"
-                        (Decode.at [ "detail", "selectedItems", "0", "dataset", "id" ] Decode.string
-                            |> Decode.map (\v -> Form.Input tipoField.path Form.Select (FormField.String v))
-                        )
-                    ]
-                    [ Ui5.segmentedButtonItem
-                        [ Attr.attribute "data-id" "monto_equitativo"
-                        , selected <| tipoField.value == Just "monto_equitativo"
-                        ]
-                        [ text "Equitativo" ]
-                    , Ui5.segmentedButtonItem
-                        [ Attr.attribute "data-id" "montos_especificos"
-                        , selected <| tipoField.value == Just "montos_especificos"
-                        ]
-                        [ text "Específico" ]
-                    , Ui5.segmentedButtonItem
-                        [ Attr.attribute "data-id" "repartija"
-                        , selected <| tipoField.value == Just "repartija"
-                        ]
-                        [ text "Repartija" ]
-                    ]
+            [ Bs.segmentedButton []
+                [ Bs.segmentedButtonItem
+                    { active = tipoField.value == Just "monto_equitativo"
+                    , onSelect = selectTipo "monto_equitativo"
+                    }
+                    [ id (prefix ++ "-tipo") ]
+                    [ text "Equitativo" ]
+                , Bs.segmentedButtonItem
+                    { active = tipoField.value == Just "montos_especificos"
+                    , onSelect = selectTipo "montos_especificos"
+                    }
+                    []
+                    [ text "Específico" ]
+                , Bs.segmentedButtonItem
+                    { active = tipoField.value == Just "repartija"
+                    , onSelect = selectTipo "repartija"
+                    }
+                    []
+                    [ text "Repartija" ]
+                ]
             ]
             :: (case tipoField.value of
                     Just "repartija" ->
                         [ p [ style "margin-bottom" "1rem" ]
-                            [ Ui5.text "División por items del recibo. Podés subir una foto del ticket para que se complete automáticamente." ]
+                            [ text "División por items del recibo. Podés subir una foto del ticket para que se complete automáticamente." ]
                         , viewRepartijaForm prefix form receiptParseState
                         ]
 
@@ -1411,49 +1382,50 @@ viewDistribucionForm participantes prefix form receiptParseState =
                                 Form.getListIndexes (prefix ++ ".montos") form
                         in
                         [ p [ style "margin-bottom" "1rem" ]
-                            [ Ui5.text "Cada participante pone/debe un monto fijo que vos especificás." ]
+                            [ text "Cada participante pone/debe un monto fijo que vos especificás." ]
                         , div [ style "margin-bottom" "0.5rem" ] <|
                             (montosIndexes
                                 |> List.map
-                                    (\i ->
+                                    (\index ->
                                         let
                                             montoField =
-                                                Form.getFieldAsString (prefix ++ ".montos." ++ String.fromInt i ++ ".monto") form
+                                                Form.getFieldAsString (prefix ++ ".montos." ++ String.fromInt index ++ ".monto") form
 
                                             participanteField =
-                                                Form.getFieldAsString (prefix ++ ".montos." ++ String.fromInt i ++ ".participante") form
+                                                Form.getFieldAsString (prefix ++ ".montos." ++ String.fromInt index ++ ".participante") form
                                         in
                                         div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "end", style "margin-bottom" "0.5rem" ]
-                                            [ Html.map PagoForm <|
-                                                Ui5.montoInput montoField
-                                                    [ placeholder "200" ]
-                                            , Html.map PagoForm <|
-                                                Ui5.formSelect
-                                                    (( "", "" ) :: List.map (\p -> ( p.id, p.nombre )) participantes)
-                                                    participanteField
-                                                    []
-                                            , Ui5.button
-                                                [ Attr.attribute "design" "Negative"
-                                                , Attr.attribute "icon" "delete"
-                                                , type_ "button"
-                                                , onClick <| PagoForm <| Form.RemoveItem (prefix ++ ".montos") i
+                                            [ div [ style "flex" "1" ]
+                                                [ Html.map PagoForm <|
+                                                    Bs.montoInput montoField [ placeholder "200" ]
                                                 ]
-                                                []
+                                            , div [ style "flex" "1" ]
+                                                [ Html.map PagoForm <|
+                                                    Bs.selectInput
+                                                        (( "", "" ) :: List.map (\p -> ( p.id, p.nombre )) participantes)
+                                                        participanteField
+                                                        []
+                                                ]
+                                            , Bs.btn Bs.Danger
+                                                [ type_ "button"
+                                                , onClick <| PagoForm <| Form.RemoveItem (prefix ++ ".montos") index
+                                                , Attr.attribute "aria-label" "Eliminar"
+                                                ]
+                                                [ i [ class "bi bi-trash" ] [] ]
                                             ]
                                     )
                             )
-                                ++ [ Ui5.button
-                                        [ Attr.attribute "icon" "add"
-                                        , onClick <| PagoForm <| Form.Append (prefix ++ ".montos")
+                                ++ [ Bs.btn Bs.Secondary
+                                        [ onClick <| PagoForm <| Form.Append (prefix ++ ".montos")
                                         , type_ "button"
                                         ]
-                                        [ text "Agregar" ]
+                                        [ i [ class "bi bi-plus me-1" ] [], text "Agregar" ]
                                    ]
                         ]
 
                     Just "monto_equitativo" ->
                         [ p [ style "margin-bottom" "1rem" ]
-                            [ Ui5.text "El monto se divide en partes iguales entre los participantes seleccionados." ]
+                            [ text "El monto se divide en partes iguales entre los participantes seleccionados." ]
                         , div [ style "margin-bottom" "0.5rem" ]
                             (participantes
                                 |> List.map
@@ -1463,8 +1435,7 @@ viewDistribucionForm participantes prefix form receiptParseState =
                                                 Form.getFieldAsBool (prefix ++ ".participantes." ++ p.id) form
                                         in
                                         Html.map PagoForm <|
-                                            Ui5.formCheckbox participanteField
-                                                [ Attr.attribute "text" p.nombre ]
+                                            Bs.checkbox participanteField { label = p.nombre }
                                     )
                             )
                         ]
@@ -1480,105 +1451,107 @@ viewRepartijaForm prefix form receiptParseState =
         montoField =
             Form.getFieldAsString (prefix ++ ".extra") form
 
-        distribucionDeSobrasField =
-            Form.getFieldAsString (prefix ++ ".distribucionDeSobras") form
-
         itemsIndexes =
             Form.getListIndexes (prefix ++ ".items") form
     in
     div []
         [ div [ style "margin-bottom" "1rem" ]
-            [ Ui5.fileUploader
+            [ Bs.fileInput
                 [ accept "image/*"
                 , on "change" (Decode.map ReceiptImageSelected fileDecoder)
                 ]
-                []
             ]
         , case receiptParseState of
             Just ReadingFile ->
-                div []
-                    [ Ui5.busyIndicator [ Attr.attribute "active" "", Attr.attribute "size" "M" ] []
-                    , Ui5.messageStrip
-                        [ Attr.attribute "design" "Information", style "margin-bottom" "1rem" ]
+                div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "center", style "margin-bottom" "1rem" ]
+                    [ Bs.spinner [ Attr.attribute "aria-hidden" "true" ]
+                    , Bs.alert Bs.AlertInfo
+                        [ style "margin-bottom" "0", style "flex" "1" ]
                         [ text "Leyendo la imagen..." ]
                     ]
 
             Just ProcessingWithAI ->
                 div []
-                    [ Ui5.busyIndicator [ Attr.attribute "active" "", Attr.attribute "size" "M" ] []
-                    , Ui5.messageStrip
-                        [ Attr.attribute "design" "Information", style "margin-bottom" "1rem" ]
-                        [ text "Analizando el recibo con inteligencia artificial..." ]
-                    , Ui5.messageStrip
-                        [ Attr.attribute "design" "Warning", style "margin-bottom" "1rem" ]
+                    [ div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "center", style "margin-bottom" "1rem" ]
+                        [ Bs.spinner [ Attr.attribute "aria-hidden" "true" ]
+                        , Bs.alert Bs.AlertInfo
+                            [ style "margin-bottom" "0", style "flex" "1" ]
+                            [ text "Analizando el recibo con inteligencia artificial..." ]
+                        ]
+                    , Bs.alert Bs.AlertWarning
+                        [ style "margin-bottom" "1rem" ]
                         [ text "Esto podria tomar varios minutos, no cierres esta ventana" ]
                     ]
 
             Just (ErrorProcessing errorMsg) ->
-                div []
-                    [ Ui5.messageStrip
-                        [ Attr.attribute "design" "Negative"
-                        , style "margin-bottom" "1rem"
-                        , on "close" (Decode.succeed ClearReceiptError)
+                Bs.alert Bs.AlertDanger
+                    [ style "margin-bottom" "1rem"
+                    , style "display" "flex"
+                    , style "align-items" "center"
+                    , style "gap" "0.5rem"
+                    ]
+                    [ span [ style "flex" "1" ] [ text ("Algo salio mal: " ++ errorMsg) ]
+                    , button
+                        [ type_ "button"
+                        , class "btn-close"
+                        , Attr.attribute "aria-label" "Cerrar"
+                        , onClick ClearReceiptError
                         ]
-                        [ text ("Algo salio mal: " ++ errorMsg) ]
+                        []
                     ]
 
             Nothing ->
                 text ""
-        , Ui5.formLayout
-            [ Attr.attribute "label-span" "S12 M12 L12 XL12" ]
-            [ Ui5.formGroup [ Attr.attribute "header-text" "Items" ]
-                [ Ui5.table
-                    [ Attr.attribute "row-action-count" "1" ]
-                    (Ui5.tableHeaderRow
-                        [ Ui5.slot "headerRow" ]
-                        [ Ui5.tableHeaderCell [ Attr.attribute "width" "auto", Attr.attribute "min-width" "12rem" ] [ text "Item" ]
-                        , Ui5.tableHeaderCell [ Attr.attribute "min-width" "10rem" ] [ text "Monto total" ]
-                        , Ui5.tableHeaderCell [ Attr.attribute "min-width" "8rem" ] [ text "Cantidad" ]
+        , div [ class "mb-4" ]
+            [ Html.h6 [ class "mb-2" ] [ text "Items" ]
+            , Html.table [ class "table align-middle" ]
+                [ Html.thead []
+                    [ Html.tr []
+                        [ Html.th [ Attr.scope "col" ] [ text "Item" ]
+                        , Html.th [ Attr.scope "col" ] [ text "Monto total" ]
+                        , Html.th [ Attr.scope "col" ] [ text "Cantidad" ]
+                        , Html.th [ Attr.scope "col", style "width" "1%" ] []
                         ]
-                        :: List.map
-                            (\i -> viewRepartijaItemForm i prefix form)
-                            itemsIndexes
-                    )
-                , Ui5.button
-                    [ Attr.attribute "icon" "add"
-                    , onClick <| PagoForm <| Form.Append <| prefix ++ ".items"
-                    , type_ "button"
                     ]
-                    [ text "Agregar item" ]
+                , Html.tbody []
+                    (List.map (\idx -> viewRepartijaItemForm idx prefix form) itemsIndexes)
                 ]
-            , Ui5.formGroup [ Attr.attribute "header-text" "Propina" ]
-                [ Html.map PagoForm <|
-                    Ui5.montoInput montoField
-                        [ placeholder "1000" ]
+            , Bs.btn Bs.Secondary
+                [ onClick <| PagoForm <| Form.Append <| prefix ++ ".items"
+                , type_ "button"
                 ]
+                [ i [ class "bi bi-plus me-1" ] [], text "Agregar item" ]
             ]
-        , Html.hr [ style "border" "none", style "border-top" "1px solid var(--sapGroup_ContentBorderColor)", style "margin" "1rem 0" ] []
-        , Ui5.formLayout
-            [ Attr.attribute "label-span" "S12 M12 L12 XL12" ]
-            [ Ui5.formGroup
-                [ Attr.attribute "header-text" "Distribución de sobras" ]
-                [ p [ style "margin-bottom" "0.5rem", style "font-size" "0.875rem", style "color" "var(--sapNeutralTextColor)" ]
-                    [ text "Qué hacer con los items que nadie reclamó. Podés cambiar esta opción en cualquier momento." ]
-                , Html.map PagoForm <|
-                    Ui5.segmentedButton
-                        [ on "selection-change"
-                            (Decode.at [ "detail", "selectedItems", "0", "dataset", "id" ] Decode.string
-                                |> Decode.map (\v -> Form.Input distribucionDeSobrasField.path Form.Select (FormField.String v))
-                            )
-                        ]
-                        [ Ui5.segmentedButtonItem
-                            [ Attr.attribute "data-id" "SobrasNoDistribuir"
-                            , selected (distribucionDeSobrasField.value == Just "SobrasNoDistribuir")
-                            ]
-                            [ text "No distribuir" ]
-                        , Ui5.segmentedButtonItem
-                            [ Attr.attribute "data-id" "SobrasProporcional"
-                            , selected (distribucionDeSobrasField.value == Just "SobrasProporcional")
-                            ]
-                            [ text "Proporcional" ]
-                        ]
+        , div [ class "mb-4" ]
+            [ Html.h6 [ class "mb-2" ] [ text "Propina" ]
+            , Html.map PagoForm <|
+                Bs.montoInput montoField [ placeholder "1000" ]
+            ]
+        , Html.hr [ class "my-3" ] []
+        , div [ class "mb-4" ]
+            [ Html.h6 [ class "mb-2" ] [ text "Distribución de sobras" ]
+            , p [ class "text-body-secondary mb-2", style "font-size" "0.875rem" ]
+                [ text "Qué hacer con los items que nadie reclamó. Podés cambiar esta opción en cualquier momento." ]
+            , let
+                distribucionDeSobrasField =
+                    Form.getFieldAsString (prefix ++ ".distribucionDeSobras") form
+
+                selectSobras v =
+                    PagoForm <| Form.Input distribucionDeSobrasField.path Form.Select (FormField.String v)
+              in
+              Bs.segmentedButton []
+                [ Bs.segmentedButtonItem
+                    { active = distribucionDeSobrasField.value == Just "SobrasNoDistribuir"
+                    , onSelect = selectSobras "SobrasNoDistribuir"
+                    }
+                    []
+                    [ text "No distribuir" ]
+                , Bs.segmentedButtonItem
+                    { active = distribucionDeSobrasField.value == Just "SobrasProporcional"
+                    , onSelect = selectSobras "SobrasProporcional"
+                    }
+                    []
+                    [ text "Proporcional" ]
                 ]
             ]
         ]
@@ -1596,34 +1569,27 @@ viewRepartijaItemForm i prefix form =
         cantidadField =
             Form.getFieldAsString (prefix ++ ".items." ++ String.fromInt i ++ ".cantidad") form
     in
-    Ui5.tableRow
-        []
-        [ Ui5.tableCell
-            []
+    Html.tr []
+        [ Html.td []
             [ Html.map PagoForm <|
-                Ui5.textInput nombreField
-                    [ placeholder "Birrita" ]
+                Bs.textInput nombreField [ placeholder "Birrita" ]
             ]
-        , Ui5.tableCell
-            []
+        , Html.td []
             [ Html.map PagoForm <|
-                Ui5.montoInput montoField
-                    [ placeholder "20.000" ]
+                Bs.montoInput montoField [ placeholder "20.000" ]
             ]
-        , Ui5.tableCell
-            []
+        , Html.td []
             [ Html.map PagoForm <|
-                Ui5.textInput cantidadField
-                    [ placeholder "4" ]
+                Bs.textInput cantidadField [ placeholder "4" ]
             ]
-        , Ui5.tableRowAction
-            [ Ui5.slot "actions"
-            , Attr.attribute "icon" "delete"
-            , Attr.attribute "text" "Eliminar"
-            , Attr.attribute "tooltip" "Eliminar item"
-            , on "click" (Decode.succeed <| PagoForm <| Form.RemoveItem (prefix ++ ".items") i)
+        , Html.td [ style "width" "1%" ]
+            [ Bs.btn Bs.Danger
+                [ type_ "button"
+                , onClick <| PagoForm <| Form.RemoveItem (prefix ++ ".items") i
+                , Attr.attribute "aria-label" "Eliminar item"
+                ]
+                [ Html.i [ class "bi bi-trash" ] [] ]
             ]
-            []
         ]
 
 

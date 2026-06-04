@@ -2,7 +2,6 @@ module Layouts.Default exposing (Model, Msg(..), Props, ShouldHideNavbar(..), la
 
 import Changelog
 import Components.Bootstrap as Bs
-import Css
 import Date exposing (Date)
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
