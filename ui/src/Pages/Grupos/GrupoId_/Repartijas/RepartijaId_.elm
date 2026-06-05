@@ -1,6 +1,5 @@
 module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Model, Msg, page)
 
-import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Validate as V
@@ -33,12 +32,7 @@ page shared route =
         , subscriptions = subscriptions
         , view = view shared.userId shared.store
         }
-        |> Page.withLayout
-            (\_ ->
-                Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    }
-            )
+        |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 
 
 

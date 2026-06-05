@@ -2,7 +2,6 @@ module Pages.Grupos.GrupoId_.Liquidaciones exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
 import Components.MonedaSelector as MonedaSelector exposing (MonedaSeleccionada(..))
-import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Moneda, Pago, PorMoneda, ResumenGrupo, ShallowGrupo, Transaccion, ULID)
 import Html exposing (Html, div, i, span, text)
@@ -34,12 +33,7 @@ page shared route =
         , subscriptions = subscriptions
         , view = view shared.today shared.store
         }
-        |> Page.withLayout
-            (\_ ->
-                Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    }
-            )
+        |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 
 
 type alias Model =

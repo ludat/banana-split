@@ -3,7 +3,6 @@ module Pages.Grupos.Id_ exposing (Model, Msg, page)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
 import Components.MonedaSelector as MonedaSelector exposing (MonedaSeleccionada(..))
-import Components.NavBar as NavBar exposing (modelFromShared)
 import Date
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Moneda, Netos, ShallowGrupo, ShallowPago, ULID)
@@ -36,12 +35,7 @@ page shared route =
         , subscriptions = subscriptions
         , view = view shared.store shared.userId
         }
-        |> Page.withLayout
-            (\_ ->
-                Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar (modelFromShared shared route.params.id) shared.store route.path
-                    }
-            )
+        |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 
 
 type alias Model =

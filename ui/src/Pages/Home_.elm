@@ -26,7 +26,7 @@ page _ _ =
         , subscriptions = subscriptions
         , view = view
         }
-        |> Page.withLayout (\_ -> Layouts.Default { navBarContent = Nothing })
+        |> Page.withLayout (\_ -> Layouts.Default {})
 
 
 type alias Model =

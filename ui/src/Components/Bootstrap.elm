@@ -39,7 +39,7 @@ import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 
 navbar : List (Attribute msg) -> List (Html msg) -> Html msg
 navbar attrs children =
-    nav (class "navbar navbar-expand-lg bg-body-tertiary" :: attrs)
+    nav (class "navbar bg-body-tertiary" :: attrs)
         [ div [ class "container-fluid" ] children ]
 
 

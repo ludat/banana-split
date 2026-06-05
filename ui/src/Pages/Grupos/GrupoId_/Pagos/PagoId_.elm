@@ -1,6 +1,5 @@
 module Pages.Grupos.GrupoId_.Pagos.PagoId_ exposing (Model, Msg, page)
 
-import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import Form
 import Generated.Api exposing (ULID)
@@ -48,12 +47,7 @@ page shared route =
                                 "Cargando"
                 }
         }
-        |> Page.withLayout
-            (\_ ->
-                Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    }
-            )
+        |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 
 
 
