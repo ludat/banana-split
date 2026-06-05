@@ -403,7 +403,7 @@ viewParticipantes grupo repartija =
 viewRepartijaItems : Maybe ULID -> GrupoLike g -> Repartija -> Html Msg
 viewRepartijaItems userId grupo repartija =
     div [ class "table-responsive" ]
-        [ Html.table [ class "table table-striped align-middle" ]
+        [ Html.table [ class "table table-striped table-hover align-middle" ]
             [ Html.thead []
                 [ Html.tr []
                     [ Html.th [ style "min-width" "12rem" ] [ text "Descripcion" ]
