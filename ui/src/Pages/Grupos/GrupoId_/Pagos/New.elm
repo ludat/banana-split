@@ -1211,7 +1211,6 @@ view store model =
                                                         [ a
                                                             [ class "link-primary"
                                                             , Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
-                                                            , target "_blank"
                                                             ]
                                                             [ text "repartija deudores" ]
                                                         ]
