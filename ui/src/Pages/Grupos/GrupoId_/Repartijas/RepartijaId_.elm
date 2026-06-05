@@ -1,11 +1,12 @@
 module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Model, Msg, page)
 
+import Components.Bootstrap as Bs
 import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Validate as V
 import Generated.Api as Api exposing (Repartija, RepartijaClaim, RepartijaItem, ULID)
 import Html exposing (Html, button, div, i, span, text)
-import Html.Attributes as Attr exposing (class, id, style, type_)
+import Html.Attributes as Attr exposing (class, disabled, id, style, type_)
 import Html.Events exposing (onClick)
 import Layouts
 import List.Extra exposing (find)
@@ -44,6 +45,7 @@ type alias Model =
     , repartijaId : ULID
     , claimForm : Form CustomFormError RepartijaClaim
     , pendingItemOperation : Maybe ULID
+    , repartirModalItem : Maybe RepartijaItem
     }
 
 
@@ -53,6 +55,7 @@ init grupoId repartijaId store =
       , repartijaId = repartijaId
       , claimForm = Form.initial [] validateClaim
       , pendingItemOperation = Nothing
+      , repartirModalItem = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -85,6 +88,8 @@ validateClaim =
 
 type Msg
     = NoOp
+    | OpenRepartirModal RepartijaItem
+    | CloseRepartirModal
     | ChangeCurrentClaim RepartijaItem Int
     | JoinCurrentClaim RepartijaItem
     | LeaveCurrentClaim RepartijaClaim
@@ -97,6 +102,16 @@ update maybeParticipanteId store msg model =
     case msg of
         NoOp ->
             ( model
+            , Effect.none
+            )
+
+        OpenRepartirModal item ->
+            ( { model | repartirModalItem = Just item }
+            , Effect.none
+            )
+
+        CloseRepartirModal ->
+            ( { model | repartirModalItem = Nothing }
             , Effect.none
             )
 
@@ -184,7 +199,7 @@ update maybeParticipanteId store msg model =
                                                 |> (\x -> x + deltaCantidad)
                                                 |> Basics.max 0
                                     in
-                                    ( { model | pendingItemOperation = Just item.id }
+                                    ( { model | pendingItemOperation = Just item.id, repartirModalItem = Nothing }
                                     , if newCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
@@ -202,7 +217,7 @@ update maybeParticipanteId store msg model =
                                     )
 
                                 Nothing ->
-                                    ( { model | pendingItemOperation = Just item.id }
+                                    ( { model | pendingItemOperation = Just item.id, repartirModalItem = Nothing }
                                     , if deltaCantidad > 0 then
                                         Effect.sendCmd <|
                                             Api.putRepartijasByRepartijaId model.repartijaId
@@ -226,7 +241,7 @@ update maybeParticipanteId store msg model =
         JoinCurrentClaim item ->
             case maybeParticipanteId of
                 Just participanteId ->
-                    ( { model | pendingItemOperation = Just item.id }
+                    ( { model | pendingItemOperation = Just item.id, repartirModalItem = Nothing }
                     , Effect.sendCmd <|
                         Api.putRepartijasByRepartijaId model.repartijaId
                             { id = emptyUlid
@@ -278,6 +293,7 @@ view userId store model =
             , body =
                 [ viewParticipantes grupo repartija
                 , viewRepartijaItems userId grupo repartija
+                , viewRepartirModal model.repartirModalItem
                 ]
             }
 
@@ -459,6 +475,12 @@ interpretClaims originalClaims =
     List.foldl folder NoClaims originalClaims
 
 
+type CTAState
+    = Visible
+    | Disabled
+    | Hidden
+
+
 viewClaimsLine : Maybe ULID -> GrupoLike g -> Repartija -> RepartijaItem -> Html Msg
 viewClaimsLine userId grupo repartija item =
     let
@@ -478,65 +500,53 @@ viewClaimsLine userId grupo repartija item =
             claimsForItem |> find (\c -> Just c.participante == userId)
 
         allHidden =
-            { plus1 = False, minus1 = False, participe = False, salirse = False, repartir = False }
+            { plus1 = Hidden, minus1 = Hidden, participe = Hidden, salirse = Hidden, repartir = Hidden }
 
-        visibility =
+        buttonsState =
             case ( userId, itemRepartidoState, userClaim ) of
                 ( Nothing, _, _ ) ->
                     allHidden
 
                 ( Just _, RepartidoIncorrectamente, Just _ ) ->
-                    { allHidden | plus1 = True, minus1 = True }
+                    { allHidden | plus1 = Visible, minus1 = Visible, participe = Visible, salirse = Visible }
 
                 ( Just _, RepartidoIncorrectamente, Nothing ) ->
-                    { allHidden | plus1 = True }
+                    { allHidden | plus1 = Visible, minus1 = Visible, participe = Visible, salirse = Visible }
 
                 ( Just _, RepartidoExactamente _, Just _ ) ->
-                    { allHidden | plus1 = True, minus1 = True }
+                    { allHidden | plus1 = Visible, minus1 = Visible }
 
                 ( Just _, RepartidoExactamente _, Nothing ) ->
-                    { allHidden | plus1 = True }
+                    { allHidden | plus1 = Visible, minus1 = Disabled }
 
                 ( Just _, RepartidoEquitativamenteEntre _, Nothing ) ->
-                    { allHidden | participe = True }
+                    { allHidden | participe = Visible, salirse = Disabled }
 
                 ( Just _, RepartidoEquitativamenteEntre _, Just _ ) ->
-                    { allHidden | salirse = True }
+                    { allHidden | participe = Disabled, salirse = Visible }
 
                 ( Just _, SinRepartir, _ ) ->
-                    { allHidden | repartir = True }
+                    { allHidden | repartir = Visible }
 
-        iconButton iconClass tooltip msg isVisible =
-            if isVisible then
-                [ button
-                    [ type_ "button"
-                    , class "btn btn-sm btn-outline-secondary border-0"
-                    , Attr.title tooltip
-                    , onClick msg
-                    ]
-                    [ i [ class ("bi " ++ iconClass) ] [] ]
-                ]
+        actionButton variant label msg state =
+            case state of
+                Hidden ->
+                    []
 
-            else
-                []
-
-        repartirDropdown =
-            if visibility.repartir then
-                [ div [ class "dropdown d-inline-block" ]
+                _ ->
                     [ button
                         [ type_ "button"
-                        , class "btn btn-sm btn-outline-secondary border-0"
-                        , Attr.title "Repartir"
-                        , Attr.attribute "data-bs-toggle" "dropdown"
-                        , Attr.attribute "aria-expanded" "false"
-                        ]
-                        [ i [ class "bi bi-pencil" ] [] ]
-                    , viewPickSchemeMenu item
-                    ]
-                ]
+                        , class "btn"
+                        , if state == Disabled then
+                            class <| "btn-outline-" ++ variant
 
-            else
-                []
+                          else
+                            class <| "btn-" ++ variant
+                        , disabled (state == Disabled)
+                        , onClick msg
+                        ]
+                        [ text label ]
+                    ]
     in
     Html.tr []
         [ Html.td [] [ text item.nombre ]
@@ -548,11 +558,11 @@ viewClaimsLine userId grupo repartija item =
         , Html.td [ class "text-end" ]
             [ div [ class "d-inline-flex align-items-center gap-1" ]
                 (List.concat
-                    [ repartirDropdown
-                    , iconButton "bi-plus-lg" "+1" (ChangeCurrentClaim item 1) visibility.plus1
-                    , iconButton "bi-dash-lg" "-1" (ChangeCurrentClaim item -1) visibility.minus1
-                    , iconButton "bi-check-lg" "Participé" (JoinCurrentClaim item) visibility.participe
-                    , iconButton "bi-x-lg"
+                    [ actionButton "primary" "Repartir" (OpenRepartirModal item) buttonsState.repartir
+                    , actionButton "primary" "+1" (ChangeCurrentClaim item 1) buttonsState.plus1
+                    , actionButton "danger" "-1" (ChangeCurrentClaim item -1) buttonsState.minus1
+                    , actionButton "primary" "Participé" (JoinCurrentClaim item) buttonsState.participe
+                    , actionButton "danger"
                         "Salirse"
                         (case userClaim of
                             Just claim ->
@@ -561,44 +571,53 @@ viewClaimsLine userId grupo repartija item =
                             Nothing ->
                                 NoOp
                         )
-                        visibility.salirse
+                        buttonsState.salirse
                     ]
                 )
             ]
         ]
 
 
-viewPickSchemeMenu : RepartijaItem -> Html Msg
-viewPickSchemeMenu item =
-    Html.ul [ class "dropdown-menu dropdown-menu-end shadow" ]
-        [ Html.li [] [ Html.h6 [ class "dropdown-header" ] [ text "Elegí cómo repartir" ] ]
-        , Html.li []
-            [ button
-                [ type_ "button"
-                , class "dropdown-item d-flex align-items-start gap-2"
-                , onClick (ChangeCurrentClaim item 1)
-                ]
-                [ i [ class "bi bi-plus-lg mt-1" ] []
-                , div []
-                    [ div [ class "fw-semibold" ] [ text "Por cantidad" ]
-                    , div [ class "small text-muted" ] [ text "Indicás cuántas unidades consumió cada persona" ]
+viewRepartirModal : Maybe RepartijaItem -> Html Msg
+viewRepartirModal maybeItem =
+    Bs.modal
+        { isOpen = maybeItem /= Nothing
+        , onClose = CloseRepartirModal
+        , title = "Elegí cómo repartir"
+        , body =
+            case maybeItem of
+                Just item ->
+                    [ div [ class "list-group" ]
+                        [ button
+                            [ type_ "button"
+                            , class "list-group-item list-group-item-action d-flex align-items-start gap-2"
+                            , onClick (ChangeCurrentClaim item 1)
+                            ]
+                            [ i [ class "bi bi-plus-lg mt-1" ] []
+                            , div []
+                                [ div [ class "fw-semibold" ] [ text "Por cantidad" ]
+                                , div [ class "small text-muted" ] [ text "Indicás cuántas unidades consumió cada persona" ]
+                                ]
+                            ]
+                        , button
+                            [ type_ "button"
+                            , class "list-group-item list-group-item-action d-flex align-items-start gap-2"
+                            , onClick (JoinCurrentClaim item)
+                            ]
+                            [ i [ class "bi bi-check-lg mt-1" ] []
+                            , div []
+                                [ div [ class "fw-semibold" ] [ text "Equitativo" ]
+                                , div [ class "small text-muted" ] [ text "Se divide en partes iguales entre los que participaron" ]
+                                ]
+                            ]
+                        ]
                     ]
-                ]
-            ]
-        , Html.li []
-            [ button
-                [ type_ "button"
-                , class "dropdown-item d-flex align-items-start gap-2"
-                , onClick (JoinCurrentClaim item)
-                ]
-                [ i [ class "bi bi-check-lg mt-1" ] []
-                , div []
-                    [ div [ class "fw-semibold" ] [ text "Equitativo" ]
-                    , div [ class "small text-muted" ] [ text "Se divide en partes iguales entre los que participaron" ]
-                    ]
-                ]
-            ]
-        ]
+
+                Nothing ->
+                    []
+        , footer =
+            [ Bs.btn Bs.Transparent [ onClick CloseRepartirModal ] [ text "Cancelar" ] ]
+        }
 
 
 type Delta
