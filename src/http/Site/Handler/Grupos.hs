@@ -25,7 +25,6 @@ import BananaSplit.Persistence (
   freezeGrupo,
   unfreezeGrupo,
   updateGrupo,
-  updateIsValidPago,
  )
 import Site.Api
 import Site.Handler.Utils
@@ -43,9 +42,8 @@ handleGetNetos grupoId = do
 
   pagos <- runBeam $ do
     shallowPagos <- fetchShallowPagos grupoId
-    forM shallowPagos $ \shallowPago -> do
-      pago <- fetchPago grupoId shallowPago.pagoId
-      updateIsValidPago (pago & addIsValidPago)
+    forM shallowPagos $ \shallowPago ->
+      fetchPago shallowPago.pagoId
 
   let grupo =
         Grupo
@@ -102,7 +100,7 @@ handleFreezeGrupo grupoId = do
   pagos <- runBeam $ do
     shallowPagos <- fetchShallowPagos grupoId
     forM shallowPagos $ \shallowPago ->
-      fetchPago grupoId shallowPago.pagoId
+      fetchPago shallowPago.pagoId
 
   let grupo =
         Grupo

@@ -19,8 +19,10 @@ type StoreMsg
     | FetchGrupo ULID
     | ResumenFetched ULID (WebData ResumenGrupo)
     | FetchResumen ULID
+    | InvalidateResumen ULID
     | PagosFetched ULID (WebData (List ShallowPago))
     | FetchPagos ULID
+    | InvalidatePagos ULID
     | PagoFetched ULID (WebData Pago)
     | FetchPago ULID
     | RepartijaFetched ULID (WebData RepartijaForFrontend)

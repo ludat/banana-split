@@ -116,12 +116,19 @@ update maybeParticipanteId store msg model =
                             }
                     in
                     ( { model | pendingItemOperation = Nothing }
-                    , Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
+                    , Effect.batch
+                        [ Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
+                        , Store.invalidateResumen model.grupoId
+                        , Store.invalidatePagos model.grupoId
+                        , Store.refreshRepartija model.repartijaId
+                        ]
                     )
 
                 _ ->
                     ( { model | pendingItemOperation = Nothing }
-                    , Effect.batch [ Store.refreshRepartija model.repartijaId ]
+                    , Effect.batch
+                        [ Store.refreshRepartija model.repartijaId
+                        ]
                     )
 
         DeleteRepartijaClaimResponded claimId webDataResponse ->
@@ -137,7 +144,12 @@ update maybeParticipanteId store msg model =
                             }
                     in
                     ( { model | pendingItemOperation = Nothing }
-                    , Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
+                    , Effect.batch
+                        [ Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
+                        , Store.invalidateResumen model.grupoId
+                        , Store.invalidatePagos model.grupoId
+                        , Store.refreshRepartija model.repartijaId
+                        ]
                     )
 
                 _ ->

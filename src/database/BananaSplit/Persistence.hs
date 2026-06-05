@@ -34,6 +34,7 @@ import Data.Decimal qualified as Decimal
 import Data.Pool qualified as Pool
 import Data.String (String)
 import Database.Beam as Beam
+import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full hiding (insert)
 import Database.PostgreSQL.Simple (Only (..), execute, query)
@@ -131,8 +132,8 @@ fetchGrupo aGrupoId = do
           , M.monedaPorDefecto = grupo.moneda_por_defecto
           }
 
-fetchPago :: ULID -> ULID -> Pg M.Pago
-fetchPago grupoId pagoId = do
+fetchPago :: ULID -> Pg M.Pago
+fetchPago pagoId = do
   (dbPago :: Pago) <-
     fromMaybe (panic "Pago not found")
       <$> runSelectReturningOne
@@ -594,12 +595,7 @@ fetchRepartija unRepartijaId = do
   (repartija, pagoNombre, pagoId) :: (DistribucionRepartija, Text, ULID) <- fmap (fromMaybe (panic "Repartija not found")) $ runSelectReturningOne $ select $ do
     repartija <- all_ db.repartijas
     guard_ (repartija.id ==. val_ unRepartijaId)
-
-    distrib <- all_ db.distribuciones
-    guard_ (repartija.distribucion `references_` distrib)
-    pago <- all_ db.pagos
-    guard_ (pago.distribucion_pagadores `references_` distrib ||. pago.distribucion_deudores `references_` distrib)
-
+    pago <- pagoDeRepartija repartija
     pure (repartija, pago.pagoNombre, pago.pagoId)
   items :: [RepartijaItem] <- runSelectReturningList $ select $ do
     item <- all_ db.repartija_items
@@ -646,7 +642,7 @@ fetchRepartija unRepartijaId = do
       }
 
 saveRepartijaClaim :: ULID -> M.RepartijaClaim -> Pg M.RepartijaClaim
-saveRepartijaClaim _unRepartijaId repartijaClaim = do
+saveRepartijaClaim repartijaId repartijaClaim = do
   claimId <-
     if repartijaClaim.id == nullUlid
       then liftIO ULID.getULID
@@ -660,14 +656,76 @@ saveRepartijaClaim _unRepartijaId repartijaClaim = do
       onConflictUpdateAll
   -- (onConflictUpdateSet (\fields _oldValues ->
   --   repartijaClaimCantidad fields <-. val_ (fromIntegral <$> M.repartijaClaimCantidad claim')))
+  fetchPagoIdFromRepartija repartijaId >>= traverse_ recalcValidezPago
   pure claim'
 
 deleteRepartijaClaim :: ULID -> Pg ()
 deleteRepartijaClaim claimId = do
+  -- Resolve the owning pago before deleting, since we navigate through the claim.
+  pagoId <- fetchPagoIdFromClaim claimId
   runDelete
     $ delete
       db.repartija_claims
       (\c -> c.repartijaclaimId ==. val_ claimId)
+  forM_ pagoId recalcValidezPago
+
+-- | Recompute and persist a pago's @isValid@ flag. Call this from any mutation
+-- that can affect a pago's validity without going through 'savePago' (e.g.
+-- editing repartija claims), so the stored flag never goes stale.
+recalcValidezPago :: ULID -> Pg ()
+recalcValidezPago pagoId = do
+  pago <- fetchPago pagoId
+  void $ updateIsValidPago (pago & M.addIsValidPago)
+
+-- | Query fragment: the pago that owns a given repartija row, following
+-- distribución → pago (one repartija belongs to one distribución, which is
+-- referenced by exactly one pago, as either pagadores or deudores).
+pagoDeRepartija ::
+  (HasSqlEqualityCheck be ULID) =>
+  DistribucionRepartijaT (QExpr be s)
+  -> Q be BananaSplitDb s (PagoT (QExpr be s))
+pagoDeRepartija repartija = do
+  distrib <- all_ db.distribuciones
+  guard_ (repartija.distribucion `references_` distrib)
+  pago <- all_ db.pagos
+  guard_ (pago.distribucion_pagadores `references_` distrib ||. pago.distribucion_deudores `references_` distrib)
+  pure pago
+
+-- | Query fragment: the pago that owns the repartija with the given id.
+pagoDeRepartijaId ::
+  (HasSqlEqualityCheck be ULID, BeamSqlBackendCanSerialize be ULID) =>
+  ULID
+  -> Q be BananaSplitDb s (PagoT (QExpr be s))
+pagoDeRepartijaId repartijaId = do
+  repartija <- all_ db.repartijas
+  guard_ (repartija.id ==. val_ repartijaId)
+  pagoDeRepartija repartija
+
+-- | Query fragment: the pago that owns the claim with the given id, following
+-- claim → item → repartija → pago.
+pagoDeClaimId ::
+  (HasSqlEqualityCheck be ULID, BeamSqlBackendCanSerialize be ULID) =>
+  ULID
+  -> Q be BananaSplitDb s (PagoT (QExpr be s))
+pagoDeClaimId claimId = do
+  claim <- all_ db.repartija_claims
+  guard_ (claim.repartijaclaimId ==. val_ claimId)
+  item <- all_ db.repartija_items
+  guard_ (claim.repartijaclaimRepartijaItem `references_` item)
+  repartija <- all_ db.repartijas
+  guard_ (item.repartijaitemRepartija `references_` repartija)
+  pagoDeRepartija repartija
+
+grupoIdDePago :: PagoT (QExpr be s) -> QExpr be s ULID
+grupoIdDePago pago = let GrupoId grupoId = pago.pagoGrupo in grupoId
+
+fetchPagoIdFromRepartija :: ULID -> Pg (Maybe ULID)
+fetchPagoIdFromRepartija repartijaId =
+  runSelectReturningOne $ select $ (.pagoId) <$> pagoDeRepartijaId repartijaId
+
+fetchPagoIdFromClaim :: ULID -> Pg (Maybe ULID)
+fetchPagoIdFromClaim claimId =
+  runSelectReturningOne $ select $ (.pagoId) <$> pagoDeClaimId claimId
 
 claimToRow :: M.RepartijaClaim -> RepartijaClaim
 claimToRow claim =
@@ -760,30 +818,12 @@ deleteTransaccionCongelada transaccionId = do
       (\tc -> tc.id ==. val_ transaccionId)
 
 fetchGrupoIdFromRepartija :: ULID -> Pg (Maybe ULID)
-fetchGrupoIdFromRepartija repartijaId = runSelectReturningOne $ select $ do
-  repartija <- all_ db.repartijas
-  guard_ (repartija.id ==. val_ repartijaId)
-  distrib <- all_ db.distribuciones
-  guard_ (repartija.distribucion `references_` distrib)
-  pago <- all_ db.pagos
-  guard_ (pago.distribucion_pagadores `references_` distrib ||. pago.distribucion_deudores `references_` distrib)
-  let GrupoId grupoId = pago.pagoGrupo
-  pure grupoId
+fetchGrupoIdFromRepartija repartijaId =
+  runSelectReturningOne $ select $ grupoIdDePago <$> pagoDeRepartijaId repartijaId
 
 fetchGrupoIdFromClaim :: ULID -> Pg (Maybe ULID)
-fetchGrupoIdFromClaim claimId = runSelectReturningOne $ select $ do
-  claim <- all_ db.repartija_claims
-  guard_ (claim.repartijaclaimId ==. val_ claimId)
-  item <- all_ db.repartija_items
-  guard_ (claim.repartijaclaimRepartijaItem `references_` item)
-  repartija <- all_ db.repartijas
-  guard_ (item.repartijaitemRepartija `references_` repartija)
-  distrib <- all_ db.distribuciones
-  guard_ (repartija.distribucion `references_` distrib)
-  pago <- all_ db.pagos
-  guard_ (pago.distribucion_pagadores `references_` distrib ||. pago.distribucion_deudores `references_` distrib)
-  let GrupoId grupoId = pago.pagoGrupo
-  pure grupoId
+fetchGrupoIdFromClaim claimId =
+  runSelectReturningOne $ select $ grupoIdDePago <$> pagoDeClaimId claimId
 
 distribucionDeSobrasToText :: M.DistribucionDeSobras -> Text
 distribucionDeSobrasToText = \case

@@ -1,4 +1,4 @@
-module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, refreshGrupo, refreshPagos, refreshRepartija, refreshResumen, update, updateRepartijaForFrontend)
+module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshPagos, refreshRepartija, refreshResumen, update, updateRepartijaForFrontend)
 
 import Dict
 import Effect exposing (Effect)
@@ -31,6 +31,9 @@ update msg store =
                 ]
             )
 
+        InvalidateResumen grupoId ->
+            ( { store | resumenes = store.resumenes |> Dict.remove grupoId }, Effect.none )
+
         PagosFetched grupoId pagos ->
             ( store |> savePagos grupoId pagos
             , Effect.none
@@ -42,6 +45,9 @@ update msg store =
                 [ Effect.sendCmd <| Api.getGrupoByIdPagos grupoId (RemoteData.fromResult >> PagosFetched grupoId >> StoreMsg)
                 ]
             )
+
+        InvalidatePagos grupoId ->
+            ( { store | pagosPorGrupo = store.pagosPorGrupo |> Dict.remove grupoId }, Effect.none )
 
         PagoFetched pagoId pago ->
             ( store |> savePago pagoId pago
@@ -218,6 +224,16 @@ ensureResumen grupoId store =
 
         Success _ ->
             Effect.none
+
+
+invalidateResumen : ULID -> Effect msg
+invalidateResumen grupoId =
+    Effect.sendStoreMsg <| InvalidateResumen grupoId
+
+
+invalidatePagos : ULID -> Effect msg
+invalidatePagos grupoId =
+    Effect.sendStoreMsg <| InvalidatePagos grupoId
 
 
 getGrupo : ULID -> Store -> WebData ShallowGrupo

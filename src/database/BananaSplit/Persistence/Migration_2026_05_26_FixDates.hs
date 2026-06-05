@@ -1,6 +1,5 @@
 module BananaSplit.Persistence.Migration_2026_05_26_FixDates (run) where
 
-import Data.Bits (shiftR)
 import Data.Time (Day, UTCTime (..), fromGregorian)
 import Data.Time.Clock.POSIX (posixSecondsToUTCTime)
 import Data.ULID (ULID, ulidToInteger)

@@ -34,8 +34,8 @@ handlePagosGet grupoId = do
   runBeam (fetchShallowPagos grupoId)
 
 handlePagoGet :: ULID -> ULID -> AppHandler Pago
-handlePagoGet grupoId pagoId = do
-  runBeam (fetchPago grupoId pagoId)
+handlePagoGet _grupoId pagoId = do
+  runBeam (fetchPago pagoId)
 
 handlePagoPost :: ULID -> Pago -> AppHandler Pago
 handlePagoPost grupoId pago = do
