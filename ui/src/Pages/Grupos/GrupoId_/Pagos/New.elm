@@ -5,7 +5,6 @@ import Browser.Dom
 import Bytes exposing (Bytes)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
-import Components.NavBar as NavBar
 import Date exposing (Date)
 import Effect exposing (Effect)
 import File exposing (File)
@@ -52,12 +51,7 @@ page shared route =
         , subscriptions = subscriptions
         , view = view shared.store
         }
-        |> Page.withLayout
-            (\_ ->
-                Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    }
-            )
+        |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 
 
 

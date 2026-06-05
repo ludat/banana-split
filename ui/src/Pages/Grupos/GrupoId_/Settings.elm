@@ -1,7 +1,6 @@
 module Pages.Grupos.GrupoId_.Settings exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
-import Components.NavBar as NavBar
 import Effect exposing (Effect)
 import Form exposing (Form, Msg(..))
 import Form.Field
@@ -38,12 +37,7 @@ page shared route =
         , subscriptions = subscriptions
         , view = view shared.store
         }
-        |> Page.withLayout
-            (\_ ->
-                Layouts.Default
-                    { navBarContent = Just <| NavBar.navBar (NavBar.modelFromShared shared route.params.grupoId) shared.store route.path
-                    }
-            )
+        |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 
 
 type alias Model =
