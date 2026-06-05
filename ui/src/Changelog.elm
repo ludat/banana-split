@@ -38,6 +38,10 @@ changelog =
       , title = "Identificá mejor los pagos usando fechas"
       , description = "Ahora podés agregar a tus pagos la fecha en la que ocurrieron para poder identificar mejor entre ellos."
       }
+    , { date = Date.fromCalendarDate 2026 Jun 2
+      , title = "Usá `=` para hacer cuentas mientras cargas un pago"
+      , description = "Ahora mientras escribís un monto podés escribir = seguido de una cuenta matemática y se va a reemplazar por el resultado."
+      }
     ]
 
 
