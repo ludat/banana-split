@@ -157,11 +157,7 @@ viewNavbar unread =
             , onClick ToggleNavBar
             ]
             [ span [ class "navbar-toggler-icon" ] [] ]
-        , Bs.navbarBrand
-            [ Attr.href "#"
-            , onClick (NavigateAndClose Path.Home_)
-            ]
-            [ text "Banana Split" ]
+        , Bs.navbarBrand [ Attr.href "#" ] [ text "Banana Split" ]
         , div [ class "ms-auto d-flex align-items-center gap-2" ]
             [ if unread > 0 then
                 button
