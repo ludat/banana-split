@@ -384,7 +384,10 @@ viewGroupHeader model origin currentPath activeUser store grupo =
                             )
                         ]
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
-                        [ viewShareDropdown origin grupo
+                        [ viewShareDropdown
+                            { title = info.share.title
+                            , url = origin ++ Path.toString info.share.path
+                            }
                         , Bs.btn Bs.Primary
                             [ onClick
                                 (ForwardSharedMessage HideNavbarAfterEvent <|
@@ -438,7 +441,10 @@ grupoIdFromPath currentPath =
         Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
             Just params.grupoId
 
-        _ ->
+        Path.Home_ ->
+            Nothing
+
+        Path.NotFound_ ->
             Nothing
 
 
@@ -453,7 +459,7 @@ type alias Crumb =
 the breadcrumb trail, the big `h2` title, and whether the section tabs should be
 shown (only on top-level sections).
 
-Entity names are resolved from the store, falling back to `"Cargando"` while the
+Entity names are resolved from the store, falling back to `"Cargando..."` while the
 data is still loading.
 
 -}
@@ -461,49 +467,53 @@ headerInfo :
     Path.Path
     -> Store
     -> ShallowGrupo
-    -> { crumbs : List Crumb, title : String, showTabs : Bool }
+    -> { crumbs : List Crumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
 headerInfo currentPath store grupo =
     let
+        grupoCrumb : Crumb
         grupoCrumb =
             { label = grupo.nombre, path = Just (Path.Grupos_Id_ { id = grupo.id }) }
 
+        pagosCrumb : Crumb
         pagosCrumb =
             { label = "Pagos", path = Just (Path.Grupos_GrupoId__Pagos { grupoId = grupo.id }) }
 
-        prefix crumbs =
-            { label = "Grupo", path = Nothing } :: crumbs
+        gruposCrumb : Crumb
+        gruposCrumb =
+            { label = "Grupos", path = Nothing }
 
-        topLevel sectionLabel =
-            { crumbs =
-                prefix
-                    [ grupoCrumb
-                    , { label = sectionLabel, path = Nothing }
-                    ]
+        grupoShare =
+            { title = grupo.nombre, path = Path.Grupos_Id_ { id = grupo.id } }
+
+        topLevelGrupo crumbs =
+            { crumbs = crumbs
             , title = grupo.nombre
             , showTabs = True
+            , share = grupoShare
             }
     in
     case currentPath of
         Path.Grupos_GrupoId__Pagos _ ->
-            topLevel "Pagos"
+            topLevelGrupo [ gruposCrumb ]
 
         Path.Grupos_GrupoId__Liquidaciones _ ->
-            topLevel "Liquidaciones"
+            topLevelGrupo [ gruposCrumb ]
 
         Path.Grupos_GrupoId__Participantes _ ->
-            topLevel "Participantes"
+            topLevelGrupo [ gruposCrumb ]
 
         Path.Grupos_GrupoId__Settings _ ->
-            topLevel "Ajustes"
+            topLevelGrupo [ gruposCrumb ]
 
-        Path.Grupos_GrupoId__Pagos_New _ ->
+        Path.Grupos_GrupoId__Pagos_New params ->
             { crumbs =
-                prefix
-                    [ grupoCrumb
-                    , { label = "Nuevo Pago", path = Nothing }
-                    ]
+                [ gruposCrumb
+                , grupoCrumb
+                , pagosCrumb
+                ]
             , title = "Nuevo pago"
             , showTabs = False
+            , share = { title = "Nuevo pago", path = Path.Grupos_GrupoId__Pagos_New params }
             }
 
         Path.Grupos_GrupoId__Pagos_PagoId_ params ->
@@ -512,16 +522,16 @@ headerInfo currentPath store grupo =
                     Store.getPago params.pagoId store
                         |> RemoteData.toMaybe
                         |> Maybe.map .nombre
-                        |> Maybe.withDefault "Cargando"
+                        |> Maybe.withDefault "Cargando..."
             in
             { crumbs =
-                prefix
-                    [ grupoCrumb
-                    , pagosCrumb
-                    , { label = pagoNombre, path = Nothing }
-                    ]
+                [ gruposCrumb
+                , grupoCrumb
+                , pagosCrumb
+                ]
             , title = pagoNombre
             , showTabs = False
+            , share = { title = pagoNombre, path = Path.Grupos_GrupoId__Pagos_PagoId_ params }
             }
 
         Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
@@ -540,62 +550,54 @@ headerInfo currentPath store grupo =
                         |> Maybe.map (\r -> Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = grupo.id, pagoId = r.pagoId })
             in
             { crumbs =
-                prefix
-                    [ grupoCrumb
-                    , pagosCrumb
-                    , { label = pagoNombre, path = pagoCrumbPath }
-                    , { label = "Deudores", path = Nothing }
-                    ]
-            , title = pagoNombre
+                [ gruposCrumb
+                , grupoCrumb
+                , pagosCrumb
+                , { label = pagoNombre, path = pagoCrumbPath }
+                ]
+            , title = "Deudores de '" ++ pagoNombre ++ "'"
             , showTabs = False
+            , share = { title = "Deudores de " ++ pagoNombre, path = Path.Grupos_GrupoId__Repartijas_RepartijaId_ params }
             }
 
         Path.Grupos_Id_ _ ->
-            { crumbs = prefix [ grupoCrumb ]
+            { crumbs = [ gruposCrumb ]
             , title = grupo.nombre
             , showTabs = True
+            , share = grupoShare
             }
 
         Path.NotFound_ ->
-            { crumbs = prefix [ grupoCrumb ]
+            { crumbs = []
             , title = grupo.nombre
-            , showTabs = True
+            , showTabs = False
+            , share = grupoShare
             }
 
         Path.Home_ ->
             { crumbs = []
             , title = "Banana split"
             , showTabs = False
+            , share = grupoShare
             }
 
 
 viewBreadcrumb : List Crumb -> Html Msg
 viewBreadcrumb crumbs =
     let
-        lastIndex =
-            List.length crumbs - 1
+        viewCrumb crumb =
+            li [ class "breadcrumb-item" ]
+                [ case crumb.path of
+                    Just path ->
+                        Html.a [ Path.href path ] [ text crumb.label ]
 
-        viewCrumb index crumb =
-            if index == lastIndex then
-                li
-                    [ class "breadcrumb-item active"
-                    , Attr.attribute "aria-current" "page"
-                    ]
-                    [ text crumb.label ]
-
-            else
-                li [ class "breadcrumb-item" ]
-                    [ case crumb.path of
-                        Just path ->
-                            Html.a [ Path.href path ] [ text crumb.label ]
-
-                        Nothing ->
-                            text crumb.label
-                    ]
+                    Nothing ->
+                        text crumb.label
+                ]
     in
     Html.nav [ Attr.attribute "aria-label" "breadcrumb" ]
         [ ol [ class "breadcrumb mb-1 small" ]
-            (List.indexedMap viewCrumb crumbs)
+            (crumbs |> List.map viewCrumb)
         ]
 
 
@@ -672,15 +674,12 @@ viewOffcanvas model navBarContent =
 
 
 {-| The "Compartir" split button: a native/clipboard share plus a QR code
-option, both pointing at the group's main page. Opening and closing (including
-closing on blur) is handled by Bootstrap's own dropdown JS via `data-bs-toggle`.
+option, both pointing at the current page's share target. Opening and closing
+(including closing on blur) is handled by Bootstrap's own dropdown JS via
+`data-bs-toggle`.
 -}
-viewShareDropdown : String -> ShallowGrupo -> Html Msg
-viewShareDropdown origin grupo =
-    let
-        url =
-            origin ++ (Path.toString <| Path.Grupos_Id_ { id = grupo.id })
-    in
+viewShareDropdown : { title : String, url : String } -> Html Msg
+viewShareDropdown { title, url } =
     div [ class "dropdown" ]
         [ button
             [ type_ "button"
@@ -697,7 +696,7 @@ viewShareDropdown origin grupo =
                     [ class "dropdown-item"
                     , Attr.href "#"
                     , preventDefaultOn "click"
-                        (Decode.succeed ( ShareUrl { title = grupo.nombre, url = url }, True ))
+                        (Decode.succeed ( ShareUrl { title = title, url = url }, True ))
                     ]
                     [ i [ class "bi bi-link-45deg me-2" ] []
                     , text "Compartir link"
@@ -708,7 +707,7 @@ viewShareDropdown origin grupo =
                     [ class "dropdown-item"
                     , Attr.href "#"
                     , preventDefaultOn "click"
-                        (Decode.succeed ( OpenQrShare { title = grupo.nombre, url = url }, True ))
+                        (Decode.succeed ( OpenQrShare { title = title, url = url }, True ))
                     ]
                     [ i [ class "bi bi-qr-code me-2" ] []
                     , text "Código QR"
