@@ -56,6 +56,7 @@ init grupoId store =
     , Effect.batch
         [ Store.ensureResumen grupoId store
         , Store.ensureGrupo grupoId store
+        , Effect.getCurrentUser grupoId
         ]
     )
 
