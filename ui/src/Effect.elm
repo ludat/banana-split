@@ -22,6 +22,7 @@ port module Effect exposing
     , sendToast
     , sendToastMsg
     , setUnsavedChangesWarning
+    , share
     , toCmd
     )
 
@@ -244,6 +245,22 @@ saveLastReadChangelog =
         outgoing
             { tag = "SAVE_LAST_READ_CHANGELOG"
             , data = Json.Encode.null
+            }
+
+
+{-| Open the native share sheet (or fall back to copying the link to the
+clipboard) for the given title and URL.
+-}
+share : { title : String, url : String } -> Effect msg
+share { title, url } =
+    SendCmd <|
+        outgoing
+            { tag = "SHARE"
+            , data =
+                Json.Encode.object
+                    [ ( "title", Json.Encode.string title )
+                    , ( "url", Json.Encode.string url )
+                    ]
             }
 
 

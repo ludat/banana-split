@@ -19,6 +19,7 @@ import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Time
 import Utils.Toasts as Toast
+import Utils.Toasts.Types exposing (ToastLevel(..))
 
 
 
@@ -26,16 +27,17 @@ import Utils.Toasts as Toast
 
 
 type alias Flags =
-    { now : Int, offset : Int, timeZone : String, lastReadChangelog : Maybe Int }
+    { now : Int, offset : Int, timeZone : String, lastReadChangelog : Maybe Int, origin : String }
 
 
 decoder : Json.Decode.Decoder Flags
 decoder =
-    Json.Decode.map4 Flags
+    Json.Decode.map5 Flags
         (Json.Decode.field "now" Json.Decode.int)
         (Json.Decode.field "offset" Json.Decode.int)
         (Json.Decode.field "timeZone" Json.Decode.string)
         (Json.Decode.field "lastReadChangelog" (Json.Decode.nullable Json.Decode.int))
+        (Json.Decode.field "origin" Json.Decode.string)
 
 
 
@@ -50,7 +52,7 @@ init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
 init possiblyFlags _ =
     let
         flags =
-            Result.withDefault { now = 0, offset = 0, timeZone = "UTC", lastReadChangelog = Nothing } possiblyFlags
+            Result.withDefault { now = 0, offset = 0, timeZone = "UTC", lastReadChangelog = Nothing, origin = "" } possiblyFlags
 
         now =
             Time.millisToPosix flags.now
@@ -69,6 +71,7 @@ init possiblyFlags _ =
       , lastReadChangelog =
             flags.lastReadChangelog
                 |> Maybe.map (\ms -> Date.fromPosix timezone (Time.millisToPosix ms))
+      , origin = flags.origin
       }
     , Effect.none
     )
@@ -182,6 +185,9 @@ decodeIncomingPortMessage { tag, data } =
                 )
                 data
                 |> Result.toMaybe
+
+        "SHARE_LINK_COPIED" ->
+            Just <| AddToast { level = ToastSuccess, content = "Link copiado al portapapeles" }
 
         _ ->
             Nothing

@@ -71,6 +71,7 @@ export const flags = ({ env }) => {
     offset: now.getTimezoneOffset(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     lastReadChangelog: lastReadRaw ? parseInt(lastReadRaw, 10) : null,
+    origin: window.location.origin,
   };
 };
 
@@ -119,6 +120,29 @@ export const onReady = ({ app, env }) => {
         case "SAVE_LAST_READ_CHANGELOG":
           // data: null
           localStorage.setItem("banana-split:lastReadChangelog", new Date().getTime().toString());
+          break;
+
+        case "SHARE":
+          // data: { title: string, url: string }
+          {
+            if (navigator.share) {
+              navigator.share({ title: data.title, url: data.url }).catch((err) => {
+                // AbortError happens when the user dismisses the share sheet.
+                if (err && err.name !== "AbortError") {
+                  console.warn("Share failed:", err);
+                }
+              });
+            } else if (navigator.clipboard) {
+              navigator.clipboard.writeText(data.url).then(
+                () =>
+                  app.ports.incoming.send({
+                    tag: "SHARE_LINK_COPIED",
+                    data: null,
+                  }),
+                (err) => console.warn("Clipboard write failed:", err),
+              );
+            }
+          }
           break;
 
         default:

@@ -5,19 +5,21 @@ import Components.Bootstrap as Bs
 import Date exposing (Date)
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
-import Html exposing (Html, button, div, h2, h5, i, li, node, ol, option, p, select, span, strong, text, ul)
+import Html exposing (Html, a, button, div, h2, h5, i, li, node, ol, option, p, select, span, strong, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
-import Html.Events exposing (on, onClick)
+import Html.Events exposing (on, onClick, preventDefaultOn)
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Models.Grupo exposing (GrupoLike)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
+import QRCode
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared.Model as Shared
 import Shared.Msg as Shared
+import Svg.Attributes as SvgAttr
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types exposing (Toast, ToastLevel(..), ToastMsg, Toasts)
 import View exposing (View)
@@ -33,7 +35,7 @@ layout props shared route =
     Layout.new
         { init = \() -> init
         , update = update
-        , view = view props shared.store route.path shared.userId shared.toasties shared.lastReadChangelog shared.today
+        , view = view props shared.store route.path shared.userId shared.toasties shared.lastReadChangelog shared.today shared.origin
         , subscriptions = subscriptions
         }
 
@@ -46,6 +48,7 @@ type alias Model =
     { navBarOpen : Bool
     , changelogOpen : Bool
     , openDropdown : Maybe String
+    , qrShare : Maybe { title : String, url : String }
     }
 
 
@@ -54,6 +57,7 @@ init =
     ( { navBarOpen = False
       , changelogOpen = False
       , openDropdown = Nothing
+      , qrShare = Nothing
       }
     , Effect.none
     )
@@ -71,6 +75,9 @@ type Msg
     | CloseChangelog
     | MarkChangelogReadAndClose
     | ToggleDropdown String
+    | ShareUrl { title : String, url : String }
+    | OpenQrShare { title : String, url : String }
+    | CloseQrShare
 
 
 
@@ -133,6 +140,21 @@ update msg model =
             , Effect.none
             )
 
+        ShareUrl data ->
+            ( model
+            , Effect.share data
+            )
+
+        OpenQrShare data ->
+            ( { model | qrShare = Just data }
+            , Effect.none
+            )
+
+        CloseQrShare ->
+            ( { model | qrShare = Nothing }
+            , Effect.none
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
@@ -151,9 +173,10 @@ view :
     -> Toasts
     -> Maybe Date
     -> Date
+    -> String
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view props store currentPath activeUser toasts lastReadChangelog now { toContentMsg, model, content } =
+view props store currentPath activeUser toasts lastReadChangelog now origin { toContentMsg, model, content } =
     let
         recentEntries =
             Changelog.recentChangelog lastReadChangelog now
@@ -188,7 +211,7 @@ view props store currentPath activeUser toasts lastReadChangelog now { toContent
         , case remoteGrupo of
             Success grupo ->
                 Html.map toContentMsg <|
-                    viewGroupHeader model currentPath activeUser store grupo
+                    viewGroupHeader model origin currentPath activeUser store grupo
 
             _ ->
                 text ""
@@ -196,6 +219,8 @@ view props store currentPath activeUser toasts lastReadChangelog now { toContent
             viewOffcanvas model props.navBarContent
         , Html.map toContentMsg <|
             viewChangelogModal model.changelogOpen recentEntries
+        , Html.map toContentMsg <|
+            viewQrModal model.qrShare
         , div [ class "position-fixed bottom-0 start-50 translate-middle-x p-3", Attr.style "z-index" "1090" ]
             [ Html.map toContentMsg <|
                 Toasts.view Toasts.config renderToast ToastMsg toasts
@@ -273,8 +298,8 @@ viewNavbar unread =
         ]
 
 
-viewGroupHeader : Model -> Path.Path -> Maybe ULID -> Store -> ShallowGrupo -> Html Msg
-viewGroupHeader model currentPath activeUser store grupo =
+viewGroupHeader : Model -> String -> Path.Path -> Maybe ULID -> Store -> ShallowGrupo -> Html Msg
+viewGroupHeader model origin currentPath activeUser store grupo =
     let
         info =
             headerInfo currentPath store grupo
@@ -359,7 +384,8 @@ viewGroupHeader model currentPath activeUser store grupo =
                             )
                         ]
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
-                        [ Bs.btn Bs.Primary
+                        [ viewShareDropdown origin grupo
+                        , Bs.btn Bs.Primary
                             [ onClick
                                 (ForwardSharedMessage HideNavbarAfterEvent <|
                                     Shared.NavigateTo <|
@@ -643,6 +669,95 @@ viewOffcanvas model navBarContent =
                 ]
             ]
         ]
+
+
+{-| The "Compartir" split button: a native/clipboard share plus a QR code
+option, both pointing at the group's main page. Opening and closing (including
+closing on blur) is handled by Bootstrap's own dropdown JS via `data-bs-toggle`.
+-}
+viewShareDropdown : String -> ShallowGrupo -> Html Msg
+viewShareDropdown origin grupo =
+    let
+        url =
+            origin ++ (Path.toString <| Path.Grupos_Id_ { id = grupo.id })
+    in
+    div [ class "dropdown" ]
+        [ button
+            [ type_ "button"
+            , class "btn btn-outline-secondary dropdown-toggle"
+            , Attr.attribute "data-bs-toggle" "dropdown"
+            , Attr.attribute "aria-expanded" "false"
+            ]
+            [ i [ class "bi bi-share me-1" ] []
+            , text "Compartir"
+            ]
+        , ul [ class "dropdown-menu dropdown-menu-end shadow" ]
+            [ li []
+                [ a
+                    [ class "dropdown-item"
+                    , Attr.href "#"
+                    , preventDefaultOn "click"
+                        (Decode.succeed ( ShareUrl { title = grupo.nombre, url = url }, True ))
+                    ]
+                    [ i [ class "bi bi-link-45deg me-2" ] []
+                    , text "Compartir link"
+                    ]
+                ]
+            , li []
+                [ a
+                    [ class "dropdown-item"
+                    , Attr.href "#"
+                    , preventDefaultOn "click"
+                        (Decode.succeed ( OpenQrShare { title = grupo.nombre, url = url }, True ))
+                    ]
+                    [ i [ class "bi bi-qr-code me-2" ] []
+                    , text "Código QR"
+                    ]
+                ]
+            ]
+        ]
+
+
+{-| Modal showing a scannable QR code of the group's link.
+-}
+viewQrModal : Maybe { title : String, url : String } -> Html Msg
+viewQrModal qrShare =
+    let
+        qrImage url =
+            QRCode.fromString url
+                |> Result.map
+                    (QRCode.toSvg
+                        [ SvgAttr.width "240px"
+                        , SvgAttr.height "240px"
+                        ]
+                    )
+                |> Result.withDefault (text "No se pudo generar el código QR")
+    in
+    Bs.modal
+        { isOpen = qrShare /= Nothing
+        , onClose = CloseQrShare
+        , title =
+            qrShare
+                |> Maybe.map .title
+                |> Maybe.withDefault "Código QR"
+        , body =
+            case qrShare of
+                Just { url } ->
+                    [ div [ class "text-center" ]
+                        [ div
+                            [ class "d-inline-block bg-white rounded p-3"
+                            , style "line-height" "0"
+                            ]
+                            [ qrImage url ]
+                        , p [ class "text-muted small mt-3 mb-0 text-break" ] [ text url ]
+                        ]
+                    ]
+
+                Nothing ->
+                    []
+        , footer =
+            [ Bs.btn Bs.Transparent [ onClick CloseQrShare ] [ text "Cerrar" ] ]
+        }
 
 
 viewChangelogModal : Bool -> List Changelog.Entry -> Html Msg
