@@ -96,13 +96,13 @@ monto-input {
         flex-direction: column;
         align-items: center;
         justify-content: center;
-        gap: 3cqh;
-        font-size: 20cqh;
+        gap: 0.1rem;
+        font-size: 0.7rem;
         line-height: 1;
         white-space: nowrap;
 
         & > .bi {
-            font-size: 33cqh;
+            font-size: 1.15rem;
         }
 
         &:not(.active) {
@@ -123,19 +123,19 @@ monto-input {
         display: flex;
         align-items: center;
         justify-content: center;
-        width: 93cqh;
-        height: 93cqh;
+        width: 4.25rem;
+        height: 4.25rem;
         position: relative;
-        margin-block: -30cqh;
-        transform: translateY(-30cqh);
+        margin-block: -1.55rem;
+        transform: translateY(-1.55rem);
         border-radius: 50%;
         border: 0;
         background-color: var(--bs-primary);
         color: #fff;
-        box-shadow: 0 7cqh 21cqh rgba(0, 0, 0, 0.25);
+        box-shadow: 0 0.25rem 0.75rem rgba(0, 0, 0, 0.25);
 
         & > .bi {
-            font-size: 43cqh;
+            font-size: 2rem;
         }
     }
 }
