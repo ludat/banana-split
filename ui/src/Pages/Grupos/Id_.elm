@@ -273,7 +273,9 @@ viewLeftColumn store userId model grupo =
                         , case netosForActive of
                             Just netos ->
                                 div [ class "row g-3" ]
-                                    [ div [ class "col-4" ]
+                                    [ div [ class "col-12 col-md-4" ]
+                                        [ viewTuEstadoCard userId netos grupo grupo.monedaPorDefecto monedaSeleccionada ]
+                                    , div [ class "col-6 col-md-4" ]
                                         [ viewNetoCard "Mayor pagador"
                                             (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.reverse |> List.head)
                                             grupo
@@ -281,7 +283,7 @@ viewLeftColumn store userId model grupo =
                                             monedaSeleccionada
                                             False
                                         ]
-                                    , div [ class "col-4" ]
+                                    , div [ class "col-6 col-md-4" ]
                                         [ viewNetoCard "Mayor deudor"
                                             (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.head)
                                             grupo
@@ -289,8 +291,6 @@ viewLeftColumn store userId model grupo =
                                             monedaSeleccionada
                                             False
                                         ]
-                                    , div [ class "col-4" ]
-                                        [ viewTuEstadoCard userId netos grupo grupo.monedaPorDefecto monedaSeleccionada ]
                                     ]
 
                             Nothing ->

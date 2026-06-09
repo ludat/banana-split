@@ -1,6 +1,7 @@
 module Layouts.Default.Grupo exposing (Model, Msg, Props, layout)
 
 import Components.Bootstrap as Bs
+import Css
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID)
 import Html exposing (Html, a, button, div, h2, i, li, node, ol, option, p, select, strong, text, ul)
@@ -252,7 +253,7 @@ viewGroupHeader model origin currentPath activeUser store grupo =
                                    )
                             )
                         ]
-                    , div [ class "d-flex flex-wrap align-items-center gap-2" ]
+                    , div [ class "d-none d-md-flex flex-wrap align-items-center gap-2" ]
                         [ viewShareDropdown
                             { title = info.share.title
                             , url = origin ++ Path.toString info.share.path
@@ -272,8 +273,13 @@ viewGroupHeader model origin currentPath activeUser store grupo =
                 ]
             ]
         , if info.showTabs then
-            div [ class "container-fluid" ]
+            div [ class "container-fluid d-none d-md-block" ]
                 [ viewTabNav currentPath grupo ]
+
+          else
+            text ""
+        , if info.showTabs then
+            viewBottomNav origin currentPath grupo info
 
           else
             text ""
@@ -353,26 +359,35 @@ headerInfo currentPath store grupo =
 
         grupoShare =
             { title = grupo.nombre, path = Path.Grupos_Id_ { id = grupo.id } }
-
-        topLevelGrupo crumbs =
-            { crumbs = crumbs
-            , title = grupo.nombre
-            , showTabs = True
-            , share = grupoShare
-            }
     in
     case currentPath of
         Path.Grupos_GrupoId__Pagos _ ->
-            topLevelGrupo [ gruposCrumb ]
+            { crumbs = [ gruposCrumb, grupoCrumb ]
+            , title = "Pagos"
+            , showTabs = True
+            , share = { path = currentPath, title = grupo.nombre }
+            }
 
         Path.Grupos_GrupoId__Liquidaciones _ ->
-            topLevelGrupo [ gruposCrumb ]
+            { crumbs = [ gruposCrumb, grupoCrumb ]
+            , title = "Liquidaciones"
+            , showTabs = True
+            , share = { path = currentPath, title = grupo.nombre }
+            }
 
         Path.Grupos_GrupoId__Participantes _ ->
-            topLevelGrupo [ gruposCrumb ]
+            { crumbs = [ gruposCrumb, grupoCrumb ]
+            , title = "Participantes"
+            , showTabs = True
+            , share = { path = currentPath, title = grupo.nombre }
+            }
 
         Path.Grupos_GrupoId__Settings _ ->
-            topLevelGrupo [ gruposCrumb ]
+            { crumbs = [ gruposCrumb, grupoCrumb ]
+            , title = "Ajustes"
+            , showTabs = True
+            , share = { path = currentPath, title = grupo.nombre }
+            }
 
         Path.Grupos_GrupoId__Pagos_New params ->
             { crumbs =
@@ -498,6 +513,105 @@ viewTabNav currentPath grupo =
             , attrs = [ Path.href <| Path.Grupos_GrupoId__Settings { grupoId = grupo.id } ]
             }
             [ text "Ajustes" ]
+        ]
+
+
+{-| The mobile-only bottom tab bar. Mirrors the desktop top tab nav plus a
+raised "Ingresar pago" FAB in the centre and a "Más" popover (opening upward)
+for the sections that don't fit on the bar. Hidden on `md+` via the
+`navbar-bottom` component's own media query.
+-}
+viewBottomNav :
+    String
+    -> Path.Path
+    -> ShallowGrupo
+    -> { crumbs : List Crumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
+    -> Html Msg
+viewBottomNav origin currentPath grupo info =
+    let
+        item icon label path =
+            a
+                [ classList [ ( "navbar-item", True ), ( "active", currentPath == path ) ]
+                , Path.href path
+                ]
+                [ i [ class ("bi " ++ icon) ] []
+                , Html.span [] [ text label ]
+                ]
+
+        masActive =
+            (currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id })
+                || (currentPath == Path.Grupos_GrupoId__Settings { grupoId = grupo.id })
+
+        shareUrl =
+            origin ++ Path.toString info.share.path
+    in
+    Html.nav [ Css.navbar_bottom ]
+        [ item "bi-house-door" "Resumen" (Path.Grupos_Id_ { id = grupo.id })
+        , item "bi-card-list" "Pagos" (Path.Grupos_GrupoId__Pagos { grupoId = grupo.id })
+        , a
+            [ Css.navbar_item
+            , Path.href (Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id })
+            ]
+            [ Html.span [ Css.navbar_big_button ]
+                [ i [ class "bi bi-plus-lg" ] [] ]
+            , Html.span [] [ text "Ingresar pago" ]
+            ]
+        , item "bi-wallet2" "Saldos" (Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id })
+        , div [ Css.navbar_more, class "dropup" ]
+            [ a
+                [ classList [ ( "navbar-item", True ), ( "active", masActive ) ]
+                , Attr.attribute "role" "button"
+                , Attr.attribute "data-bs-toggle" "dropdown"
+                , Attr.attribute "aria-expanded" "false"
+                ]
+                [ i [ class "bi bi-three-dots" ] []
+                , Html.span [] [ text "Más" ]
+                ]
+            , ul [ class "dropdown-menu dropdown-menu-end shadow" ]
+                [ li []
+                    [ a
+                        [ class "dropdown-item"
+                        , classList [ ( "active", currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id } ) ]
+                        , Path.href (Path.Grupos_GrupoId__Participantes { grupoId = grupo.id })
+                        ]
+                        [ i [ class "bi bi-people me-2" ] []
+                        , text "Participantes"
+                        ]
+                    ]
+                , li []
+                    [ a
+                        [ class "dropdown-item"
+                        , classList [ ( "active", currentPath == Path.Grupos_GrupoId__Settings { grupoId = grupo.id } ) ]
+                        , Path.href (Path.Grupos_GrupoId__Settings { grupoId = grupo.id })
+                        ]
+                        [ i [ class "bi bi-gear me-2" ] []
+                        , text "Ajustes"
+                        ]
+                    ]
+                , li []
+                    [ a
+                        [ class "dropdown-item"
+                        , Attr.href "#"
+                        , preventDefaultOn "click"
+                            (Decode.succeed ( ShareUrl { title = info.share.title, url = shareUrl }, True ))
+                        ]
+                        [ i [ class "bi bi-share me-2" ] []
+                        , text "Compartir"
+                        ]
+                    ]
+                , li []
+                    [ a
+                        [ class "dropdown-item"
+                        , Attr.href "#"
+                        , preventDefaultOn "click"
+                            (Decode.succeed ( OpenQrShare { title = info.share.title, url = shareUrl }, True ))
+                        ]
+                        [ i [ class "bi bi-qr-code me-2" ] []
+                        , text "Código QR"
+                        ]
+                    ]
+                ]
+            ]
         ]
 
 

@@ -59,3 +59,120 @@ monto-input {
     width: 2px;
     z-index: 1;
 }
+
+/* Mobile bottom tab bar, split into 4 independent, reusable components.
+
+   The bar height is the single sizing anchor. The bar is a query container
+   (`container-type: size`), so everything inside is expressed in `cqh`
+   (percent of the bar's height) and scales from this one value — no other
+   hardcoded sizes. (The 1px hairline border is intentionally left fixed.) */
+:root {
+    --navbar-bottom-height: 3.5rem;
+}
+
+/* 1 — fixed, full-width grid of rigid equal columns. Mobile-only: the desktop
+   hide lives here (replacing the `d-md-none` class) so the element can use the
+   `Css.navbar_bottom` helper as its single class. */
+.navbar-bottom {
+    @scope (&) {
+        position: fixed;
+        inset: auto 0 0 0;
+        display: grid;
+        grid-auto-flow: column;
+        grid-auto-columns: minmax(0, 1fr);
+        height: var(--navbar-bottom-height);
+        container-type: size;
+        border-top: 1px solid var(--bs-border-color);
+        background-color: var(--bs-body-bg);
+        z-index: 1030;
+        padding-bottom: env(safe-area-inset-bottom);
+
+        /* uniform placement: each slot fills its rigid cell (whole cell tappable) */
+        & > * {
+            align-self: stretch;
+            justify-self: stretch;
+        }
+    }
+}
+
+@media (min-width: 768px) {
+    .navbar-bottom {
+        display: none;
+    }
+}
+
+/* 2 — icon-over-label slot, self-contained so it works wrapped too (Más) */
+.navbar-item {
+    @scope (&) {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 3cqh;
+        font-size: 20cqh;
+        line-height: 1;
+        white-space: nowrap; /* replaces .text-nowrap */
+
+        & > .bi {
+            font-size: 33cqh;
+        }
+
+        /* Class-bearing selectors: bare declarations inside @scope carry no
+           specificity, so colour/decoration must out-rank Bootstrap's
+           `a { color; text-decoration }` (the slots are `a` tags). */
+        &:not(.active) {
+            color: var(--bs-secondary-color);
+            text-decoration: none;
+        }
+
+        &.active {
+            color: var(--bs-primary);
+            font-weight: bold;
+            text-decoration: none;
+        }
+    }
+}
+
+/* 3 — raised circle inside a navbar-item; overflows via transform, no layout shift */
+.navbar-big-button {
+    @scope (&) {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        width: 93cqh;
+        height: 93cqh;
+        position: relative;
+        /* Collapse the flow footprint to ~icon size (margin) so the sibling
+           label keeps its normal place, then lift the circle above the bar
+           (transform) without shifting the label. */
+        margin-block: -30cqh;
+        transform: translateY(-30cqh); /* tune to taste */
+        border-radius: 50%;
+        border: 0;
+        background-color: var(--bs-primary);
+        color: #fff;
+        box-shadow: 0 7cqh 21cqh rgba(0, 0, 0, 0.25);
+
+        & > .bi {
+            font-size: 43cqh;
+        }
+    }
+}
+
+/* 4 — held: dropup context that reuses navbar-item, stretched to fill its cell */
+.navbar-more {
+    @scope (&) {
+        display: flex;
+
+        & > .navbar-item {
+            flex: 1;
+        }
+    }
+}
+
+
+@media (max-width: 767.98px) {
+    body {
+        padding-bottom: var(--navbar-bottom-height);
+    }
+}
