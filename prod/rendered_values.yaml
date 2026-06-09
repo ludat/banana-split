@@ -3,7 +3,7 @@ services:
   backend:
     image:
       repository: ghcr.io/ludat/banana-split
-      tag: 20260605-123513@sha256:4b8deb5c2fa080233e98b788246ae059035e6c2845d84babdb2a077be9a38354
+      tag: 20260609-100535@sha256:00314e1aa8ced1049535179b34258e4afff6101863af9d2abc5ddd6b5d9858fc
       source:
         type: upstream
         stage: stg
