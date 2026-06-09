@@ -138,7 +138,7 @@ view toasts lastReadChangelog now { toContentMsg, model, content } =
             viewOffcanvas model unread
         , Html.map toContentMsg <|
             viewChangelogModal model.changelogOpen modalEntries
-        , div [ class "position-fixed bottom-0 start-50 translate-middle-x p-3", Attr.style "z-index" "1090" ]
+        , div [ class "position-fixed bottom-0 start-50 translate-middle-x p-3", Attr.style "z-index" "1090", Attr.style "pointer-events" "none" ]
             [ Html.map toContentMsg <|
                 Toasts.view Toasts.config renderToast ToastMsg toasts
             ]
@@ -297,6 +297,7 @@ renderToast toast =
     in
     div
         [ class ("toast show align-items-center border-0 " ++ bgClass)
+        , Attr.style "pointer-events" "auto"
         , Attr.attribute "role" "alert"
         , Attr.attribute "aria-live" "assertive"
         , Attr.attribute "aria-atomic" "true"
