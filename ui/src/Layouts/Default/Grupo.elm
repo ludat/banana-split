@@ -253,13 +253,14 @@ viewGroupHeader model origin currentPath activeUser store grupo =
                                    )
                             )
                         ]
-                    , div [ class "d-none d-md-flex flex-wrap align-items-center gap-2" ]
+                    , div [ class "d-flex flex-wrap align-items-center gap-2" ]
                         [ viewShareDropdown
                             { title = info.share.title
                             , url = origin ++ Path.toString info.share.path
                             }
                         , Bs.btn Bs.Primary
-                            [ onClick
+                            [ class "d-none d-md-inline-flex"
+                            , onClick
                                 (ForwardSharedMessage <|
                                     Shared.NavigateTo <|
                                         Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id }
@@ -279,7 +280,7 @@ viewGroupHeader model origin currentPath activeUser store grupo =
           else
             text ""
         , if info.showTabs then
-            viewBottomNav origin currentPath grupo info
+            viewBottomNav currentPath grupo
 
           else
             text ""
@@ -522,12 +523,10 @@ for the sections that don't fit on the bar. Hidden on `md+` via the
 `navbar-bottom` component's own media query.
 -}
 viewBottomNav :
-    String
-    -> Path.Path
+    Path.Path
     -> ShallowGrupo
-    -> { crumbs : List Crumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
     -> Html Msg
-viewBottomNav origin currentPath grupo info =
+viewBottomNav currentPath grupo =
     let
         item icon label path =
             a
@@ -541,9 +540,6 @@ viewBottomNav origin currentPath grupo info =
         masActive =
             (currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id })
                 || (currentPath == Path.Grupos_GrupoId__Settings { grupoId = grupo.id })
-
-        shareUrl =
-            origin ++ Path.toString info.share.path
     in
     Html.nav [ Css.navbar_bottom ]
         [ item "bi-house-door" "Resumen" (Path.Grupos_Id_ { id = grupo.id })
@@ -586,28 +582,6 @@ viewBottomNav origin currentPath grupo info =
                         ]
                         [ i [ class "bi bi-gear me-2" ] []
                         , text "Ajustes"
-                        ]
-                    ]
-                , li []
-                    [ a
-                        [ class "dropdown-item"
-                        , Attr.href "#"
-                        , preventDefaultOn "click"
-                            (Decode.succeed ( ShareUrl { title = info.share.title, url = shareUrl }, True ))
-                        ]
-                        [ i [ class "bi bi-share me-2" ] []
-                        , text "Compartir"
-                        ]
-                    ]
-                , li []
-                    [ a
-                        [ class "dropdown-item"
-                        , Attr.href "#"
-                        , preventDefaultOn "click"
-                            (Decode.succeed ( OpenQrShare { title = info.share.title, url = shareUrl }, True ))
-                        ]
-                        [ i [ class "bi bi-qr-code me-2" ] []
-                        , text "Código QR"
                         ]
                     ]
                 ]
