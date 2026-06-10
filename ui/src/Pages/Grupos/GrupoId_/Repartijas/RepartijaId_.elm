@@ -727,8 +727,12 @@ viewRepartidoState itemRepartidoState =
                     else
                         "btn-warning"
 
-                RepartidoEquitativamenteEntre _ ->
-                    "btn-success"
+                RepartidoEquitativamenteEntre { cantidadDeParticipantes } ->
+                    if cantidadDeParticipantes >= 2 then
+                        "btn-success"
+
+                    else
+                        "btn-warning"
     in
     button
         [ type_ "button"
