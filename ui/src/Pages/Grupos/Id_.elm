@@ -322,7 +322,7 @@ viewUltimosPagosCard store model grupo =
             let
                 ultimosPagos =
                     pagos
-                        |> List.sortWith (\a b -> Date.compare b.fecha a.fecha)
+                        |> List.sortBy .pagoId
                         |> List.take 5
             in
             Bs.card []
