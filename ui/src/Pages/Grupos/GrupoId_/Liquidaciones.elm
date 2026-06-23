@@ -247,20 +247,20 @@ pagoFromTransaccion hoy moneda transaction =
     , pagadores =
         { id = emptyUlid
         , tipo =
-            Api.TipoDistribucionMontoEquitativo <|
+            Api.TipoDistribucionPartes <|
                 { id = emptyUlid
-                , participantes =
-                    [ transaction.from
+                , partes =
+                    [ Api.Ponderado 1 transaction.from
                     ]
                 }
         }
     , deudores =
         { id = emptyUlid
         , tipo =
-            Api.TipoDistribucionMontoEquitativo <|
+            Api.TipoDistribucionPartes <|
                 { id = emptyUlid
-                , participantes =
-                    [ transaction.to
+                , partes =
+                    [ Api.Ponderado 1 transaction.to
                     ]
                 }
         }

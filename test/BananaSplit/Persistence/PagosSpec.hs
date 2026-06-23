@@ -80,8 +80,8 @@ saveInvalidRepartijaPago grupo =
       , fecha = fromGregorian 2025 1 1
       , pagadores =
           Distribucion nullUlid $
-            TipoDistribucionMontoEquitativo $
-              DistribucionMontoEquitativo nullUlid [participanteDe grupo]
+            TipoDistribucionPartes $
+              DistribucionPartes nullUlid [Ponderado 1 (participanteDe grupo)]
       , deudores =
           Distribucion nullUlid $
             TipoDistribucionRepartija $
@@ -109,8 +109,7 @@ instance Arbitrary DistribucionDeSobras where
 instance Arbitrary TipoDistribucion where
   arbitrary =
     oneof
-      [ pure $ TipoDistribucionMontoEquitativo $ DistribucionMontoEquitativo nullUlid []
-      , pure $ TipoDistribucionMontosEspecificos $ DistribucionMontosEspecificos nullUlid []
+      [ pure $ TipoDistribucionPartes $ DistribucionPartes nullUlid []
       , TipoDistribucionRepartija <$> (Repartija nullUlid "nombre" <$> arbitrary <*> arbitrary <*> pure [] <*> pure [])
       ]
 
@@ -145,25 +144,13 @@ distribucionWithoutIds distribucion =
   distribucion
     { id = nullUlid
     , tipo = case distribucion.tipo of
-        TipoDistribucionMontoEquitativo d -> TipoDistribucionMontoEquitativo (distribucionMontoEquitativoWithoutIds d)
-        TipoDistribucionMontosEspecificos d -> TipoDistribucionMontosEspecificos (distribucionMontosEspecificosWithoutIds d)
+        TipoDistribucionPartes d -> TipoDistribucionPartes (distribucionPartesWithoutIds d)
         TipoDistribucionRepartija r -> TipoDistribucionRepartija (repartijaWithoutIds r)
     }
 
-distribucionMontoEquitativoWithoutIds :: DistribucionMontoEquitativo -> DistribucionMontoEquitativo
-distribucionMontoEquitativoWithoutIds d =
+distribucionPartesWithoutIds :: DistribucionPartes -> DistribucionPartes
+distribucionPartesWithoutIds d =
   d{id = nullUlid}
-
-distribucionMontosEspecificosWithoutIds :: DistribucionMontosEspecificos -> DistribucionMontosEspecificos
-distribucionMontosEspecificosWithoutIds d =
-  d
-    { id = nullUlid
-    , montos = fmap montoEspecificoWithoutIds d.montos
-    }
-
-montoEspecificoWithoutIds :: MontoEspecifico -> MontoEspecifico
-montoEspecificoWithoutIds m =
-  m{id = nullUlid}
 
 repartijaWithoutIds :: Repartija -> Repartija
 repartijaWithoutIds r =

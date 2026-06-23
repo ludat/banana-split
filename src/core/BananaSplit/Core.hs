@@ -10,13 +10,10 @@
 
 module BananaSplit.Core (
   Grupo (..),
-  Parte (Ponderado, MontoFijo),
   ShallowGrupo (..),
   nullUlid,
   -- Pago
   Distribucion (..),
-  DistribucionMontoEquitativo (..),
-  DistribucionMontosEspecificos (..),
   Pago (..),
   ShallowPago (..),
   TipoDistribucion (..),
@@ -41,7 +38,7 @@ import Elm.TyRep (
 import BananaSplit.Deudas
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
 import BananaSplit.Monto (Monto)
-import BananaSplit.Participante (Participante, ParticipanteId)
+import BananaSplit.Participante (Participante)
 import BananaSplit.ULID
 import Preludat
 
@@ -120,11 +117,6 @@ addIsValidPago :: Pago -> Pago
 addIsValidPago pago =
   pago{isValid = isValid pago}
 
-data Parte
-  = MontoFijo Monto ParticipanteId
-  | Ponderado Integer ParticipanteId
-  deriving (Show, Eq, Generic)
-
 instance IsElmDefinition UTCTime where
   compileElmDef _ =
     ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "UTCTime", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
@@ -133,7 +125,6 @@ instance IsElmDefinition Day where
   compileElmDef _ =
     ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "Day", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
 
-Elm.deriveBoth Elm.defaultOptions ''Parte
 Elm.deriveBoth Elm.defaultOptions ''Pago
 Elm.deriveBoth Elm.defaultOptions ''ShallowPago
 Elm.deriveBoth Elm.defaultOptions ''Grupo

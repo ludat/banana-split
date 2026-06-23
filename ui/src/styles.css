@@ -149,3 +149,31 @@ monto-input {
         }
     }
 }
+
+/* Pie de acciones (errores + botón) de cada paso de un pago. En mobile flota al
+   fondo de la pantalla; en desktop fluye al final de la página. */
+.action-footer {
+    padding-top: 0.5rem;
+
+    /* En mobile queda fijo al fondo de la pantalla, siempre visible. Su altura
+       la define su contenido y crece hacia arriba con los errores. */
+    @media (max-width: 767.98px) {
+        position: fixed;
+        inset: auto 0 0 0;
+        z-index: 1020;
+        padding: 0.5rem 1rem;
+        background-color: var(--bs-body-bg);
+        box-shadow: 0 -0.5rem 1rem -0.75rem rgba(0, 0, 0, 0.3);
+    }
+}
+
+/* Cualquier página que tenga un pie de acciones fijo reserva espacio de scroll
+   al final, para que el contenido no quede tapado por el pie. Como el pie es
+   fijo, ese espacio queda oculto debajo de él (no es espacio vacío visible). */
+@media (max-width: 767.98px) {
+    .container-fluid:has(.action-footer) {
+        /* !important para ganarle al utilitario `py-3` de Bootstrap, que también
+           usa !important. */
+        padding-bottom: 6rem !important;
+    }
+}

@@ -1,27 +1,13 @@
-module Models.ResumenNetos exposing (errorAccionableEn, errorMensaje, getDeudasFromResumen, getTotalFromResumen)
+module Models.ResumenNetos exposing (errorAccionableEn, errorMensaje, getDeudasFromResumen)
 
 import Generated.Api exposing (Monto, Netos, ResumenNetos, TipoErrorResumen(..))
 import Models.LugarAccionable exposing (LugarParaAccionar(..))
 import Models.Monto as Monto
 
 
-getTotalFromResumen : ResumenNetos -> Monto
-getTotalFromResumen resumen =
-    resumen.total
-
-
 errorMensaje : TipoErrorResumen -> String
 errorMensaje tipo =
     case tipo of
-        ErrorMontosEspecificosVacios ->
-            "No hay montos especificados"
-
-        ErrorMontosEspecificosTotalNoCoincide actual esperado ->
-            "El total (" ++ Monto.toString actual ++ ") debería ser igual al monto del pago (" ++ Monto.toString esperado ++ "), " ++ Monto.diffText actual esperado
-
-        ErrorEquitativoSinParticipantes ->
-            "No hay participantes especificados"
-
         ErrorRepartijaSinItems ->
             "No hay items para repartir."
 
@@ -34,19 +20,19 @@ errorMensaje tipo =
         ErrorRepartijaTotalReclamadoNoCoincide totalReclamado totalPago ->
             "El total reclamado (" ++ Monto.toString totalReclamado ++ ") no coincide con el monto del pago (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalReclamado totalPago
 
+        ErrorPartesVacias ->
+            "No hay participantes en el reparto"
+
+        ErrorPartesMontoFijoSuperaTotal totalFijos totalPago ->
+            "Los montos fijos (" ++ Monto.toString totalFijos ++ ") superan el monto del pago (" ++ Monto.toString totalPago ++ ")"
+
+        ErrorPartesTotalNoCoincide totalFijos totalPago ->
+            "El total de los montos fijos (" ++ Monto.toString totalFijos ++ ") debería ser igual al monto del pago (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalFijos totalPago
+
 
 errorAccionableEn : TipoErrorResumen -> List LugarParaAccionar
 errorAccionableEn tipo =
     case tipo of
-        ErrorMontosEspecificosVacios ->
-            [ Lugar_CreacionPago ]
-
-        ErrorMontosEspecificosTotalNoCoincide _ _ ->
-            [ Lugar_CreacionPago ]
-
-        ErrorEquitativoSinParticipantes ->
-            [ Lugar_CreacionPago ]
-
         ErrorRepartijaSinItems ->
             [ Lugar_CreacionPago ]
 
@@ -58,6 +44,15 @@ errorAccionableEn tipo =
 
         ErrorRepartijaTotalReclamadoNoCoincide _ _ ->
             [ Lugar_PaginaRepartija ]
+
+        ErrorPartesVacias ->
+            [ Lugar_CreacionPago ]
+
+        ErrorPartesMontoFijoSuperaTotal _ _ ->
+            [ Lugar_CreacionPago ]
+
+        ErrorPartesTotalNoCoincide _ _ ->
+            [ Lugar_CreacionPago ]
 
 
 getDeudasFromResumen : ResumenNetos -> Maybe (Netos Monto)

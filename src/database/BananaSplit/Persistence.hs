@@ -200,7 +200,9 @@ fetchDistribucionMontoEquitativoItems distribucionMontoEquitativoId = do
     pure item
   pure $ items & fmap (\item -> M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid)
 
-fetchDistribucionMontosEspecificosItems :: ULID -> Pg [M.MontoEspecifico]
+-- | Las distribuciones de montos específicos viejas se leen como partes con
+-- montos fijos.
+fetchDistribucionMontosEspecificosItems :: ULID -> Pg [M.Parte]
 fetchDistribucionMontosEspecificosItems distribucionMontosEspecificosId = do
   items <- runSelectReturningList $ select $ do
     item <- all_ db.distribuciones_montos_especificos_items
@@ -210,11 +212,27 @@ fetchDistribucionMontosEspecificosItems distribucionMontosEspecificosId = do
     $ items
     & fmap
       ( \item ->
-          M.MontoEspecifico
-            { M.id = item.id
-            , M.participante = M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid
-            , M.monto = constructMonto item.monto
-            }
+          M.MontoFijo
+            (constructMonto item.monto)
+            (M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid)
+      )
+
+fetchDistribucionPartesItems :: ULID -> Pg [M.Parte]
+fetchDistribucionPartesItems distribucionPartesId = do
+  items <- runSelectReturningList $ select $ do
+    item <- all_ db.distribuciones_partes_items
+    guard_ (item.distribucion ==. DistribucionPartesId (val_ distribucionPartesId))
+    pure item
+  pure
+    $ items
+    & fmap
+      ( \item ->
+          let participante = M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid
+          in case (constructMontoMaybe item.monto, item.cuota) of
+               (Just monto, Just cuota) -> M.PonderadoYMontoFijo monto (fromIntegral cuota) participante
+               (Just monto, Nothing) -> M.MontoFijo monto participante
+               (Nothing, Just cuota) -> M.Ponderado (fromIntegral cuota) participante
+               (Nothing, Nothing) -> panic $ "DistribucionPartesItem sin monto ni cuota: " <> show item.id
       )
 
 fetchDistribucion :: ULID -> Pg (Maybe M.Distribucion)
@@ -235,12 +253,14 @@ fetchDistribucion distribucionId = do
         Nothing -> pure Nothing
         Just dbDistrib -> do
           participantes <- fetchDistribucionMontoEquitativoItems dbDistrib.id
+          -- Las distribuciones equitativas viejas se leen como partes con una
+          -- ponderación de 1 para cada participante.
           pure
             $ Just
-            $ M.TipoDistribucionMontoEquitativo
-            $ M.DistribucionMontoEquitativo
+            $ M.TipoDistribucionPartes
+            $ M.DistribucionPartes
               { M.id = dbDistrib.id
-              , M.participantes = participantes
+              , M.partes = participantes & fmap (M.Ponderado 1)
               }
     "DistribucionMontosEspecificos" -> do
       dbDistribucionMontosEspecificos :: Maybe DistribucionMontosEspecifico <- runSelectReturningOne $ select $ do
@@ -251,13 +271,13 @@ fetchDistribucion distribucionId = do
       case dbDistribucionMontosEspecificos of
         Nothing -> pure Nothing
         Just dbDistrib -> do
-          montos <- fetchDistribucionMontosEspecificosItems dbDistrib.id
+          partes <- fetchDistribucionMontosEspecificosItems dbDistrib.id
           pure
             $ Just
-            $ M.TipoDistribucionMontosEspecificos
-            $ M.DistribucionMontosEspecificos
+            $ M.TipoDistribucionPartes
+            $ M.DistribucionPartes
               { M.id = dbDistrib.id
-              , M.montos = montos
+              , M.partes = partes
               }
     "Repartija" -> do
       repartijaId <- fmap (fromMaybe (panic "Repartija not found")) $ runSelectReturningOne $ select $ do
@@ -266,6 +286,23 @@ fetchDistribucion distribucionId = do
         pure r.id
       repartija <- fetchRepartija repartijaId
       pure $ Just $ M.TipoDistribucionRepartija repartija.repartija
+    "DistribucionPartes" -> do
+      dbDistribucionPartes :: Maybe DistribucionPartes <- runSelectReturningOne $ select $ do
+        distribucionPartes <- all_ db.distribuciones_partes
+        guard_ (distribucionPartes.distribucion ==. DistribucionId (val_ distribucionId))
+        pure distribucionPartes
+
+      case dbDistribucionPartes of
+        Nothing -> pure Nothing
+        Just dbDistrib -> do
+          partes <- fetchDistribucionPartesItems dbDistrib.id
+          pure
+            $ Just
+            $ M.TipoDistribucionPartes
+            $ M.DistribucionPartes
+              { M.id = dbDistrib.id
+              , M.partes = partes
+              }
     _ -> pure Nothing
 
   case tipo of
@@ -391,102 +428,63 @@ saveDistribucion distribucionWithoutId = do
       (conflictingFields (\d -> d.id))
       onConflictUpdateAll
   case distribucionWithoutId.tipo of
-    M.TipoDistribucionMontoEquitativo tipoWithoutId -> do
-      tipoId <-
-        if tipoWithoutId.id == nullUlid
-          then liftIO ULID.getULID
-          else pure tipoWithoutId.id
-      let tipo = tipoWithoutId{M.id = tipoId} :: M.DistribucionMontoEquitativo
-
-      runDelete
-        $ delete
-          db.distribuciones_monto_equitativo
-          (\dme -> dme.id /=. val_ tipo.id &&. dme.distribucion ==. val_ (DistribucionId distribucionId))
-
-      runInsert
-        $ insertOnConflict
-          db.distribuciones_monto_equitativo
-          ( insertValues
-              [ DistribucionMontoEquitativo tipo.id (DistribucionId distribucion.id)
-              ]
-          )
-          (conflictingFields (\dme -> (dme.id, dme.distribucion)))
-          onConflictUpdateAll
-
-      runDelete
-        $ delete
-          db.distribuciones_monto_equitativo_items
-          ( \item ->
-              item.distribucion
-                ==. DistribucionMontoEquitativoId (val_ tipo.id)
-                &&. not_ (item.participante `in_` [ParticipanteId (val_ $ M.participanteId2ULID p) | p <- tipo.participantes])
-          )
-      runInsert
-        $ insertOnConflict
-          db.distribuciones_monto_equitativo_items
-          ( insertValues
-              [DistribucionMontoEquitativoItem (DistribucionMontoEquitativoId tipo.id) (participanteId2Persistent p) | p <- tipo.participantes]
-          )
-          (conflictingFields (\item -> (item.distribucion, item.participante)))
-          onConflictUpdateAll
-      pure $ distribucion{M.tipo = M.TipoDistribucionMontoEquitativo tipo}
-    M.TipoDistribucionMontosEspecificos tipoWithoutId -> do
-      montosEspecificos <- forM tipoWithoutId.montos $ \monto -> do
-        montoId <-
-          if monto.id == nullUlid
-            then liftIO ULID.getULID
-            else pure monto.id
-        pure (monto{M.id = montoId} :: M.MontoEspecifico)
-
-      tipoId <-
-        if tipoWithoutId.id == nullUlid
-          then liftIO ULID.getULID
-          else pure tipoWithoutId.id
-
-      let tipo = tipoWithoutId{M.id = tipoId, M.montos = montosEspecificos} :: M.DistribucionMontosEspecificos
-
-      runDelete
-        $ delete
-          db.distribuciones_montos_especificos
-          (\dme -> dme.id /=. val_ tipo.id &&. dme.distribucion ==. val_ (DistribucionId distribucionId))
-
-      runInsert
-        $ insertOnConflict
-          db.distribuciones_montos_especificos
-          ( insertValues
-              [ DistribucionMontosEspecificos tipoId (DistribucionId distribucion.id)
-              ]
-          )
-          (conflictingFields (\dme -> (dme.id, dme.distribucion)))
-          onConflictUpdateAll
-
-      runDelete
-        $ delete
-          db.distribuciones_montos_especificos_items
-          ( \item ->
-              item.distribucion
-                ==. val_ (DistribucionMontosEspecificosId tipo.id)
-                &&. not_ (item.id `in_` [val_ m.id | m <- tipo.montos])
-          )
-
-      runInsert
-        $ insertOnConflict
-          db.distribuciones_montos_especificos_items
-          ( insertValues
-              [DistribucionMontosEspecificosItem m.id (DistribucionMontosEspecificosId tipo.id) (participanteId2Persistent m.participante) (deconstructMonto m.monto) | m <- tipo.montos]
-          )
-          (conflictingFields (\item -> item.id))
-          onConflictUpdateAll
-      pure $ distribucion{M.tipo = M.TipoDistribucionMontosEspecificos tipo}
     M.TipoDistribucionRepartija repartijaWithoutId -> do
       repartija <- saveRepartija distribucion.id repartijaWithoutId
       pure $ distribucion{M.tipo = M.TipoDistribucionRepartija repartija}
+    M.TipoDistribucionPartes tipoWithoutId -> do
+      tipoId <-
+        if tipoWithoutId.id == nullUlid
+          then liftIO ULID.getULID
+          else pure tipoWithoutId.id
+      let tipo = tipoWithoutId{M.id = tipoId} :: M.DistribucionPartes
+
+      runDelete
+        $ delete
+          db.distribuciones_partes
+          (\dp -> dp.id /=. val_ tipo.id &&. dp.distribucion ==. val_ (DistribucionId distribucionId))
+
+      runInsert
+        $ insertOnConflict
+          db.distribuciones_partes
+          ( insertValues
+              [ DistribucionPartes tipo.id (DistribucionId distribucion.id)
+              ]
+          )
+          (conflictingFields (\dp -> (dp.id, dp.distribucion)))
+          onConflictUpdateAll
+
+      -- Las partes no tienen id propio asi que las reemplazamos todas
+      runDelete
+        $ delete
+          db.distribuciones_partes_items
+          (\item -> item.distribucion ==. DistribucionPartesId (val_ tipo.id))
+
+      items <- forM tipo.partes $ \parte -> do
+        itemId <- liftIO ULID.getULID
+        let mkItem participante monto cuota =
+              DistribucionPartesItem
+                itemId
+                (DistribucionPartesId tipo.id)
+                (participanteId2Persistent participante)
+                (deconstructMontoMaybe monto)
+                (fromIntegral <$> cuota)
+        pure $ case parte of
+          M.MontoFijo monto participante ->
+            mkItem participante (Just monto) Nothing
+          M.Ponderado cuota participante ->
+            mkItem participante Nothing (Just cuota)
+          M.PonderadoYMontoFijo monto cuota participante ->
+            mkItem participante (Just monto) (Just cuota)
+
+      runInsert
+        $ insert db.distribuciones_partes_items
+        $ insertValues items
+      pure $ distribucion{M.tipo = M.TipoDistribucionPartes tipo}
 
 tipoDistribucionToText :: M.TipoDistribucion -> Text
 tipoDistribucionToText tipo = case tipo of
-  M.TipoDistribucionMontosEspecificos _ -> "DistribucionMontosEspecificos"
-  M.TipoDistribucionMontoEquitativo _ -> "DistribucionMontoEquitativo"
   M.TipoDistribucionRepartija _ -> "Repartija"
+  M.TipoDistribucionPartes _ -> "DistribucionPartes"
 
 deletePago :: ULID -> Pg ()
 deletePago unId = do

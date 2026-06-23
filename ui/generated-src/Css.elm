@@ -1,4 +1,4 @@
-module Css exposing (barras_precio, eje_vertical, navbar_bottom, navbar_item, navbar_big_button, navbar_more)
+module Css exposing (barras_precio, eje_vertical, navbar_bottom, navbar_item, navbar_big_button, navbar_more, action_footer)
 
 import Html
 import Html.Attributes
@@ -32,3 +32,8 @@ navbar_big_button =
 navbar_more : Html.Attribute msg
 navbar_more =
     Html.Attributes.class "navbar-more"
+
+
+action_footer : Html.Attribute msg
+action_footer =
+    Html.Attributes.class "action-footer"

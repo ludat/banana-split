@@ -1,4 +1,4 @@
-module Models.Moneda exposing (nombre, perEach, simbolo, toString, todas, validate)
+module Models.Moneda exposing (nombre, perEach, simbolo, simboloUnico, toString, todas, validate)
 
 import Form.Error as FormError
 import Form.Validate as V exposing (Validation)

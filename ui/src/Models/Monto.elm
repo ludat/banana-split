@@ -2,7 +2,6 @@ module Models.Monto exposing
     ( abs
     , add
     , diffText
-    , negate
     , toFloat
     , toRawString
     , toString
@@ -64,11 +63,6 @@ toFloat monto =
 zero : Monto
 zero =
     Monto 0 0
-
-
-negate : Monto -> Monto
-negate monto =
-    { lugaresDespuesDeLaComa = monto.lugaresDespuesDeLaComa, valor = monto.valor * -1 }
 
 
 {-| Add two Montos, scaling both to the larger precision so no decimal places are lost.
