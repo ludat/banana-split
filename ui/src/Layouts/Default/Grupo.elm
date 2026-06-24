@@ -10,7 +10,7 @@ import Html.Events exposing (on, onClick, preventDefaultOn)
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
-import Models.Grupo exposing (GrupoLike)
+import Models.Grupo exposing (GrupoLike, grupoIdFromPath)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import QRCode
@@ -285,43 +285,6 @@ viewGroupHeader model origin currentPath activeUser store grupo =
           else
             text ""
         ]
-
-
-{-| Extracts the grupo id carried by a route, if any. Used to look up the grupo
-shown in the header straight from the store.
--}
-grupoIdFromPath : Path.Path -> Maybe ULID
-grupoIdFromPath currentPath =
-    case currentPath of
-        Path.Grupos_Id_ params ->
-            Just params.id
-
-        Path.Grupos_GrupoId__Pagos params ->
-            Just params.grupoId
-
-        Path.Grupos_GrupoId__Pagos_New params ->
-            Just params.grupoId
-
-        Path.Grupos_GrupoId__Pagos_PagoId_ params ->
-            Just params.grupoId
-
-        Path.Grupos_GrupoId__Liquidaciones params ->
-            Just params.grupoId
-
-        Path.Grupos_GrupoId__Participantes params ->
-            Just params.grupoId
-
-        Path.Grupos_GrupoId__Settings params ->
-            Just params.grupoId
-
-        Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
-            Just params.grupoId
-
-        Path.Home_ ->
-            Nothing
-
-        Path.NotFound_ ->
-            Nothing
 
 
 {-| A single breadcrumb segment. `path` is `Just` when the segment should be a

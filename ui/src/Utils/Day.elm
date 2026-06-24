@@ -89,8 +89,12 @@ mesAbreviado date =
 
 toString : Day -> String
 toString fecha =
-    String.fromInt (Date.day fecha)
-        ++ " "
-        ++ mesAbreviado fecha
-        ++ " "
+    let
+        pad n =
+            String.padLeft 2 '0' (String.fromInt n)
+    in
+    pad (Date.day fecha)
+        ++ "-"
+        ++ pad (Date.monthNumber fecha)
+        ++ "-"
         ++ String.fromInt (Date.year fecha)

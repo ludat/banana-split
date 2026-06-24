@@ -27,9 +27,13 @@ import View exposing (View)
 
 page : Shared.Model -> Route { id : String } -> Page Model Msg
 page shared route =
+    let
+        ctx =
+            PagoDetalleModal.context shared route
+    in
     Page.new
-        { init = \() -> init route shared.store
-        , update = update
+        { init = \() -> init ctx route shared.store
+        , update = update ctx
         , subscriptions = subscriptions
         , view = view shared.store shared.userId
         }
@@ -43,14 +47,14 @@ type alias Model =
     }
 
 
-init : Route { id : String } -> Store -> ( Model, Effect Msg )
-init route store =
+init : PagoDetalleModal.Context -> Route { id : String } -> Store -> ( Model, Effect Msg )
+init ctx route store =
     let
         grupoId =
             route.params.id
 
         ( pagoModal, modalEffect ) =
-            PagoDetalleModal.init route grupoId
+            PagoDetalleModal.init ctx route
     in
     ( { grupoId = grupoId
       , monedaSeleccionada = MonedaDefaultDelGrupo
@@ -73,8 +77,8 @@ type Msg
     | PagoModalMsg PagoDetalleModal.Msg
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : PagoDetalleModal.Context -> Msg -> Model -> ( Model, Effect Msg )
+update ctx msg model =
     case msg of
         SelectMoneda moneda ->
             ( { model | monedaSeleccionada = MonedaSeleccionadaPorUsuario moneda }
@@ -84,14 +88,14 @@ update msg model =
         OpenPago pagoId ->
             let
                 ( pagoModal, eff ) =
-                    PagoDetalleModal.open pagoId model.pagoModal
+                    PagoDetalleModal.open ctx pagoId
             in
             ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
         PagoModalMsg subMsg ->
             let
                 ( pagoModal, eff ) =
-                    PagoDetalleModal.update subMsg model.pagoModal
+                    PagoDetalleModal.update ctx subMsg model.pagoModal
             in
             ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
