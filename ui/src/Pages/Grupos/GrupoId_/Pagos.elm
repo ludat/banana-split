@@ -29,8 +29,8 @@ page shared route =
             PagoDetalleModal.context shared route
     in
     Page.new
-        { init = \() -> init ctx route shared.store
-        , update = update ctx
+        { init = \() -> init route shared.store
+        , update = update ctx shared.store
         , subscriptions = subscriptions
         , view = view shared.store
         }
@@ -43,14 +43,14 @@ type alias Model =
     }
 
 
-init : PagoDetalleModal.Context -> Route { grupoId : String } -> Store -> ( Model, Effect Msg )
-init ctx route store =
+init : Route { grupoId : String } -> Store -> ( Model, Effect Msg )
+init route store =
     let
         grupoId =
             route.params.grupoId
 
         ( pagoModal, modalEffect ) =
-            PagoDetalleModal.init ctx route
+            PagoDetalleModal.init route
     in
     ( { grupoId = grupoId, pagoModal = pagoModal }
     , Effect.batch
@@ -67,8 +67,8 @@ type Msg
     | PagoModalMsg PagoDetalleModal.Msg
 
 
-update : PagoDetalleModal.Context -> Msg -> Model -> ( Model, Effect Msg )
-update ctx msg model =
+update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
+update ctx store msg model =
     case msg of
         OpenPago pagoId ->
             let
@@ -80,7 +80,7 @@ update ctx msg model =
         PagoModalMsg subMsg ->
             let
                 ( pagoModal, eff ) =
-                    PagoDetalleModal.update ctx subMsg model.pagoModal
+                    PagoDetalleModal.update ctx store subMsg model.pagoModal
             in
             ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
@@ -109,7 +109,7 @@ view store model =
             , body =
                 [ div [ class "container-fluid py-3" ]
                     [ viewPagos store model grupo ]
-                , Html.map PagoModalMsg (PagoDetalleModal.view grupo model.pagoModal)
+                , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
                 ]
             }
 

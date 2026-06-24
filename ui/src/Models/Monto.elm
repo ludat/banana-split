@@ -2,6 +2,7 @@ module Models.Monto exposing
     ( abs
     , add
     , diffText
+    , sub
     , toFloat
     , toRawString
     , toString
@@ -75,6 +76,19 @@ add a b =
     in
     { lugaresDespuesDeLaComa = precision
     , valor = scaleTo precision a + scaleTo precision b
+    }
+
+
+{-| Subtract `b` from `a`, scaling both to the larger precision so no decimal places are lost.
+-}
+sub : Monto -> Monto -> Monto
+sub a b =
+    let
+        precision =
+            max a.lugaresDespuesDeLaComa b.lugaresDespuesDeLaComa
+    in
+    { lugaresDespuesDeLaComa = precision
+    , valor = scaleTo precision a - scaleTo precision b
     }
 
 

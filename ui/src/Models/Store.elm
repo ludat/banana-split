@@ -1,4 +1,4 @@
-module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshPagos, refreshRepartija, refreshResumen, update, updateRepartijaForFrontend)
+module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshPago, refreshPagos, refreshRepartija, refreshResumen, update, updateRepartijaForFrontend)
 
 import Dict
 import Effect exposing (Effect)
@@ -138,6 +138,11 @@ updateRepartijaForFrontend repartijaId repartijaPage =
 refreshPagos : ULID -> Effect msg
 refreshPagos grupoId =
     Effect.sendStoreMsg <| FetchPagos grupoId
+
+
+refreshPago : ULID -> Effect msg
+refreshPago pagoId =
+    Effect.sendStoreMsg <| FetchPago pagoId
 
 
 refreshRepartija : ULID -> Effect msg

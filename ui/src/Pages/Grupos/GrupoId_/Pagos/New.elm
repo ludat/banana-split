@@ -5,8 +5,10 @@ import Browser.Dom
 import Bytes exposing (Bytes)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
+import Components.GraficoTorta as GraficoTorta
 import Css
 import Date exposing (Date)
+import Dict
 import Effect exposing (Effect)
 import File exposing (File)
 import Form exposing (Form)
@@ -74,6 +76,7 @@ type Msg
     | ReceiptImageBytes File Bytes
     | ReceiptParseResponse (Result Http.Error Api.ReceiptImageResponse)
     | ClearReceiptError
+    | Cancel
 
 
 type Section
@@ -388,7 +391,7 @@ update shared msg model =
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el pago"
-                , Effect.pushRoutePath <| Path.Grupos_Id_ { id = model.grupoId }
+                , irAlPagoEnLista model.grupoId pago.pagoId
                 ]
             )
                 |> andThenSendWarningOnExit
@@ -411,6 +414,7 @@ update shared msg model =
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el pago"
+                , irAlPagoEnLista model.grupoId pago.pagoId
                 ]
             )
                 |> andThenUpdateResumenesFromForms model
@@ -495,6 +499,14 @@ update shared msg model =
         ClearReceiptError ->
             ( { model | receiptParseState = Nothing }
             , Effect.none
+            )
+
+        Cancel ->
+            ( { model | hasUnsavedChanges = False }
+            , Effect.batch
+                [ Effect.setUnsavedChangesWarning False
+                , Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos { grupoId = model.grupoId }
+                ]
             )
 
         ReceiptImageSelected file ->
@@ -694,6 +706,18 @@ updateAllForms participantes formMsgs model =
         )
         model
         formMsgs
+
+
+{-| Navega a la lista de pagos abriendo el modal de detalle del pago dado (la
+página de pagos abre ese modal cuando ve `?pago=<id>` en la URL).
+-}
+irAlPagoEnLista : ULID -> ULID -> Effect msg
+irAlPagoEnLista grupoId pagoId =
+    Effect.pushRoute
+        { path = Path.Grupos_GrupoId__Pagos { grupoId = grupoId }
+        , query = Dict.singleton "pago" pagoId
+        , hash = Nothing
+        }
 
 
 andThenSendWarningOnExit : ( Model, Effect Msg ) -> ( Model, Effect Msg )
@@ -1166,6 +1190,30 @@ viewActionFooter children =
     div [ Css.action_footer ] children
 
 
+{-| Arma las porciones de la torta a partir de los netos del resumen de la
+sección (pagadores o deudores), tomando la sección con `accessor` cuando el
+resumen ya cargó. Delega en `GraficoTorta.porciones` el cálculo del reparto.
+-}
+porcionesTorta : GrupoLike g -> Maybe Monto -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> List GraficoTorta.PorcionTorta
+porcionesTorta grupo totalPago resumenData accessor =
+    case resumenData of
+        Success resumenPago ->
+            GraficoTorta.porciones grupo totalPago (accessor resumenPago)
+
+        _ ->
+            []
+
+
+{-| Caja con la torta del reparto que va al pie, a la izquierda del botón
+principal. Es un botón que abre un modal con la torta en grande y su leyenda.
+`modalId` debe ser único por sección para no colisionar entre pasos.
+-}
+viewTortaFooter : GrupoLike g -> Maybe Monto -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> String -> Html Msg
+viewTortaFooter grupo totalPago resumenData accessor modalId =
+    div [ class "flex-shrink-0" ]
+        [ GraficoTorta.viewTortaTrigger modalId (porcionesTorta grupo totalPago resumenData accessor) ]
+
+
 view : Store -> Model -> View Msg
 view store model =
     case store |> Store.getGrupo model.grupoId of
@@ -1250,10 +1298,19 @@ viewStepTabs model =
                     )
                 ]
     in
-    Html.ul [ class "nav nav-tabs mb-4" ]
-        [ tab BasicPagoData "Gasto"
-        , tab PagadoresSection "Pago"
-        , tab DeudoresSection "Reparto"
+    div [ class "d-flex align-items-end mb-4" ]
+        [ Html.ul [ class "nav nav-tabs flex-grow-1" ]
+            [ tab BasicPagoData "Gasto"
+            , tab PagadoresSection "Pago"
+            , tab DeudoresSection "Reparto"
+            ]
+        , button
+            [ type_ "button"
+            , class "btn-close ms-3 mb-2"
+            , Attr.attribute "aria-label" "Cancelar"
+            , onClick Cancel
+            ]
+            []
         ]
 
 
@@ -1431,18 +1488,21 @@ viewPagadoresSection grupo model =
                 [ viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
                 , viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
                 ]
-            , viewPartesTable prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.pagadores)) form
+            , viewPartesTable grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.pagadores)) form
             , viewActionFooter
                 [ viewErrorFromResumenData model.resumenPagadores .resumenPagadores
-                , Bs.btn Bs.Primary
-                    [ -- Se permite continuar aunque el gasto sea inválido (p. ej.
-                      -- montos que no cuadran); sólo se bloquea si el form no es
-                      -- siquiera construible.
-                      disabled (Form.getOutput form == Nothing)
-                    , onClick SubmitCurrentSection
-                    , class "w-100"
+                , div [ class "d-flex gap-2 align-items-stretch" ]
+                    [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenPagadores .resumenPagadores "torta-pagadores"
+                    , Bs.btn Bs.Primary
+                        [ -- Se permite continuar aunque el gasto sea inválido (p. ej.
+                          -- montos que no cuadran); sólo se bloquea si el form no es
+                          -- siquiera construible.
+                          disabled (Form.getOutput form == Nothing)
+                        , onClick SubmitCurrentSection
+                        , class "flex-grow-1"
+                        ]
+                        [ text "Siguiente" ]
                     ]
-                    [ text "Siguiente" ]
                 ]
             ]
         ]
@@ -1483,8 +1543,9 @@ viewDeudoresSection grupo model =
                   -- scope: `.resumenDeudores` ya viene sin el prefijo "deudores"
                   -- que `.resumen` agrega al combinar pagadores y deudores.
                   viewErrorFromResumenData model.resumenDeudores .resumenDeudores
-                , if model.hasUnsavedChanges then
-                    let
+                , div [ class "d-flex gap-2 align-items-stretch" ]
+                    [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenDeudores .resumenDeudores "torta-deudores"
+                    , let
                         textoCTA =
                             case model.currentPagoId of
                                 Nothing ->
@@ -1492,20 +1553,18 @@ viewDeudoresSection grupo model =
 
                                 Just _ ->
                                     "Actualizar pago"
-                    in
-                    Bs.btn Bs.Primary
+                      in
+                      Bs.btn Bs.Primary
                         [ -- Se permite enviar aunque el gasto sea inválido; queda
-                          -- guardado con `isValid = False`. Sólo se bloquea si el
-                          -- form no es construible.
-                          disabled (Form.getOutput model.pagoForm == Nothing)
+                          -- guardado con `isValid = False`. Se bloquea si el form no
+                          -- es construible o si no hay cambios para guardar.
+                          disabled (Form.getOutput model.pagoForm == Nothing || not model.hasUnsavedChanges)
                         , onClick (PagoForm Form.Submit)
                         , Attr.id "pago-submit-button"
-                        , class "w-100"
+                        , class "flex-grow-1"
                         ]
                         [ text textoCTA ]
-
-                  else
-                    text ""
+                    ]
                 ]
             ]
         ]
@@ -1671,7 +1730,7 @@ viewPartesForm grupo prefix form =
             [ viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
             , viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
             ]
-        , viewPartesTable prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.deudores)) form
+        , viewPartesTable grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.deudores)) form
         ]
 
 
@@ -1857,8 +1916,8 @@ activo y "División" (contador de partes o "En partes iguales") salvo cuando el
 único modo es el de monto fijo. `suma` es el total de montos fijos parseado del
 form, mostrado en el pie cuando se editan montos.
 -}
-viewPartesTable : String -> ModoPartes -> List Participante -> Maybe Monto -> Form CustomFormError Pago -> Html Msg
-viewPartesTable prefix mode incluidos suma form =
+viewPartesTable : List Participante -> String -> ModoPartes -> List Participante -> Maybe Monto -> Form CustomFormError Pago -> Html Msg
+viewPartesTable participantesDelGrupo prefix mode incluidos suma form =
     let
         headerCells =
             Html.th [ Attr.scope "col" ] [ text "Participante" ]
@@ -1878,7 +1937,7 @@ viewPartesTable prefix mode incluidos suma form =
     Html.table [ class "table align-middle" ]
         [ Html.thead [] [ Html.tr [] headerCells ]
         , Html.tbody []
-            (incluidos |> List.map (\participante -> viewParteRow prefix mode participante form))
+            (incluidos |> List.map (\participante -> viewParteRow participantesDelGrupo prefix mode participante form))
         , if mode.mostrarMontoFijo then
             let
                 sumaRow =
@@ -1902,14 +1961,19 @@ viewPartesTable prefix mode incluidos suma form =
         ]
 
 
-viewParteRow : String -> ModoPartes -> Participante -> Form CustomFormError Pago -> Html Msg
-viewParteRow prefix mode participante form =
+viewParteRow : List Participante -> String -> ModoPartes -> Participante -> Form CustomFormError Pago -> Html Msg
+viewParteRow participantesDelGrupo prefix mode participante form =
     let
         basePath =
             prefix ++ ".partes." ++ participante.id
     in
     Html.tr []
-        (Html.td [ class "fw-bold" ] [ text participante.nombre ]
+        (Html.td [ class "fw-bold" ]
+            [ div [ class "d-flex align-items-center gap-2" ]
+                [ GraficoTorta.viewDot (GraficoTorta.colorParaParticipante participantesDelGrupo participante.id)
+                , text participante.nombre
+                ]
+            ]
             :: (if mode.mostrarMontoFijo then
                     let
                         montoField =

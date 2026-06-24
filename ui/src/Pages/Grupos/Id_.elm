@@ -32,8 +32,8 @@ page shared route =
             PagoDetalleModal.context shared route
     in
     Page.new
-        { init = \() -> init ctx route shared.store
-        , update = update ctx
+        { init = \() -> init route shared.store
+        , update = update shared.store ctx
         , subscriptions = subscriptions
         , view = view shared.store shared.userId
         }
@@ -47,14 +47,14 @@ type alias Model =
     }
 
 
-init : PagoDetalleModal.Context -> Route { id : String } -> Store -> ( Model, Effect Msg )
-init ctx route store =
+init : Route { id : String } -> Store -> ( Model, Effect Msg )
+init route store =
     let
         grupoId =
             route.params.id
 
         ( pagoModal, modalEffect ) =
-            PagoDetalleModal.init ctx route
+            PagoDetalleModal.init route
     in
     ( { grupoId = grupoId
       , monedaSeleccionada = MonedaDefaultDelGrupo
@@ -77,8 +77,8 @@ type Msg
     | PagoModalMsg PagoDetalleModal.Msg
 
 
-update : PagoDetalleModal.Context -> Msg -> Model -> ( Model, Effect Msg )
-update ctx msg model =
+update : Store -> PagoDetalleModal.Context -> Msg -> Model -> ( Model, Effect Msg )
+update store ctx msg model =
     case msg of
         SelectMoneda moneda ->
             ( { model | monedaSeleccionada = MonedaSeleccionadaPorUsuario moneda }
@@ -95,7 +95,7 @@ update ctx msg model =
         PagoModalMsg subMsg ->
             let
                 ( pagoModal, eff ) =
-                    PagoDetalleModal.update ctx subMsg model.pagoModal
+                    PagoDetalleModal.update ctx store subMsg model.pagoModal
             in
             ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
@@ -141,7 +141,7 @@ view store userId model =
                                 [ viewUltimosPagosCard store model grupo ]
                             ]
                         ]
-                , Html.map PagoModalMsg (PagoDetalleModal.view grupo model.pagoModal)
+                , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
                 ]
             }
 

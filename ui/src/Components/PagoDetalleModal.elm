@@ -1,7 +1,8 @@
-module Components.PagoDetalleModal exposing (Context, Model, Msg, context, init, open, update, view)
+module Components.PagoDetalleModal exposing (Context, Model, Msg, Overlay, context, init, open, update, view)
 
-import Components.BarrasDeNetos exposing (viewNetosBarras)
+import Components.BarrasDeNetos exposing (viewNetosBarras, viewNetosBarrasMini)
 import Components.Bootstrap as Bs
+import Components.GraficoTorta as GraficoTorta
 import Dict
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (ErrorResumen, Moneda, Monto, Pago, Parte(..), Repartija, ResumenPago, ShallowGrupo, TipoDistribucion(..), ULID)
@@ -15,11 +16,14 @@ import Models.Moneda as Moneda
 import Models.Monto as Monto
 import Models.ResumenNetos exposing (errorMensaje, getDeudasFromResumen)
 import Models.Store as Store
+import Models.Store.Types exposing (Store)
+import Process
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Set
 import Shared.Model
+import Task
 import Utils.Day as Day
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
@@ -37,13 +41,23 @@ each `init`/`open`/`update` rather than us duplicating it here.
 type alias Model =
     { isOpen : Bool
     , pagoId : ULID
-    , pago : WebData Pago
     , resumen : WebData ResumenPago
     , confirmingDelete : Bool
     , deleting : Bool
-    , balanceOpen : Bool
+    , activeOverlay : Maybe Overlay
     , expandedErrors : Set.Set String
     }
+
+
+{-| Qué sección del detalle está abierta en un overlay propio (el balance, la
+torta del pago o la del reparto). Sólo una puede estar abierta a la vez, así que
+es un único `Maybe` y no un flag por sección. Usamos un overlay propio en vez de
+un modal de Bootstrap anidado, que quedaría detrás del modal de detalle.
+-}
+type Overlay
+    = BalanceGraphOverlay
+    | PagadoresGraphOverlay
+    | DeudoresGraphOverlay
 
 
 type alias Context =
@@ -64,12 +78,12 @@ context shared route =
     }
 
 
-init : Context -> Route routeParams -> ( Model, Effect Msg )
-init ctx route =
+init : Route routeParams -> ( Model, Effect Msg )
+init route =
     case Dict.get "pago" route.query of
         Just pagoId ->
             ( forPago True pagoId
-            , fetchPago ctx.grupoId pagoId
+            , loadPago pagoId
             )
 
         Nothing ->
@@ -82,7 +96,7 @@ open : Context -> ULID -> ( Model, Effect Msg )
 open ctx pagoId =
     ( forPago True pagoId
     , Effect.batch
-        [ fetchPago ctx.grupoId pagoId
+        [ loadPago pagoId
         , syncUrl ctx.path (Just pagoId)
         ]
     )
@@ -92,18 +106,33 @@ forPago : Bool -> ULID -> Model
 forPago isOpen pagoId =
     { isOpen = isOpen
     , pagoId = pagoId
-    , pago = Loading
     , resumen = Loading
     , confirmingDelete = False
     , deleting = False
-    , balanceOpen = False
+    , activeOverlay = Nothing
     , expandedErrors = Set.empty
     }
 
 
-fetchPago : ULID -> ULID -> Effect Msg
-fetchPago grupoId pagoId =
-    Effect.sendCmd <| Api.getGrupoByIdPagosByPagoId grupoId pagoId PagoFetched
+{-| Refresca el pago en el store (en vez de pedirlo directo a la API) y arranca
+el sondeo que dispara el cálculo del resumen cuando el pago ya está disponible.
+-}
+loadPago : ULID -> Effect Msg
+loadPago pagoId =
+    Effect.batch
+        [ Store.refreshPago pagoId
+        , waitForPago
+        ]
+
+
+{-| Vuelve a chequear el store dentro de 100ms. Replica el patrón de
+`waitAndCheckNecessaryData` de la página de alta de pagos: como las respuestas
+del store llegan por `Shared` y no como un `Msg` nuestro, sondeamos hasta que el
+pago aparezca para recién ahí calcular el resumen (que sí es estado local).
+-}
+waitForPago : Effect Msg
+waitForPago =
+    Effect.sendCmd <| Task.perform (\_ -> CheckPagoPresent) (Process.sleep 100)
 
 
 syncUrl : Path.Path -> Maybe ULID -> Effect Msg
@@ -125,9 +154,10 @@ syncUrl path maybePagoId =
 type Msg
     = NoOp
     | Close
-    | PagoFetched (Result Http.Error Pago)
+    | CheckPagoPresent
     | ResumenFetched (Result Http.Error ResumenPago)
-    | ToggleBalance
+    | OpenOverlay Overlay
+    | CloseOverlay
     | ToggleErrors String
     | Share { title : String, path : Path.Path }
     | AskDelete
@@ -136,8 +166,8 @@ type Msg
     | DeleteResponse (Result Http.Error ULID)
 
 
-update : Context -> Msg -> Model -> ( Model, Effect Msg )
-update ctx msg model =
+update : Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
+update ctx store msg model =
     case msg of
         NoOp ->
             ( model, Effect.none )
@@ -150,23 +180,30 @@ update ctx msg model =
             , Effect.share { title = title, url = ctx.origin ++ Path.toString path }
             )
 
-        PagoFetched result ->
-            ( { model | pago = RemoteData.fromResult result }
-            , case result of
-                Ok pago ->
-                    Effect.sendCmd <| Api.postPagosResumen pago ResumenFetched
+        CheckPagoPresent ->
+            case Store.getPago model.pagoId store of
+                Success pago ->
+                    ( model
+                    , Effect.sendCmd <| Api.postPagosResumen pago ResumenFetched
+                    )
 
-                Err _ ->
-                    Effect.none
-            )
+                Failure _ ->
+                    -- El error del pago lo muestra la vista leyéndolo del store.
+                    ( model, Effect.none )
+
+                _ ->
+                    ( model, waitForPago )
 
         ResumenFetched result ->
             ( { model | resumen = RemoteData.fromResult result }
             , Effect.none
             )
 
-        ToggleBalance ->
-            ( { model | balanceOpen = not model.balanceOpen }, Effect.none )
+        OpenOverlay overlay ->
+            ( { model | activeOverlay = Just overlay }, Effect.none )
+
+        CloseOverlay ->
+            ( { model | activeOverlay = Nothing }, Effect.none )
 
         ToggleErrors key ->
             ( { model
@@ -212,33 +249,37 @@ update ctx msg model =
 -- VIEW
 
 
-view : ShallowGrupo -> Model -> Html Msg
-view grupo model =
+view : Store -> ShallowGrupo -> Model -> Html Msg
+view store grupo model =
     if not model.isOpen then
         text ""
 
     else
         let
-            ( header, content ) =
-                case ( model.pago, model.resumen ) of
+            ( header, content, overlays ) =
+                case ( Store.getPago model.pagoId store, model.resumen ) of
                     ( Success pago, Success resumen ) ->
                         ( viewHeader grupo pago resumen model
                         , viewContent grupo pago resumen model
+                        , viewOverlay grupo pago resumen model
                         )
 
                     ( Failure _, _ ) ->
                         ( text "Error"
                         , Bs.alert Bs.AlertDanger [] [ text "No se pudo cargar el pago." ]
+                        , text ""
                         )
 
                     ( _, Failure _ ) ->
                         ( text "Error"
                         , Bs.alert Bs.AlertDanger [] [ text "No se pudieron cargar los detalles." ]
+                        , text ""
                         )
 
                     _ ->
                         ( text ""
                         , div [ class "text-center py-3" ] [ Bs.spinner [] ]
+                        , text ""
                         )
         in
         div []
@@ -258,6 +299,7 @@ view grupo model =
                     ]
                 ]
             , div [ class "modal-backdrop show" ] []
+            , overlays
             ]
 
 
@@ -283,6 +325,84 @@ closeOnOverlayClick =
         )
         (Decode.at [ "target", "id" ] Decode.string)
         (Decode.at [ "currentTarget", "id" ] Decode.string)
+
+
+overlayId : String
+overlayId =
+    "pago-detalle-overlay-modal"
+
+
+{-| Igual que `closeOnOverlayClick` pero para el overlay de la sección abierta:
+cierra sólo cuando el click cae en el fondo y no dentro del diálogo.
+-}
+closeOverlayOnBackdropClick : Decode.Decoder Msg
+closeOverlayOnBackdropClick =
+    Decode.map2
+        (\targetId currentId ->
+            if targetId == currentId then
+                CloseOverlay
+
+            else
+                NoOp
+        )
+        (Decode.at [ "target", "id" ] Decode.string)
+        (Decode.at [ "currentTarget", "id" ] Decode.string)
+
+
+{-| Overlay propio (no de Bootstrap) que muestra la sección abierta —balance o
+torta— por encima del modal de detalle, con un `z-index` mayor. Un único overlay
+sirve a las tres porque nunca hay más de una abierta a la vez.
+-}
+viewOverlay : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
+viewOverlay grupo pago resumen model =
+    case model.activeOverlay of
+        Nothing ->
+            text ""
+
+        Just overlay ->
+            let
+                torta netos =
+                    GraficoTorta.viewTortaGrande (GraficoTorta.porciones grupo (Just pago.monto) netos)
+
+                ( titulo, cuerpo ) =
+                    case overlay of
+                        BalanceGraphOverlay ->
+                            ( "Balance", viewBalance grupo resumen )
+
+                        PagadoresGraphOverlay ->
+                            ( "Pago", torta resumen.resumenPagadores )
+
+                        DeudoresGraphOverlay ->
+                            ( "Reparto", torta resumen.resumenDeudores )
+            in
+            div []
+                [ div
+                    [ class "modal d-block fade show"
+                    , id overlayId
+                    , style "z-index" "1070"
+                    , tabindex -1
+                    , attribute "aria-modal" "true"
+                    , attribute "role" "dialog"
+                    , on "click" closeOverlayOnBackdropClick
+                    ]
+                    [ div [ class "modal-dialog modal-dialog-centered modal-dialog-scrollable" ]
+                        [ div [ class "modal-content" ]
+                            [ div [ class "modal-header" ]
+                                [ h4 [ class "modal-title fw-bold" ] [ text titulo ]
+                                , button
+                                    [ type_ "button"
+                                    , class "btn-close"
+                                    , attribute "aria-label" "Cerrar"
+                                    , onClick CloseOverlay
+                                    ]
+                                    []
+                                ]
+                            , div [ class "modal-body" ] [ cuerpo ]
+                            ]
+                        ]
+                    ]
+                , div [ class "modal-backdrop show", style "z-index" "1065" ] []
+                ]
 
 
 viewHeader : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
@@ -365,7 +485,7 @@ viewActionsMenu model =
 viewContent : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewContent grupo pago resumen model =
     div []
-        [ viewInfo grupo pago model
+        [ viewInfo grupo pago resumen
         , viewPago grupo pago resumen model
         , viewReparto grupo pago resumen model
         ]
@@ -412,9 +532,9 @@ errorList key expanded errores =
         text ""
 
 
-viewInfo : ShallowGrupo -> Pago -> Model -> Html Msg
-viewInfo grupo pago model =
-    div [ class "d-flex justify-content-between gap-3 flex-wrap mb-2" ]
+viewInfo : ShallowGrupo -> Pago -> ResumenPago -> Html Msg
+viewInfo grupo pago resumen =
+    div [ class "d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2" ]
         [ div []
             [ div [ class "text-muted text-uppercase fw-semibold small" ] [ text "Monto" ]
             , div [ class "fs-4 fw-bold mb-2" ]
@@ -422,62 +542,43 @@ viewInfo grupo pago model =
             , div [ class "text-muted text-uppercase fw-semibold small" ] [ text "Fecha" ]
             , div [ class "fw-bold" ] [ text (Day.toString pago.fecha) ]
             ]
-        , div [ class "flex-grow-1", style "min-width" "12rem" ]
-            [ div [ class "d-flex justify-content-between align-items-center" ]
-                [ span [ class "fw-bold" ] [ text "Balance" ]
-                , button
-                    [ type_ "button"
-                    , class "btn btn-light rounded-circle d-flex align-items-center justify-content-center"
-                    , style "width" "2rem"
-                    , style "height" "2rem"
-                    , attribute "aria-label" "Ver balance"
-                    , onClick ToggleBalance
-                    ]
-                    [ i
-                        [ class
-                            (if model.balanceOpen then
-                                "bi bi-chevron-up"
-
-                             else
-                                "bi bi-search"
-                            )
-                        ]
-                        []
-                    ]
-                ]
-            , if model.balanceOpen then
-                div [ class "border rounded p-2 mt-2" ] [ viewBalance grupo model.resumen ]
-
-              else
-                text ""
+        , button
+            [ type_ "button"
+            , class "btn p-0 border-0"
+            , attribute "aria-label" "Ver balance"
+            , onClick (OpenOverlay BalanceGraphOverlay)
             ]
+            [ viewNetosBarrasMini resumen.resumen.netos ]
         ]
 
 
-viewBalance : ShallowGrupo -> WebData ResumenPago -> Html Msg
+viewBalance : ShallowGrupo -> ResumenPago -> Html Msg
 viewBalance grupo resumen =
-    case resumen of
-        Success resumenPago ->
-            case getDeudasFromResumen resumenPago.resumen of
-                Just netos ->
-                    viewNetosBarras grupo netos
+    case getDeudasFromResumen resumen.resumen of
+        Just netos ->
+            viewNetosBarras grupo netos
 
-                Nothing ->
-                    div [ class "text-muted small" ] [ text "Sin balance para mostrar." ]
-
-        Loading ->
-            div [ class "text-center py-2" ] [ Bs.spinner [] ]
-
-        _ ->
-            div [ class "text-muted small" ] [ text "No se pudo cargar el balance." ]
+        Nothing ->
+            div [ class "text-muted small" ] [ text "Sin balance para mostrar." ]
 
 
 viewReparto : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewReparto grupo pago resumen model =
     Bs.card [ class "mt-3" ]
         [ Bs.cardBody []
-            [ div [ class "text-muted text-uppercase fw-semibold small mb-2" ]
-                [ text "Reparto", errorToggle "reparto" model.expandedErrors resumen.resumenDeudores.errores ]
+            [ div [ class "d-flex justify-content-between align-items-start mb-2" ]
+                [ div [ class "text-muted text-uppercase fw-semibold small" ]
+                    [ text "Reparto", errorToggle "reparto" model.expandedErrors resumen.resumenDeudores.errores ]
+                , button
+                    [ type_ "button"
+                    , class "btn p-0 border-0"
+                    , attribute "aria-label" "Ver gráfico del reparto"
+                    , onClick (OpenOverlay DeudoresGraphOverlay)
+                    ]
+                    [ GraficoTorta.viewTortaMini
+                        (GraficoTorta.porciones grupo (Just pago.monto) resumen.resumenDeudores)
+                    ]
+                ]
             , errorList "reparto" model.expandedErrors resumen.resumenDeudores.errores
             , case pago.deudores.tipo of
                 TipoDistribucionPartes dp ->
@@ -688,8 +789,19 @@ viewPago : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewPago grupo pago resumen model =
     Bs.card [ class "mt-3" ]
         [ Bs.cardBody []
-            [ div [ class "text-muted text-uppercase fw-semibold small mb-2" ]
-                [ text "Pago", errorToggle "pago" model.expandedErrors resumen.resumenPagadores.errores ]
+            [ div [ class "d-flex justify-content-between align-items-start mb-2" ]
+                [ div [ class "text-muted text-uppercase fw-semibold small" ]
+                    [ text "Pago", errorToggle "pago" model.expandedErrors resumen.resumenPagadores.errores ]
+                , button
+                    [ type_ "button"
+                    , class "btn p-0 border-0"
+                    , attribute "aria-label" "Ver gráfico del reparto"
+                    , onClick (OpenOverlay PagadoresGraphOverlay)
+                    ]
+                    [ GraficoTorta.viewTortaMini
+                        (GraficoTorta.porciones grupo (Just pago.monto) resumen.resumenPagadores)
+                    ]
+                ]
             , errorList "pago" model.expandedErrors resumen.resumenPagadores.errores
             , case pago.pagadores.tipo of
                 TipoDistribucionPartes dp ->
