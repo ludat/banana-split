@@ -3,13 +3,13 @@ module Pages.Grupos.Id_ exposing (Model, Msg, page)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
 import Components.MonedaSelector as MonedaSelector exposing (MonedaSeleccionada(..))
+import Components.PagoDetalleModal as PagoDetalleModal
 import Date
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Moneda, Netos, ShallowGrupo, ShallowPago, ULID)
-import Html exposing (Html, a, button, div, i, p, strong, text)
-import Html.Attributes exposing (class, style, type_)
+import Html exposing (Html, a, div, i, p, text)
+import Html.Attributes exposing (class, style)
 import Html.Events exposing (onClick)
-import Http
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Moneda as Moneda
@@ -22,16 +22,14 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Utils.Day
-import Utils.Toasts as Toasts
-import Utils.Toasts.Types as Toasts
 import View exposing (View)
 
 
 page : Shared.Model -> Route { id : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route.params.id shared.store
-        , update = update shared.store
+        { init = \() -> init route shared.store
+        , update = update
         , subscriptions = subscriptions
         , view = view shared.store shared.userId
         }
@@ -40,16 +38,23 @@ page shared route =
 
 type alias Model =
     { grupoId : String
-    , deletingPagoId : Maybe ULID
     , monedaSeleccionada : MonedaSeleccionada
+    , pagoModal : PagoDetalleModal.Model
     }
 
 
-init : ULID -> Store -> ( Model, Effect Msg )
-init grupoId store =
+init : Route { id : String } -> Store -> ( Model, Effect Msg )
+init route store =
+    let
+        grupoId =
+            route.params.id
+
+        ( pagoModal, modalEffect ) =
+            PagoDetalleModal.init route grupoId
+    in
     ( { grupoId = grupoId
-      , deletingPagoId = Nothing
       , monedaSeleccionada = MonedaDefaultDelGrupo
+      , pagoModal = pagoModal
       }
     , Effect.batch
         [ Store.ensureResumen grupoId store
@@ -57,62 +62,38 @@ init grupoId store =
         , Store.ensurePagos grupoId store
         , Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
+        , Effect.map PagoModalMsg modalEffect
         ]
     )
 
 
 type Msg
-    = Navigate Path.Path
-    | DeletePago ULID
-    | ConfirmDeletePago ULID
-    | CancelDeletePago
-    | DeletePagoResponse (Result Http.Error ULID)
-    | SelectMoneda Moneda
+    = SelectMoneda Moneda
+    | OpenPago ULID
+    | PagoModalMsg PagoDetalleModal.Msg
 
 
-update : Store -> Msg -> Model -> ( Model, Effect Msg )
-update store msg model =
+update : Msg -> Model -> ( Model, Effect Msg )
+update msg model =
     case msg of
-        Navigate path ->
-            ( model, Effect.pushRoutePath path )
-
-        DeletePago pagoId ->
-            ( { model | deletingPagoId = Just pagoId }
-            , Effect.none
-            )
-
-        ConfirmDeletePago pagoId ->
-            case store |> Store.getGrupo model.grupoId of
-                Success grupo ->
-                    ( { model | deletingPagoId = Nothing }
-                    , Effect.sendCmd <| Api.deleteGrupoByIdPagosByPagoId grupo.id pagoId DeletePagoResponse
-                    )
-
-                _ ->
-                    ( model, Effect.none )
-
-        CancelDeletePago ->
-            ( { model | deletingPagoId = Nothing }
-            , Effect.none
-            )
-
-        DeletePagoResponse (Ok _) ->
-            ( model
-            , Effect.batch
-                [ Store.refreshGrupo model.grupoId
-                , Store.refreshResumen model.grupoId
-                , Store.refreshPagos model.grupoId
-                , Toasts.pushToast Toasts.ToastSuccess "Pago borrado"
-                ]
-            )
-
-        DeletePagoResponse (Err _) ->
-            ( model, Toasts.pushToast Toasts.ToastDanger "Falle al borrar el pago" )
-
         SelectMoneda moneda ->
             ( { model | monedaSeleccionada = MonedaSeleccionadaPorUsuario moneda }
             , Effect.none
             )
+
+        OpenPago pagoId ->
+            let
+                ( pagoModal, eff ) =
+                    PagoDetalleModal.open pagoId model.pagoModal
+            in
+            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
+
+        PagoModalMsg subMsg ->
+            let
+                ( pagoModal, eff ) =
+                    PagoDetalleModal.update subMsg model.pagoModal
+            in
+            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
 
 subscriptions : Model -> Sub Msg
@@ -135,19 +116,6 @@ view store userId model =
             { title = "Fallo", body = [] }
 
         Success grupo ->
-            let
-                pagoBeingDeleted =
-                    model.deletingPagoId
-                        |> Maybe.andThen
-                            (\pagoId ->
-                                case Store.getPagos model.grupoId store of
-                                    Success pagos ->
-                                        pagos |> List.filter (\p -> p.pagoId == pagoId) |> List.head
-
-                                    _ ->
-                                        Nothing
-                            )
-            in
             { title = grupo.nombre
             , body =
                 [ if List.isEmpty grupo.participantes then
@@ -169,37 +137,7 @@ view store userId model =
                                 [ viewUltimosPagosCard store model grupo ]
                             ]
                         ]
-                , Bs.modal
-                    { isOpen = model.deletingPagoId /= Nothing
-                    , onClose = CancelDeletePago
-                    , title = "Confirmar eliminación"
-                    , body =
-                        [ p []
-                            [ text "¿Estás seguro que querés eliminar "
-                            , case pagoBeingDeleted of
-                                Just pago ->
-                                    strong [] [ text ("\"" ++ pago.nombre ++ "\"") ]
-
-                                Nothing ->
-                                    text "este pago"
-                            , text "?"
-                            ]
-                        , p [ class "mt-2 text-muted" ] [ text "Esta acción no se puede deshacer." ]
-                        ]
-                    , footer =
-                        [ Bs.btn Bs.Transparent [ onClick CancelDeletePago ] [ text "Cancelar" ]
-                        , Bs.btn Bs.Danger
-                            [ onClick <|
-                                case model.deletingPagoId of
-                                    Just pagoId ->
-                                        ConfirmDeletePago pagoId
-
-                                    Nothing ->
-                                        Navigate (Path.Grupos_Id_ { id = "" })
-                            ]
-                            [ text "Eliminar" ]
-                        ]
-                    }
+                , Html.map PagoModalMsg (PagoDetalleModal.view grupo model.pagoModal)
                 ]
             }
 
@@ -328,16 +266,21 @@ viewUltimosPagosCard store model grupo =
             Bs.card []
                 [ Bs.cardHeader [] [ text "Ultimos pagos" ]
                 , Bs.listGroup [ class "list-group-flush" ]
-                    (ultimosPagos |> List.map (viewUltimoPago model.grupoId grupo.monedaPorDefecto))
+                    (ultimosPagos |> List.map (viewUltimoPago grupo.monedaPorDefecto))
                 ]
 
         _ ->
             text ""
 
 
-viewUltimoPago : ULID -> Moneda -> ShallowPago -> Html Msg
-viewUltimoPago grupoId monedaPorDefecto pago =
-    Bs.listGroupItem []
+viewUltimoPago : Moneda -> ShallowPago -> Html Msg
+viewUltimoPago monedaPorDefecto pago =
+    Bs.listGroupItem
+        [ class "list-group-item-action"
+        , style "cursor" "pointer"
+        , Html.Attributes.attribute "role" "button"
+        , onClick (OpenPago pago.pagoId)
+        ]
         [ div [ class "d-flex align-items-center gap-3" ]
             [ div
                 [ class "text-center border rounded px-2 py-1 flex-shrink-0"
@@ -355,17 +298,6 @@ viewUltimoPago grupoId monedaPorDefecto pago =
             , div [ class "flex-grow-1 text-truncate" ] [ text pago.nombre ]
             , div [ class "text-nowrap text-muted small" ]
                 [ text (Moneda.simbolo monedaPorDefecto pago.moneda ++ " " ++ Monto.toString pago.monto) ]
-            , a
-                [ Path.href <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = grupoId, pagoId = pago.pagoId }
-                , class "btn btn-sm btn-outline-secondary flex-shrink-0"
-                ]
-                [ i [ class "bi bi-arrow-right" ] [] ]
-            , button
-                [ type_ "button"
-                , class "btn btn-sm btn-outline-danger flex-shrink-0"
-                , onClick (DeletePago pago.pagoId)
-                ]
-                [ i [ class "bi bi-trash" ] [] ]
             ]
         ]
 
