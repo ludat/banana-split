@@ -426,13 +426,14 @@ savePago grupoId pagoWithoutId = do
   pure pago{M.pagadores = distribucionPagadores, M.deudores = distribucionDeudores}
 
 recomputePagos :: Connection -> IO ()
-recomputePagos conn = go nullUlid
+recomputePagos conn = go 0 nullUlid
   where
     recomputePagosBatchSize = 100
 
-    go :: ULID -> IO ()
-    go ultimoId = do
-      siguienteId <- runBeamPostgres conn $ do
+    -- 'total' es la cantidad de pagos ya recomputados (para loguear progreso).
+    go :: Int -> ULID -> IO ()
+    go total ultimoId = do
+      resultado <- runBeamPostgres conn $ do
         lote <- runSelectReturningList $ select $ do
           limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
             p <- all_ db.pagos
@@ -444,8 +445,13 @@ recomputePagos conn = go nullUlid
             forM_ loteNE $ \(pagoId, GrupoId grupoId) -> do
               pago <- fetchPago pagoId
               void $ savePago grupoId pago
-            pure $ Just $ fst $ NE.last loteNE
-      forM_ siguienteId go
+            pure $ Just (NE.length loteNE, fst $ NE.last loteNE)
+      case resultado of
+        Nothing -> putText $ "recompute-pagos: listo, " <> show total <> " pagos recomputados"
+        Just (procesados, siguienteId) -> do
+          let total' = total + procesados
+          putText $ "recompute-pagos: lote de " <> show procesados <> " procesado (" <> show total' <> " en total)"
+          go total' siguienteId
 
 saveDistribucion :: M.Distribucion -> Pg M.Distribucion
 saveDistribucion distribucionWithoutId = do
