@@ -265,16 +265,16 @@ view store grupo model =
                         )
 
                     ( Failure _, _ ) ->
-                        ( text "Error"
-                        , Bs.alert Bs.AlertDanger [] [ text "No se pudo cargar el pago." ]
-                        , text ""
-                        )
+                        viewEstado
+                            "bi bi-receipt-cutoff"
+                            "No encontramos este pago"
+                            "Puede que lo hayan eliminado o que el enlace ya no sea válido."
 
                     ( _, Failure _ ) ->
-                        ( text "Error"
-                        , Bs.alert Bs.AlertDanger [] [ text "No se pudieron cargar los detalles." ]
-                        , text ""
-                        )
+                        viewEstado
+                            "bi bi-exclamation-triangle"
+                            "No pudimos cargar los detalles"
+                            "Hubo un problema al calcular el reparto. Probá de nuevo en un momento."
 
                     _ ->
                         ( text ""
@@ -301,6 +301,30 @@ view store grupo model =
             , div [ class "modal-backdrop show" ] []
             , overlays
             ]
+
+
+{-| Estado vacío/error con un ícono, un título y un mensaje. Incluye un header
+con sólo el botón de cerrar para que siempre se pueda salir del modal. Devuelve
+la terna `(header, contenido, overlays)` que arma `view`.
+-}
+viewEstado : String -> String -> String -> ( Html Msg, Html Msg, Html Msg )
+viewEstado icono titulo mensaje =
+    ( div [ class "modal-header border-bottom-0" ]
+        [ button
+            [ type_ "button"
+            , class "btn-close ms-auto"
+            , attribute "aria-label" "Cerrar"
+            , onClick Close
+            ]
+            []
+        ]
+    , div [ class "text-center px-3 pb-4" ]
+        [ i [ class (icono ++ " text-secondary"), style "font-size" "3rem" ] []
+        , h4 [ class "mt-3 mb-1 fw-bold" ] [ text titulo ]
+        , p [ class "text-muted mb-0" ] [ text mensaje ]
+        ]
+    , text ""
+    )
 
 
 modalOverlayId : String
