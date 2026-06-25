@@ -2,6 +2,7 @@ module Layouts.Default exposing (Model, Msg, Props, layout)
 
 import Changelog
 import Components.Bootstrap as Bs
+import Components.Toasts
 import Date exposing (Date)
 import Effect exposing (Effect)
 import Html exposing (Html, a, button, div, h5, i, span, text)
@@ -12,8 +13,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared.Model as Shared
 import Shared.Msg as Shared
-import Utils.Toasts as Toasts
-import Utils.Toasts.Types exposing (Toast, ToastLevel(..), ToastMsg, Toasts)
+import Utils.Toasts.Types exposing (ToastMsg, Toasts)
 import View exposing (View)
 
 
@@ -138,10 +138,8 @@ view toasts lastReadChangelog now { toContentMsg, model, content } =
             viewOffcanvas model unread
         , Html.map toContentMsg <|
             viewChangelogModal model.changelogOpen modalEntries
-        , div [ class "position-fixed bottom-0 start-50 translate-middle-x p-3", Attr.style "z-index" "1090", Attr.style "pointer-events" "none" ]
-            [ Html.map toContentMsg <|
-                Toasts.view Toasts.config renderToast ToastMsg toasts
-            ]
+        , Html.map toContentMsg <|
+            Components.Toasts.view ToastMsg toasts
         ]
             ++ content.body
     }
@@ -282,24 +280,3 @@ viewChangelogEntry entry =
         [ Html.strong [] [ text entry.title ]
         , Html.p [ class "mb-0 text-muted small mt-1" ] [ text entry.description ]
         ]
-
-
-renderToast : Toast -> Html Msg
-renderToast toast =
-    let
-        bgClass =
-            case toast.level of
-                ToastSuccess ->
-                    "text-bg-success"
-
-                ToastDanger ->
-                    "text-bg-danger"
-    in
-    div
-        [ class ("toast show align-items-center border-0 " ++ bgClass)
-        , Attr.style "pointer-events" "auto"
-        , Attr.attribute "role" "alert"
-        , Attr.attribute "aria-live" "assertive"
-        , Attr.attribute "aria-atomic" "true"
-        ]
-        [ div [ class "toast-body" ] [ text toast.content ] ]

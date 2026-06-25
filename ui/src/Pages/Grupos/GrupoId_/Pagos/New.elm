@@ -3,7 +3,6 @@ module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg, ReceiptReadingState
 import Base64.Encode
 import Browser.Dom
 import Bytes exposing (Bytes)
-import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
 import Components.GraficoTorta as GraficoTorta
 import Css
@@ -27,7 +26,7 @@ import Models.Grupo exposing (GrupoLike)
 import Models.LugarAccionable exposing (LugarParaAccionar(..))
 import Models.Moneda as Moneda
 import Models.Monto as Monto
-import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje, getDeudasFromResumen)
+import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
@@ -54,7 +53,7 @@ page shared route =
         , subscriptions = subscriptions
         , view = view shared.store
         }
-        |> Page.withLayout (\_ -> Layouts.Default {})
+        |> Page.withLayout (\_ -> Layouts.Minimal {})
 
 
 
@@ -1537,7 +1536,6 @@ viewDeudoresSection grupo model =
 
                 _ ->
                     text ""
-            , viewBalanceCard grupo model
             , viewActionFooter
                 [ -- Sólo los errores de esta sección (deudores) y sin el tag de
                   -- scope: `.resumenDeudores` ya viene sin el prefijo "deudores"
@@ -1934,30 +1932,32 @@ viewPartesTable participantesDelGrupo prefix mode incluidos suma form =
                         []
                    )
     in
-    Html.table [ class "table align-middle" ]
-        [ Html.thead [] [ Html.tr [] headerCells ]
-        , Html.tbody []
-            (incluidos |> List.map (\participante -> viewParteRow participantesDelGrupo prefix mode participante form))
-        , if mode.mostrarMontoFijo then
-            let
-                sumaRow =
-                    Html.tr [ class "text-body-secondary" ]
-                        ([ Html.td [] [ text "Total" ]
-                         , Html.td [ class "text-end" ]
-                            [ text ("$ " ++ (suma |> Maybe.map Monto.toString |> Maybe.withDefault "—")) ]
-                         ]
-                            ++ (if divisionVisible mode then
-                                    [ Html.td [] [] ]
+    div [ class "table-responsive" ]
+        [ Html.table [ class "table align-middle" ]
+            [ Html.thead [] [ Html.tr [] headerCells ]
+            , Html.tbody []
+                (incluidos |> List.map (\participante -> viewParteRow participantesDelGrupo prefix mode participante form))
+            , if mode.mostrarMontoFijo then
+                let
+                    sumaRow =
+                        Html.tr [ class "text-body-secondary" ]
+                            ([ Html.td [] [ text "Total" ]
+                             , Html.td [ class "text-end" ]
+                                [ text ("$ " ++ (suma |> Maybe.map Monto.toString |> Maybe.withDefault "—")) ]
+                             ]
+                                ++ (if divisionVisible mode then
+                                        [ Html.td [] [] ]
 
-                                else
-                                    []
-                               )
-                        )
-            in
-            Html.tfoot [] [ sumaRow ]
+                                    else
+                                        []
+                                   )
+                            )
+                in
+                Html.tfoot [] [ sumaRow ]
 
-          else
-            text ""
+              else
+                text ""
+            ]
         ]
 
 
@@ -2037,28 +2037,6 @@ viewCuotaCounter path form =
             ]
             [ i [ class "bi bi-plus" ] [] ]
         ]
-
-
-viewBalanceCard : GrupoLike g -> Model -> Html Msg
-viewBalanceCard grupo model =
-    case model.resumenPago of
-        Success resumen ->
-            case getDeudasFromResumen resumen.resumen of
-                Just netos ->
-                    div [ class "mb-3" ]
-                        [ Html.h5 [ class "mb-2" ] [ text "Balance de este gasto" ]
-                        , div [ class "card" ]
-                            [ div [ class "card-body" ] [ viewNetosBarras grupo netos ] ]
-                        ]
-
-                Nothing ->
-                    text ""
-
-        Loading ->
-            div [ class "mb-3 d-flex justify-content-center" ] [ Bs.spinner [] ]
-
-        _ ->
-            text ""
 
 
 viewRepartijaLink : ULID -> Form CustomFormError Pago -> Html Msg

@@ -47,7 +47,7 @@ page shared route =
                                 "Cargando"
                 }
         }
-        |> Page.withLayout (\_ -> Layouts.Default {})
+        |> Page.withLayout (\_ -> Layouts.Minimal {})
 
 
 
