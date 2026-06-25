@@ -5,6 +5,7 @@ module BananaSplit.Persistence (
   MissingPGRollSchema (..),
   makePool,
   runMigration,
+  recomputePagos,
   addParticipante,
   createGrupo,
   db,
@@ -31,6 +32,7 @@ module BananaSplit.Persistence (
 
 import Conferer qualified
 import Data.Decimal qualified as Decimal
+import Data.List.NonEmpty qualified as NE
 import Data.Pool qualified as Pool
 import Data.String (String)
 import Database.Beam as Beam
@@ -56,6 +58,9 @@ runMigration config args = do
   case args of
     ["fix-pagos-fecha"] -> do
       runBeamPostgres conn FixDates.run
+      putText "Done"
+    ["recompute-pagos"] -> do
+      recomputePagos conn
       putText "Done"
     _ -> do
       putText $ "Unknown migration: " <> show args
@@ -386,6 +391,12 @@ savePago grupoId pagoWithoutId = do
       then liftIO ULID.getULID
       else pure pagoWithoutId.pagoId
   let pago = (pagoWithoutId{M.pagoId = pagoId} :: M.Pago) & M.addIsValidPago
+
+  distribucionesViejas <- runSelectReturningOne $ select $ do
+    p <- all_ db.pagos
+    guard_ (p.pagoId ==. val_ pagoId)
+    pure (p.distribucion_pagadores, p.distribucion_deudores)
+
   distribucionPagadores <- saveDistribucion pago.pagadores
   distribucionDeudores <- saveDistribucion pago.deudores
   runInsert
@@ -408,7 +419,33 @@ savePago grupoId pagoWithoutId = do
       (conflictingFields (\p -> p.pagoId))
       onConflictUpdateAll
 
+  forM_ distribucionesViejas $ \(DistribucionId viejaPagadores, DistribucionId viejaDeudores) -> do
+    when (viejaPagadores /= distribucionPagadores.id) $ deleteDistribucion viejaPagadores
+    when (viejaDeudores /= distribucionDeudores.id) $ deleteDistribucion viejaDeudores
+
   pure pago{M.pagadores = distribucionPagadores, M.deudores = distribucionDeudores}
+
+recomputePagos :: Connection -> IO ()
+recomputePagos conn = go nullUlid
+  where
+    recomputePagosBatchSize = 100
+
+    go :: ULID -> IO ()
+    go ultimoId = do
+      siguienteId <- runBeamPostgres conn $ do
+        lote <- runSelectReturningList $ select $ do
+          limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
+            p <- all_ db.pagos
+            guard_ (p.pagoId >. val_ ultimoId)
+            pure (p.pagoId, p.pagoGrupo)
+        case NE.nonEmpty lote of
+          Nothing -> pure Nothing
+          Just loteNE -> do
+            forM_ loteNE $ \(pagoId, GrupoId grupoId) -> do
+              pago <- fetchPago pagoId
+              void $ savePago grupoId pago
+            pure $ Just $ fst $ NE.last loteNE
+      forM_ siguienteId go
 
 saveDistribucion :: M.Distribucion -> Pg M.Distribucion
 saveDistribucion distribucionWithoutId = do
@@ -418,11 +455,21 @@ saveDistribucion distribucionWithoutId = do
       else pure distribucionWithoutId.id
   let distribucion = distribucionWithoutId{M.id = distribucionId} :: M.Distribucion
 
+  oldTipo <- runSelectReturningOne $ select $ do
+    d <- all_ db.distribuciones
+    guard_ (d.id ==. val_ distribucionId)
+    pure d.tipo
+
+  let nuevoTipo = tipoDistribucionToText distribucion.tipo
+  case oldTipo of
+    Just t | t /= nuevoTipo -> deleteDistribucionSubtipo t distribucionId
+    _ -> pure ()
+
   runInsert
     $ insertOnConflict
       db.distribuciones
       ( insertValues
-          [ Distribucion distribucion.id (tipoDistribucionToText distribucion.tipo)
+          [ Distribucion distribucion.id nuevoTipo
           ]
       )
       (conflictingFields (\d -> d.id))
@@ -505,6 +552,34 @@ deletePago unId = do
           (\p -> p.pagoId ==. val_ unId)
       deleteDistribucion pagadoresId
       deleteDistribucion deudoresId
+
+-- | Borra la fila padre del subtipo indicado por el texto de tipo guardado.
+-- Los items/claims asociados se eliminan por las FKs con ON DELETE CASCADE,
+-- así que sólo hay que borrar la fila padre. Cubre también los tipos legados
+-- por si la distribución empezó siendo uno de ellos.
+deleteDistribucionSubtipo :: Text -> ULID -> Pg ()
+deleteDistribucionSubtipo tipo distribucionId = case tipo of
+  "DistribucionPartes" ->
+    runDelete
+      $ delete
+        db.distribuciones_partes
+        (\d -> d.distribucion ==. val_ (DistribucionId distribucionId))
+  "Repartija" ->
+    runDelete
+      $ delete
+        db.repartijas
+        (\r -> r.distribucion ==. val_ (DistribucionId distribucionId))
+  "DistribucionMontoEquitativo" ->
+    runDelete
+      $ delete
+        db.distribuciones_monto_equitativo
+        (\d -> d.distribucion ==. val_ (DistribucionId distribucionId))
+  "DistribucionMontosEspecificos" ->
+    runDelete
+      $ delete
+        db.distribuciones_montos_especificos
+        (\d -> d.distribucion ==. val_ (DistribucionId distribucionId))
+  _ -> pure ()
 
 deleteDistribucion :: ULID -> Pg ()
 deleteDistribucion distribucionId = do
