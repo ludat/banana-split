@@ -1982,7 +1982,7 @@ viewParteRow participantesDelGrupo prefix mode participante form =
                     [ Html.td [ class "text-end" ]
                         [ div [ class "ms-auto", style "width" "11rem" ]
                             [ Html.map PagoForm <|
-                                Bs.montoInput montoField [ placeholder "13.000,00" ]
+                                Bs.montoInput montoField [ placeholder "13.000,00", style "text-align" "right" ]
                             ]
                         ]
                     ]
@@ -2186,7 +2186,7 @@ viewRepartijaItemForm i prefix form =
             ]
         , Html.td []
             [ Html.map PagoForm <|
-                Bs.montoInput montoField [ placeholder "20.000" ]
+                Bs.montoInput montoField [ placeholder "20.000", style "text-align" "right" ]
             ]
         , Html.td [ style "width" "1%" ]
             [ Bs.btn Bs.Danger
