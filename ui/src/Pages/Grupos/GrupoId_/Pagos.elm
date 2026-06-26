@@ -24,13 +24,9 @@ import View exposing (View)
 
 page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
-    let
-        ctx =
-            PagoDetalleModal.context shared route
-    in
     Page.new
         { init = \() -> init route shared.store
-        , update = update ctx shared.store
+        , update = update (PagoDetalleModal.context shared route) shared.store
         , subscriptions = subscriptions
         , view = view shared.store
         }

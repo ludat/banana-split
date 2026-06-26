@@ -504,7 +504,7 @@ viewBottomNav currentPath grupo =
             (currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id })
                 || (currentPath == Path.Grupos_GrupoId__Settings { grupoId = grupo.id })
     in
-    Html.nav [ Css.navbar_bottom ]
+    Html.nav [ Css.navbar_bottom, Css.barra_inferior_fija ]
         [ item "bi-house-door" "Resumen" (Path.Grupos_Id_ { id = grupo.id })
         , item "bi-card-list" "Pagos" (Path.Grupos_GrupoId__Pagos { grupoId = grupo.id })
         , a

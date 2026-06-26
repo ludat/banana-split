@@ -127,7 +127,7 @@ instance HasResumen DistribucionPartes where
             totalFijos
             netosFijos
             [ErrorResumen{objeto = mempty, tipo = ErrorPartesMontoFijoSuperaTotal totalFijos totalPago}]
-      | null ponderados || totalPonderaciones <= 0 ->
+      | totalPonderaciones <= 0 ->
           if totalFijos == totalPago
             then ResumenNetos totalPago netosFijos []
             else
@@ -138,29 +138,27 @@ instance HasResumen DistribucionPartes where
       | otherwise ->
           ResumenNetos totalPago (netosFijos <> netosPonderados) []
     where
-      fijos =
+      netosFijos =
         distribucion.partes
-          & mapMaybe
+          & foldMap
             ( \case
-                MontoFijo m p -> Just (p, m)
-                PonderadoYMontoFijo m _ p -> Just (p, m)
-                Ponderado _ _ -> Nothing
+                MontoFijo m p -> mkDeuda p m
+                PonderadoYMontoFijo m _ p -> mkDeuda p m
+                Ponderado _ _ -> mempty
             )
       ponderados =
         distribucion.partes
-          & mapMaybe
+          & foldMap
             ( \case
-                Ponderado n p | n > 0 -> Just (p, n)
-                PonderadoYMontoFijo _ n p | n > 0 -> Just (p, n)
-                _ -> Nothing
+                Ponderado n p | n > 0 -> mkDeuda p n
+                PonderadoYMontoFijo _ n p | n > 0 -> mkDeuda p n
+                _ -> mempty
             )
-      totalFijos = fijos & fmap snd & sum
-      totalPonderaciones = ponderados & fmap snd & sum
-      netosFijos = fijos & fmap (uncurry mkDeuda) & mconcat
+      totalFijos = totalNetos netosFijos
+      totalPonderaciones = totalNetos ponderados
       netosPonderados =
         ponderados
-          & fmap (\(p, n) -> mkDeuda p (fromIntegral n))
-          & mconcat
+          & fmap fromIntegral
           & distribuirEntrePonderados (totalPago - totalFijos)
 
 instance HasResumen Repartija where

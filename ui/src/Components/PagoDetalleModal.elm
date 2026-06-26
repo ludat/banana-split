@@ -167,7 +167,6 @@ update ctx store msg model =
                     )
 
                 Failure _ ->
-                    -- El error del pago lo muestra la vista leyéndolo del store.
                     ( model, Effect.none )
 
                 _ ->

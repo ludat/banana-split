@@ -5,7 +5,8 @@ module Components.GraficoTorta exposing
     , viewDot
     , viewTortaGrande
     , viewTortaMini
-    , viewTortaTrigger
+    , viewTortaModal
+    , viewTortaTriggerButton
     )
 
 {-| Gráfico de torta (pie chart) reutilizable, construido con `elm-visualization`
@@ -222,29 +223,16 @@ viewTortaGrande porciones_ =
         ]
 
 
-{-| Ícono chico con la torta que, al tocarlo, abre un modal de Bootstrap con la
-torta en grande y su leyenda. Incluye tanto el botón como el markup del modal.
-`modalId` debe ser único en la página para no colisionar entre distintas tortas
-(p. ej. pagadores vs deudores).
-
-Sólo sirve cuando el disparador no vive dentro de otro modal: para mostrar la
-torta desde un modal propio, usá `viewTortaMini` + `viewTortaGrande` con estado
-propio (ver `Components.PagoDetalleModal`).
-
--}
-viewTortaTrigger : String -> List PorcionTorta -> Html msg
-viewTortaTrigger modalId porciones_ =
-    Html.div []
-        [ Html.button
-            [ type_ "button"
-            , class "btn p-0 border-0"
-            , attribute "data-bs-toggle" "modal"
-            , attribute "data-bs-target" ("#" ++ modalId)
-            , attribute "aria-label" "Ver gráfico del reparto"
-            ]
-            [ viewTortaMini porciones_ ]
-        , viewTortaModal modalId porciones_
+viewTortaTriggerButton : String -> List PorcionTorta -> Html msg
+viewTortaTriggerButton modalId porciones_ =
+    Html.button
+        [ type_ "button"
+        , class "btn p-0 border-0"
+        , attribute "data-bs-toggle" "modal"
+        , attribute "data-bs-target" ("#" ++ modalId)
+        , attribute "aria-label" "Ver gráfico del reparto"
         ]
+        [ viewTortaMini porciones_ ]
 
 
 viewTortaModal : String -> List PorcionTorta -> Html msg

@@ -26,6 +26,7 @@ import Models.Grupo exposing (GrupoLike)
 import Models.LugarAccionable exposing (LugarParaAccionar(..))
 import Models.Moneda as Moneda
 import Models.Monto as Monto
+import Models.Parte as Parte
 import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -112,7 +113,7 @@ init grupoId today store =
     let
         defaultFormValues =
             [ Form.setString "fecha" (Date.toIsoString today)
-            , Form.setGroup "distribucion_pagadores" (pagadoresToForm [] Nothing)
+            , Form.setGroup "distribucion_pagadores" (pagadoresToForm [] Nothing Nothing)
             , Form.setGroup "distribucion_deudores" (deudoresToForm [] Nothing)
             ]
     in
@@ -311,45 +312,37 @@ readModoPartes =
 
 validateParte : ModoPartes -> ParticipanteId -> Validation CustomFormError (Maybe Api.Parte)
 validateParte mode participanteId =
-    V.defaultValue False (V.field "incluido" V.bool)
+    let
+        validateMonto =
+            V.field "monto" (V.defaultValue Monto.zero Monto.validateMonto)
+
+        validateCuota =
+            V.field "cuota" (V.defaultValue 0 V.int)
+
+        -- Cada modo exige exactamente los campos que necesita; si falta
+        -- alguno el parser falla en vez de tratarlo como opcional.
+        parte =
+            case ( mode.mostrarMontoFijo, mode.mostrarPartes ) of
+                ( True, True ) ->
+                    V.map2 (\monto cuota -> Api.PonderadoYMontoFijo monto cuota participanteId)
+                        validateMonto
+                        validateCuota
+
+                ( True, False ) ->
+                    V.map (\monto -> Api.MontoFijo monto participanteId) validateMonto
+
+                ( False, True ) ->
+                    V.map (\cuota -> Api.Ponderado cuota participanteId) validateCuota
+
+                ( False, False ) ->
+                    -- En partes iguales: cada participante que participa aporta una parte.
+                    V.succeed (Api.Ponderado 1 participanteId)
+    in
+    V.defaultValue False (V.field "participa" V.bool)
         |> V.andThen
-            (\incluido ->
-                if incluido then
-                    V.succeed Tuple.pair
-                        |> V.andMap
-                            (if mode.mostrarMontoFijo then
-                                V.maybe (V.field "monto" Monto.validateMonto)
-
-                             else
-                                V.succeed Nothing
-                            )
-                        |> V.andMap
-                            (if mode.mostrarPartes then
-                                V.maybe (V.field "cuota" (V.int |> V.andThen (V.minInt 1)))
-
-                             else
-                                V.succeed Nothing
-                            )
-                        |> V.andThen
-                            (\( maybeMonto, maybeCuota ) ->
-                                case ( maybeMonto, maybeCuota ) of
-                                    ( Just monto, Just cuota ) ->
-                                        V.succeed (Just (Api.PonderadoYMontoFijo monto cuota participanteId))
-
-                                    ( Just monto, Nothing ) ->
-                                        V.succeed (Just (Api.MontoFijo monto participanteId))
-
-                                    ( Nothing, Just cuota ) ->
-                                        V.succeed (Just (Api.Ponderado cuota participanteId))
-
-                                    ( Nothing, Nothing ) ->
-                                        if not mode.mostrarPartes && not mode.mostrarMontoFijo then
-                                            -- En partes iguales: cada incluido aporta una parte.
-                                            V.succeed (Just (Api.Ponderado 1 participanteId))
-
-                                        else
-                                            V.fail <| FormError.value FormError.Empty
-                            )
+            (\participa ->
+                if participa then
+                    V.map Just parte
 
                 else
                     V.succeed Nothing
@@ -383,7 +376,7 @@ update shared msg model =
         AddedPagoResponse (Ok pago) ->
             let
                 newModel =
-                    initializePagoForms pago.moneda participantes (Just pago) model
+                    initializePagoForms pago.moneda participantes shared.userId (Just pago) model
             in
             ( { newModel | hasUnsavedChanges = False }
             , Effect.batch
@@ -406,7 +399,7 @@ update shared msg model =
         UpdatedPagoResponse (Ok pago) ->
             let
                 newModel =
-                    initializePagoForms pago.moneda participantes (Just pago) model
+                    initializePagoForms pago.moneda participantes shared.userId (Just pago) model
             in
             ( newModel
             , Effect.batch
@@ -567,55 +560,14 @@ update shared msg model =
         SubmitCurrentSection ->
             case model.currentSection of
                 BasicPagoData ->
-                    let
-                        -- si todavía no hay pagadores arrancamos con el usuario
-                        -- actual pagando el total
-                        hayPagadores =
-                            participantes
-                                |> List.any
-                                    (\participante ->
-                                        (Form.getFieldAsBool ("distribucion_pagadores.partes." ++ participante.id ++ ".incluido") model.pagoForm).value == Just True
-                                    )
-
-                        autoAddMsgs =
-                            if hayPagadores then
-                                []
-
-                            else
-                                shared.userId
-                                    |> Maybe.andThen
-                                        (\userId ->
-                                            participantes
-                                                |> List.filter (\participante -> participante.id == userId)
-                                                |> List.head
-                                        )
-                                    |> Maybe.map
-                                        (\participante ->
-                                            let
-                                                basePath =
-                                                    "distribucion_pagadores.partes." ++ participante.id
-
-                                                totalRaw =
-                                                    Form.getOutput model.pagoBasicoForm
-                                                        |> Maybe.map (.monto >> Monto.toRawString)
-                                                        |> Maybe.withDefault ""
-                                            in
-                                            [ Form.Input (basePath ++ ".incluido") Form.Checkbox (FormField.Bool True)
-                                            , Form.Input (basePath ++ ".monto") Form.Text (FormField.String totalRaw)
-                                            ]
-                                        )
-                                    |> Maybe.withDefault []
-
-                        newModel =
-                            updateAllForms participantes
-                                autoAddMsgs
-                                { model
-                                    | pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) Form.Submit model.pagoBasicoForm
-                                    , currentSection = PagadoresSection
-                                    , hasUnsavedChanges = model.hasUnsavedChanges || not (List.isEmpty autoAddMsgs)
-                                }
-                    in
-                    ( newModel, Effect.none )
+                    -- El creador ya viene como pagador por defecto desde que se
+                    -- crea el form, así que acá sólo avanzamos de paso.
+                    ( { model
+                        | pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) Form.Submit model.pagoBasicoForm
+                        , currentSection = PagadoresSection
+                      }
+                    , Effect.none
+                    )
                         |> andThenFocusFieldIfSectionChanged model.currentSection
                         |> andThenUpdateResumenesFromForms model
                         |> andThenSendWarningOnExit
@@ -650,7 +602,7 @@ update shared msg model =
                         Success grupo ->
                             let
                                 newModel =
-                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes Nothing model
+                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes shared.userId Nothing model
                             in
                             ( { newModel
                                 | storedClaims = Nothing
@@ -683,7 +635,7 @@ update shared msg model =
                         ( Success grupo, Success pago ) ->
                             let
                                 newModel =
-                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes (Just pago) model
+                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes shared.userId (Just pago) model
                             in
                             ( newModel
                             , Effect.none
@@ -729,8 +681,8 @@ andThenSendWarningOnExit ( model, oldEffects ) =
     )
 
 
-initializePagoForms : Moneda -> List Participante -> Maybe Pago -> Model -> Model
-initializePagoForms monedaPorDefecto participantes pago model =
+initializePagoForms : Moneda -> List Participante -> Maybe ParticipanteId -> Maybe Pago -> Model -> Model
+initializePagoForms monedaPorDefecto participantes creadorId pago model =
     let
         monedaInicial =
             pago |> Maybe.map .moneda |> Maybe.withDefault monedaPorDefecto
@@ -746,7 +698,7 @@ initializePagoForms monedaPorDefecto participantes pago model =
                     |> Maybe.withDefault (Form.getFieldAsString "fecha" model.pagoForm |> .value |> Maybe.withDefault "")
                 )
             , Form.setGroup "distribucion_pagadores" <|
-                pagadoresToForm participantes (Maybe.map .pagadores pago)
+                pagadoresToForm participantes creadorId (Maybe.map .pagadores pago)
             , Form.setGroup "distribucion_deudores" <|
                 deudoresToForm participantes (Maybe.map .deudores pago)
             ]
@@ -837,19 +789,6 @@ mergeClaimsIntoDistribucion claims distribucion =
             distribucion
 
 
-parteParticipante : Api.Parte -> ParticipanteId
-parteParticipante parte =
-    case parte of
-        Api.MontoFijo _ participanteId ->
-            participanteId
-
-        Api.Ponderado _ participanteId ->
-            participanteId
-
-        Api.PonderadoYMontoFijo _ _ participanteId ->
-            participanteId
-
-
 defaultRepartija : Repartija
 defaultRepartija =
     { id = emptyUlid
@@ -862,12 +801,12 @@ defaultRepartija =
 
 
 {-| Los pagadores se editan con la misma distribución por partes que los
-deudores; sólo cambian los valores por defecto: arrancan en modo "monto fijo" y
-sin nadie preseleccionado (se agrega al usuario actual al avanzar desde el paso
-del monto). Las distribuciones existentes se convierten conservando sus partes.
+deudores; sólo cambian los valores por defecto: en un pago nuevo arrancan en
+modo "partes iguales" con el creador como único pagador (paga el total). Las
+distribuciones existentes se convierten conservando sus partes.
 -}
-pagadoresToForm : List Participante -> Maybe Distribucion -> List ( String, FormField.Field )
-pagadoresToForm participantes distribucion =
+pagadoresToForm : List Participante -> Maybe ParticipanteId -> Maybe Distribucion -> List ( String, FormField.Field )
+pagadoresToForm participantes creadorId distribucion =
     let
         modo =
             case distribucion |> Maybe.map .tipo of
@@ -875,12 +814,23 @@ pagadoresToForm participantes distribucion =
                     deriveModoPartes distribucion
 
                 _ ->
-                    { mostrarPartes = False, mostrarMontoFijo = True }
+                    { mostrarPartes = False, mostrarMontoFijo = False }
 
         partes =
             case distribucion |> Maybe.map .tipo of
                 Just (TipoDistribucionPartes p) ->
                     p
+
+                Nothing ->
+                    -- En un pago nuevo el creador es, por defecto, el único
+                    -- pagador y aporta la única parte: paga el total. Arrancar
+                    -- así evita tener que autoagregarlo al salir del paso.
+                    { id = emptyUlid
+                    , partes =
+                        creadorId
+                            |> Maybe.map (\id -> [ Api.Ponderado 1 id ])
+                            |> Maybe.withDefault []
+                    }
 
                 _ ->
                     { id = emptyUlid, partes = [] }
@@ -993,23 +943,23 @@ partesToForm participantes distribucion =
                         campos =
                             case
                                 distribucion.partes
-                                    |> List.filter (\parte -> parteParticipante parte == participante.id)
+                                    |> List.filter (\parte -> Parte.participanteId parte == participante.id)
                                     |> List.head
                             of
                                 Nothing ->
-                                    { incluido = False, cuota = "1", monto = "" }
+                                    { participa = False, cuota = "1", monto = Monto.toRawString Monto.zero }
 
                                 Just (Api.Ponderado cuota _) ->
-                                    { incluido = True, cuota = String.fromInt cuota, monto = "" }
+                                    { participa = True, cuota = String.fromInt cuota, monto = Monto.toRawString Monto.zero }
 
                                 Just (Api.MontoFijo monto _) ->
-                                    { incluido = True, cuota = "1", monto = Monto.toRawString monto }
+                                    { participa = True, cuota = "1", monto = Monto.toRawString monto }
 
                                 Just (Api.PonderadoYMontoFijo monto cuota _) ->
-                                    { incluido = True, cuota = String.fromInt cuota, monto = Monto.toRawString monto }
+                                    { participa = True, cuota = String.fromInt cuota, monto = Monto.toRawString monto }
                     in
                     Form.setGroup participante.id
-                        [ Form.setBool "incluido" campos.incluido
+                        [ Form.setBool "participa" campos.participa
                         , Form.setString "cuota" campos.cuota
                         , Form.setString "monto" campos.monto
                         ]
@@ -1181,12 +1131,14 @@ viewUnsavedChangesBanner =
 
 {-| Pie de acciones de cada paso (errores + botón principal). En mobile queda
 flotando al fondo de la pantalla; en desktop fluye al final del formulario. El
-estilo vive en `styles.css` y se referencia vía `Css.action_footer` para que el
-compilador avise si la clase deja de existir.
+posicionamiento al fondo lo comparte con la navbar inferior vía
+`Css.barra_inferior_fija`; `Css.action_footer` agrega su decoración propia. El
+estilo vive en `styles.css` y se referencia desde acá para que el compilador
+avise si la clase deja de existir.
 -}
 viewActionFooter : List (Html Msg) -> Html Msg
 viewActionFooter children =
-    div [ Css.action_footer ] children
+    div [ Css.action_footer, Css.barra_inferior_fija ] children
 
 
 {-| Arma las porciones de la torta a partir de los netos del resumen de la
@@ -1203,14 +1155,24 @@ porcionesTorta grupo totalPago resumenData accessor =
             []
 
 
-{-| Caja con la torta del reparto que va al pie, a la izquierda del botón
-principal. Es un botón que abre un modal con la torta en grande y su leyenda.
-`modalId` debe ser único por sección para no colisionar entre pasos.
--}
 viewTortaFooter : GrupoLike g -> Maybe Monto -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> String -> Html Msg
 viewTortaFooter grupo totalPago resumenData accessor modalId =
     div [ class "flex-shrink-0" ]
-        [ GraficoTorta.viewTortaTrigger modalId (porcionesTorta grupo totalPago resumenData accessor) ]
+        [ GraficoTorta.viewTortaTriggerButton modalId (porcionesTorta grupo totalPago resumenData accessor) ]
+
+
+viewTortaModales : GrupoLike g -> Model -> Html Msg
+viewTortaModales grupo model =
+    let
+        totalPago =
+            Form.getOutput model.pagoBasicoForm |> Maybe.map .monto
+    in
+    div []
+        [ GraficoTorta.viewTortaModal "torta-pagadores"
+            (porcionesTorta grupo totalPago model.resumenPagadores .resumenPagadores)
+        , GraficoTorta.viewTortaModal "torta-deudores"
+            (porcionesTorta grupo totalPago model.resumenDeudores .resumenDeudores)
+        ]
 
 
 view : Store -> Model -> View Msg
@@ -1238,6 +1200,7 @@ view store model =
                                 viewDeudoresSection grupo model
                         ]
                     ]
+                , viewTortaModales grupo model
                 ]
             }
 
@@ -1490,7 +1453,7 @@ viewPagadoresSection grupo model =
             grupo.participantes
                 |> List.filter
                     (\participante ->
-                        (Form.getFieldAsBool (prefix ++ ".partes." ++ participante.id ++ ".incluido") form).value == Just True
+                        (Form.getFieldAsBool (prefix ++ ".partes." ++ participante.id ++ ".participa") form).value == Just True
                     )
 
         mode =
@@ -1511,8 +1474,8 @@ viewPagadoresSection grupo model =
                 , viewSeleccionarParticipantes "Quienes pagaron" "pagadores-seleccionar" grupo.participantes prefix form
                 ]
             , div [ class "d-flex flex-wrap gap-2 mb-3" ]
-                [ viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
-                , viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
+                [ viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
+                , viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
                 ]
             , viewPartesTable grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.pagadores)) form
             , viewActionFooter
@@ -1520,10 +1483,7 @@ viewPagadoresSection grupo model =
                 , div [ class "d-flex gap-2 align-items-stretch" ]
                     [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenPagadores .resumenPagadores "torta-pagadores"
                     , Bs.btn Bs.Primary
-                        [ -- Se permite continuar aunque el gasto sea inválido (p. ej.
-                          -- montos que no cuadran); sólo se bloquea si el form no es
-                          -- siquiera construible.
-                          disabled (Form.getOutput form == Nothing)
+                        [ disabled (Form.getOutput form == Nothing)
                         , onClick SubmitCurrentSection
                         , class "flex-grow-1"
                         ]
@@ -1574,7 +1534,7 @@ viewDeudoresSection grupo model =
                         textoCTA =
                             case model.currentPagoId of
                                 Nothing ->
-                                    "Terminar"
+                                    "Crear"
 
                                 Just _ ->
                                     "Actualizar pago"
@@ -1736,7 +1696,7 @@ viewPartesForm grupo prefix form =
             grupo.participantes
                 |> List.filter
                     (\participante ->
-                        (Form.getFieldAsBool (prefix ++ ".partes." ++ participante.id ++ ".incluido") form).value == Just True
+                        (Form.getFieldAsBool (prefix ++ ".partes." ++ participante.id ++ ".participa") form).value == Just True
                     )
 
         mode =
@@ -1854,27 +1814,27 @@ viewSeleccionarParticipantes titulo selectorId participantes prefix form =
 viewParticipantePill : Participante -> String -> Form CustomFormError Pago -> Html Msg
 viewParticipantePill participante prefix form =
     let
-        incluidoField =
-            Form.getFieldAsBool (prefix ++ ".partes." ++ participante.id ++ ".incluido") form
+        participaField =
+            Form.getFieldAsBool (prefix ++ ".partes." ++ participante.id ++ ".participa") form
 
-        incluido =
-            incluidoField.value == Just True
+        participa =
+            participaField.value == Just True
     in
     button
         [ type_ "button"
         , class "btn btn-light rounded-pill d-inline-flex align-items-center gap-2"
         , Attr.attribute "aria-pressed"
-            (if incluido then
+            (if participa then
                 "true"
 
              else
                 "false"
             )
-        , onClick <| PagoForm <| Form.Input incluidoField.path Form.Checkbox (FormField.Bool (not incluido))
+        , onClick <| PagoForm <| Form.Input participaField.path Form.Checkbox (FormField.Bool (not participa))
         ]
         [ i
             [ class
-                (if incluido then
+                (if participa then
                     "bi bi-check-square-fill"
 
                  else
@@ -1953,7 +1913,7 @@ viewPartesTable participantesDelGrupo prefix mode incluidos suma form =
                         []
                    )
                 ++ (if divisionVisible mode then
-                        [ Html.th [ Attr.scope "col", class "text-end" ] [ text "División" ] ]
+                        [ Html.th [ Attr.scope "col", class "text-end" ] [ text "Partes" ] ]
 
                     else
                         []

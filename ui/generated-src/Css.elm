@@ -1,4 +1,4 @@
-module Css exposing (barras_precio, eje_vertical, navbar_bottom, navbar_item, navbar_big_button, navbar_more, action_footer)
+module Css exposing (barras_precio, eje_vertical, barra_inferior_fija, navbar_bottom, navbar_item, navbar_big_button, navbar_more, action_footer)
 
 import Html
 import Html.Attributes
@@ -12,6 +12,11 @@ barras_precio =
 eje_vertical : Html.Attribute msg
 eje_vertical =
     Html.Attributes.class "eje-vertical"
+
+
+barra_inferior_fija : Html.Attribute msg
+barra_inferior_fija =
+    Html.Attributes.class "barra-inferior-fija"
 
 
 navbar_bottom : Html.Attribute msg
