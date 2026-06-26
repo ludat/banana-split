@@ -1330,10 +1330,37 @@ sectionIncomplete model section =
             faltaTotal
 
         PagadoresSection ->
-            faltaTotal || Form.getOutput model.pagadoresForm == Nothing
+            let
+                -- Un pago nuevo arranca sin nadie pagando (partes vacías). Hasta que se
+                -- elige —o se autoagrega al avanzar— un pagador, la sección está
+                -- incompleta, así la solapa se ve grisada en vez de marcar error porque
+                -- los montos "no cuadran" antes de que el usuario la toque.
+                sinPagadores =
+                    case Form.getOutput model.pagadoresForm of
+                        Just pago ->
+                            distribucionSinPartes pago.pagadores
+
+                        Nothing ->
+                            True
+            in
+            faltaTotal || sinPagadores
 
         DeudoresSection ->
             faltaTotal || Form.getOutput model.deudoresForm == Nothing
+
+
+{-| Una distribución por partes "vacía" (nadie incluido) significa, en el paso de
+pagadores, que todavía no se eligió quién pagó. Una repartija nunca se considera
+vacía acá.
+-}
+distribucionSinPartes : Distribucion -> Bool
+distribucionSinPartes distribucion =
+    case distribucion.tipo of
+        Api.TipoDistribucionPartes { partes } ->
+            List.isEmpty partes
+
+        Api.TipoDistribucionRepartija _ ->
+            False
 
 
 {-| Un paso tiene error sólo cuando ya tiene datos cargados pero su resumen

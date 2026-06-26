@@ -33,11 +33,6 @@ import Utils.Toasts.Types as Toasts
 -- MODEL
 
 
-{-| The modal only owns its transient UI state. Everything else it needs
-(`grupoId`, the current `path`, the app `origin`) is caller-owned context that
-already lives in `Shared`/`Route`, so the page passes it in via `Context` on
-each `init`/`open`/`update` rather than us duplicating it here.
--}
 type alias Model =
     { isOpen : Bool
     , pagoId : ULID
@@ -49,11 +44,6 @@ type alias Model =
     }
 
 
-{-| Qué sección del detalle está abierta en un overlay propio (el balance, la
-torta del pago o la del reparto). Sólo una puede estar abierta a la vez, así que
-es un único `Maybe` y no un flag por sección. Usamos un overlay propio en vez de
-un modal de Bootstrap anidado, que quedaría detrás del modal de detalle.
--}
 type Overlay
     = BalanceGraphOverlay
     | PagadoresGraphOverlay
@@ -67,9 +57,6 @@ type alias Context =
     }
 
 
-{-| Build the caller-owned `Context` the modal needs straight from `Shared` and
-the current `Route`, so pages don't have to know what the modal reads.
--}
 context : Shared.Model.Model -> Route routeParams -> Context
 context shared route =
     { grupoId = grupoIdFromPath route.path |> Maybe.withDefault ""
@@ -114,9 +101,6 @@ forPago isOpen pagoId =
     }
 
 
-{-| Refresca el pago en el store (en vez de pedirlo directo a la API) y arranca
-el sondeo que dispara el cálculo del resumen cuando el pago ya está disponible.
--}
 loadPago : ULID -> Effect Msg
 loadPago pagoId =
     Effect.batch
@@ -125,11 +109,6 @@ loadPago pagoId =
         ]
 
 
-{-| Vuelve a chequear el store dentro de 100ms. Replica el patrón de
-`waitAndCheckNecessaryData` de la página de alta de pagos: como las respuestas
-del store llegan por `Shared` y no como un `Msg` nuestro, sondeamos hasta que el
-pago aparezca para recién ahí calcular el resumen (que sí es estado local).
--}
 waitForPago : Effect Msg
 waitForPago =
     Effect.sendCmd <| Task.perform (\_ -> CheckPagoPresent) (Process.sleep 100)
@@ -303,10 +282,6 @@ view store grupo model =
             ]
 
 
-{-| Estado vacío/error con un ícono, un título y un mensaje. Incluye un header
-con sólo el botón de cerrar para que siempre se pueda salir del modal. Devuelve
-la terna `(header, contenido, overlays)` que arma `view`.
--}
 viewEstado : String -> String -> String -> ( Html Msg, Html Msg, Html Msg )
 viewEstado icono titulo mensaje =
     ( div [ class "modal-header border-bottom-0" ]
@@ -332,11 +307,6 @@ modalOverlayId =
     "pago-detalle-modal"
 
 
-{-| Fire `Close` only when the click lands on the overlay itself (outside the
-dialog). We compare the event `target` to its `currentTarget` instead of
-stopping propagation, so the click still reaches `document` and Bootstrap can
-auto-close the delete dropdown.
--}
 closeOnOverlayClick : Decode.Decoder Msg
 closeOnOverlayClick =
     Decode.map2
@@ -356,9 +326,6 @@ overlayId =
     "pago-detalle-overlay-modal"
 
 
-{-| Igual que `closeOnOverlayClick` pero para el overlay de la sección abierta:
-cierra sólo cuando el click cae en el fondo y no dentro del diálogo.
--}
 closeOverlayOnBackdropClick : Decode.Decoder Msg
 closeOverlayOnBackdropClick =
     Decode.map2
@@ -373,10 +340,6 @@ closeOverlayOnBackdropClick =
         (Decode.at [ "currentTarget", "id" ] Decode.string)
 
 
-{-| Overlay propio (no de Bootstrap) que muestra la sección abierta —balance o
-torta— por encima del modal de detalle, con un `z-index` mayor. Un único overlay
-sirve a las tres porque nunca hay más de una abierta a la vez.
--}
 viewOverlay : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewOverlay grupo pago resumen model =
     case model.activeOverlay of
@@ -515,10 +478,6 @@ viewContent grupo pago resumen model =
         ]
 
 
-{-| Toggle button (a small warning icon) shown next to a section title when its
-slice of the resumen has errors. Clicking it shows/hides `errorList` for the
-same `key`.
--}
 errorToggle : String -> Set.Set String -> List ErrorResumen -> Html Msg
 errorToggle key expanded errores =
     if List.isEmpty errores then
@@ -541,8 +500,6 @@ errorToggle key expanded errores =
             [ i [ class "bi bi-exclamation-triangle-fill" ] [] ]
 
 
-{-| The error messages for a section, shown only while its `key` is expanded.
--}
 errorList : String -> Set.Set String -> List ErrorResumen -> Html Msg
 errorList key expanded errores =
     if Set.member key expanded && not (List.isEmpty errores) then
