@@ -6,15 +6,14 @@
 module BananaSplit.Deudas (
   calcularNetosRepartija,
   Distribucion (..),
-  DistribucionMontoEquitativo (..),
-  DistribucionMontosEspecificos (..),
+  DistribucionPartes (..),
   ErrorResumen (..),
   getNetosResumen,
   HasResumen (..),
   minimizeTransactions,
   mkDeuda,
-  MontoEspecifico (..),
   Netos (..),
+  Parte (..),
   relabelError,
   Repartija (..),
   ResumenNetos (..),
@@ -50,27 +49,22 @@ data Distribucion = Distribucion
   deriving (Show, Eq, Generic)
 
 data TipoDistribucion
-  = TipoDistribucionMontosEspecificos DistribucionMontosEspecificos
-  | TipoDistribucionMontoEquitativo DistribucionMontoEquitativo
-  | TipoDistribucionRepartija Repartija
+  = TipoDistribucionRepartija Repartija
+  | TipoDistribucionPartes DistribucionPartes
   deriving (Show, Eq, Generic)
 
-data DistribucionMontosEspecificos = DistribucionMontosEspecificos
-  { id :: ULID
-  , montos :: [MontoEspecifico]
-  }
+data Parte
+  = MontoFijo Monto ParticipanteId
+  | Ponderado Integer ParticipanteId
+  | PonderadoYMontoFijo Monto Integer ParticipanteId
   deriving (Show, Eq, Generic)
 
-data MontoEspecifico = MontoEspecifico
+-- | Distribución mixta: cada participante aporta un monto fijo o una cantidad
+-- de partes. Los montos fijos se asignan primero y el restante se reparte
+-- entre los ponderados proporcionalmente a sus partes.
+data DistribucionPartes = DistribucionPartes
   { id :: ULID
-  , participante :: ParticipanteId
-  , monto :: Monto
-  }
-  deriving (Show, Eq, Generic)
-
-data DistribucionMontoEquitativo = DistribucionMontoEquitativo
-  { id :: ULID
-  , participantes :: [ParticipanteId]
+  , partes :: [Parte]
   }
   deriving (Show, Eq, Generic)
 
@@ -83,16 +77,17 @@ data ResumenNetos
   deriving (Show, Eq, Generic)
 
 data TipoErrorResumen
-  = ErrorMontosEspecificosVacios
-  | -- | actual, esperado
-    ErrorMontosEspecificosTotalNoCoincide Monto Monto
-  | ErrorEquitativoSinParticipantes
-  | ErrorRepartijaSinItems
+  = ErrorRepartijaSinItems
   | -- | totalItems, totalPago
     ErrorRepartijaTotalItemsNoCoincide Monto Monto
   | ErrorRepartijaSinClaims
   | -- | totalReclamado, totalPago
     ErrorRepartijaTotalReclamadoNoCoincide Monto Monto
+  | ErrorPartesVacias
+  | -- | totalFijos, totalPago
+    ErrorPartesMontoFijoSuperaTotal Monto Monto
+  | -- | totalFijos, totalPago
+    ErrorPartesTotalNoCoincide Monto Monto
   deriving (Show, Eq, Generic)
 
 data ErrorResumen = ErrorResumen
@@ -119,29 +114,52 @@ instance HasResumen ResumenNetos where
 instance HasResumen Distribucion where
   getResumen totalPago distribucion =
     case distribucion.tipo of
-      TipoDistribucionMontoEquitativo d -> getResumen totalPago d
-      TipoDistribucionMontosEspecificos d -> getResumen totalPago d
       TipoDistribucionRepartija r -> getResumen totalPago r
+      TipoDistribucionPartes d -> getResumen totalPago d
 
-instance HasResumen DistribucionMontosEspecificos where
+instance HasResumen DistribucionPartes where
   getResumen totalPago distribucion =
     if
-      | null distribucion.montos -> ResumenNetos 0 mempty [ErrorResumen{objeto = mempty, tipo = ErrorMontosEspecificosVacios}]
-      | total /= totalPago ->
+      | null distribucion.partes ->
+          ResumenNetos 0 mempty [ErrorResumen{objeto = mempty, tipo = ErrorPartesVacias}]
+      | totalFijos > totalPago ->
           ResumenNetos
-            total
-            netos
-            [ErrorResumen{objeto = mempty, tipo = ErrorMontosEspecificosTotalNoCoincide total totalPago}]
-      | otherwise -> ResumenNetos total netos []
+            totalFijos
+            netosFijos
+            [ErrorResumen{objeto = mempty, tipo = ErrorPartesMontoFijoSuperaTotal totalFijos totalPago}]
+      | totalPonderaciones <= 0 ->
+          if totalFijos == totalPago
+            then ResumenNetos totalPago netosFijos []
+            else
+              ResumenNetos
+                totalFijos
+                netosFijos
+                [ErrorResumen{objeto = mempty, tipo = ErrorPartesTotalNoCoincide totalFijos totalPago}]
+      | otherwise ->
+          ResumenNetos totalPago (netosFijos <> netosPonderados) []
     where
-      netos = distribucion.montos <&> (\m -> mkDeuda m.participante m.monto) & mconcat
-      total = totalNetos netos
-
-instance HasResumen DistribucionMontoEquitativo where
-  getResumen totalPago distribucion =
-    if
-      | null distribucion.participantes -> ResumenNetos 0 mempty [ErrorResumen{objeto = mempty, tipo = ErrorEquitativoSinParticipantes}]
-      | otherwise -> ResumenNetos totalPago (calcularNetosMontoEquitativo totalPago distribucion) []
+      netosFijos =
+        distribucion.partes
+          & foldMap
+            ( \case
+                MontoFijo m p -> mkDeuda p m
+                PonderadoYMontoFijo m _ p -> mkDeuda p m
+                Ponderado _ _ -> mempty
+            )
+      ponderados =
+        distribucion.partes
+          & foldMap
+            ( \case
+                Ponderado n p | n > 0 -> mkDeuda p n
+                PonderadoYMontoFijo _ n p | n > 0 -> mkDeuda p n
+                _ -> mempty
+            )
+      totalFijos = totalNetos netosFijos
+      totalPonderaciones = totalNetos ponderados
+      netosPonderados =
+        ponderados
+          & fmap fromIntegral
+          & distribuirEntrePonderados (totalPago - totalFijos)
 
 instance HasResumen Repartija where
   getResumen totalPago repartija =
@@ -273,13 +291,6 @@ totalNetos (Netos deudasMap) =
 mkDeuda :: ParticipanteId -> a -> Netos a
 mkDeuda participanteId monto =
   Netos $ Map.singleton participanteId monto
-
-calcularNetosMontoEquitativo :: Monto -> DistribucionMontoEquitativo -> Netos Monto
-calcularNetosMontoEquitativo total distribucion =
-  distribucion.participantes
-    & fmap (`mkDeuda` 1)
-    & mconcat
-    & distribuirEntrePonderados total
 
 distribuirEntrePonderados :: Monto -> Netos Decimal -> Netos Monto
 distribuirEntrePonderados (Monto total) deudas =
@@ -547,9 +558,8 @@ calcularNetosRepartija repartija =
 
 Elm.deriveBoth Elm.defaultOptions ''Transaccion
 Elm.deriveBoth Elm.defaultOptions ''Netos
-Elm.deriveBoth Elm.defaultOptions ''MontoEspecifico
-Elm.deriveBoth Elm.defaultOptions ''DistribucionMontosEspecificos
-Elm.deriveBoth Elm.defaultOptions ''DistribucionMontoEquitativo
+Elm.deriveBoth Elm.defaultOptions ''Parte
+Elm.deriveBoth Elm.defaultOptions ''DistribucionPartes
 Elm.deriveBoth Elm.defaultOptions ''TipoDistribucion
 Elm.deriveBoth Elm.defaultOptions ''Distribucion
 Elm.deriveBoth Elm.defaultOptions ''TipoErrorResumen

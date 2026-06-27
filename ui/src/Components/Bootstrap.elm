@@ -7,21 +7,19 @@ module Components.Bootstrap exposing
     , card
     , cardBody
     , cardHeader
-    , checkbox
     , dateFormItem
     , fileInput
     , listGroup
     , listGroupItem
     , modal
-    , montoFormItem
     , montoInput
     , navTab
     , navTabs
     , navbar
     , navbarBrand
+    , requiredMarker
     , segmentedButton
     , segmentedButtonItem
-    , selectFormItem
     , selectInput
     , spinner
     , textFormItem
@@ -31,7 +29,7 @@ module Components.Bootstrap exposing
 import Form exposing (Msg(..))
 import Form.Field as FormField
 import Html exposing (Attribute, Html, button, div, h5, li, nav, span, ul)
-import Html.Attributes as Attr exposing (attribute, checked, class, classList, for, id, placeholder, selected, type_, value)
+import Html.Attributes as Attr exposing (attribute, class, classList, for, id, placeholder, selected, type_, value)
 import Html.Events exposing (on, onClick, onInput)
 import Json.Decode as Decode
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
@@ -275,56 +273,6 @@ textFormItem state opts =
         ]
 
 
-montoFormItem : Form.FieldState CustomFormError String -> { label : String, placeholder : Maybe String, required : Bool } -> Html Form.Msg
-montoFormItem state opts =
-    div [ class "mb-3" ]
-        [ fieldLabel state.path opts.label opts.required
-        , Html.node "monto-input"
-            ([ attribute "raw-value" (Maybe.withDefault "" state.value)
-             , attribute "input-id" state.path
-             , classList [ ( "is-invalid", hasErrorField state ) ]
-             , on "autoNumeric:rawValueModified"
-                (Decode.at [ "detail", "newRawValue" ] Decode.string
-                    |> Decode.map (\v -> Input state.path Form.Text (FormField.String v))
-                )
-             , on "focusin" (Decode.succeed (Focus state.path))
-             , on "focusout" (Decode.succeed (Blur state.path))
-             , Attr.required opts.required
-             ]
-                ++ maybePlaceholder opts.placeholder
-            )
-            []
-        , feedback state
-        ]
-
-
-selectFormItem : Form.FieldState CustomFormError String -> { label : String, required : Bool, options : List ( String, String ) } -> Html Form.Msg
-selectFormItem state opts =
-    div [ class "mb-3" ]
-        [ fieldLabel state.path opts.label opts.required
-        , Html.select
-            [ class (controlClass state "form-select")
-            , id state.path
-            , on "change"
-                (Decode.at [ "target", "value" ] Decode.string
-                    |> Decode.map (\v -> Input state.path Form.Select (FormField.String v))
-                )
-            , on "focusin" (Decode.succeed (Focus state.path))
-            , on "focusout" (Decode.succeed (Blur state.path))
-            , Attr.required opts.required
-            ]
-            (opts.options
-                |> List.map
-                    (\( val, lbl ) ->
-                        Html.option
-                            [ value val, selected (state.value == Just val) ]
-                            [ Html.text lbl ]
-                    )
-            )
-        , feedback state
-        ]
-
-
 dateFormItem : Form.FieldState CustomFormError String -> { label : String, required : Bool } -> Html Form.Msg
 dateFormItem state opts =
     div [ class "mb-3" ]
@@ -404,26 +352,6 @@ selectInput options state attrs =
                         [ Html.text lbl ]
                 )
         )
-
-
-checkbox : Form.FieldState CustomFormError Bool -> { label : String } -> Html Form.Msg
-checkbox state opts =
-    div [ class "form-check" ]
-        [ Html.input
-            [ type_ "checkbox"
-            , class "form-check-input"
-            , id state.path
-            , checked (state.value == Just True)
-            , on "change"
-                (Decode.at [ "target", "checked" ] Decode.bool
-                    |> Decode.map (\v -> Input state.path Form.Checkbox (FormField.Bool v))
-                )
-            , on "focusin" (Decode.succeed (Focus state.path))
-            , on "focusout" (Decode.succeed (Blur state.path))
-            ]
-            []
-        , Html.label [ class "form-check-label", for state.path ] [ Html.text opts.label ]
-        ]
 
 
 fileInput : List (Attribute msg) -> Html msg

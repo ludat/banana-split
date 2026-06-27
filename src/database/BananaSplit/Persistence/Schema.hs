@@ -29,6 +29,8 @@ data BananaSplitDb f = BananaSplitDb
   , distribuciones_monto_equitativo_items :: f (TableEntity DistribucionMontoEquitativoItemT)
   , distribuciones_montos_especificos :: f (TableEntity DistribucionMontosEspecificosT)
   , distribuciones_montos_especificos_items :: f (TableEntity DistribucionMontosEspecificosItemT)
+  , distribuciones_partes :: f (TableEntity DistribucionPartesT)
+  , distribuciones_partes_items :: f (TableEntity DistribucionPartesItemT)
   , repartijas :: f (TableEntity DistribucionRepartijaT)
   , repartija_items :: f (TableEntity RepartijaItemT)
   , repartija_claims :: f (TableEntity RepartijaClaimT)
@@ -130,6 +132,8 @@ deriving instance Show Monto
 
 deriving instance Show (MontoT (Nullable Identity))
 
+deriving instance Eq (MontoT (Nullable Identity))
+
 deriving instance Eq Monto
 
 data DistribucionT f = Distribucion
@@ -205,6 +209,60 @@ instance Table DistribucionMontosEspecificosItemT where
     = DistribucionMontosEspecificosItemId (Columnar f ULID)
     deriving (Generic, Beamable)
   primaryKey distrubucion = DistribucionMontosEspecificosItemId distrubucion.id
+
+data DistribucionPartesT f = DistribucionPartes
+  { id :: Columnar f ULID
+  , distribucion :: PrimaryKey DistribucionT f
+  }
+  deriving (Generic, Beamable)
+
+type DistribucionPartes = DistribucionPartesT Identity
+
+deriving instance Show DistribucionPartes
+
+deriving instance Eq DistribucionPartes
+
+type DistribucionPartesId = PrimaryKey DistribucionPartesT Identity
+
+deriving instance Show DistribucionPartesId
+
+deriving instance Eq DistribucionPartesId
+
+instance Table DistribucionPartesT where
+  data PrimaryKey DistribucionPartesT f
+    = DistribucionPartesId (Columnar f ULID)
+    deriving (Generic, Beamable)
+  primaryKey = DistribucionPartesId . (.id)
+
+-- | Cada fila es una 'M.Parte'. Según qué columnas estén presentes:
+-- solo monto es 'M.MontoFijo', solo cuota es 'M.Ponderado', y ambos es
+-- 'M.PonderadoYMontoFijo'. Nunca pueden estar ambos nulos (ver check).
+data DistribucionPartesItemT f = DistribucionPartesItem
+  { id :: Columnar f ULID
+  , distribucion :: PrimaryKey DistribucionPartesT f
+  , participante :: PrimaryKey ParticipanteT f
+  , monto :: MontoT (Nullable f)
+  , cuota :: C (Nullable f) Int32
+  }
+  deriving (Generic, Beamable)
+
+type DistribucionPartesItem = DistribucionPartesItemT Identity
+
+deriving instance Show DistribucionPartesItem
+
+deriving instance Eq DistribucionPartesItem
+
+type DistribucionPartesItemId = PrimaryKey DistribucionPartesItemT Identity
+
+deriving instance Show DistribucionPartesItemId
+
+deriving instance Eq DistribucionPartesItemId
+
+instance Table DistribucionPartesItemT where
+  data PrimaryKey DistribucionPartesItemT f
+    = DistribucionPartesItemId (Columnar f ULID)
+    deriving (Generic, Beamable)
+  primaryKey = DistribucionPartesItemId . (.id)
 
 data DistribucionMontoEquitativoT f = DistribucionMontoEquitativo
   { id :: Columnar f ULID

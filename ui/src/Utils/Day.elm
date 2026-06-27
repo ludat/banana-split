@@ -1,4 +1,4 @@
-module Utils.Day exposing (Day, jsonDecDay, jsonEncDay, mesAbreviado, validateDay)
+module Utils.Day exposing (Day, jsonDecDay, jsonEncDay, mesAbreviado, toString, validateDay)
 
 import Date exposing (Date)
 import Form.Validate as V exposing (Validation)
@@ -85,3 +85,16 @@ mesAbreviado date =
 
         _ ->
             ""
+
+
+toString : Day -> String
+toString fecha =
+    let
+        pad n =
+            String.padLeft 2 '0' (String.fromInt n)
+    in
+    pad (Date.day fecha)
+        ++ "-"
+        ++ pad (Date.monthNumber fecha)
+        ++ "-"
+        ++ String.fromInt (Date.year fecha)

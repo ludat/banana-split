@@ -3,9 +3,11 @@ module Pages.Grupos.GrupoId_.Pagos.New exposing (Model, Msg, ReceiptReadingState
 import Base64.Encode
 import Browser.Dom
 import Bytes exposing (Bytes)
-import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
+import Components.GraficoTorta as GraficoTorta
+import Css
 import Date exposing (Date)
+import Dict
 import Effect exposing (Effect)
 import File exposing (File)
 import Form exposing (Form)
@@ -13,18 +15,19 @@ import Form.Error as FormError
 import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
-import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), DistribucionMontoEquitativo, DistribucionMontosEspecificos, Moneda, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
-import Html exposing (Html, a, button, details, div, i, li, p, span, summary, text, ul)
-import Html.Attributes as Attr exposing (accept, class, classList, disabled, id, placeholder, style, target, type_)
+import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), Moneda, Monto, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
+import Html exposing (Html, a, button, details, div, i, li, p, span, summary, text)
+import Html.Attributes as Attr exposing (accept, class, classList, disabled, placeholder, style, target, type_)
 import Html.Events exposing (on, onClick, onSubmit)
 import Http
 import Json.Decode as Decode
 import Layouts
-import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
+import Models.Grupo exposing (GrupoLike)
 import Models.LugarAccionable exposing (LugarParaAccionar(..))
 import Models.Moneda as Moneda
 import Models.Monto as Monto
-import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje, getDeudasFromResumen, getTotalFromResumen)
+import Models.Parte as Parte
+import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
@@ -47,11 +50,11 @@ page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route.params.grupoId shared.today shared.store
-        , update = update shared.store
+        , update = update shared
         , subscriptions = subscriptions
         , view = view shared.store
         }
-        |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
+        |> Page.withLayout (\_ -> Layouts.Minimal {})
 
 
 
@@ -73,13 +76,13 @@ type Msg
     | ReceiptImageBytes File Bytes
     | ReceiptParseResponse (Result Http.Error Api.ReceiptImageResponse)
     | ClearReceiptError
+    | Cancel
 
 
 type Section
     = BasicPagoData
     | PagadoresSection
     | DeudoresSection
-    | PagoConfirmation
 
 
 type ReceiptReadingState
@@ -108,27 +111,21 @@ type alias Model =
 init : ULID -> Date -> Store -> ( Model, Effect Msg )
 init grupoId today store =
     let
-        defaultDistribucionValues =
+        defaultFormValues =
             [ Form.setString "fecha" (Date.toIsoString today)
-            , Form.setGroup "distribucion_pagadores"
-                [ Form.setString "tipo" "monto_equitativo"
-                , Form.setString "distribucionDeSobras" <| distribucionDeSobrasToString SobrasNoDistribuir
-                ]
-            , Form.setGroup "distribucion_deudores"
-                [ Form.setString "tipo" "monto_equitativo"
-                , Form.setString "distribucionDeSobras" <| distribucionDeSobrasToString SobrasNoDistribuir
-                ]
+            , Form.setGroup "distribucion_pagadores" (pagadoresToForm [] Nothing Nothing)
+            , Form.setGroup "distribucion_deudores" (deudoresToForm [] Nothing)
             ]
     in
     ( { grupoId = grupoId
       , currentPagoId = Nothing
       , currentSection = BasicPagoData
-      , pagoBasicoForm = Form.initial defaultDistribucionValues (validatePagoInSection BasicPagoData [])
-      , deudoresForm = Form.initial defaultDistribucionValues (validatePagoInSection DeudoresSection [])
+      , pagoBasicoForm = Form.initial defaultFormValues (validatePagoInSection BasicPagoData [])
+      , deudoresForm = Form.initial defaultFormValues (validatePagoInSection DeudoresSection [])
       , resumenDeudores = NotAsked
-      , pagadoresForm = Form.initial defaultDistribucionValues (validatePagoInSection PagadoresSection [])
+      , pagadoresForm = Form.initial defaultFormValues (validatePagoInSection PagadoresSection [])
       , resumenPagadores = NotAsked
-      , pagoForm = Form.initial defaultDistribucionValues (validatePago [])
+      , pagoForm = Form.initial defaultFormValues (validatePago [])
       , resumenPago = NotAsked
       , receiptParseState = Nothing
       , storedClaims = Nothing
@@ -145,20 +142,23 @@ init grupoId today store =
 
 validatePagoInSection : Section -> List Participante -> Validation CustomFormError Pago
 validatePagoInSection section participantes =
+    let
+        emptyDistribucion =
+            { id = emptyUlid, tipo = Api.TipoDistribucionPartes { id = emptyUlid, partes = [] } }
+    in
     V.succeed Pago
         |> V.andMap (V.field "id" validateId)
         |> V.andMap
-            (if section == PagoConfirmation || section == BasicPagoData then
+            (if section == BasicPagoData then
                 V.field "monto" Monto.validateMonto
 
              else
                 V.maybe (V.field "monto" Monto.validateMonto) |> V.map (Maybe.withDefault Monto.zero)
-             --V.succeed Monto.zero
             )
         |> V.andMap (V.field "moneda" Moneda.validate)
         |> V.andMap (V.succeed False)
         |> V.andMap
-            (if section == PagoConfirmation || section == BasicPagoData then
+            (if section == BasicPagoData then
                 V.field "nombre" (V.string |> V.andThen nonEmpty)
 
              else
@@ -166,18 +166,18 @@ validatePagoInSection section participantes =
             )
         |> V.andMap (V.field "fecha" validateDay)
         |> V.andMap
-            (if section == PagoConfirmation || section == PagadoresSection then
+            (if section == PagadoresSection then
                 V.field "distribucion_pagadores" <| validateDistribucion participantes
 
              else
-                V.succeed { id = emptyUlid, tipo = Api.TipoDistribucionMontosEspecificos { id = emptyUlid, montos = [] } }
+                V.succeed emptyDistribucion
             )
         |> V.andMap
-            (if section == PagoConfirmation || section == DeudoresSection then
+            (if section == DeudoresSection then
                 V.field "distribucion_deudores" <| validateDistribucion participantes
 
              else
-                V.succeed { id = emptyUlid, tipo = Api.TipoDistribucionMontosEspecificos { id = emptyUlid, montos = [] } }
+                V.succeed emptyDistribucion
             )
 
 
@@ -257,44 +257,23 @@ validateDistribucion participantes =
                                 validateRepartija
                                     |> V.map Api.TipoDistribucionRepartija
 
-                            "montos_especificos" ->
-                                V.succeed Api.DistribucionMontosEspecificos
-                                    |> V.andMap (V.field "montos_especificos_id" validateId)
-                                    |> V.andMap
-                                        (V.field "montos"
-                                            (V.list
-                                                (V.succeed Api.MontoEspecifico
-                                                    |> V.andMap (V.field "id" validateId)
-                                                    |> V.andMap (V.field "participante" V.string |> V.andThen V.nonEmpty)
-                                                    |> V.andMap (V.field "monto" Monto.validateMonto)
-                                                )
-                                            )
-                                        )
-                                    |> V.map Api.TipoDistribucionMontosEspecificos
-
-                            "monto_equitativo" ->
-                                V.succeed Api.DistribucionMontoEquitativo
-                                    |> V.andMap (V.field "monto_equitativo_id" validateId)
-                                    |> V.andMap
-                                        (V.field "participantes"
-                                            (V.sequence
-                                                (participantes
-                                                    |> List.map
-                                                        (\p -> V.field p.id V.bool |> V.map (\b -> ( p, b )))
-                                                )
-                                                |> V.map
-                                                    (List.filterMap
-                                                        (\( p, b ) ->
-                                                            if b then
-                                                                Just p.id
-
-                                                            else
-                                                                Nothing
+                            "partes" ->
+                                readModoPartes
+                                    |> V.andThen
+                                        (\mode ->
+                                            V.succeed Api.DistribucionPartes
+                                                |> V.andMap (V.field "partes_id" validateId)
+                                                |> V.andMap
+                                                    (V.field "partes"
+                                                        (V.sequence
+                                                            (participantes
+                                                                |> List.map (\participante -> V.field participante.id (validateParte mode participante.id))
+                                                            )
+                                                            |> V.map (List.filterMap identity)
                                                         )
                                                     )
-                                            )
+                                                |> V.map Api.TipoDistribucionPartes
                                         )
-                                    |> V.map Api.TipoDistribucionMontoEquitativo
 
                             _ ->
                                 V.fail <| FormError.value FormError.Empty
@@ -302,9 +281,80 @@ validateDistribucion participantes =
             )
 
 
-update : Store -> Msg -> Model -> ( Model, Effect Msg )
-update store msg model =
+{-| Qué columnas del reparto por partes se tienen en cuenta. Los flags viven
+dentro del propio formulario (`mostrar_partes` / `mostrar_monto_fijo`), así que
+los valores de partes y monto fijo siempre quedan guardados; estos flags sólo
+deciden cuáles se ignoran al construir las `Parte`. Con ambos en `False` el
+gasto se reparte en partes iguales.
+-}
+type alias ModoPartes =
+    { mostrarPartes : Bool
+    , mostrarMontoFijo : Bool
+    }
+
+
+mostrarPartesField : String
+mostrarPartesField =
+    "mostrar_partes"
+
+
+mostrarMontoFijoField : String
+mostrarMontoFijoField =
+    "mostrar_monto_fijo"
+
+
+readModoPartes : Validation CustomFormError ModoPartes
+readModoPartes =
+    V.succeed ModoPartes
+        |> V.andMap (V.field mostrarPartesField (V.defaultValue False V.bool))
+        |> V.andMap (V.field mostrarMontoFijoField (V.defaultValue False V.bool))
+
+
+validateParte : ModoPartes -> ParticipanteId -> Validation CustomFormError (Maybe Api.Parte)
+validateParte mode participanteId =
     let
+        validateMonto =
+            V.field "monto" (V.defaultValue Monto.zero Monto.validateMonto)
+
+        validateCuota =
+            V.field "cuota" (V.defaultValue 0 V.int)
+
+        -- Cada modo exige exactamente los campos que necesita; si falta
+        -- alguno el parser falla en vez de tratarlo como opcional.
+        parte =
+            case ( mode.mostrarMontoFijo, mode.mostrarPartes ) of
+                ( True, True ) ->
+                    V.map2 (\monto cuota -> Api.PonderadoYMontoFijo monto cuota participanteId)
+                        validateMonto
+                        validateCuota
+
+                ( True, False ) ->
+                    V.map (\monto -> Api.MontoFijo monto participanteId) validateMonto
+
+                ( False, True ) ->
+                    V.map (\cuota -> Api.Ponderado cuota participanteId) validateCuota
+
+                ( False, False ) ->
+                    -- En partes iguales: cada participante que participa aporta una parte.
+                    V.succeed (Api.Ponderado 1 participanteId)
+    in
+    V.defaultValue False (V.field "participa" V.bool)
+        |> V.andThen
+            (\participa ->
+                if participa then
+                    V.map Just parte
+
+                else
+                    V.succeed Nothing
+            )
+
+
+update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+update shared msg model =
+    let
+        store =
+            shared.store
+
         participantes =
             case Store.getGrupo model.grupoId store of
                 Success grupo ->
@@ -326,14 +376,15 @@ update store msg model =
         AddedPagoResponse (Ok pago) ->
             let
                 newModel =
-                    initializePagoForms pago.moneda participantes (Just pago) model
+                    initializePagoForms pago.moneda participantes shared.userId (Just pago) model
             in
             ( { newModel | hasUnsavedChanges = False }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
+                , Store.setPago pago.pagoId pago
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el pago"
-                , Effect.pushRoutePath <| Path.Grupos_Id_ { id = model.grupoId }
+                , irAlPagoEnLista model.grupoId pago.pagoId
                 ]
             )
                 |> andThenSendWarningOnExit
@@ -349,13 +400,15 @@ update store msg model =
         UpdatedPagoResponse (Ok pago) ->
             let
                 newModel =
-                    initializePagoForms pago.moneda participantes (Just pago) model
+                    initializePagoForms pago.moneda participantes shared.userId (Just pago) model
             in
             ( newModel
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
+                , Store.setPago pago.pagoId pago
                 , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el pago"
+                , irAlPagoEnLista model.grupoId pago.pagoId
                 ]
             )
                 |> andThenUpdateResumenesFromForms model
@@ -405,12 +458,12 @@ update store msg model =
                     )
 
         PagoForm formMsg ->
-            ( { model
-                | pagoForm = Form.update (validatePago participantes) formMsg model.pagoForm
-                , pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) formMsg model.pagoBasicoForm
-                , pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) formMsg model.pagadoresForm
-                , deudoresForm = Form.update (validatePagoInSection DeudoresSection participantes) formMsg model.deudoresForm
-                , hasUnsavedChanges =
+            let
+                newModel =
+                    updateAllForms participantes [ formMsg ] model
+            in
+            ( { newModel
+                | hasUnsavedChanges =
                     if isDataModifyingEvent formMsg then
                         True
 
@@ -442,6 +495,14 @@ update store msg model =
             , Effect.none
             )
 
+        Cancel ->
+            ( { model | hasUnsavedChanges = False }
+            , Effect.batch
+                [ Effect.setUnsavedChangesWarning False
+                , Effect.pushRoutePath <| Path.Grupos_GrupoId__Pagos { grupoId = model.grupoId }
+                ]
+            )
+
         ReceiptImageSelected file ->
             if List.member (File.mime file) allowedMimeTypesForReceiptUpload then
                 ( { model | receiptParseState = Just ReadingFile }
@@ -466,35 +527,17 @@ update store msg model =
             case result of
                 Ok (Api.ReceiptImageSuccess { items }) ->
                     let
+                        formMsgs =
+                            Form.Input "distribucion_deudores.tipo" Form.Select (FormField.String "repartija")
+                                :: receiptItemsFormMsgs "distribucion_deudores" items model.pagoForm
+
                         newModel =
-                            case model.currentSection of
-                                PagadoresSection ->
-                                    { model
-                                        | pagoForm = addItemsToForm "distribucion_pagadores" items model.pagoForm (validatePago participantes)
-                                        , pagoBasicoForm = addItemsToForm "distribucion_pagadores" items model.pagoBasicoForm (validatePagoInSection BasicPagoData participantes)
-                                        , pagadoresForm = addItemsToForm "distribucion_pagadores" items model.pagadoresForm (validatePagoInSection PagadoresSection participantes)
-                                        , deudoresForm = addItemsToForm "distribucion_pagadores" items model.deudoresForm (validatePagoInSection DeudoresSection participantes)
-                                        , hasUnsavedChanges = True
-                                    }
-
-                                DeudoresSection ->
-                                    { model
-                                        | pagoForm = addItemsToForm "distribucion_deudores" items model.pagoForm (validatePago participantes)
-                                        , pagoBasicoForm = addItemsToForm "distribucion_deudores" items model.pagoBasicoForm (validatePagoInSection BasicPagoData participantes)
-                                        , pagadoresForm = addItemsToForm "distribucion_deudores" items model.pagadoresForm (validatePagoInSection PagadoresSection participantes)
-                                        , deudoresForm = addItemsToForm "distribucion_deudores" items model.deudoresForm (validatePagoInSection DeudoresSection participantes)
-                                        , hasUnsavedChanges = True
-                                    }
-
-                                _ ->
-                                    model
+                            updateAllForms participantes formMsgs { model | hasUnsavedChanges = True }
                     in
                     ( { newModel
                         | receiptParseState = Nothing
                       }
-                    , Effect.batch
-                        [ Toasts.pushToast Toasts.ToastSuccess "Recibo parseado correctamente"
-                        ]
+                    , Toasts.pushToast Toasts.ToastSuccess "Recibo parseado correctamente"
                     )
                         |> andThenUpdateResumenesFromForms model
                         |> andThenSendWarningOnExit
@@ -517,46 +560,33 @@ update store msg model =
                 |> andThenUpdateResumenesFromForms model
 
         SubmitCurrentSection ->
-            let
-                updateModel =
-                    case model.currentSection of
-                        BasicPagoData ->
-                            \m ->
-                                { m
-                                    | pagoBasicoForm = Form.update (validatePagoInSection model.currentSection participantes) Form.Submit model.pagoBasicoForm
-                                    , currentSection = PagadoresSection
-                                }
+            case model.currentSection of
+                BasicPagoData ->
+                    -- El creador ya viene como pagador por defecto desde que se
+                    -- crea el form, así que acá sólo avanzamos de paso.
+                    ( { model
+                        | pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) Form.Submit model.pagoBasicoForm
+                        , currentSection = PagadoresSection
+                      }
+                    , Effect.none
+                    )
+                        |> andThenFocusFieldIfSectionChanged model.currentSection
+                        |> andThenUpdateResumenesFromForms model
+                        |> andThenSendWarningOnExit
 
-                        PagadoresSection ->
-                            \m ->
-                                { m
-                                    | pagadoresForm =
-                                        Form.update (validatePagoInSection model.currentSection participantes) Form.Submit model.pagadoresForm
-                                    , currentSection = DeudoresSection
-                                }
+                PagadoresSection ->
+                    ( { model
+                        | pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) Form.Submit model.pagadoresForm
+                        , currentSection = DeudoresSection
+                      }
+                    , Effect.none
+                    )
+                        |> andThenFocusFieldIfSectionChanged model.currentSection
+                        |> andThenUpdateResumenesFromForms model
+                        |> andThenSendWarningOnExit
 
-                        DeudoresSection ->
-                            \m ->
-                                { m
-                                    | deudoresForm =
-                                        Form.update (validatePagoInSection model.currentSection participantes) Form.Submit model.deudoresForm
-                                    , currentSection = PagoConfirmation
-                                }
-
-                        PagoConfirmation ->
-                            \m ->
-                                { m
-                                    | pagoForm =
-                                        Form.update (validatePagoInSection model.currentSection participantes) Form.Submit model.pagoForm
-                                    , currentSection = PagoConfirmation
-                                }
-            in
-            ( updateModel model
-            , Effect.none
-            )
-                |> andThenFocusFieldIfSectionChanged model.currentSection
-                |> andThenUpdateResumenesFromForms model
-                |> andThenSendWarningOnExit
+                DeudoresSection ->
+                    update shared (PagoForm Form.Submit) model
 
         CheckIfPagoAndGrupoArePresent ->
             case model.currentPagoId of
@@ -574,7 +604,7 @@ update store msg model =
                         Success grupo ->
                             let
                                 newModel =
-                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes Nothing model
+                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes shared.userId Nothing model
                             in
                             ( { newModel
                                 | storedClaims = Nothing
@@ -607,13 +637,40 @@ update store msg model =
                         ( Success grupo, Success pago ) ->
                             let
                                 newModel =
-                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes (Just pago) model
+                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes shared.userId (Just pago) model
                             in
                             ( newModel
                             , Effect.none
                             )
                                 |> andThenUpdateResumenesFromForms model
                                 |> andThenSendWarningOnExit
+
+
+updateAllForms : List Participante -> List Form.Msg -> Model -> Model
+updateAllForms participantes formMsgs model =
+    List.foldl
+        (\formMsg m ->
+            { m
+                | pagoForm = Form.update (validatePago participantes) formMsg m.pagoForm
+                , pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) formMsg m.pagoBasicoForm
+                , pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) formMsg m.pagadoresForm
+                , deudoresForm = Form.update (validatePagoInSection DeudoresSection participantes) formMsg m.deudoresForm
+            }
+        )
+        model
+        formMsgs
+
+
+{-| Navega a la lista de pagos abriendo el modal de detalle del pago dado (la
+página de pagos abre ese modal cuando ve `?pago=<id>` en la URL).
+-}
+irAlPagoEnLista : ULID -> ULID -> Effect msg
+irAlPagoEnLista grupoId pagoId =
+    Effect.pushRoute
+        { path = Path.Grupos_GrupoId__Pagos { grupoId = grupoId }
+        , query = Dict.singleton "pago" pagoId
+        , hash = Nothing
+        }
 
 
 andThenSendWarningOnExit : ( Model, Effect Msg ) -> ( Model, Effect Msg )
@@ -626,8 +683,8 @@ andThenSendWarningOnExit ( model, oldEffects ) =
     )
 
 
-initializePagoForms : Moneda -> List Participante -> Maybe Pago -> Model -> Model
-initializePagoForms monedaPorDefecto participantes pago model =
+initializePagoForms : Moneda -> List Participante -> Maybe ParticipanteId -> Maybe Pago -> Model -> Model
+initializePagoForms monedaPorDefecto participantes creadorId pago model =
     let
         monedaInicial =
             pago |> Maybe.map .moneda |> Maybe.withDefault monedaPorDefecto
@@ -643,9 +700,9 @@ initializePagoForms monedaPorDefecto participantes pago model =
                     |> Maybe.withDefault (Form.getFieldAsString "fecha" model.pagoForm |> .value |> Maybe.withDefault "")
                 )
             , Form.setGroup "distribucion_pagadores" <|
-                distribucionToForm (distribucionesPagadoresDefault participantes) (Maybe.map .pagadores pago)
+                pagadoresToForm participantes creadorId (Maybe.map .pagadores pago)
             , Form.setGroup "distribucion_deudores" <|
-                distribucionToForm (distribucionesDeudoresDefault participantes) (Maybe.map .deudores pago)
+                deudoresToForm participantes (Maybe.map .deudores pago)
             ]
 
         claimsToStore =
@@ -676,42 +733,27 @@ waitAndCheckNecessaryData =
     Effect.sendCmd <| Task.perform (\_ -> CheckIfPagoAndGrupoArePresent) (Process.sleep 100)
 
 
-addItemsToForm : String -> List Api.RepartijaItem -> Form CustomFormError Pago -> Validation CustomFormError Pago -> Form CustomFormError Pago
-addItemsToForm prefix items form validation =
+receiptItemsFormMsgs : String -> List Api.RepartijaItem -> Form CustomFormError Pago -> List Form.Msg
+receiptItemsFormMsgs prefix items form =
     let
-        -- Get the current number of items in the form
-        currentIndexes =
-            Form.getListIndexes (prefix ++ ".items") form
-
         startingIndex =
-            List.length currentIndexes
-
-        -- Build a list of Form.Msg to add and populate the new items
-        formUpdates =
-            items
-                |> List.indexedMap
-                    (\idx item ->
-                        let
-                            newIndex =
-                                startingIndex + idx
-
-                            itemPrefix =
-                                prefix ++ ".items." ++ String.fromInt newIndex
-                        in
-                        [ Form.Append (prefix ++ ".items")
-                        , Form.Input (itemPrefix ++ ".id") Form.Text (FormField.String emptyUlid)
-                        , Form.Input (itemPrefix ++ ".nombre") Form.Text (FormField.String item.nombre)
-                        , Form.Input (itemPrefix ++ ".monto") Form.Text (FormField.String (Monto.toRawString item.monto))
-                        , Form.Input (itemPrefix ++ ".cantidad") Form.Text (FormField.String (String.fromInt item.cantidad))
-                        ]
-                    )
-                |> List.concat
+            List.length (Form.getListIndexes (prefix ++ ".items") form)
     in
-    -- Apply all form updates using a fold
-    List.foldl
-        (\formMsg accForm -> Form.update validation formMsg accForm)
-        form
-        formUpdates
+    items
+        |> List.indexedMap
+            (\idx item ->
+                let
+                    itemPrefix =
+                        prefix ++ ".items." ++ String.fromInt (startingIndex + idx)
+                in
+                [ Form.Append (prefix ++ ".items")
+                , Form.Input (itemPrefix ++ ".id") Form.Text (FormField.String emptyUlid)
+                , Form.Input (itemPrefix ++ ".nombre") Form.Text (FormField.String item.nombre)
+                , Form.Input (itemPrefix ++ ".monto") Form.Text (FormField.String (Monto.toRawString item.monto))
+                , Form.Input (itemPrefix ++ ".cantidad") Form.Text (FormField.String (String.fromInt item.cantidad))
+                ]
+            )
+        |> List.concat
 
 
 extractClaimsFromDistribucion : Distribucion -> List Api.RepartijaClaim
@@ -749,93 +791,183 @@ mergeClaimsIntoDistribucion claims distribucion =
             distribucion
 
 
-equitativosToForm : DistribucionMontoEquitativo -> List ( String, FormField.Field )
-equitativosToForm equitativo =
-    [ Form.setString "monto_equitativo_id" equitativo.id
-    , Form.setString "tipo" "monto_equitativo"
-    , Form.setGroup "participantes"
-        (equitativo.participantes
-            |> List.map (\p -> Form.setBool p True)
-        )
+defaultRepartija : Repartija
+defaultRepartija =
+    { id = emptyUlid
+    , nombre = "GENERATED"
+    , items = []
+    , claims = []
+    , extra = Monto.zero
+    , distribucionDeSobras = SobrasNoDistribuir
+    }
+
+
+{-| Los pagadores se editan con la misma distribución por partes que los
+deudores; sólo cambian los valores por defecto: en un pago nuevo arrancan en
+modo "partes iguales" con el creador como único pagador (paga el total). Las
+distribuciones existentes se convierten conservando sus partes.
+-}
+pagadoresToForm : List Participante -> Maybe ParticipanteId -> Maybe Distribucion -> List ( String, FormField.Field )
+pagadoresToForm participantes creadorId distribucion =
+    let
+        modo =
+            case distribucion |> Maybe.map .tipo of
+                Just (TipoDistribucionPartes _) ->
+                    deriveModoPartes distribucion
+
+                _ ->
+                    { mostrarPartes = False, mostrarMontoFijo = False }
+
+        partes =
+            case distribucion |> Maybe.map .tipo of
+                Just (TipoDistribucionPartes p) ->
+                    p
+
+                Nothing ->
+                    -- En un pago nuevo el creador es, por defecto, el único
+                    -- pagador y aporta la única parte: paga el total. Arrancar
+                    -- así evita tener que autoagregarlo al salir del paso.
+                    { id = emptyUlid
+                    , partes =
+                        creadorId
+                            |> Maybe.map (\id -> [ Api.Ponderado 1 id ])
+                            |> Maybe.withDefault []
+                    }
+
+                _ ->
+                    { id = emptyUlid, partes = [] }
+    in
+    [ Form.setString "id" (distribucion |> Maybe.map .id |> Maybe.withDefault emptyUlid)
+    , Form.setBool mostrarPartesField modo.mostrarPartes
+    , Form.setBool mostrarMontoFijoField modo.mostrarMontoFijo
     ]
+        ++ partesToForm participantes partes
 
 
-especificosToForm : DistribucionMontosEspecificos -> List ( String, FormField.Field )
-especificosToForm especificos =
-    [ Form.setString "montos_especificos_id" especificos.id
-    , Form.setString "tipo" "montos_especificos"
-    , Form.setList "montos"
-        (especificos.montos
+{-| Deduce qué columnas mostrar (partes / monto fijo) a partir de las `Parte`
+ya guardadas. Si todas son `Ponderado 1` se asume "en partes iguales" (ambos
+flags en `False`).
+-}
+deriveModoPartes : Maybe Distribucion -> ModoPartes
+deriveModoPartes distribucion =
+    case distribucion |> Maybe.map .tipo of
+        Just (TipoDistribucionPartes partes) ->
+            { mostrarPartes =
+                partes.partes
+                    |> List.any
+                        (\parte ->
+                            case parte of
+                                Api.Ponderado cuota _ ->
+                                    cuota /= 1
+
+                                Api.PonderadoYMontoFijo _ _ _ ->
+                                    True
+
+                                Api.MontoFijo _ _ ->
+                                    False
+                        )
+            , mostrarMontoFijo =
+                partes.partes
+                    |> List.any
+                        (\parte ->
+                            case parte of
+                                Api.MontoFijo _ _ ->
+                                    True
+
+                                Api.PonderadoYMontoFijo _ _ _ ->
+                                    True
+
+                                Api.Ponderado _ _ ->
+                                    False
+                        )
+            }
+
+        _ ->
+            { mostrarPartes = False, mostrarMontoFijo = False }
+
+
+deudoresToForm : List Participante -> Maybe Distribucion -> List ( String, FormField.Field )
+deudoresToForm participantes distribucion =
+    let
+        modo =
+            deriveModoPartes distribucion
+
+        partesEquitativas incluidos =
+            { id = emptyUlid
+            , partes = incluidos |> List.map (Api.Ponderado 1)
+            }
+
+        -- En un pago nuevo no elegimos modalidad por defecto: el usuario tiene
+        -- que optar explícitamente entre "Clásica" (partes) y "Repartija". Al
+        -- editar, arrancamos con la que ya tenía guardada.
+        tipoInicial =
+            case distribucion |> Maybe.map .tipo of
+                Just (TipoDistribucionRepartija _) ->
+                    "repartija"
+
+                Just (TipoDistribucionPartes _) ->
+                    "partes"
+
+                Nothing ->
+                    ""
+    in
+    [ Form.setString "id" (distribucion |> Maybe.map .id |> Maybe.withDefault emptyUlid)
+    , Form.setBool mostrarPartesField modo.mostrarPartes
+    , Form.setBool mostrarMontoFijoField modo.mostrarMontoFijo
+    ]
+        ++ (case distribucion |> Maybe.map .tipo of
+                Just (TipoDistribucionRepartija repartija) ->
+                    partesToForm participantes (partesEquitativas (participantes |> List.map .id))
+                        ++ repartijaToForm repartija
+
+                Just (TipoDistribucionPartes partes) ->
+                    repartijaToForm defaultRepartija
+                        ++ partesToForm participantes partes
+
+                Nothing ->
+                    repartijaToForm defaultRepartija
+                        ++ partesToForm participantes (partesEquitativas (participantes |> List.map .id))
+           )
+        -- `partesToForm`/`repartijaToForm` fijan su propio "tipo"; lo
+        -- sobreescribimos al final para que mande `tipoInicial`.
+        ++ [ Form.setString "tipo" tipoInicial ]
+
+
+partesToForm : List Participante -> Api.DistribucionPartes -> List ( String, FormField.Field )
+partesToForm participantes distribucion =
+    [ Form.setString "partes_id" distribucion.id
+    , Form.setString "tipo" "partes"
+    , Form.setGroup "partes"
+        (participantes
             |> List.map
-                (\m ->
-                    FormField.group
-                        [ Form.setString "id" m.id
-                        , Form.setString "participante" <| m.participante
-                        , Form.setString "monto" <| Monto.toRawString m.monto
+                (\participante ->
+                    let
+                        campos =
+                            case
+                                distribucion.partes
+                                    |> List.filter (\parte -> Parte.participanteId parte == participante.id)
+                                    |> List.head
+                            of
+                                Nothing ->
+                                    { participa = False, cuota = "1", monto = Monto.toRawString Monto.zero }
+
+                                Just (Api.Ponderado cuota _) ->
+                                    { participa = True, cuota = String.fromInt cuota, monto = Monto.toRawString Monto.zero }
+
+                                Just (Api.MontoFijo monto _) ->
+                                    { participa = True, cuota = "1", monto = Monto.toRawString monto }
+
+                                Just (Api.PonderadoYMontoFijo monto cuota _) ->
+                                    { participa = True, cuota = String.fromInt cuota, monto = Monto.toRawString monto }
+                    in
+                    Form.setGroup participante.id
+                        [ Form.setBool "participa" campos.participa
+                        , Form.setString "cuota" campos.cuota
+                        , Form.setString "monto" campos.monto
                         ]
                 )
         )
     ]
-
-
-distribucionesPagadoresDefault : List Participante -> DistribucionesFormDefaults
-distribucionesPagadoresDefault participantes =
-    { especificos =
-        { id = emptyUlid
-        , montos =
-            participantes
-                |> List.map
-                    (\p ->
-                        { id = emptyUlid
-                        , participante = p.id
-                        , monto = Monto.zero
-                        }
-                    )
-        }
-    , equitativo =
-        { id = emptyUlid
-        , participantes = []
-        }
-    , repartija =
-        { id = emptyUlid
-        , nombre = "GENERATED"
-        , items = []
-        , claims = []
-        , extra = Monto.zero
-        , distribucionDeSobras = SobrasNoDistribuir
-        }
-    }
-
-
-distribucionesDeudoresDefault : List Participante -> DistribucionesFormDefaults
-distribucionesDeudoresDefault participantes =
-    { especificos =
-        { id = emptyUlid
-        , montos =
-            participantes
-                |> List.map
-                    (\p ->
-                        { id = emptyUlid
-                        , participante = p.id
-                        , monto = Monto.zero
-                        }
-                    )
-        }
-    , equitativo =
-        { id = emptyUlid
-        , participantes =
-            participantes
-                |> List.map .id
-        }
-    , repartija =
-        { id = emptyUlid
-        , nombre = "GENERATED"
-        , items = []
-        , claims = []
-        , extra = Monto.zero
-        , distribucionDeSobras = SobrasNoDistribuir
-        }
-    }
 
 
 repartijaToForm : Repartija -> List ( String, FormField.Field )
@@ -860,42 +992,6 @@ repartijaToForm repartija =
     ]
 
 
-type alias DistribucionesFormDefaults =
-    { repartija : Repartija
-    , especificos : DistribucionMontosEspecificos
-    , equitativo : DistribucionMontoEquitativo
-    }
-
-
-distribucionToForm :
-    DistribucionesFormDefaults
-    -> Maybe Distribucion
-    -> List ( String, FormField.Field )
-distribucionToForm defaults distribucion =
-    Form.setString "id" (distribucion |> Maybe.map .id |> Maybe.withDefault emptyUlid)
-        :: (case distribucion |> Maybe.map .tipo of
-                Just (TipoDistribucionRepartija repartija) ->
-                    equitativosToForm defaults.equitativo
-                        ++ especificosToForm defaults.especificos
-                        ++ repartijaToForm repartija
-
-                Just (TipoDistribucionMontosEspecificos especificos) ->
-                    equitativosToForm defaults.equitativo
-                        ++ repartijaToForm defaults.repartija
-                        ++ especificosToForm especificos
-
-                Just (TipoDistribucionMontoEquitativo equitativo) ->
-                    especificosToForm defaults.especificos
-                        ++ repartijaToForm defaults.repartija
-                        ++ equitativosToForm equitativo
-
-                Nothing ->
-                    especificosToForm defaults.especificos
-                        ++ repartijaToForm defaults.repartija
-                        ++ equitativosToForm defaults.equitativo
-           )
-
-
 andThenFocusFieldIfSectionChanged : Section -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
 andThenFocusFieldIfSectionChanged oldSection ( model, oldEffects ) =
     let
@@ -906,16 +1002,13 @@ andThenFocusFieldIfSectionChanged oldSection ( model, oldEffects ) =
             else
                 case model.currentSection of
                     BasicPagoData ->
-                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "pago-nombre")
+                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "nombre")
 
                     PagadoresSection ->
-                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "distribucion_pagadores-tipo")
+                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "pagadores-seleccionar")
 
                     DeudoresSection ->
-                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "distribucion_deudores-tipo")
-
-                    PagoConfirmation ->
-                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "pago-submit-button")
+                        Effect.sendCmd <| Task.attempt (\_ -> NoOp) (Browser.Dom.focus "deudores-modalidad")
     in
     ( model
     , Effect.batch [ oldEffects, focusEffect ]
@@ -965,13 +1058,6 @@ subscriptions _ =
 
 
 -- VIEW
-
-
-getParticipantesFromResumen : ResumenNetos -> Maybe (List ParticipanteId)
-getParticipantesFromResumen resumen =
-    resumen.netos
-        |> List.map (\( p, _ ) -> p)
-        |> Just
 
 
 hasActionableErrors : LugarParaAccionar -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> Bool
@@ -1038,60 +1124,6 @@ viewErrorFromResumen lugar resumen =
                 )
 
 
-viewResumenPanel :
-    GrupoLike g
-    -> WebData ResumenPago
-    -> (ResumenPago -> ResumenNetos)
-    -> Bool
-    -> List (Html Msg)
-    -> Html Msg
-viewResumenPanel grupo resumenData accessor negateMontos extraContent =
-    div [ style "flex" "1", style "min-width" "300px" ]
-        [ Bs.card []
-            [ Bs.cardHeader [] [ text "Resumen" ]
-            , Bs.cardBody []
-                (case resumenData of
-                    Success resumen ->
-                        let
-                            resumenNetos =
-                                accessor resumen
-
-                            netos =
-                                getDeudasFromResumen resumenNetos
-                                    |> (if negateMontos then
-                                            Maybe.map (List.map (\( pp, m ) -> ( pp, Monto.negate m )))
-
-                                        else
-                                            identity
-                                       )
-                        in
-                        [ p [] [ text <| "total: " ++ (Monto.toString <| getTotalFromResumen resumenNetos) ]
-                        , p []
-                            [ text <|
-                                "participantes: "
-                                    ++ (resumenNetos
-                                            |> getParticipantesFromResumen
-                                            |> Maybe.map (\ps -> ps |> List.map (lookupNombreParticipante grupo) |> String.join ", ")
-                                            |> Maybe.withDefault "???"
-                                       )
-                            ]
-                        , p [] [ Maybe.withDefault (text "") <| Maybe.map (viewNetosBarras grupo) netos ]
-                        ]
-                            ++ extraContent
-
-                    NotAsked ->
-                        []
-
-                    Loading ->
-                        [ Bs.spinner [] ]
-
-                    Failure _ ->
-                        [ Bs.alert Bs.AlertDanger [] [ text "Error al cargar el resumen" ] ]
-                )
-            ]
-        ]
-
-
 viewUnsavedChangesBanner : Html Msg
 viewUnsavedChangesBanner =
     Bs.alert Bs.AlertWarning
@@ -1099,24 +1131,49 @@ viewUnsavedChangesBanner =
         [ text "Hay cambios sin guardar" ]
 
 
-viewWizardNav : Section -> Html Msg
-viewWizardNav current =
+{-| Pie de acciones de cada paso (errores + botón principal). En mobile queda
+flotando al fondo de la pantalla; en desktop fluye al final del formulario. El
+posicionamiento al fondo lo comparte con la navbar inferior vía
+`Css.barra_inferior_fija`; `Css.action_footer` agrega su decoración propia. El
+estilo vive en `styles.css` y se referencia desde acá para que el compilador
+avise si la clase deja de existir.
+-}
+viewActionFooter : List (Html Msg) -> Html Msg
+viewActionFooter children =
+    div [ Css.action_footer, Css.barra_inferior_fija ] children
+
+
+{-| Arma las porciones de la torta a partir de los netos del resumen de la
+sección (pagadores o deudores), tomando la sección con `accessor` cuando el
+resumen ya cargó. Delega en `GraficoTorta.porciones` el cálculo del reparto.
+-}
+porcionesTorta : GrupoLike g -> Maybe Monto -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> List GraficoTorta.PorcionTorta
+porcionesTorta grupo totalPago resumenData accessor =
+    case resumenData of
+        Success resumenPago ->
+            GraficoTorta.porciones grupo totalPago (accessor resumenPago)
+
+        _ ->
+            []
+
+
+viewTortaFooter : GrupoLike g -> Maybe Monto -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> String -> Html Msg
+viewTortaFooter grupo totalPago resumenData accessor modalId =
+    div [ class "flex-shrink-0" ]
+        [ GraficoTorta.viewTortaTriggerButton modalId (porcionesTorta grupo totalPago resumenData accessor) ]
+
+
+viewTortaModales : GrupoLike g -> Model -> Html Msg
+viewTortaModales grupo model =
     let
-        tab section title =
-            li [ class "nav-item" ]
-                [ button
-                    [ type_ "button"
-                    , classList [ ( "nav-link", True ), ( "active", current == section ) ]
-                    , onClick (SelectSection section)
-                    ]
-                    [ text title ]
-                ]
+        totalPago =
+            Form.getOutput model.pagoBasicoForm |> Maybe.map .monto
     in
-    ul [ class "nav nav-tabs mb-3" ]
-        [ tab BasicPagoData "Datos básicos"
-        , tab PagadoresSection "Pagadores"
-        , tab DeudoresSection "Deudores"
-        , tab PagoConfirmation "Detalles"
+    div []
+        [ GraficoTorta.viewTortaModal "torta-pagadores"
+            (porcionesTorta grupo totalPago model.resumenPagadores .resumenPagadores)
+        , GraficoTorta.viewTortaModal "torta-deudores"
+            (porcionesTorta grupo totalPago model.resumenDeudores .resumenDeudores)
         ]
 
 
@@ -1126,120 +1183,26 @@ view store model =
         Success grupo ->
             { title = grupo.nombre
             , body =
-                [ if model.hasUnsavedChanges then
-                    viewUnsavedChangesBanner
+                [ div [ class "row justify-content-center" ]
+                    [ div [ class "col-12 col-md-8 col-lg-6 col-xxl-5" ]
+                        [ if model.hasUnsavedChanges then
+                            viewUnsavedChangesBanner
 
-                  else
-                    text ""
-                , viewWizardNav model.currentSection
-                , case model.currentSection of
-                    BasicPagoData ->
-                        div []
-                            [ p [] [ text "Ingresá la información básica del pago: un nombre descriptivo y el monto total." ]
-                            , viewPagoForm model.pagoBasicoForm
-                            ]
+                          else
+                            text ""
+                        , viewStepTabs model
+                        , case model.currentSection of
+                            BasicPagoData ->
+                                viewBasicSection model
 
-                    PagadoresSection ->
-                        div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
-                            [ div [ style "flex" "1", style "min-width" "300px" ]
-                                [ Html.form [ onSubmit <| SubmitCurrentSection ]
-                                    [ p [] [ text "Indicá quién pagó y cómo se distribuye el gasto entre los que pusieron plata." ]
-                                    , viewDistribucionForm grupo.participantes "distribucion_pagadores" model.pagadoresForm model.receiptParseState
-                                    , viewErrorFromResumenData model.resumenPagadores .resumenPagadores
-                                    , Bs.btn Bs.Primary
-                                        [ disabled (Form.getOutput model.pagadoresForm == Nothing || hasActionableErrors Lugar_CreacionPago model.resumenPagadores .resumenPagadores)
-                                        , onClick SubmitCurrentSection
-                                        ]
-                                        [ text "Siguiente seccion" ]
-                                    ]
-                                ]
-                            , viewResumenPanel grupo model.resumenPagadores .resumenPagadores False []
-                            ]
+                            PagadoresSection ->
+                                viewPagadoresSection grupo model
 
-                    DeudoresSection ->
-                        div [ style "display" "flex", style "gap" "1.5rem", style "flex-wrap" "wrap" ]
-                            [ div [ style "flex" "1", style "min-width" "300px" ]
-                                [ Html.form [ onSubmit <| SubmitCurrentSection ]
-                                    [ p [] [ text "Indicá quiénes deben y cómo se reparte la deuda entre ellos." ]
-                                    , viewDistribucionForm grupo.participantes "distribucion_deudores" model.deudoresForm model.receiptParseState
-                                    , viewErrorFromResumenData model.resumenDeudores .resumenDeudores
-                                    , Bs.btn Bs.Primary
-                                        [ disabled (Form.getOutput model.deudoresForm == Nothing || hasActionableErrors Lugar_CreacionPago model.resumenDeudores .resumenDeudores)
-                                        , onClick SubmitCurrentSection
-                                        ]
-                                        [ text "Siguiente seccion" ]
-                                    ]
-                                ]
-                            , viewResumenPanel grupo model.resumenDeudores .resumenDeudores True []
-                            ]
-
-                    PagoConfirmation ->
-                        Html.form [ onSubmit <| PagoForm Form.Submit ]
-                            [ viewResumenPanel grupo
-                                model.resumenPago
-                                .resumen
-                                False
-                                (case Form.getOutput model.pagoForm of
-                                    Just pago ->
-                                        [ case pago.pagadores.tipo of
-                                            TipoDistribucionRepartija repartija ->
-                                                if repartija.id /= emptyUlid then
-                                                    p []
-                                                        [ a
-                                                            [ class "link-primary"
-                                                            , Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
-                                                            , target "_blank"
-                                                            ]
-                                                            [ text "repartija pagadores" ]
-                                                        ]
-
-                                                else
-                                                    text ""
-
-                                            _ ->
-                                                text ""
-                                        , case pago.deudores.tipo of
-                                            TipoDistribucionRepartija repartija ->
-                                                if repartija.id /= emptyUlid then
-                                                    p []
-                                                        [ a
-                                                            [ class "link-primary"
-                                                            , Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = model.grupoId, repartijaId = repartija.id }
-                                                            ]
-                                                            [ text "repartija deudores" ]
-                                                        ]
-
-                                                else
-                                                    text ""
-
-                                            _ ->
-                                                text ""
-                                        ]
-
-                                    Nothing ->
-                                        []
-                                )
-                            , viewErrorFromResumenData model.resumenPago .resumen
-                            , if model.hasUnsavedChanges then
-                                let
-                                    textoCTA =
-                                        case model.currentPagoId of
-                                            Nothing ->
-                                                text "Crear pago"
-
-                                            Just _ ->
-                                                text "Actualizar pago"
-                                in
-                                Bs.btn Bs.Primary
-                                    [ disabled (Form.getOutput model.pagoForm == Nothing)
-                                    , onClick (PagoForm Form.Submit)
-                                    , id "pago-submit-button"
-                                    ]
-                                    [ textoCTA ]
-
-                              else
-                                text ""
-                            ]
+                            DeudoresSection ->
+                                viewDeudoresSection grupo model
+                        ]
+                    ]
+                , viewTortaModales grupo model
                 ]
             }
 
@@ -1265,9 +1228,156 @@ view store model =
             }
 
 
-viewPagoForm : Form CustomFormError Pago -> Html Msg
-viewPagoForm form =
+{-| Wizard de pasos como tabs por defecto de Bootstrap (`nav-tabs`). Marca el
+paso actual y permite saltar a cualquier paso con `SelectSection`.
+-}
+viewStepTabs : Model -> Html Msg
+viewStepTabs model =
     let
+        tab section label =
+            let
+                active =
+                    model.currentSection == section
+            in
+            li [ class "nav-item" ]
+                [ button
+                    [ type_ "button"
+                    , classList
+                        [ ( "nav-link", True )
+                        , ( "active", active )
+
+                        -- Paso incompleto (todavía sin completar): se ve grisado
+                        -- en vez de como error, así no aparece "en rojo" al inicio.
+                        , ( "text-body-tertiary", not active && sectionIncomplete model section )
+                        ]
+                    , onClick (SelectSection section)
+                    ]
+                    (text label
+                        :: (if not (sectionIncomplete model section) && sectionHasError model section then
+                                [ i [ class "bi bi-exclamation-circle-fill text-danger ms-1" ] [] ]
+
+                            else
+                                []
+                           )
+                    )
+                ]
+    in
+    div [ class "d-flex align-items-end mb-4" ]
+        [ Html.ul [ class "nav nav-tabs flex-grow-1" ]
+            [ tab BasicPagoData "Gasto"
+            , tab PagadoresSection "Pago"
+            , tab DeudoresSection "Reparto"
+            ]
+        , button
+            [ type_ "button"
+            , class "btn-close ms-3 mb-2"
+            , Attr.attribute "aria-label" "Cancelar"
+            , onClick Cancel
+            ]
+            []
+        ]
+
+
+{-| Un paso está incompleto cuando su form todavía no produce un valor válido.
+Se muestra grisado (no como error) para no alarmar al inicio.
+-}
+sectionIncomplete : Model -> Section -> Bool
+sectionIncomplete model section =
+    let
+        -- Sin el total del gasto (la sección básica) los pasos siguientes no se
+        -- pueden evaluar: el monto en Pago/Reparto es opcional y cae a cero, así
+        -- que el resumen daría "no cuadra" antes de que se cargue el total.
+        faltaTotal =
+            Form.getOutput model.pagoBasicoForm == Nothing
+    in
+    case section of
+        BasicPagoData ->
+            faltaTotal
+
+        PagadoresSection ->
+            let
+                -- Un pago nuevo arranca sin nadie pagando (partes vacías). Hasta que se
+                -- elige —o se autoagrega al avanzar— un pagador, la sección está
+                -- incompleta, así la solapa se ve grisada en vez de marcar error porque
+                -- los montos "no cuadran" antes de que el usuario la toque.
+                sinPagadores =
+                    case Form.getOutput model.pagadoresForm of
+                        Just pago ->
+                            distribucionSinPartes pago.pagadores
+
+                        Nothing ->
+                            True
+            in
+            faltaTotal || sinPagadores
+
+        DeudoresSection ->
+            faltaTotal || Form.getOutput model.deudoresForm == Nothing
+
+
+{-| Una distribución por partes "vacía" (nadie incluido) significa, en el paso de
+pagadores, que todavía no se eligió quién pagó. Una repartija nunca se considera
+vacía acá.
+-}
+distribucionSinPartes : Distribucion -> Bool
+distribucionSinPartes distribucion =
+    case distribucion.tipo of
+        Api.TipoDistribucionPartes { partes } ->
+            List.isEmpty partes
+
+        Api.TipoDistribucionRepartija _ ->
+            False
+
+
+{-| Un paso tiene error sólo cuando ya tiene datos cargados pero su resumen
+marca errores accionables (p. ej. los montos no cuadran). Un paso simplemente
+incompleto no cuenta como error: se muestra grisado vía `sectionIncomplete`.
+-}
+sectionHasError : Model -> Section -> Bool
+sectionHasError model section =
+    case section of
+        BasicPagoData ->
+            False
+
+        PagadoresSection ->
+            hasActionableErrors Lugar_CreacionPago model.resumenPagadores .resumenPagadores
+
+        DeudoresSection ->
+            hasActionableErrors Lugar_CreacionPago model.resumenDeudores .resumenDeudores
+
+
+viewStepHeader : Model -> { title : String, showMonto : Bool } -> Html Msg
+viewStepHeader model opts =
+    div [ class "mb-4" ]
+        [ div [ class "d-flex justify-content-between align-items-start gap-3" ]
+            [ Html.h2 [ class "mb-0" ] [ text opts.title ]
+            , if opts.showMonto then
+                viewMontoChip model
+
+              else
+                text ""
+            ]
+        ]
+
+
+viewMontoChip : Model -> Html Msg
+viewMontoChip model =
+    case Form.getOutput model.pagoBasicoForm of
+        Just pago ->
+            div [ class "text-end" ]
+                [ div [ class "text-body-secondary text-uppercase", style "font-size" "0.75rem" ] [ text "Monto" ]
+                , div [ class "fw-bold" ] [ text (Moneda.simboloUnico pago.moneda ++ " " ++ Monto.toString pago.monto) ]
+                ]
+
+        Nothing ->
+            text ""
+
+
+viewBasicSection : Model -> Html Msg
+viewBasicSection model =
+    let
+        form =
+            model.pagoBasicoForm
+
         nombreField =
             Form.getFieldAsString "nombre" form
 
@@ -1280,36 +1390,663 @@ viewPagoForm form =
         fechaField =
             Form.getFieldAsString "fecha" form
     in
-    Html.form [ onSubmit SubmitCurrentSection ]
-        [ Html.map PagoForm <|
-            Bs.textFormItem nombreField
-                { label = "Nombre"
-                , placeholder = Just "Pago de deudas"
-                , required = True
-                }
-        , Html.map PagoForm <|
-            Bs.montoFormItem montoField
-                { label = "Monto"
-                , placeholder = Just "2000"
-                , required = True
-                }
-        , Html.map PagoForm <|
-            Bs.selectFormItem monedaField
-                { label = "Moneda"
-                , required = True
-                , options = Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.nombre m ))
-                }
-        , Html.map PagoForm <|
-            Bs.dateFormItem fechaField
-                { label = "Fecha"
-                , required = True
-                }
-        , Bs.btn Bs.Primary
-            [ disabled (Form.getOutput form == Nothing)
-            , onClick SubmitCurrentSection
+    div []
+        [ viewStepHeader model
+            { title =
+                case model.currentPagoId of
+                    Nothing ->
+                        "Gasto compartido"
+
+                    Just _ ->
+                        "Editar gasto"
+            , showMonto = False
+            }
+        , Html.form [ onSubmit SubmitCurrentSection ]
+            [ Html.map PagoForm <|
+                Bs.textFormItem nombreField
+                    { label = "Título"
+                    , placeholder = Just "Restaurant El Oso Pardo"
+                    , required = True
+                    }
+            , div [ class "d-flex gap-3 flex-wrap align-items-start" ]
+                [ div [ class "flex-grow-1 mb-3" ]
+                    [ Html.label [ class "form-label", Attr.for "monto" ]
+                        [ text "Monto total", Bs.requiredMarker True ]
+                    , div [ class "d-flex gap-2" ]
+                        [ Html.map PagoForm <|
+                            Bs.selectInput
+                                (Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.simboloUnico m )))
+                                monedaField
+                                [ style "max-width" "6.5rem" ]
+                        , div [ class "flex-grow-1" ]
+                            [ Html.map PagoForm <|
+                                Bs.montoInput montoField [ placeholder "33.000,00" ]
+                            ]
+                        ]
+                    ]
+                , Html.map PagoForm <|
+                    Bs.dateFormItem fechaField
+                        { label = "Fecha"
+                        , required = True
+                        }
+                ]
+            , viewActionFooter
+                [ Bs.btn Bs.Primary
+                    [ disabled (Form.getOutput form == Nothing)
+                    , onClick SubmitCurrentSection
+                    , class "w-100"
+                    ]
+                    [ text "Siguiente" ]
+                ]
             ]
-            [ text "Siguiente seccion" ]
         ]
+
+
+viewPagadoresSection : GrupoLike g -> Model -> Html Msg
+viewPagadoresSection grupo model =
+    let
+        form =
+            model.pagadoresForm
+
+        prefix =
+            "distribucion_pagadores"
+
+        incluidos =
+            grupo.participantes
+                |> List.filter
+                    (\participante ->
+                        (Form.getFieldAsBool (prefix ++ ".partes." ++ participante.id ++ ".participa") form).value == Just True
+                    )
+
+        mode =
+            { mostrarPartes =
+                (Form.getFieldAsBool (prefix ++ "." ++ mostrarPartesField) form).value == Just True
+            , mostrarMontoFijo =
+                (Form.getFieldAsBool (prefix ++ "." ++ mostrarMontoFijoField) form).value == Just True
+            }
+    in
+    div []
+        [ viewStepHeader model
+            { title = "Pago"
+            , showMonto = True
+            }
+        , Html.form [ onSubmit SubmitCurrentSection ]
+            [ div [ class "d-flex flex-wrap align-items-center gap-2 mb-2" ]
+                [ Html.h5 [ class "mb-0" ] [ text "Quienes pagaron" ]
+                , viewSeleccionarParticipantes "Quienes pagaron" "pagadores-seleccionar" grupo.participantes prefix form
+                ]
+            , div [ class "d-flex flex-wrap gap-2 mb-3" ]
+                [ viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
+                , viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
+                ]
+            , viewPartesTable grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.pagadores)) form
+            , viewActionFooter
+                [ viewErrorFromResumenData model.resumenPagadores .resumenPagadores
+                , div [ class "d-flex gap-2 align-items-stretch" ]
+                    [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenPagadores .resumenPagadores "torta-pagadores"
+                    , Bs.btn Bs.Primary
+                        [ disabled (Form.getOutput form == Nothing)
+                        , onClick SubmitCurrentSection
+                        , class "flex-grow-1"
+                        ]
+                        [ text "Siguiente" ]
+                    ]
+                ]
+            ]
+        ]
+
+
+viewDeudoresSection : GrupoLike g -> Model -> Html Msg
+viewDeudoresSection grupo model =
+    let
+        form =
+            model.deudoresForm
+
+        tipoField =
+            Form.getFieldAsString "distribucion_deudores.tipo" form
+    in
+    div []
+        [ viewStepHeader model
+            { title = "Reparto"
+            , showMonto = True
+            }
+        , Html.form [ onSubmit <| PagoForm Form.Submit ]
+            [ viewReceiptBanner model.receiptParseState
+            , viewModalidadSelector tipoField
+            , case tipoField.value of
+                Just "repartija" ->
+                    div []
+                        [ viewRepartijaForm "distribucion_deudores" form
+                        , viewRepartijaLink model.grupoId form
+                        ]
+
+                Just "partes" ->
+                    viewPartesForm grupo "distribucion_deudores" form
+
+                _ ->
+                    text ""
+            , viewActionFooter
+                [ -- Sólo los errores de esta sección (deudores) y sin el tag de
+                  -- scope: `.resumenDeudores` ya viene sin el prefijo "deudores"
+                  -- que `.resumen` agrega al combinar pagadores y deudores.
+                  viewErrorFromResumenData model.resumenDeudores .resumenDeudores
+                , div [ class "d-flex gap-2 align-items-stretch" ]
+                    [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenDeudores .resumenDeudores "torta-deudores"
+                    , let
+                        textoCTA =
+                            case model.currentPagoId of
+                                Nothing ->
+                                    "Crear"
+
+                                Just _ ->
+                                    "Actualizar pago"
+                      in
+                      Bs.btn Bs.Primary
+                        [ -- Se permite enviar aunque el gasto sea inválido; queda
+                          -- guardado con `isValid = False`. Se bloquea si el form no
+                          -- es construible o si no hay cambios para guardar.
+                          disabled (Form.getOutput model.pagoForm == Nothing || not model.hasUnsavedChanges)
+                        , onClick (PagoForm Form.Submit)
+                        , Attr.id "pago-submit-button"
+                        , class "flex-grow-1"
+                        ]
+                        [ text textoCTA ]
+                    ]
+                ]
+            ]
+        ]
+
+
+viewModalidadSelector : Form.FieldState CustomFormError String -> Html Msg
+viewModalidadSelector tipoField =
+    let
+        card value icono titulo descripcion attrs =
+            let
+                active =
+                    tipoField.value == Just value
+
+                -- Borde resaltado con `--bs-emphasis-color`, que se invierte según
+                -- el tema (casi negro en claro, casi blanco en oscuro), así se ve
+                -- bien en ambos. Sin esto un borde fijo oscuro quedaría invisible
+                -- sobre el fondo oscuro.
+                emphasisBorder =
+                    if active then
+                        [ style "border-color" "var(--bs-emphasis-color)" ]
+
+                    else
+                        []
+            in
+            button
+                ([ type_ "button"
+                 , classList
+                    [ ( "card flex-fill text-center border-2 position-relative", True )
+                    , ( "shadow-sm", active )
+                    ]
+                 , onClick <| PagoForm <| Form.Input tipoField.path Form.Select (FormField.String value)
+                 ]
+                    ++ emphasisBorder
+                    ++ attrs
+                )
+                [ -- El círculo del ícono se posiciona absoluto sobre el borde
+                  -- superior (translate-middle lo centra ahí) y lleva fondo
+                  -- `bg-body` para tapar la línea del borde por detrás.
+                  span
+                    [ class "position-absolute top-0 start-50 translate-middle d-inline-flex align-items-center justify-content-center rounded-circle fs-4 bg-body"
+                    , style "width" "3.5rem"
+                    , style "height" "3.5rem"
+                    , style "border-style" "solid"
+                    , style "border-width"
+                        (if active then
+                            "2px"
+
+                         else
+                            "var(--bs-border-width)"
+                        )
+                    , style "border-color"
+                        (if active then
+                            "var(--bs-emphasis-color)"
+
+                         else
+                            "var(--bs-border-color)"
+                        )
+                    ]
+                    [ i [ class icono ] [] ]
+                , div [ class "card-body px-2 pb-2", style "padding-top" "2.25rem" ]
+                    [ Html.h6 [ class "mb-1" ] [ text titulo ]
+                    , p [ class "text-body-secondary small mb-0" ] [ text descripcion ]
+                    ]
+                ]
+    in
+    div [ class "mb-4" ]
+        [ Html.h5 [ class "mb-2" ] [ text "Modalidad" ]
+        , div [ class "d-flex gap-3 mt-4" ]
+            [ card "partes"
+                "bi bi-robot"
+                "Clásica"
+                "Repartí de manera automática el gasto, con varias modalidades"
+                [ Attr.id "deudores-modalidad" ]
+            , card "repartija"
+                "bi bi-people-fill"
+                "Repartija"
+                "Repartí el gasto como items de un recibo y realizá una carga colaborativa"
+                []
+            ]
+        ]
+
+
+viewReceiptBanner : Maybe ReceiptReadingState -> Html Msg
+viewReceiptBanner receiptParseState =
+    div [ class "card mb-4" ]
+        [ div [ class "card-body" ]
+            [ Html.h6 [ class "mb-1" ] [ i [ class "bi bi-stars me-1" ] [], text "Leer recibo con IA" ]
+            , p [ class "text-body-secondary small mb-2" ]
+                [ text "Subí una foto del recibo y cargá los items automáticamente" ]
+            , Bs.fileInput
+                [ accept "image/*"
+                , on "change" (Decode.map ReceiptImageSelected fileDecoder)
+                ]
+            , case receiptParseState of
+                Just ReadingFile ->
+                    div [ class "d-flex gap-2 align-items-center mt-3" ]
+                        [ Bs.spinner [ Attr.attribute "aria-hidden" "true" ]
+                        , Bs.alert Bs.AlertInfo
+                            [ style "margin-bottom" "0", style "flex" "1" ]
+                            [ text "Leyendo la imagen..." ]
+                        ]
+
+                Just ProcessingWithAI ->
+                    div [ class "mt-3" ]
+                        [ div [ class "d-flex gap-2 align-items-center mb-3" ]
+                            [ Bs.spinner [ Attr.attribute "aria-hidden" "true" ]
+                            , Bs.alert Bs.AlertInfo
+                                [ style "margin-bottom" "0", style "flex" "1" ]
+                                [ text "Analizando el recibo con inteligencia artificial..." ]
+                            ]
+                        , Bs.alert Bs.AlertWarning
+                            [ style "margin-bottom" "0" ]
+                            [ text "Esto podria tomar varios minutos, no cierres esta ventana" ]
+                        ]
+
+                Just (ErrorProcessing errorMsg) ->
+                    Bs.alert Bs.AlertDanger
+                        [ class "mt-3"
+                        , style "margin-bottom" "0"
+                        , style "display" "flex"
+                        , style "align-items" "center"
+                        , style "gap" "0.5rem"
+                        ]
+                        [ span [ style "flex" "1" ] [ text ("Algo salio mal: " ++ errorMsg) ]
+                        , button
+                            [ type_ "button"
+                            , class "btn-close"
+                            , Attr.attribute "aria-label" "Cerrar"
+                            , onClick ClearReceiptError
+                            ]
+                            []
+                        ]
+
+                Nothing ->
+                    text ""
+            ]
+        ]
+
+
+viewPartesForm : GrupoLike g -> String -> Form CustomFormError Pago -> Html Msg
+viewPartesForm grupo prefix form =
+    let
+        incluidos =
+            grupo.participantes
+                |> List.filter
+                    (\participante ->
+                        (Form.getFieldAsBool (prefix ++ ".partes." ++ participante.id ++ ".participa") form).value == Just True
+                    )
+
+        mode =
+            { mostrarPartes =
+                (Form.getFieldAsBool (prefix ++ "." ++ mostrarPartesField) form).value == Just True
+            , mostrarMontoFijo =
+                (Form.getFieldAsBool (prefix ++ "." ++ mostrarMontoFijoField) form).value == Just True
+            }
+    in
+    div [ class "mb-4" ]
+        [ div [ class "d-flex flex-wrap align-items-center gap-2 mb-2" ]
+            [ Html.h5 [ class "mb-0" ] [ text "Quienes participan" ]
+            , viewSeleccionarParticipantes "Quienes participan" "deudores-seleccionar" grupo.participantes prefix form
+            ]
+        , div [ class "d-flex flex-wrap gap-2 mb-3" ]
+            [ viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
+            , viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
+            ]
+        , viewPartesTable grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.deudores)) form
+        ]
+
+
+{-| Pill con checkbox interno para activar/desactivar un modo de reparto
+("Partes" o "Monto fijo"). El cuadradito refleja el estado igual que un
+checkbox; al togglearlo se muestra u oculta la columna correspondiente.
+-}
+viewModoChip : String -> Bool -> String -> Html Msg
+viewModoChip path active label =
+    button
+        [ type_ "button"
+        , class "btn btn-light rounded-pill d-inline-flex align-items-center gap-2"
+        , Attr.attribute "aria-pressed"
+            (if active then
+                "true"
+
+             else
+                "false"
+            )
+        , onClick <| PagoForm <| Form.Input path Form.Checkbox (FormField.Bool (not active))
+        ]
+        [ i
+            [ class
+                (if active then
+                    "bi bi-check-square-fill"
+
+                 else
+                    "bi bi-square"
+                )
+            ]
+            []
+        , text label
+        ]
+
+
+{-| Selector de participantes como grupo de pills. En desktop se muestra
+directamente; en mobile se esconde detrás de un botón que abre un modal con las
+mismas pills. El estado abierto/cerrado del modal lo maneja Bootstrap por JS
+(atributos `data-bs-*`), así que no toca el `Model`.
+-}
+viewSeleccionarParticipantes : String -> String -> List Participante -> String -> Form CustomFormError Pago -> Html Msg
+viewSeleccionarParticipantes titulo selectorId participantes prefix form =
+    let
+        modalId =
+            selectorId ++ "-modal"
+
+        pills =
+            div [ class "d-flex flex-wrap gap-2" ]
+                (participantes |> List.map (\participante -> viewParticipantePill participante prefix form))
+    in
+    div []
+        [ div [ class "d-none d-md-block" ] [ pills ]
+        , div [ class "d-md-none" ]
+            [ button
+                [ type_ "button"
+                , class "btn btn-light rounded-pill d-inline-flex align-items-center gap-2"
+                , Attr.id selectorId
+                , Attr.attribute "data-bs-toggle" "modal"
+                , Attr.attribute "data-bs-target" ("#" ++ modalId)
+                ]
+                [ i [ class "bi bi-person-fill" ] [], text "Seleccionar" ]
+            ]
+        , div
+            [ class "modal fade"
+            , Attr.id modalId
+            , Attr.attribute "tabindex" "-1"
+            , Attr.attribute "aria-hidden" "true"
+            ]
+            [ div [ class "modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down" ]
+                [ div [ class "modal-content" ]
+                    [ div [ class "modal-header" ]
+                        [ Html.h5 [ class "modal-title" ] [ text titulo ]
+                        , button
+                            [ type_ "button"
+                            , class "btn-close"
+                            , Attr.attribute "data-bs-dismiss" "modal"
+                            , Attr.attribute "aria-label" "Cerrar"
+                            ]
+                            []
+                        ]
+                    , div [ class "modal-body" ] [ pills ]
+                    , div [ class "modal-footer" ]
+                        [ button
+                            [ type_ "button"
+                            , class "btn btn-dark w-100"
+                            , Attr.attribute "data-bs-dismiss" "modal"
+                            ]
+                            [ text "Listo" ]
+                        ]
+                    ]
+                ]
+            ]
+        ]
+
+
+viewParticipantePill : Participante -> String -> Form CustomFormError Pago -> Html Msg
+viewParticipantePill participante prefix form =
+    let
+        participaField =
+            Form.getFieldAsBool (prefix ++ ".partes." ++ participante.id ++ ".participa") form
+
+        participa =
+            participaField.value == Just True
+    in
+    button
+        [ type_ "button"
+        , class "btn btn-light rounded-pill d-inline-flex align-items-center gap-2"
+        , Attr.attribute "aria-pressed"
+            (if participa then
+                "true"
+
+             else
+                "false"
+            )
+        , onClick <| PagoForm <| Form.Input participaField.path Form.Checkbox (FormField.Bool (not participa))
+        ]
+        [ i
+            [ class
+                (if participa then
+                    "bi bi-check-square-fill"
+
+                 else
+                    "bi bi-square"
+                )
+            ]
+            []
+        , text participante.nombre
+        ]
+
+
+{-| Indica si la columna "División" debe mostrarse. Sólo se oculta cuando el
+único modo activo es el de monto fijo (no hay nada que repartir por partes).
+-}
+divisionVisible : ModoPartes -> Bool
+divisionVisible mode =
+    mode.mostrarPartes || not mode.mostrarMontoFijo
+
+
+{-| Suma de los montos fijos de una distribución, usada en la fila "Suma". Toma
+las `Parte` ya parseadas del `Pago` del form, así que no reparsea strings.
+-}
+sumaMontosFijos : Distribucion -> Monto
+sumaMontosFijos distribucion =
+    case distribucion.tipo of
+        Api.TipoDistribucionPartes dp ->
+            dp.partes
+                |> List.filterMap
+                    (\parte ->
+                        case parte of
+                            Api.MontoFijo monto _ ->
+                                Just monto
+
+                            Api.PonderadoYMontoFijo monto _ _ ->
+                                Just monto
+
+                            Api.Ponderado _ _ ->
+                                Nothing
+                    )
+                |> List.foldl Monto.add Monto.zero
+
+        Api.TipoDistribucionRepartija _ ->
+            Monto.zero
+
+
+{-| Total del listado de una repartija: la suma de los montos de cada ítem (la
+cantidad no multiplica, sólo se usa al reclamar). No incluye la propina. Toma
+los ítems ya parseados del `Pago` del form.
+-}
+totalItemsRepartija : Distribucion -> Monto
+totalItemsRepartija distribucion =
+    case distribucion.tipo of
+        Api.TipoDistribucionRepartija repartija ->
+            repartija.items
+                |> List.map .monto
+                |> List.foldl Monto.add Monto.zero
+
+        Api.TipoDistribucionPartes _ ->
+            Monto.zero
+
+
+{-| Tabla de partes con columnas dinámicas: "Monto fijo" cuando ese modo está
+activo y "División" (contador de partes o "En partes iguales") salvo cuando el
+único modo es el de monto fijo. `suma` es el total de montos fijos parseado del
+form, mostrado en el pie cuando se editan montos.
+-}
+viewPartesTable : List Participante -> String -> ModoPartes -> List Participante -> Maybe Monto -> Form CustomFormError Pago -> Html Msg
+viewPartesTable participantesDelGrupo prefix mode incluidos suma form =
+    let
+        headerCells =
+            Html.th [ Attr.scope "col" ] [ text "Participante" ]
+                :: (if mode.mostrarMontoFijo then
+                        [ Html.th [ Attr.scope "col", class "text-end" ] [ text "Monto fijo" ] ]
+
+                    else
+                        []
+                   )
+                ++ (if divisionVisible mode then
+                        [ Html.th [ Attr.scope "col", class "text-end" ] [ text "Partes" ] ]
+
+                    else
+                        []
+                   )
+    in
+    div [ class "table-responsive" ]
+        [ Html.table [ class "table align-middle" ]
+            [ Html.thead [] [ Html.tr [] headerCells ]
+            , Html.tbody []
+                (incluidos |> List.map (\participante -> viewParteRow participantesDelGrupo prefix mode participante form))
+            , if mode.mostrarMontoFijo then
+                let
+                    sumaRow =
+                        Html.tr [ class "text-body-secondary" ]
+                            ([ Html.td [] [ text "Total" ]
+                             , Html.td [ class "text-end" ]
+                                [ text ("$ " ++ (suma |> Maybe.map Monto.toString |> Maybe.withDefault "—")) ]
+                             ]
+                                ++ (if divisionVisible mode then
+                                        [ Html.td [] [] ]
+
+                                    else
+                                        []
+                                   )
+                            )
+                in
+                Html.tfoot [] [ sumaRow ]
+
+              else
+                text ""
+            ]
+        ]
+
+
+viewParteRow : List Participante -> String -> ModoPartes -> Participante -> Form CustomFormError Pago -> Html Msg
+viewParteRow participantesDelGrupo prefix mode participante form =
+    let
+        basePath =
+            prefix ++ ".partes." ++ participante.id
+    in
+    Html.tr []
+        (Html.td [ class "fw-bold" ]
+            [ div [ class "d-flex align-items-center gap-2" ]
+                [ GraficoTorta.viewDot (GraficoTorta.colorParaParticipante participantesDelGrupo participante.id)
+                , text participante.nombre
+                ]
+            ]
+            :: (if mode.mostrarMontoFijo then
+                    let
+                        montoField =
+                            Form.getFieldAsString (basePath ++ ".monto") form
+                    in
+                    [ Html.td [ class "text-end" ]
+                        [ div [ class "ms-auto", style "width" "11rem" ]
+                            [ Html.map PagoForm <|
+                                Bs.montoInput montoField [ placeholder "13.000,00", style "text-align" "right" ]
+                            ]
+                        ]
+                    ]
+
+                else
+                    []
+               )
+            ++ (if divisionVisible mode then
+                    [ Html.td [ class "text-end" ]
+                        [ if mode.mostrarPartes then
+                            viewCuotaCounter (basePath ++ ".cuota") form
+
+                          else
+                            span [ class "text-body-secondary" ] [ text "En partes iguales" ]
+                        ]
+                    ]
+
+                else
+                    []
+               )
+        )
+
+
+viewCuotaCounter : String -> Form CustomFormError Pago -> Html Msg
+viewCuotaCounter path form =
+    let
+        cuotaField =
+            Form.getFieldAsString path form
+
+        cuota =
+            cuotaField.value
+                |> Maybe.andThen String.toInt
+                |> Maybe.withDefault 0
+
+        setCuota nuevaCuota =
+            PagoForm <| Form.Input cuotaField.path Form.Text (FormField.String (String.fromInt (max 0 nuevaCuota)))
+    in
+    div [ class "d-flex align-items-center justify-content-end gap-2" ]
+        [ button
+            [ type_ "button"
+            , class "btn btn-dark btn-sm rounded-circle"
+            , Attr.attribute "aria-label" "Menos partes"
+            , onClick (setCuota (cuota - 1))
+            ]
+            [ i [ class "bi bi-dash" ] [] ]
+        , span [ class "px-1" ] [ text (String.fromInt cuota) ]
+        , button
+            [ type_ "button"
+            , class "btn btn-dark btn-sm rounded-circle"
+            , Attr.attribute "aria-label" "Más partes"
+            , onClick (setCuota (cuota + 1))
+            ]
+            [ i [ class "bi bi-plus" ] [] ]
+        ]
+
+
+viewRepartijaLink : ULID -> Form CustomFormError Pago -> Html Msg
+viewRepartijaLink grupoId form =
+    let
+        repartijaId =
+            (Form.getFieldAsString "distribucion_deudores.repartija_id" form).value
+                |> Maybe.withDefault emptyUlid
+    in
+    if repartijaId /= emptyUlid && repartijaId /= "" then
+        p []
+            [ a
+                [ class "link-primary"
+                , Path.href <| Path.Grupos_GrupoId__Repartijas_RepartijaId_ { grupoId = grupoId, repartijaId = repartijaId }
+                , target "_blank"
+                ]
+                [ text "Ver repartija colaborativa" ]
+            ]
+
+    else
+        text ""
 
 
 fileDecoder : Decode.Decoder File
@@ -1329,116 +2066,8 @@ fileDecoder =
             )
 
 
-viewDistribucionForm : List Participante -> String -> Form CustomFormError Pago -> Maybe ReceiptReadingState -> Html Msg
-viewDistribucionForm participantes prefix form receiptParseState =
-    let
-        tipoField =
-            Form.getFieldAsString (prefix ++ ".tipo") form
-
-        selectTipo v =
-            PagoForm <| Form.Input tipoField.path Form.Select (FormField.String v)
-    in
-    div [] <|
-        div [ style "margin-bottom" "1rem" ]
-            [ Bs.segmentedButton []
-                [ Bs.segmentedButtonItem
-                    { active = tipoField.value == Just "monto_equitativo"
-                    , onSelect = selectTipo "monto_equitativo"
-                    }
-                    [ id (prefix ++ "-tipo") ]
-                    [ text "Equitativo" ]
-                , Bs.segmentedButtonItem
-                    { active = tipoField.value == Just "montos_especificos"
-                    , onSelect = selectTipo "montos_especificos"
-                    }
-                    []
-                    [ text "Específico" ]
-                , Bs.segmentedButtonItem
-                    { active = tipoField.value == Just "repartija"
-                    , onSelect = selectTipo "repartija"
-                    }
-                    []
-                    [ text "Repartija" ]
-                ]
-            ]
-            :: (case tipoField.value of
-                    Just "repartija" ->
-                        [ p [ style "margin-bottom" "1rem" ]
-                            [ text "División por items del recibo. Podés subir una foto del ticket para que se complete automáticamente." ]
-                        , viewRepartijaForm prefix form receiptParseState
-                        ]
-
-                    Just "montos_especificos" ->
-                        let
-                            montosIndexes =
-                                Form.getListIndexes (prefix ++ ".montos") form
-                        in
-                        [ p [ style "margin-bottom" "1rem" ]
-                            [ text "Cada participante pone/debe un monto fijo que vos especificás." ]
-                        , div [ style "margin-bottom" "0.5rem" ] <|
-                            (montosIndexes
-                                |> List.map
-                                    (\index ->
-                                        let
-                                            montoField =
-                                                Form.getFieldAsString (prefix ++ ".montos." ++ String.fromInt index ++ ".monto") form
-
-                                            participanteField =
-                                                Form.getFieldAsString (prefix ++ ".montos." ++ String.fromInt index ++ ".participante") form
-                                        in
-                                        div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "end", style "margin-bottom" "0.5rem" ]
-                                            [ div [ style "flex" "1" ]
-                                                [ Html.map PagoForm <|
-                                                    Bs.montoInput montoField [ placeholder "200" ]
-                                                ]
-                                            , div [ style "flex" "1" ]
-                                                [ Html.map PagoForm <|
-                                                    Bs.selectInput
-                                                        (( "", "" ) :: List.map (\p -> ( p.id, p.nombre )) participantes)
-                                                        participanteField
-                                                        []
-                                                ]
-                                            , Bs.btn Bs.Danger
-                                                [ type_ "button"
-                                                , onClick <| PagoForm <| Form.RemoveItem (prefix ++ ".montos") index
-                                                , Attr.attribute "aria-label" "Eliminar"
-                                                ]
-                                                [ i [ class "bi bi-trash" ] [] ]
-                                            ]
-                                    )
-                            )
-                                ++ [ Bs.btn Bs.Secondary
-                                        [ onClick <| PagoForm <| Form.Append (prefix ++ ".montos")
-                                        , type_ "button"
-                                        ]
-                                        [ i [ class "bi bi-plus me-1" ] [], text "Agregar" ]
-                                   ]
-                        ]
-
-                    Just "monto_equitativo" ->
-                        [ p [ style "margin-bottom" "1rem" ]
-                            [ text "El monto se divide en partes iguales entre los participantes seleccionados." ]
-                        , div [ style "margin-bottom" "0.5rem" ]
-                            (participantes
-                                |> List.map
-                                    (\p ->
-                                        let
-                                            participanteField =
-                                                Form.getFieldAsBool (prefix ++ ".participantes." ++ p.id) form
-                                        in
-                                        Html.map PagoForm <|
-                                            Bs.checkbox participanteField { label = p.nombre }
-                                    )
-                            )
-                        ]
-
-                    _ ->
-                        []
-               )
-
-
-viewRepartijaForm : String -> Form CustomFormError Pago -> Maybe ReceiptReadingState -> Html Msg
-viewRepartijaForm prefix form receiptParseState =
+viewRepartijaForm : String -> Form CustomFormError Pago -> Html Msg
+viewRepartijaForm prefix form =
     let
         montoField =
             Form.getFieldAsString (prefix ++ ".extra") form
@@ -1447,72 +2076,46 @@ viewRepartijaForm prefix form receiptParseState =
             Form.getListIndexes (prefix ++ ".items") form
     in
     div []
-        [ div [ style "margin-bottom" "1rem" ]
-            [ Bs.fileInput
-                [ accept "image/*"
-                , on "change" (Decode.map ReceiptImageSelected fileDecoder)
+        [ div [ class "mb-4" ]
+            [ div [ class "d-flex justify-content-between align-items-center mb-2" ]
+                [ Html.h6 [ class "mb-0" ] [ text "Ítems" ]
+                , Bs.btn Bs.Secondary
+                    [ onClick <| PagoForm <| Form.Append <| prefix ++ ".items"
+                    , type_ "button"
+                    , class "btn-sm rounded-pill"
+                    ]
+                    [ i [ class "bi bi-plus me-1" ] [], text "Item" ]
                 ]
-            ]
-        , case receiptParseState of
-            Just ReadingFile ->
-                div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "center", style "margin-bottom" "1rem" ]
-                    [ Bs.spinner [ Attr.attribute "aria-hidden" "true" ]
-                    , Bs.alert Bs.AlertInfo
-                        [ style "margin-bottom" "0", style "flex" "1" ]
-                        [ text "Leyendo la imagen..." ]
-                    ]
-
-            Just ProcessingWithAI ->
-                div []
-                    [ div [ style "display" "flex", style "gap" "0.5rem", style "align-items" "center", style "margin-bottom" "1rem" ]
-                        [ Bs.spinner [ Attr.attribute "aria-hidden" "true" ]
-                        , Bs.alert Bs.AlertInfo
-                            [ style "margin-bottom" "0", style "flex" "1" ]
-                            [ text "Analizando el recibo con inteligencia artificial..." ]
+            , div [ class "table-responsive" ]
+                [ Html.table [ class "table align-middle", style "min-width" "40rem" ]
+                    [ Html.thead []
+                        [ Html.tr []
+                            [ Html.th [ Attr.scope "col" ] [ text "Nombre" ]
+                            , Html.th [ Attr.scope "col", style "width" "5rem" ] [ text "Cantidad" ]
+                            , Html.th [ Attr.scope "col" ] [ text "Monto" ]
+                            , Html.th [ Attr.scope "col", style "width" "1%" ] []
+                            ]
                         ]
-                    , Bs.alert Bs.AlertWarning
-                        [ style "margin-bottom" "1rem" ]
-                        [ text "Esto podria tomar varios minutos, no cierres esta ventana" ]
-                    ]
-
-            Just (ErrorProcessing errorMsg) ->
-                Bs.alert Bs.AlertDanger
-                    [ style "margin-bottom" "1rem"
-                    , style "display" "flex"
-                    , style "align-items" "center"
-                    , style "gap" "0.5rem"
-                    ]
-                    [ span [ style "flex" "1" ] [ text ("Algo salio mal: " ++ errorMsg) ]
-                    , button
-                        [ type_ "button"
-                        , class "btn-close"
-                        , Attr.attribute "aria-label" "Cerrar"
-                        , onClick ClearReceiptError
-                        ]
-                        []
-                    ]
-
-            Nothing ->
-                text ""
-        , div [ class "mb-4" ]
-            [ Html.h6 [ class "mb-2" ] [ text "Items" ]
-            , Html.table [ class "table align-middle" ]
-                [ Html.thead []
-                    [ Html.tr []
-                        [ Html.th [ Attr.scope "col" ] [ text "Item" ]
-                        , Html.th [ Attr.scope "col" ] [ text "Monto total" ]
-                        , Html.th [ Attr.scope "col" ] [ text "Cantidad" ]
-                        , Html.th [ Attr.scope "col", style "width" "1%" ] []
+                    , Html.tbody []
+                        (List.map (\idx -> viewRepartijaItemForm idx prefix form) itemsIndexes)
+                    , Html.tfoot []
+                        [ Html.tr [ class "text-body-secondary" ]
+                            [ Html.td [] [ text "Total" ]
+                            , Html.td [] []
+                            , Html.td []
+                                [ text
+                                    ("$ "
+                                        ++ (Form.getOutput form
+                                                |> Maybe.map (\pago -> Monto.toString (totalItemsRepartija pago.deudores))
+                                                |> Maybe.withDefault "—"
+                                           )
+                                    )
+                                ]
+                            , Html.td [ style "width" "1%" ] []
+                            ]
                         ]
                     ]
-                , Html.tbody []
-                    (List.map (\idx -> viewRepartijaItemForm idx prefix form) itemsIndexes)
                 ]
-            , Bs.btn Bs.Secondary
-                [ onClick <| PagoForm <| Form.Append <| prefix ++ ".items"
-                , type_ "button"
-                ]
-                [ i [ class "bi bi-plus me-1" ] [], text "Agregar item" ]
             ]
         , div [ class "mb-4" ]
             [ Html.h6 [ class "mb-2" ] [ text "Propina" ]
@@ -1566,13 +2169,13 @@ viewRepartijaItemForm i prefix form =
             [ Html.map PagoForm <|
                 Bs.textInput nombreField [ placeholder "Birrita" ]
             ]
-        , Html.td []
+        , Html.td [ style "width" "5rem" ]
             [ Html.map PagoForm <|
-                Bs.montoInput montoField [ placeholder "20.000" ]
+                Bs.textInput cantidadField [ placeholder "4" ]
             ]
         , Html.td []
             [ Html.map PagoForm <|
-                Bs.textInput cantidadField [ placeholder "4" ]
+                Bs.montoInput montoField [ placeholder "20.000", style "text-align" "right" ]
             ]
         , Html.td [ style "width" "1%" ]
             [ Bs.btn Bs.Danger

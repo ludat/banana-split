@@ -25,7 +25,7 @@ page : Shared.Model -> Route { grupoId : String, pagoId : String } -> Page Model
 page shared route =
     Page.new
         { init = \() -> init route.params.grupoId route.params.pagoId shared.store
-        , update = update shared.store
+        , update = update shared
         , subscriptions = subscriptions
         , view =
             \m ->
@@ -47,7 +47,7 @@ page shared route =
                                 "Cargando"
                 }
         }
-        |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
+        |> Page.withLayout (\_ -> Layouts.Minimal {})
 
 
 
@@ -58,7 +58,7 @@ init : ULID -> ULID -> Store -> ( Model, Effect Msg )
 init grupoId pagoId store =
     ( { grupoId = grupoId
       , currentPagoId = Just pagoId
-      , currentSection = PagoConfirmation
+      , currentSection = BasicPagoData
       , pagoBasicoForm = Form.initial [] (validatePagoInSection BasicPagoData [])
       , deudoresForm = Form.initial [] (validatePagoInSection DeudoresSection [])
       , resumenDeudores = NotAsked

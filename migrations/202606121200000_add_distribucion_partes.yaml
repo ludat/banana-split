@@ -1,0 +1,56 @@
+operations:
+  - create_table:
+      name: "distribuciones_partes"
+      constraints:
+        - name: "distribucion_partes__id__id__unique"
+          type: unique
+          columns:
+            - id
+            - distribucion__id
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "distribucion__id"
+          type: "text"
+          nullable: false
+          unique: true
+          references:
+            table: "distribuciones"
+            column: "id"
+            name: "fk_distribuciones_partes_distribuciones__id"
+            on_delete: CASCADE
+  - create_table:
+      name: "distribuciones_partes_items"
+      constraints:
+        - name: "distribuciones_partes_items__monto_o_cuota"
+          type: check
+          check: "monto__valor IS NOT NULL OR cuota IS NOT NULL"
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "distribucion__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "distribuciones_partes"
+            column: "id"
+            name: "fk_partes_item_distribuciones_partes__id"
+            on_delete: CASCADE
+        - name: "participante__id"
+          type: "text"
+          nullable: false
+          references:
+            table: "participantes"
+            column: "id"
+            name: "fk_partes_item_participante__id"
+        - name: "monto__lugares_despues_de_la_coma"
+          type: "int"
+          nullable: true
+        - name: "monto__valor"
+          type: "bigint"
+          nullable: true
+        - name: "cuota"
+          type: "int"
+          nullable: true

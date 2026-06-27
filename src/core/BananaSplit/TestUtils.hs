@@ -1,6 +1,7 @@
 module BananaSplit.TestUtils (
   distribucionMontoEquitativo,
   distribucionMontosEspecificos,
+  distribucionPartes,
   distribucionRepartija,
   fakeUlid,
   netos,
@@ -35,16 +36,24 @@ netos l =
     & fmap (uncurry mkDeuda)
     & mconcat
 
+-- | Montos específicos modelados como partes con montos fijos.
 distribucionMontosEspecificos :: [(ParticipanteId, Monto)] -> Distribucion
 distribucionMontosEspecificos ps =
   Distribucion (fakeUlid 21) $
-    TipoDistribucionMontosEspecificos $
-      DistribucionMontosEspecificos
+    TipoDistribucionPartes $
+      DistribucionPartes
         (fakeUlid 12)
-        ((\(n, (p, m)) -> MontoEspecifico{id = fakeUlid n, monto = m, participante = p}) <$> zip [0 ..] ps)
+        ((\(p, m) -> MontoFijo m p) <$> ps)
 
+-- | Monto equitativo modelado como partes ponderadas con 1 cada una.
 distribucionMontoEquitativo :: [ParticipanteId] -> Distribucion
-distribucionMontoEquitativo ps = Distribucion (fakeUlid 21) $ TipoDistribucionMontoEquitativo $ DistribucionMontoEquitativo (fakeUlid 12) ps
+distribucionMontoEquitativo ps =
+  Distribucion (fakeUlid 21) $
+    TipoDistribucionPartes $
+      DistribucionPartes (fakeUlid 12) (Ponderado 1 <$> ps)
+
+distribucionPartes :: [Parte] -> Distribucion
+distribucionPartes ps = Distribucion (fakeUlid 21) $ TipoDistribucionPartes $ DistribucionPartes (fakeUlid 12) ps
 
 distribucionRepartija :: Repartija -> Distribucion
 distribucionRepartija r = Distribucion (fakeUlid 21) $ TipoDistribucionRepartija r

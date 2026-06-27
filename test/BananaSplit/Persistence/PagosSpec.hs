@@ -1,3 +1,4 @@
+{-# OPTIONS_GHC -Wno-name-shadowing #-}
 {-# OPTIONS_GHC -Wno-orphans #-}
 
 module BananaSplit.Persistence.PagosSpec (
@@ -5,6 +6,7 @@ module BananaSplit.Persistence.PagosSpec (
 ) where
 
 import Data.Time (fromGregorian)
+import Database.Beam
 import Database.Beam.Postgres (Pg)
 import Protolude
 import Test.Hspec
@@ -16,6 +18,7 @@ import BananaSplit.Moneda
 import BananaSplit.Monto
 import BananaSplit.Participante (Participante (..), ParticipanteId (..))
 import BananaSplit.Persistence
+import BananaSplit.Persistence.Schema qualified as Schema
 import BananaSplit.Persistence.SpecHook
 import BananaSplit.Repartija
 
@@ -28,6 +31,43 @@ spec =
       pago <- runDb $ updatePago grupo.id pago.pagoId pago{pagadores = pago.pagadores{tipo = d1}}
       pago <- runDb $ updatePago grupo.id pago.pagoId pago{pagadores = pago.pagadores{tipo = d2}}
       pagoWithoutIds pago `shouldBe` pagoWithoutIds pagoOriginal{pagadores = Distribucion nullUlid d2}
+
+    it "updating a pago with fresh distribución ids doesn't leave orphans" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Test Grupo" "alguien"
+      pago <- runDb $ saveInvalidRepartijaPago grupo
+
+      runDb countOrphanedDistribuciones `shouldReturn` 0
+
+      let nuevosPagadores =
+            Distribucion nullUlid $
+              TipoDistribucionPartes $
+                DistribucionPartes nullUlid [Ponderado 1 (participanteDe grupo)]
+          nuevosDeudores =
+            Distribucion nullUlid $
+              TipoDistribucionRepartija $
+                Repartija nullUlid "Cena" 0 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] []
+      _ <- runDb $ updatePago grupo.id pago.pagoId pago{pagadores = nuevosPagadores, deudores = nuevosDeudores}
+
+      runDb countOrphanedDistribuciones `shouldReturn` 0
+
+    it "re-saving a distribución with the same tipo preserves its repartija claims" $ \(RunDb runDb) -> do
+      let
+        countAllClaims :: Pg Int
+        countAllClaims =
+          fmap length $ runSelectReturningList $ select $ do
+            c <- all_ db.repartija_claims
+            pure c
+      grupo <- runDb $ createGrupo "Test Grupo" "alguien"
+      pago <- runDb $ saveInvalidRepartijaPago grupo
+      let repartija = repartijaDe pago
+
+      _ <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
+      claimsBefore <- runDb countAllClaims
+      claimsBefore `shouldBe` 1
+
+      _ <- runDb $ updatePago grupo.id pago.pagoId pago
+      claimsAfter <- runDb countAllClaims
+      claimsAfter `shouldBe` 1
 
     it "Pago roundtrips from the db" $ \(RunDb runDb) -> property $ \pago -> do
       grupo <- runDb $ createGrupo "Test Grupo" "alguien"
@@ -80,13 +120,29 @@ saveInvalidRepartijaPago grupo =
       , fecha = fromGregorian 2025 1 1
       , pagadores =
           Distribucion nullUlid $
-            TipoDistribucionMontoEquitativo $
-              DistribucionMontoEquitativo nullUlid [participanteDe grupo]
+            TipoDistribucionPartes $
+              DistribucionPartes nullUlid [Ponderado 1 (participanteDe grupo)]
       , deudores =
           Distribucion nullUlid $
             TipoDistribucionRepartija $
               Repartija nullUlid "Cena" 0 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] []
       }
+
+-- | Count distribuciones not referenced by any pago. Their subtype rows
+-- (partes/repartijas y sus items) son huérfanas y deberían haberse borrado.
+countOrphanedDistribuciones :: Pg Int
+countOrphanedDistribuciones =
+  fmap length $ runSelectReturningList $ select $ do
+    distribucion <- all_ db.distribuciones
+    guard_ $ not_ $ exists_ $ do
+      pago <- all_ db.pagos
+      guard_ $
+        pago.distribucion_pagadores
+          `references_` distribucion
+          ||. pago.distribucion_deudores
+          `references_` distribucion
+      pure pago
+    pure distribucion.id
 
 participanteDe :: Grupo -> ParticipanteId
 participanteDe grupo = case grupo.participantes of
@@ -109,8 +165,7 @@ instance Arbitrary DistribucionDeSobras where
 instance Arbitrary TipoDistribucion where
   arbitrary =
     oneof
-      [ pure $ TipoDistribucionMontoEquitativo $ DistribucionMontoEquitativo nullUlid []
-      , pure $ TipoDistribucionMontosEspecificos $ DistribucionMontosEspecificos nullUlid []
+      [ pure $ TipoDistribucionPartes $ DistribucionPartes nullUlid []
       , TipoDistribucionRepartija <$> (Repartija nullUlid "nombre" <$> arbitrary <*> arbitrary <*> pure [] <*> pure [])
       ]
 
@@ -145,25 +200,13 @@ distribucionWithoutIds distribucion =
   distribucion
     { id = nullUlid
     , tipo = case distribucion.tipo of
-        TipoDistribucionMontoEquitativo d -> TipoDistribucionMontoEquitativo (distribucionMontoEquitativoWithoutIds d)
-        TipoDistribucionMontosEspecificos d -> TipoDistribucionMontosEspecificos (distribucionMontosEspecificosWithoutIds d)
+        TipoDistribucionPartes d -> TipoDistribucionPartes (distribucionPartesWithoutIds d)
         TipoDistribucionRepartija r -> TipoDistribucionRepartija (repartijaWithoutIds r)
     }
 
-distribucionMontoEquitativoWithoutIds :: DistribucionMontoEquitativo -> DistribucionMontoEquitativo
-distribucionMontoEquitativoWithoutIds d =
+distribucionPartesWithoutIds :: DistribucionPartes -> DistribucionPartes
+distribucionPartesWithoutIds d =
   d{id = nullUlid}
-
-distribucionMontosEspecificosWithoutIds :: DistribucionMontosEspecificos -> DistribucionMontosEspecificos
-distribucionMontosEspecificosWithoutIds d =
-  d
-    { id = nullUlid
-    , montos = fmap montoEspecificoWithoutIds d.montos
-    }
-
-montoEspecificoWithoutIds :: MontoEspecifico -> MontoEspecifico
-montoEspecificoWithoutIds m =
-  m{id = nullUlid}
 
 repartijaWithoutIds :: Repartija -> Repartija
 repartijaWithoutIds r =

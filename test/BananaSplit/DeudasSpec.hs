@@ -45,27 +45,38 @@ spec = do
         }
     err objeto tipo = ErrorResumen{objeto = objeto, tipo = tipo}
 
-  describe "getResumen para DistribucionMontosEspecificos" $ do
-    it "sin montos devuelve ErrorMontosEspecificosVacios" $ do
-      (getResumen 100 (distribucionMontosEspecificos [])).errores
-        `shouldBe` [err [] ErrorMontosEspecificosVacios]
+  describe "getResumen para DistribucionPartes" $ do
+    it "sin partes devuelve ErrorPartesVacias" $ do
+      (getResumen 100 (distribucionPartes [])).errores
+        `shouldBe` [err [] ErrorPartesVacias]
 
-    it "con total que no coincide devuelve ErrorMontosEspecificosTotalNoCoincide" $ do
-      (getResumen 500 (distribucionMontosEspecificos [(u1, 300)])).errores
-        `shouldBe` [err [] (ErrorMontosEspecificosTotalNoCoincide 300 500)]
+    it "con montos fijos que superan el total devuelve ErrorPartesMontoFijoSuperaTotal" $ do
+      (getResumen 100 (distribucionPartes [MontoFijo 200 u1, Ponderado 1 u2])).errores
+        `shouldBe` [err [] (ErrorPartesMontoFijoSuperaTotal 200 100)]
 
-    it "con total que coincide no devuelve errores" $ do
-      (getResumen 500 (distribucionMontosEspecificos [(u1, 300), (u2, 200)])).errores
-        `shouldBe` []
+    it "con solo montos fijos que no coinciden con el total devuelve ErrorPartesTotalNoCoincide" $ do
+      (getResumen 500 (distribucionPartes [MontoFijo 300 u1])).errores
+        `shouldBe` [err [] (ErrorPartesTotalNoCoincide 300 500)]
 
-  describe "getResumen para DistribucionMontoEquitativo" $ do
-    it "sin participantes devuelve ErrorEquitativoSinParticipantes" $ do
-      (getResumen 100 (distribucionMontoEquitativo [])).errores
-        `shouldBe` [err [] ErrorEquitativoSinParticipantes]
+    it "con solo montos fijos que coinciden con el total no devuelve errores" $ do
+      getNetos 500 (distribucionPartes [MontoFijo 300 u1, MontoFijo 200 u2])
+        `shouldBe` netos [(u1, 300), (u2, 200)]
 
-    it "con participantes no devuelve errores" $ do
-      (getResumen 100 (distribucionMontoEquitativo [u1, u2])).errores
-        `shouldBe` []
+    it "con solo ponderados reparte proporcionalmente" $ do
+      getNetos 300 (distribucionPartes [Ponderado 1 u1, Ponderado 2 u2])
+        `shouldBe` netos [(u1, 100), (u2, 200)]
+
+    it "con ponderados iguales reparte equitativamente" $ do
+      getNetos 100 (distribucionPartes [Ponderado 1 u1, Ponderado 1 u2])
+        `shouldBe` netos [(u1, 50), (u2, 50)]
+
+    it "con fijos y ponderados asigna los fijos y reparte el resto" $ do
+      getNetos 1000 (distribucionPartes [MontoFijo 400 u1, Ponderado 1 u2, Ponderado 2 u3])
+        `shouldBe` netos [(u1, 400), (u2, 200), (u3, 400)]
+
+    it "una parte con monto fijo y ponderación aporta el fijo y participa del resto" $ do
+      getNetos 1000 (distribucionPartes [PonderadoYMontoFijo 400 1 u1, Ponderado 1 u2])
+        `shouldBe` netos [(u1, 700), (u2, 300)]
 
   describe "getResumen para Repartija" $ do
     it "sin items devuelve ErrorRepartijaSinItems" $ do
@@ -194,7 +205,7 @@ spec = do
               }
           res = getResumenPago pago
       res.errores
-        `shouldBe` [ err ["deudores"] (ErrorMontosEspecificosTotalNoCoincide 300 500)
+        `shouldBe` [ err ["deudores"] (ErrorPartesTotalNoCoincide 300 500)
                    ]
 
     it "con pagadores y deudores que balancean no devuelve errores" $ do
@@ -215,7 +226,7 @@ spec = do
               , deudores = distribucionMontosEspecificos [(u2, 500)]
               }
       (getResumenPago pago).errores
-        `shouldBe` [err ["pagadores"] ErrorMontosEspecificosVacios]
+        `shouldBe` [err ["pagadores"] ErrorPartesVacias]
 
   describe "calcularNetos" $ do
     it "calcula netos de un pago montos especificos en pagadores y deudores" $ do

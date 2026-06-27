@@ -225,37 +225,37 @@ jsonEncResumenNetos  val =
 
 
 type TipoErrorResumen  =
-    ErrorMontosEspecificosVacios 
-    | ErrorMontosEspecificosTotalNoCoincide Monto Monto
-    | ErrorEquitativoSinParticipantes 
-    | ErrorRepartijaSinItems 
+    ErrorRepartijaSinItems 
     | ErrorRepartijaTotalItemsNoCoincide Monto Monto
     | ErrorRepartijaSinClaims 
     | ErrorRepartijaTotalReclamadoNoCoincide Monto Monto
+    | ErrorPartesVacias 
+    | ErrorPartesMontoFijoSuperaTotal Monto Monto
+    | ErrorPartesTotalNoCoincide Monto Monto
 
 jsonDecTipoErrorResumen : Json.Decode.Decoder ( TipoErrorResumen )
 jsonDecTipoErrorResumen =
     let jsonDecDictTipoErrorResumen = Dict.fromList
-            [ ("ErrorMontosEspecificosVacios", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorMontosEspecificosVacios))
-            , ("ErrorMontosEspecificosTotalNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorMontosEspecificosTotalNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
-            , ("ErrorEquitativoSinParticipantes", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorEquitativoSinParticipantes))
-            , ("ErrorRepartijaSinItems", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorRepartijaSinItems))
+            [ ("ErrorRepartijaSinItems", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorRepartijaSinItems))
             , ("ErrorRepartijaTotalItemsNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorRepartijaTotalItemsNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
             , ("ErrorRepartijaSinClaims", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorRepartijaSinClaims))
             , ("ErrorRepartijaTotalReclamadoNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorRepartijaTotalReclamadoNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
+            , ("ErrorPartesVacias", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorPartesVacias))
+            , ("ErrorPartesMontoFijoSuperaTotal", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorPartesMontoFijoSuperaTotal (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
+            , ("ErrorPartesTotalNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorPartesTotalNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
             ]
     in  decodeSumObjectWithSingleField  "TipoErrorResumen" jsonDecDictTipoErrorResumen
 
 jsonEncTipoErrorResumen : TipoErrorResumen -> Value
 jsonEncTipoErrorResumen  val =
     let keyval v = case v of
-                    ErrorMontosEspecificosVacios  -> ("ErrorMontosEspecificosVacios", encodeValue (Json.Encode.list identity []))
-                    ErrorMontosEspecificosTotalNoCoincide v1 v2 -> ("ErrorMontosEspecificosTotalNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
-                    ErrorEquitativoSinParticipantes  -> ("ErrorEquitativoSinParticipantes", encodeValue (Json.Encode.list identity []))
                     ErrorRepartijaSinItems  -> ("ErrorRepartijaSinItems", encodeValue (Json.Encode.list identity []))
                     ErrorRepartijaTotalItemsNoCoincide v1 v2 -> ("ErrorRepartijaTotalItemsNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
                     ErrorRepartijaSinClaims  -> ("ErrorRepartijaSinClaims", encodeValue (Json.Encode.list identity []))
                     ErrorRepartijaTotalReclamadoNoCoincide v1 v2 -> ("ErrorRepartijaTotalReclamadoNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
+                    ErrorPartesVacias  -> ("ErrorPartesVacias", encodeValue (Json.Encode.list identity []))
+                    ErrorPartesMontoFijoSuperaTotal v1 v2 -> ("ErrorPartesMontoFijoSuperaTotal", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
+                    ErrorPartesTotalNoCoincide v1 v2 -> ("ErrorPartesTotalNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
     in encodeSumObjectWithSingleField keyval val
 
 
@@ -457,12 +457,14 @@ jsonEncShallowPago  val =
 type Parte  =
     MontoFijo Monto ParticipanteId
     | Ponderado Int ParticipanteId
+    | PonderadoYMontoFijo Monto Int ParticipanteId
 
 jsonDecParte : Json.Decode.Decoder ( Parte )
 jsonDecParte =
     let jsonDecDictParte = Dict.fromList
             [ ("MontoFijo", Json.Decode.lazy (\_ -> Json.Decode.map2 MontoFijo (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecParticipanteId))))
             , ("Ponderado", Json.Decode.lazy (\_ -> Json.Decode.map2 Ponderado (Json.Decode.index 0 (Json.Decode.int)) (Json.Decode.index 1 (jsonDecParticipanteId))))
+            , ("PonderadoYMontoFijo", Json.Decode.lazy (\_ -> Json.Decode.map3 PonderadoYMontoFijo (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (Json.Decode.int)) (Json.Decode.index 2 (jsonDecParticipanteId))))
             ]
     in  decodeSumObjectWithSingleField  "Parte" jsonDecDictParte
 
@@ -471,6 +473,7 @@ jsonEncParte  val =
     let keyval v = case v of
                     MontoFijo v1 v2 -> ("MontoFijo", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncParticipanteId v2]))
                     Ponderado v1 v2 -> ("Ponderado", encodeValue (Json.Encode.list identity [Json.Encode.int v1, jsonEncParticipanteId v2]))
+                    PonderadoYMontoFijo v1 v2 v3 -> ("PonderadoYMontoFijo", encodeValue (Json.Encode.list identity [jsonEncMonto v1, Json.Encode.int v2, jsonEncParticipanteId v3]))
     in encodeSumObjectWithSingleField keyval val
 
 
@@ -538,88 +541,42 @@ jsonEncDistribucion  val =
 
 
 type TipoDistribucion  =
-    TipoDistribucionMontosEspecificos DistribucionMontosEspecificos
-    | TipoDistribucionMontoEquitativo DistribucionMontoEquitativo
-    | TipoDistribucionRepartija Repartija
+    TipoDistribucionRepartija Repartija
+    | TipoDistribucionPartes DistribucionPartes
 
 jsonDecTipoDistribucion : Json.Decode.Decoder ( TipoDistribucion )
 jsonDecTipoDistribucion =
     let jsonDecDictTipoDistribucion = Dict.fromList
-            [ ("TipoDistribucionMontosEspecificos", Json.Decode.lazy (\_ -> Json.Decode.map TipoDistribucionMontosEspecificos (jsonDecDistribucionMontosEspecificos)))
-            , ("TipoDistribucionMontoEquitativo", Json.Decode.lazy (\_ -> Json.Decode.map TipoDistribucionMontoEquitativo (jsonDecDistribucionMontoEquitativo)))
-            , ("TipoDistribucionRepartija", Json.Decode.lazy (\_ -> Json.Decode.map TipoDistribucionRepartija (jsonDecRepartija)))
+            [ ("TipoDistribucionRepartija", Json.Decode.lazy (\_ -> Json.Decode.map TipoDistribucionRepartija (jsonDecRepartija)))
+            , ("TipoDistribucionPartes", Json.Decode.lazy (\_ -> Json.Decode.map TipoDistribucionPartes (jsonDecDistribucionPartes)))
             ]
     in  decodeSumObjectWithSingleField  "TipoDistribucion" jsonDecDictTipoDistribucion
 
 jsonEncTipoDistribucion : TipoDistribucion -> Value
 jsonEncTipoDistribucion  val =
     let keyval v = case v of
-                    TipoDistribucionMontosEspecificos v1 -> ("TipoDistribucionMontosEspecificos", encodeValue (jsonEncDistribucionMontosEspecificos v1))
-                    TipoDistribucionMontoEquitativo v1 -> ("TipoDistribucionMontoEquitativo", encodeValue (jsonEncDistribucionMontoEquitativo v1))
                     TipoDistribucionRepartija v1 -> ("TipoDistribucionRepartija", encodeValue (jsonEncRepartija v1))
+                    TipoDistribucionPartes v1 -> ("TipoDistribucionPartes", encodeValue (jsonEncDistribucionPartes v1))
     in encodeSumObjectWithSingleField keyval val
 
 
 
-type alias DistribucionMontosEspecificos  =
+type alias DistribucionPartes  =
    { id: ULID
-   , montos: (List MontoEspecifico)
+   , partes: (List Parte)
    }
 
-jsonDecDistribucionMontosEspecificos : Json.Decode.Decoder ( DistribucionMontosEspecificos )
-jsonDecDistribucionMontosEspecificos =
-   Json.Decode.succeed (\pid pmontos -> {id = pid, montos = pmontos})
+jsonDecDistribucionPartes : Json.Decode.Decoder ( DistribucionPartes )
+jsonDecDistribucionPartes =
+   Json.Decode.succeed (\pid ppartes -> {id = pid, partes = ppartes})
    |> required "id" (jsonDecULID)
-   |> required "montos" (Json.Decode.list (jsonDecMontoEspecifico))
+   |> required "partes" (Json.Decode.list (jsonDecParte))
 
-jsonEncDistribucionMontosEspecificos : DistribucionMontosEspecificos -> Value
-jsonEncDistribucionMontosEspecificos  val =
+jsonEncDistribucionPartes : DistribucionPartes -> Value
+jsonEncDistribucionPartes  val =
    Json.Encode.object
    [ ("id", jsonEncULID val.id)
-   , ("montos", (Json.Encode.list jsonEncMontoEspecifico) val.montos)
-   ]
-
-
-
-type alias MontoEspecifico  =
-   { id: ULID
-   , participante: ParticipanteId
-   , monto: Monto
-   }
-
-jsonDecMontoEspecifico : Json.Decode.Decoder ( MontoEspecifico )
-jsonDecMontoEspecifico =
-   Json.Decode.succeed (\pid pparticipante pmonto -> {id = pid, participante = pparticipante, monto = pmonto})
-   |> required "id" (jsonDecULID)
-   |> required "participante" (jsonDecParticipanteId)
-   |> required "monto" (jsonDecMonto)
-
-jsonEncMontoEspecifico : MontoEspecifico -> Value
-jsonEncMontoEspecifico  val =
-   Json.Encode.object
-   [ ("id", jsonEncULID val.id)
-   , ("participante", jsonEncParticipanteId val.participante)
-   , ("monto", jsonEncMonto val.monto)
-   ]
-
-
-
-type alias DistribucionMontoEquitativo  =
-   { id: ULID
-   , participantes: (List ParticipanteId)
-   }
-
-jsonDecDistribucionMontoEquitativo : Json.Decode.Decoder ( DistribucionMontoEquitativo )
-jsonDecDistribucionMontoEquitativo =
-   Json.Decode.succeed (\pid pparticipantes -> {id = pid, participantes = pparticipantes})
-   |> required "id" (jsonDecULID)
-   |> required "participantes" (Json.Decode.list (jsonDecParticipanteId))
-
-jsonEncDistribucionMontoEquitativo : DistribucionMontoEquitativo -> Value
-jsonEncDistribucionMontoEquitativo  val =
-   Json.Encode.object
-   [ ("id", jsonEncULID val.id)
-   , ("participantes", (Json.Encode.list jsonEncParticipanteId) val.participantes)
+   , ("partes", (Json.Encode.list jsonEncParte) val.partes)
    ]
 
 

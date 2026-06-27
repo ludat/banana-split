@@ -1,11 +1,13 @@
 module Pages.Grupos.GrupoId_.Pagos exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
+import Components.PagoDetalleModal as PagoDetalleModal
 import Date
 import Effect exposing (Effect)
 import Generated.Api exposing (Moneda, ShallowGrupo, ShallowPago, ULID)
 import Html exposing (Html, a, div, i, text)
 import Html.Attributes exposing (class, style)
+import Html.Events exposing (onClick)
 import Layouts
 import Models.Moneda as Moneda
 import Models.Monto as Monto
@@ -23,8 +25,8 @@ import View exposing (View)
 page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route.params.grupoId shared.store
-        , update = update
+        { init = \() -> init route shared.store
+        , update = update (PagoDetalleModal.context shared route) shared.store
         , subscriptions = subscriptions
         , view = view shared.store
         }
@@ -33,27 +35,50 @@ page shared route =
 
 type alias Model =
     { grupoId : String
+    , pagoModal : PagoDetalleModal.Model
     }
 
 
-init : ULID -> Store -> ( Model, Effect Msg )
-init grupoId store =
-    ( { grupoId = grupoId }
+init : Route { grupoId : String } -> Store -> ( Model, Effect Msg )
+init route store =
+    let
+        grupoId =
+            route.params.grupoId
+
+        ( pagoModal, modalEffect ) =
+            PagoDetalleModal.init route
+    in
+    ( { grupoId = grupoId, pagoModal = pagoModal }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
         , Store.ensurePagos grupoId store
         , Effect.getCurrentUser grupoId
+        , Effect.map PagoModalMsg modalEffect
         ]
     )
 
 
-type alias Msg =
-    ()
+type Msg
+    = OpenPago ULID
+    | PagoModalMsg PagoDetalleModal.Msg
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update _ model =
-    ( model, Effect.none )
+update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
+update ctx store msg model =
+    case msg of
+        OpenPago pagoId ->
+            let
+                ( pagoModal, eff ) =
+                    PagoDetalleModal.open ctx pagoId
+            in
+            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
+
+        PagoModalMsg subMsg ->
+            let
+                ( pagoModal, eff ) =
+                    PagoDetalleModal.update ctx store subMsg model.pagoModal
+            in
+            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
 
 subscriptions : Model -> Sub Msg
@@ -80,6 +105,7 @@ view store model =
             , body =
                 [ div [ class "container-fluid py-3" ]
                     [ viewPagos store model grupo ]
+                , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
                 ]
             }
 
@@ -110,14 +136,19 @@ viewPagos store model grupo =
                     [ Bs.listGroup [ class "list-group-flush" ]
                         (pagos
                             |> List.sortWith (\a b -> Date.compare b.fecha a.fecha)
-                            |> List.map (viewPago model.grupoId grupo.monedaPorDefecto)
+                            |> List.map (viewPago grupo.monedaPorDefecto)
                         )
                     ]
 
 
-viewPago : ULID -> Moneda -> ShallowPago -> Html Msg
-viewPago grupoId monedaPorDefecto pago =
-    Bs.listGroupItem []
+viewPago : Moneda -> ShallowPago -> Html Msg
+viewPago monedaPorDefecto pago =
+    Bs.listGroupItem
+        [ class "list-group-item-action"
+        , style "cursor" "pointer"
+        , Html.Attributes.attribute "role" "button"
+        , onClick (OpenPago pago.pagoId)
+        ]
         [ div [ class "d-flex align-items-center gap-3" ]
             [ div
                 [ class "text-center border rounded px-2 py-1 flex-shrink-0"
@@ -135,10 +166,5 @@ viewPago grupoId monedaPorDefecto pago =
             , div [ class "flex-grow-1 text-truncate" ] [ text pago.nombre ]
             , div [ class "text-nowrap text-muted small" ]
                 [ text (Moneda.simbolo monedaPorDefecto pago.moneda ++ " " ++ Monto.toString pago.monto) ]
-            , a
-                [ Path.href <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = grupoId, pagoId = pago.pagoId }
-                , class "btn btn-sm btn-outline-secondary flex-shrink-0"
-                ]
-                [ i [ class "bi bi-arrow-right" ] [] ]
             ]
         ]
