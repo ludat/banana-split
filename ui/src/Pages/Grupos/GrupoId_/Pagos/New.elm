@@ -382,6 +382,7 @@ update shared msg model =
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
+                , Store.setPago pago.pagoId pago
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el pago"
                 , irAlPagoEnLista model.grupoId pago.pagoId
                 ]
@@ -405,6 +406,7 @@ update shared msg model =
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId
+                , Store.setPago pago.pagoId pago
                 , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el pago"
                 , irAlPagoEnLista model.grupoId pago.pagoId
                 ]
