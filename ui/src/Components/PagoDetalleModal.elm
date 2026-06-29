@@ -116,7 +116,7 @@ waitForPago =
 
 syncUrl : Path.Path -> Maybe ULID -> Effect Msg
 syncUrl path maybePagoId =
-    Effect.replaceRoute
+    Effect.pushRoute
         { path = path
         , query =
             maybePagoId
