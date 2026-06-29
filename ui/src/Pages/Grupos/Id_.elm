@@ -34,6 +34,7 @@ page shared route =
         , view = view shared.store shared.userId
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
+        |> Page.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
 
 
 type alias Model =

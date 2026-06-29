@@ -1,4 +1,4 @@
-module Components.PagoDetalleModal exposing (Context, Model, Msg, Overlay, context, init, open, update, view)
+module Components.PagoDetalleModal exposing (Context, Model, Msg, Overlay, context, init, onUrlChanged, open, update, view)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras, viewNetosBarrasMini)
 import Components.Bootstrap as Bs
@@ -89,6 +89,19 @@ open ctx pagoId =
     )
 
 
+onUrlChanged : { from : Route (), to : Route () } -> Msg
+onUrlChanged { from, to } =
+    let
+        pagoParam route =
+            Dict.get "pago" route.query
+    in
+    if pagoParam from == pagoParam to then
+        NoOp
+
+    else
+        QueryChanged (pagoParam to)
+
+
 forPago : Bool -> ULID -> Model
 forPago isOpen pagoId =
     { isOpen = isOpen
@@ -133,6 +146,7 @@ syncUrl path maybePagoId =
 type Msg
     = NoOp
     | Close
+    | QueryChanged (Maybe ULID)
     | CheckPagoPresent
     | ResumenFetched (Result Http.Error ResumenPago)
     | OpenOverlay Overlay
@@ -153,6 +167,19 @@ update ctx store msg model =
 
         Close ->
             ( { model | isOpen = False }, syncUrl ctx.path Nothing )
+
+        QueryChanged maybePagoId ->
+            case maybePagoId of
+                Just pagoId ->
+                    if model.isOpen && pagoId == model.pagoId then
+                        -- Already showing this pago (e.g. we just pushed the URL ourselves)
+                        ( model, Effect.none )
+
+                    else
+                        ( forPago True pagoId, loadPago pagoId )
+
+                Nothing ->
+                    ( { model | isOpen = False }, Effect.none )
 
         Share { title, path } ->
             ( model
