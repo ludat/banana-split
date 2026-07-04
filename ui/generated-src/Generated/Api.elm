@@ -33,17 +33,37 @@ jsonEncCreateGrupoParams  val =
 
 
 
-type alias LoginParams  =
+type alias SigninParams  =
    { email: String
    }
 
-jsonDecLoginParams : Json.Decode.Decoder ( LoginParams )
-jsonDecLoginParams =
+jsonDecSigninParams : Json.Decode.Decoder ( SigninParams )
+jsonDecSigninParams =
    Json.Decode.succeed (\pemail -> {email = pemail}) |> custom (Json.Decode.string)
 
-jsonEncLoginParams : LoginParams -> Value
-jsonEncLoginParams  val =
+jsonEncSigninParams : SigninParams -> Value
+jsonEncSigninParams  val =
    Json.Encode.string val.email
+
+
+type alias SignupParams  =
+   { nombre: String
+   , email: String
+   }
+
+jsonDecSignupParams : Json.Decode.Decoder ( SignupParams )
+jsonDecSignupParams =
+   Json.Decode.succeed (\pnombre pemail -> {nombre = pnombre, email = pemail})
+   |> required "nombre" (Json.Decode.string)
+   |> required "email" (Json.Decode.string)
+
+jsonEncSignupParams : SignupParams -> Value
+jsonEncSignupParams  val =
+   Json.Encode.object
+   [ ("nombre", Json.Encode.string val.nombre)
+   , ("email", Json.Encode.string val.email)
+   ]
+
 
 
 type alias LoginChallenge  =
@@ -1361,8 +1381,8 @@ postReceiptParseimage body toMsg =
                 Nothing
             }
 
-postAuthLogin : LoginParams -> (Result Http.Error  (LoginChallenge)  -> msg) -> Cmd msg
-postAuthLogin body toMsg =
+postAuthSignup : SignupParams -> (Result Http.Error  (LoginChallenge)  -> msg) -> Cmd msg
+postAuthSignup body toMsg =
     let
         params =
             List.filterMap identity
@@ -1377,11 +1397,40 @@ postAuthLogin body toMsg =
             , url =
                 Url.Builder.crossOrigin "/api"
                     [ "auth"
-                    , "login"
+                    , "signup"
                     ]
                     params
             , body =
-                Http.jsonBody (jsonEncLoginParams body)
+                Http.jsonBody (jsonEncSignupParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecLoginChallenge
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthSignin : SigninParams -> (Result Http.Error  (LoginChallenge)  -> msg) -> Cmd msg
+postAuthSignin body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "signin"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncSigninParams body)
             , expect =
                 Http.expectJson toMsg jsonDecLoginChallenge
             , timeout =

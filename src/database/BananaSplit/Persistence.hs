@@ -15,6 +15,8 @@ module BananaSplit.Persistence (
   deleteTransaccionCongelada,
   fetchGrupo,
   fetchUserById,
+  fetchUserByEmail,
+  createUser,
   findOrCreateUser,
   fetchGrupoIdFromClaim,
   fetchGrupoIdFromRepartija,
@@ -36,6 +38,7 @@ import Conferer qualified
 import Data.Decimal qualified as Decimal
 import Data.List.NonEmpty qualified as NE
 import Data.Pool qualified as Pool
+import Data.Text qualified as Text
 import Data.String (String)
 import Data.Time (getCurrentTime)
 import Database.Beam as Beam
@@ -153,6 +156,39 @@ fetchUserById userId = do
     guard_ (u.id ==. val_ userId)
     pure u
   pure $ fmap toModelUser existing
+
+-- | Look up a user by their (normalized) email without creating anything.
+-- The signup/signin handlers use this to decide whether an email is already
+-- taken (signup) or actually exists (signin) before emailing a code.
+fetchUserByEmail :: Text -> Pg (Maybe M.User)
+fetchUserByEmail rawEmail = do
+  let email = M.normalizeEmail rawEmail
+  existing <- runSelectReturningOne $ select $ do
+    u <- all_ db.users
+    guard_ (u.email ==. val_ email)
+    pure u
+  pure $ fmap toModelUser existing
+
+-- | Create a brand-new user with an explicit display name. Callers must have
+-- already checked the email is free (see 'fetchUserByEmail'); a duplicate email
+-- will fail on the unique constraint.
+createUser :: Text -> Text -> Pg M.User
+createUser rawEmail rawNombre = do
+  let email = M.normalizeEmail rawEmail
+  let nombre = Text.strip rawNombre
+  newId <- liftIO ULID.getULID
+  now <- liftIO getCurrentTime
+  runInsert
+    $ insert db.users
+    $ insertValues
+      [ User { id = newId, email = email, nombre = nombre, created_at = now }
+      ]
+  pure
+    $ M.User
+      { M.id = newId
+      , M.email = email
+      , M.nombre = nombre
+      }
 
 toModelUser :: User -> M.User
 toModelUser u =

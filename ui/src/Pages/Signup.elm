@@ -1,4 +1,4 @@
-module Pages.Login exposing (Model, Msg, page)
+module Pages.Signup exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)
@@ -30,18 +30,19 @@ page _ _ =
 
 
 
--- Signin is a two step flow: an existing user requests a code by email (getting
--- back a signed challenge that commits to it), then confirms with challenge +
--- code. New accounts are created on the separate signup page.
+-- Signup is a two step flow: a new user provides their name + email (getting
+-- back a signed challenge that commits to a code), then confirms with challenge
+-- + code. The account is created only once the code is confirmed.
 
 
 type Step
-    = EnterEmail
+    = EnterDetails
     | EnterCode
 
 
 type alias Model =
-    { email : String
+    { nombre : String
+    , email : String
     , code : String
     , challenge : String
     , step : Step
@@ -51,37 +52,45 @@ type alias Model =
 
 init : () -> ( Model, Effect Msg )
 init () =
-    ( { email = "", code = "", challenge = "", step = EnterEmail, submitting = False }
+    ( { nombre = "", email = "", code = "", challenge = "", step = EnterDetails, submitting = False }
     , Effect.none
     )
 
 
 type Msg
-    = EmailChanged String
+    = NombreChanged String
+    | EmailChanged String
     | CodeChanged String
-    | SubmitEmail
+    | SubmitDetails
     | GotChallenge (Result Http.Error LoginChallenge)
     | SubmitCode
     | GotVerifyResult (Result Http.Error User)
-    | BackToEmail
+    | BackToDetails
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
+        NombreChanged nombre ->
+            ( { model | nombre = nombre }, Effect.none )
+
         EmailChanged email ->
             ( { model | email = email }, Effect.none )
 
         CodeChanged code ->
             ( { model | code = code }, Effect.none )
 
-        SubmitEmail ->
-            if String.trim model.email == "" then
+        SubmitDetails ->
+            if String.trim model.nombre == "" || String.trim model.email == "" then
                 ( model, Effect.none )
 
             else
                 ( { model | submitting = True }
-                , Effect.sendCmd (Api.postAuthSignin { email = model.email } GotChallenge)
+                , Effect.sendCmd
+                    (Api.postAuthSignup
+                        { nombre = String.trim model.nombre, email = model.email }
+                        GotChallenge
+                    )
                 )
 
         GotChallenge (Ok { challenge }) ->
@@ -91,7 +100,7 @@ update msg model =
 
         GotChallenge (Err err) ->
             ( { model | submitting = False }
-            , Effect.sendToast { level = ToastDanger, content = signinError err }
+            , Effect.sendToast { level = ToastDanger, content = signupError err }
             )
 
         SubmitCode ->
@@ -120,20 +129,23 @@ update msg model =
             , Effect.sendToast { level = ToastDanger, content = "Código inválido o vencido" }
             )
 
-        BackToEmail ->
-            ( { model | step = EnterEmail, code = "", challenge = "", submitting = False }
+        BackToDetails ->
+            ( { model | step = EnterDetails, code = "", challenge = "", submitting = False }
             , Effect.none
             )
 
 
-{-| The signin step-1 endpoint drops the response body on error, so we map the
+{-| The signup step-1 endpoint drops the response body on error, so we map the
 status code back to the message the backend would have shown.
 -}
-signinError : Http.Error -> String
-signinError err =
+signupError : Http.Error -> String
+signupError err =
     case err of
-        Http.BadStatus 404 ->
-            "No encontramos una cuenta con ese email. Registrate."
+        Http.BadStatus 409 ->
+            "Ya existe una cuenta con ese email. Iniciá sesión."
+
+        Http.BadStatus 400 ->
+            "Ingresá tu nombre"
 
         _ ->
             "No pudimos enviar el código, probá de nuevo"
@@ -141,17 +153,17 @@ signinError err =
 
 view : Model -> View Msg
 view model =
-    { title = "Iniciar sesión"
+    { title = "Crear cuenta"
     , body =
         [ div [ class "container py-4" ]
             [ div [ class "row justify-content-center" ]
                 [ div [ class "col-12 col-md-6 col-lg-4" ]
                     [ Bs.card []
-                        [ Bs.cardHeader [] [ text "Iniciar sesión" ]
+                        [ Bs.cardHeader [] [ text "Crear cuenta" ]
                         , Bs.cardBody []
                             [ case model.step of
-                                EnterEmail ->
-                                    viewEmailStep model
+                                EnterDetails ->
+                                    viewDetailsStep model
 
                                 EnterCode ->
                                     viewCodeStep model
@@ -164,11 +176,23 @@ view model =
     }
 
 
-viewEmailStep : Model -> Html Msg
-viewEmailStep model =
+viewDetailsStep : Model -> Html Msg
+viewDetailsStep model =
     div []
-        [ form [ onSubmit SubmitEmail ]
+        [ form [ onSubmit SubmitDetails ]
             [ div [ class "mb-3" ]
+                [ label [ for "nombre", class "form-label" ] [ text "Nombre" ]
+                , Html.input
+                    [ id "nombre"
+                    , type_ "text"
+                    , class "form-control"
+                    , placeholder "Juan Pérez"
+                    , Attr.value model.nombre
+                    , onInput NombreChanged
+                    ]
+                    []
+                ]
+            , div [ class "mb-3" ]
                 [ label [ for "email", class "form-label" ] [ text "Email" ]
                 , Html.input
                     [ id "email"
@@ -180,7 +204,7 @@ viewEmailStep model =
                     ]
                     []
                 , div [ class "form-text" ]
-                    [ text "Te enviamos un código para confirmar que sos vos." ]
+                    [ text "Te enviamos un código para confirmar tu email." ]
                 ]
             , Bs.btn Bs.Primary
                 [ type_ "submit", Attr.disabled model.submitting ]
@@ -189,13 +213,13 @@ viewEmailStep model =
                         "Enviando…"
 
                      else
-                        "Enviar código"
+                        "Crear cuenta"
                     )
                 ]
             ]
         , p [ class "mt-3 mb-0 text-center" ]
-            [ text "¿No tenés cuenta? "
-            , a [ Path.href Path.Signup ] [ text "Registrate" ]
+            [ text "¿Ya tenés cuenta? "
+            , a [ Path.href Path.Login ] [ text "Iniciá sesión" ]
             ]
         ]
 
@@ -231,7 +255,7 @@ viewCodeStep model =
                     )
                 ]
             , Bs.btn Bs.Transparent
-                [ type_ "button", onClick BackToEmail ]
-                [ text "Cambiar email" ]
+                [ type_ "button", onClick BackToDetails ]
+                [ text "Cambiar datos" ]
             ]
         ]

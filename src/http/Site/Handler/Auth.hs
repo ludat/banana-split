@@ -4,19 +4,21 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Site.Handler.Auth (
-  handleLogin,
+  handleSignup,
+  handleSignin,
   handleVerify,
   handleLogout,
   handleMe,
 ) where
 
+import Data.Text qualified as Text
 import Servant
 
 import BananaSplit
-import BananaSplit.Persistence (fetchUserById, findOrCreateUser)
+import BananaSplit.Persistence (createUser, fetchUserByEmail, fetchUserById)
 import Preludat
-import Site.Api (LoginChallenge (..), LoginParams (..), VerifyParams (..))
-import Site.Auth (clearSessionCookie, generateLoginCode, issueLoginChallenge, issueToken, renderSessionCookie, verifyLoginChallenge)
+import Site.Api (LoginChallenge (..), SigninParams (..), SignupParams (..), VerifyParams (..))
+import Site.Auth (ChallengeFlow (..), clearSessionCookie, generateLoginCode, issueLoginChallenge, issueToken, renderSessionCookie, verifyLoginChallenge)
 import Site.Handler.Utils (runBeam, throwJsonError)
 import Site.Mailer (Mailer (..))
 import Site.Types
@@ -28,18 +30,41 @@ newtype SessionTokenError = SessionTokenError Text
   deriving stock (Show)
   deriving anyclass (Exception)
 
--- | Step 1 of login: email the caller a short 6-digit code and hand back a
--- signed challenge that commits to it. We do not create the account here and
--- never reveal whether the email exists — the account is created only once the
--- code is verified.
-handleLogin :: LoginParams -> AppHandler LoginChallenge
-handleLogin params = do
+-- | Step 1 of signup: a new account. We reject an email that already exists up
+-- front (before emailing anything) so the user gets immediate, useful feedback
+-- instead of only finding out after entering a code. The account itself is not
+-- created until the code is verified.
+handleSignup :: SignupParams -> AppHandler LoginChallenge
+handleSignup params = do
   let email = normalizeEmail params.email
+  let nombre = Text.strip params.nombre
+  when (Text.null nombre) $
+    throwJsonError err400 "Ingresá tu nombre"
+  existing <- runBeam $ fetchUserByEmail email
+  for_ existing $ \_ ->
+    throwJsonError err409 "Ya existe una cuenta con ese email. Iniciá sesión."
+  issueChallenge (SignupFlow nombre) email
+
+-- | Step 1 of signin: an existing account. We reject an unknown email up front
+-- (symmetric with signup) so we never email a code for an account that can't
+-- be logged into.
+handleSignin :: SigninParams -> AppHandler LoginChallenge
+handleSignin params = do
+  let email = normalizeEmail params.email
+  existing <- runBeam $ fetchUserByEmail email
+  when (isNothing existing) $
+    throwJsonError err404 "No encontramos una cuenta con ese email. Registrate."
+  issueChallenge SigninFlow email
+
+-- | Shared tail of both step-1 handlers: mint a code, sign a challenge that
+-- carries the flow, and email the code.
+issueChallenge :: ChallengeFlow -> Text -> AppHandler LoginChallenge
+issueChallenge flow email = do
   key <- asks (.jwk)
   pepper <- asks (.authPepper)
   mailer <- asks (.mailer)
   code <- liftIO generateLoginCode
-  eChallenge <- liftIO $ issueLoginChallenge key pepper email code
+  eChallenge <- liftIO $ issueLoginChallenge key pepper flow email code
   case eChallenge of
     Left err ->
       liftIO $ throwIO $ SessionTokenError $ "could not sign login challenge: " <> show err
@@ -47,11 +72,10 @@ handleLogin params = do
       liftIO $ mailer.sendLoginCode email code
       pure $ LoginChallenge challenge
 
--- | Step 2 of login: exchange a challenge + its emailed code for a session.
--- This is where find-or-create happens (so unverified emails never create
--- accounts), along with the user's global participante — both in one
--- transaction, since a half-created account has no participante and wouldn't
--- appear in settlements.
+-- | Step 2 of both flows: exchange a challenge + its emailed code for a
+-- session. The flow rides inside the challenge, so this is where a signup
+-- actually creates the account and a signin actually looks one up — re-checking
+-- existence to close the gap since step 1.
 handleVerify ::
   VerifyParams
   -> AppHandler (Headers '[Header "Set-Cookie" Text] User)
@@ -59,11 +83,17 @@ handleVerify params = do
   key <- asks (.jwk)
   pepper <- asks (.authPepper)
   secure <- asks (.cookieSecure)
-  mEmail <- liftIO $ verifyLoginChallenge key pepper params.challenge params.code
-  email <- maybe (throwJsonError err401 "invalid or expired code") pure mEmail
-  user <- runBeam $ do
-    u <- findOrCreateUser email
-    pure u
+  mResult <- liftIO $ verifyLoginChallenge key pepper params.challenge params.code
+  (flow, email) <- maybe (throwJsonError err401 "Código inválido o vencido") pure mResult
+  user <- case flow of
+    SigninFlow -> do
+      existing <- runBeam $ fetchUserByEmail email
+      maybe (throwJsonError err404 "No encontramos una cuenta con ese email") pure existing
+    SignupFlow nombre -> do
+      existing <- runBeam $ fetchUserByEmail email
+      case existing of
+        Just _ -> throwJsonError err409 "Ya existe una cuenta con ese email. Iniciá sesión."
+        Nothing -> runBeam $ createUser email nombre
   eToken <- liftIO $ issueToken key user
   case eToken of
     Left err ->

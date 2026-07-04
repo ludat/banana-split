@@ -436,6 +436,13 @@ headerInfo currentPath store grupo =
             , share = grupoShare
             }
 
+        Path.Signup ->
+            { crumbs = []
+            , title = "Banana split"
+            , showTabs = False
+            , share = grupoShare
+            }
+
 
 viewBreadcrumb : List Crumb -> Html Msg
 viewBreadcrumb crumbs =

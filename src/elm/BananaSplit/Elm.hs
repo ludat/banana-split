@@ -62,7 +62,8 @@ generateElmFiles = do
     )
     "ui/generated-src/"
     [ DefineElm (Proxy :: Proxy CreateGrupoParams)
-    , DefineElm (Proxy :: Proxy LoginParams)
+    , DefineElm (Proxy :: Proxy SigninParams)
+    , DefineElm (Proxy :: Proxy SignupParams)
     , DefineElm (Proxy :: Proxy LoginChallenge)
     , DefineElm (Proxy :: Proxy VerifyParams)
     , DefineElm (Proxy :: Proxy User)

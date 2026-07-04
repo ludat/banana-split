@@ -51,6 +51,9 @@ grupoIdFromPath path =
         Path.Login ->
             Nothing
 
+        Path.Signup ->
+            Nothing
+
 
 lookupParticipante : GrupoLike g -> ParticipanteId -> Participante
 lookupParticipante grupo participanteId =

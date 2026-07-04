@@ -8,6 +8,7 @@ module Site.Auth (
   issueToken,
   verifyToken,
   generateLoginCode,
+  ChallengeFlow (..),
   issueLoginChallenge,
   verifyLoginChallenge,
   renderSessionCookie,
@@ -78,6 +79,14 @@ loginChallengeDurationSeconds = 15 * 60
 loginPurpose :: Value
 loginPurpose = String "login-challenge"
 
+-- | Which flow a challenge belongs to. Signup carries the display name the
+-- caller typed so it survives the (stateless) round-trip to the verify step;
+-- signin needs nothing beyond the email already in the challenge.
+data ChallengeFlow
+  = SignupFlow Text
+  | SigninFlow
+  deriving (Show, Eq)
+
 -- | A fresh 6-digit login code — short enough to read out over the phone or
 -- type on a device that can't open a link.
 generateLoginCode :: IO Text
@@ -102,10 +111,17 @@ codeCommitment pepper email code =
 
 -- | Sign a short-lived challenge for @email@ that commits to @code@ without
 -- containing it. The client keeps the returned challenge and later presents it
--- together with the code (which arrived out-of-band by email) to log in.
-issueLoginChallenge :: JWK -> ByteString -> Text -> Text -> IO (Either JWTError Text)
-issueLoginChallenge key pepper email code = do
+-- together with the code (which arrived out-of-band by email) to log in. The
+-- flow (and, for signup, the display name) rides inside the signed challenge so
+-- it can't be tampered with between the two steps.
+issueLoginChallenge :: JWK -> ByteString -> ChallengeFlow -> Text -> Text -> IO (Either JWTError Text)
+issueLoginChallenge key pepper flow email code = do
   now <- getCurrentTime
+  let withFlow =
+        case flow of
+          SigninFlow -> addClaim "flow" (String "signin")
+          SignupFlow nombre ->
+            addClaim "flow" (String "signup") . addClaim "nombre" (String nombre)
   let claims =
         emptyClaimsSet
           & claimIat ?~ NumericDate now
@@ -113,14 +129,16 @@ issueLoginChallenge key pepper email code = do
           & addClaim "purpose" loginPurpose
           & addClaim "email" (String email)
           & addClaim "code" (String (codeCommitment pepper email code))
+          & withFlow
   signed <-
     runJOSE
       $ signClaims key (newJWSHeader (RequiredProtection, HS256)) claims
   pure $ fmap (decodeUtf8 . BSL.toStrict . encodeCompact) (signed :: Either JWTError SignedJWT)
 
--- | Check a challenge + submitted code and recover the email if they match.
--- Returns 'Nothing' on a bad signature, expiry, wrong purpose, or wrong code.
-verifyLoginChallenge :: JWK -> ByteString -> Text -> Text -> IO (Maybe Text)
+-- | Check a challenge + submitted code and recover the flow + email if they
+-- match. Returns 'Nothing' on a bad signature, expiry, wrong purpose, unknown
+-- flow, or wrong code.
+verifyLoginChallenge :: JWK -> ByteString -> Text -> Text -> IO (Maybe (ChallengeFlow, Text))
 verifyLoginChallenge key pepper challenge code = do
   result <-
     runJOSE $ do
@@ -134,7 +152,11 @@ verifyLoginChallenge key pepper challenge code = do
       expected <- stringClaim claims "code"
       -- Constant-time so a wrong code leaks nothing through timing.
       guard (constEq (encodeUtf8 expected) (encodeUtf8 (codeCommitment pepper email code)))
-      pure email
+      flow <- case stringClaim claims "flow" of
+        Just "signin" -> Just SigninFlow
+        Just "signup" -> SignupFlow <$> stringClaim claims "nombre"
+        _ -> Nothing
+      pure (flow, email)
 
 stringClaim :: ClaimsSet -> Text -> Maybe Text
 stringClaim claims name =

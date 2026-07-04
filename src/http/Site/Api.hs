@@ -68,8 +68,10 @@ data Api routes
   , _routeReceiptImageParse ::
       routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
   , -- Auth
-    _routeAuthLogin ::
-      routes :- "auth" :> "login" :> ReqBody '[JSON] LoginParams :> Post '[JSON] LoginChallenge
+    _routeAuthSignup ::
+      routes :- "auth" :> "signup" :> ReqBody '[JSON] SignupParams :> Post '[JSON] LoginChallenge
+  , _routeAuthSignin ::
+      routes :- "auth" :> "signin" :> ReqBody '[JSON] SigninParams :> Post '[JSON] LoginChallenge
   , _routeAuthVerify ::
       routes :- "auth" :> "verify" :> ReqBody '[JSON] VerifyParams :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] User)
   , _routeAuthLogout ::
@@ -90,8 +92,18 @@ data ParticipanteAddParams = ParticipanteAddParams
   }
   deriving (Show, Eq, Generic)
 
-data LoginParams = LoginParams
+-- | Signin: an existing user asks for a login code by email.
+data SigninParams = SigninParams
   { email :: Text
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Signup: a new user provides a display name alongside their email. The name
+-- travels through the challenge so it can be persisted once the code is
+-- verified.
+data SignupParams = SignupParams
+  { nombre :: Text
+  , email :: Text
   }
   deriving (Show, Eq, Generic)
 
@@ -152,7 +164,8 @@ data ReceiptImageResponse
   deriving (Show, Eq, Generic)
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
-Elm.deriveBoth Elm.defaultOptions ''LoginParams
+Elm.deriveBoth Elm.defaultOptions ''SigninParams
+Elm.deriveBoth Elm.defaultOptions ''SignupParams
 Elm.deriveBoth Elm.defaultOptions ''LoginChallenge
 Elm.deriveBoth Elm.defaultOptions ''VerifyParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
