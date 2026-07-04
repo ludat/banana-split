@@ -5,10 +5,12 @@ import Components.Bootstrap as Bs
 import Components.Toasts
 import Date exposing (Date)
 import Effect exposing (Effect)
-import Html exposing (Html, a, button, div, h5, i, span, text)
+import Generated.Api exposing (User)
+import Html exposing (Html, a, button, div, h5, hr, i, li, span, text, ul)
 import Html.Attributes as Attr exposing (class, classList, type_)
 import Html.Events exposing (onClick)
 import Layout exposing (Layout)
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared.Model as Shared
@@ -26,7 +28,7 @@ layout _ shared _ =
     Layout.new
         { init = \() -> init
         , update = update
-        , view = view shared.toasties shared.lastReadChangelog shared.today
+        , view = view shared.toasties shared.lastReadChangelog shared.today shared.currentUser
         , subscriptions = subscriptions
         }
 
@@ -61,6 +63,7 @@ type Msg
     | OpenChangelog
     | CloseChangelog
     | MarkChangelogReadAndClose
+    | DoLogout
 
 
 update : Msg -> Model -> ( Model, Effect Msg )
@@ -96,6 +99,11 @@ update msg model =
             , Effect.sendSharedMsg Shared.MarkChangelogRead
             )
 
+        DoLogout ->
+            ( { model | navBarOpen = False }
+            , Effect.sendSharedMsg Shared.Logout
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
@@ -110,9 +118,10 @@ view :
     Toasts
     -> Maybe Date
     -> Date
+    -> WebData User
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view toasts lastReadChangelog now { toContentMsg, model, content } =
+view toasts lastReadChangelog now currentUser { toContentMsg, model, content } =
     let
         recentEntries =
             Changelog.recentChangelog lastReadChangelog now
@@ -133,9 +142,9 @@ view toasts lastReadChangelog now { toContentMsg, model, content } =
             content.title
     , body =
         [ Html.map toContentMsg <|
-            viewNavbar unread
+            viewNavbar unread currentUser
         , Html.map toContentMsg <|
-            viewOffcanvas model unread
+            viewOffcanvas model unread currentUser
         , Html.map toContentMsg <|
             viewChangelogModal model.changelogOpen modalEntries
         , Html.map toContentMsg <|
@@ -145,8 +154,8 @@ view toasts lastReadChangelog now { toContentMsg, model, content } =
     }
 
 
-viewNavbar : Int -> Html Msg
-viewNavbar unread =
+viewNavbar : Int -> WebData User -> Html Msg
+viewNavbar unread currentUser =
     Bs.navbar []
         [ button
             [ type_ "button"
@@ -172,15 +181,60 @@ viewNavbar unread =
 
               else
                 text ""
+            , viewUserIcon currentUser
             ]
+        ]
+
+
+viewUserIcon : WebData User -> Html Msg
+viewUserIcon currentUser =
+    let
+        icon =
+            case currentUser of
+                Success _ ->
+                    "bi bi-person-circle fs-5"
+
+                _ ->
+                    "bi bi-person fs-5"
+
+        menuItems =
+            case currentUser of
+                Success user ->
+                    [ li [] [ span [ class "dropdown-header text-truncate" ] [ text user.email ] ]
+                    , li [] [ hr [ class "dropdown-divider" ] [] ]
+                    , li []
+                        [ button
+                            [ type_ "button", class "dropdown-item", onClick DoLogout ]
+                            [ text "Cerrar sesión" ]
+                        ]
+                    ]
+
+                _ ->
+                    [ li []
+                        [ button
+                            [ type_ "button", class "dropdown-item", onClick (NavigateAndClose Path.Login) ]
+                            [ text "Iniciar sesión" ]
+                        ]
+                    ]
+    in
+    div [ class "dropdown" ]
+        [ button
+            [ type_ "button"
+            , class "btn btn-link text-reset p-1"
+            , Attr.attribute "data-bs-toggle" "dropdown"
+            , Attr.attribute "aria-expanded" "false"
+            , Attr.attribute "aria-label" "Cuenta"
+            ]
+            [ i [ class icon ] [] ]
+        , ul [ class "dropdown-menu dropdown-menu-end" ] menuItems
         ]
 
 
 {-| The global app menu shown in the offcanvas, identical on every page. Items
 that don't have a page/feature yet render as non-functional placeholders.
 -}
-viewOffcanvas : Model -> Int -> Html Msg
-viewOffcanvas model unread =
+viewOffcanvas : Model -> Int -> WebData User -> Html Msg
+viewOffcanvas model unread currentUser =
     let
         menuLink : Msg -> List (Html Msg) -> Html Msg
         menuLink msg children =
@@ -251,6 +305,16 @@ viewOffcanvas model unread =
                 , div [ class "nav nav-pills flex-column border-top pt-2 mt-2" ]
                     [ menuLink (NavigateAndClose Path.Home_) [ text "Crear nuevo Grupo" ]
                     ]
+                , div [ class "nav nav-pills flex-column border-top pt-2 mt-2" ] <|
+                    case currentUser of
+                        Success user ->
+                            [ span [ class "nav-link disabled text-truncate" ]
+                                [ text ("Sesión: " ++ user.email) ]
+                            , menuLink DoLogout [ text "Cerrar sesión" ]
+                            ]
+
+                        _ ->
+                            [ menuLink (NavigateAndClose Path.Login) [ text "Iniciar sesión" ] ]
                 , div [ class "nav nav-pills flex-column border-top pt-2 mt-auto" ]
                     [ menuPlaceholder "Idioma: Español" ]
                 , div [ class "nav nav-pills flex-column border-top pt-2" ]

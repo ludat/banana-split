@@ -10,11 +10,13 @@ module Shared exposing
 
 import Date
 import Effect exposing (Effect, incoming)
-import Generated.Api exposing (ULID)
+import Generated.Api as Api exposing (ULID)
 import Json.Decode
 import Json.Encode
 import Models.Store as Store
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
+import Route.Path
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Time
@@ -63,6 +65,7 @@ init possiblyFlags _ =
     ( { toasties = Toast.initialState
       , store = Store.empty
       , userId = Nothing
+      , currentUser = Loading
       , now = now
       , today = Date.fromPosix timezone now
       , timezoneName = flags.timeZone
@@ -73,7 +76,7 @@ init possiblyFlags _ =
                 |> Maybe.map (\ms -> Date.fromPosix timezone (Time.millisToPosix ms))
       , origin = flags.origin
       }
-    , Effect.none
+    , Effect.sendCmd (Api.getMe (RemoteData.fromResult >> GotCurrentUser))
     )
 
 
@@ -143,6 +146,21 @@ update _ msg model =
                 | userId = userId
               }
             , Effect.none
+            )
+
+        GotCurrentUser currentUser ->
+            ( { model | currentUser = currentUser }
+            , Effect.none
+            )
+
+        Logout ->
+            ( { model | currentUser = Loading }
+            , Effect.sendCmd (Api.postAuthLogout (\_ -> LoggedOut))
+            )
+
+        LoggedOut ->
+            ( { model | currentUser = NotAsked }
+            , Effect.pushRoutePath Route.Path.Login
             )
 
         MarkChangelogRead ->

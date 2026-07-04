@@ -6,6 +6,7 @@ module BananaSplit (
   module BananaSplit.Participante,
   module BananaSplit.Repartija,
   module BananaSplit.ULID,
+  module BananaSplit.User,
 ) where
 
 import BananaSplit.Core
@@ -15,3 +16,4 @@ import BananaSplit.Monto
 import BananaSplit.Participante
 import BananaSplit.Repartija
 import BananaSplit.ULID
+import BananaSplit.User

@@ -14,6 +14,8 @@ module BananaSplit.Persistence (
   deleteShallowParticipante,
   deleteTransaccionCongelada,
   fetchGrupo,
+  fetchUserById,
+  findOrCreateUser,
   fetchGrupoIdFromClaim,
   fetchGrupoIdFromRepartija,
   fetchPago,
@@ -35,6 +37,7 @@ import Data.Decimal qualified as Decimal
 import Data.List.NonEmpty qualified as NE
 import Data.Pool qualified as Pool
 import Data.String (String)
+import Data.Time (getCurrentTime)
 import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres
@@ -115,6 +118,49 @@ createGrupo nombre participante = do
       , M.participantes = [p]
       , M.monedaPorDefecto = M.ARS
       }
+
+-- | Find a user by (normalized) email, creating one if it doesn't exist yet.
+-- This is the whole signup/signin flow: logging in with an unknown email just
+-- creates the account. New users get their nombre set to their email.
+findOrCreateUser :: Text -> Pg M.User
+findOrCreateUser rawEmail = do
+  let email = M.normalizeEmail rawEmail
+  existing <- runSelectReturningOne $ select $ do
+    u <- all_ db.users
+    guard_ (u.email ==. val_ email)
+    pure u
+  case existing of
+    Just u -> pure $ toModelUser u
+    Nothing -> do
+      newId <- liftIO ULID.getULID
+      now <- liftIO getCurrentTime
+      runInsert
+        $ insert db.users
+        $ insertValues
+          [ User { id = newId, email = email, nombre = email, created_at = now }
+          ]
+      pure
+        $ M.User
+          { M.id = newId
+          , M.email = email
+          , M.nombre = email
+          }
+
+fetchUserById :: ULID -> Pg (Maybe M.User)
+fetchUserById userId = do
+  existing <- runSelectReturningOne $ select $ do
+    u <- all_ db.users
+    guard_ (u.id ==. val_ userId)
+    pure u
+  pure $ fmap toModelUser existing
+
+toModelUser :: User -> M.User
+toModelUser u =
+  M.User
+    { M.id = u.id
+    , M.email = u.email
+    , M.nombre = u.nombre
+    }
 
 fetchGrupo :: ULID -> Pg (Maybe M.ShallowGrupo)
 fetchGrupo aGrupoId = do
@@ -364,7 +410,7 @@ addParticipante grupoId name = do
   runInsert
     $ insert db.participantes
     $ insertValues
-      [ Participante newId (GrupoId grupoId) name
+      [ Participante newId (GrupoId grupoId) name (UserId Nothing)
       ]
   pure
     $ Right

@@ -17,6 +17,8 @@ import Servant.Server.Generic
 import WaiAppStatic.Types (StaticSettings (..))
 
 import Site.Api
+import Site.Auth (AuthContext, authHandler)
+import Site.Handler.Auth
 import Site.Handler.Grupos
 import Site.Handler.Pagos
 import Site.Handler.Receipt
@@ -49,6 +51,10 @@ serverT =
       , _routeGrupoUnfreeze = handleUnfreezeGrupo
       , _routeGrupoSaldarTransaccion = handleSaldarTransaccion
       , _routeReceiptImageParse = handleReceiptImageParse
+      , _routeAuthLogin = handleLogin
+      , _routeAuthVerify = handleVerify
+      , _routeAuthLogout = handleLogout
+      , _routeMe = handleMe
       , _routeHealth = pure "ok"
       -- , _routePagoNew = handlePagoNew
       -- , _routePagoNewPatch = handlePagoNewPatch
@@ -67,6 +73,14 @@ proxyApi = Proxy
 nt :: App -> AppHandler a -> Handler a
 nt s x = runReaderT x s
 
+authContext :: App -> Context AuthContext
+authContext appState = authHandler appState :. EmptyContext
+
 app :: App -> Application
 app appState =
-  serve proxyApi $ hoistServer proxyApi (nt appState) serverT
+  serveWithContext proxyApi (authContext appState) $
+    hoistServerWithContext
+      proxyApi
+      (Proxy :: Proxy AuthContext)
+      (nt appState)
+      serverT

@@ -10,7 +10,7 @@
 module BananaSplit.Persistence.Schema where
 
 import Data.String (String)
-import Data.Time (Day)
+import Data.Time (Day, UTCTime)
 import Database.Beam as Beam
 import Database.Beam.Backend
 import Database.Beam.Postgres
@@ -22,6 +22,7 @@ import Preludat
 
 data BananaSplitDb f = BananaSplitDb
   { grupos :: f (TableEntity GrupoT)
+  , users :: f (TableEntity UserT)
   , participantes :: f (TableEntity ParticipanteT)
   , pagos :: f (TableEntity PagoT)
   , distribuciones :: f (TableEntity DistribucionT)
@@ -65,10 +66,39 @@ instance Beam.Table GrupoT where
   data PrimaryKey GrupoT f = GrupoId (Columnar f ULID) deriving (Generic, Beamable)
   primaryKey = GrupoId . (.id)
 
+data UserT f = User
+  { id :: Columnar f ULID
+  , email :: Columnar f Text
+  , nombre :: Columnar f Text
+  , created_at :: Columnar f UTCTime
+  }
+  deriving (Generic, Beamable)
+
+type UserId = PrimaryKey UserT Identity
+
+type User = UserT Identity
+
+deriving instance Show UserId
+
+deriving instance Eq UserId
+
+deriving instance Show User
+
+deriving instance Eq User
+
+deriving instance Show (PrimaryKey UserT (Nullable Identity))
+
+deriving instance Eq (PrimaryKey UserT (Nullable Identity))
+
+instance Table UserT where
+  data PrimaryKey UserT f = UserId (Columnar f ULID) deriving (Generic, Beamable)
+  primaryKey = UserId . (.id)
+
 data ParticipanteT f = Participante
   { id :: Columnar f ULID
   , grupo :: PrimaryKey GrupoT f
   , nombre :: Columnar f Text
+  , user :: PrimaryKey UserT (Nullable f)
   }
   deriving (Generic, Beamable)
 

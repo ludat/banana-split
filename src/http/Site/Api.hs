@@ -67,6 +67,15 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "transacciones-congeladas" :> Capture "transaccionId" ULID :> "saldar" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
   , _routeReceiptImageParse ::
       routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
+  , -- Auth
+    _routeAuthLogin ::
+      routes :- "auth" :> "login" :> ReqBody '[JSON] LoginParams :> Post '[JSON] LoginChallenge
+  , _routeAuthVerify ::
+      routes :- "auth" :> "verify" :> ReqBody '[JSON] VerifyParams :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] User)
+  , _routeAuthLogout ::
+      routes :- "auth" :> "logout" :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] Text)
+  , _routeMe ::
+      routes :- AuthProtect "session" :> "me" :> Get '[JSON] User
   , _routeHealth ::
       routes :- "health" :> Get '[JSON] Text
       -- , _routeRepartijaItemDesdoblar ::
@@ -78,6 +87,25 @@ type TheAPI routes = ToServant Api routes
 
 data ParticipanteAddParams = ParticipanteAddParams
   { name :: Text
+  }
+  deriving (Show, Eq, Generic)
+
+data LoginParams = LoginParams
+  { email :: Text
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Returned by @login@: the client holds this challenge and later submits it
+-- back together with the emailed code. It commits to the code without
+-- containing it (see "Site.Auth"), so it is safe to hand to the browser.
+data LoginChallenge = LoginChallenge
+  { challenge :: Text
+  }
+  deriving (Show, Eq, Generic)
+
+data VerifyParams = VerifyParams
+  { challenge :: Text
+  , code :: Text
   }
   deriving (Show, Eq, Generic)
 
@@ -124,6 +152,9 @@ data ReceiptImageResponse
   deriving (Show, Eq, Generic)
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
+Elm.deriveBoth Elm.defaultOptions ''LoginParams
+Elm.deriveBoth Elm.defaultOptions ''LoginChallenge
+Elm.deriveBoth Elm.defaultOptions ''VerifyParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''UpdateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo

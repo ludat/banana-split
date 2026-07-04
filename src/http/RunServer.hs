@@ -18,7 +18,9 @@ import System.Posix (Handler (..), installHandler, sigTERM)
 
 import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.Receipts (ReceiptsReaderConfig (..))
+import Site.Auth (mkSessionKey)
 import Site.Config (createConfig)
+import Site.Mailer (mkMailer)
 import Site.Server qualified
 import Site.Types
 
@@ -29,9 +31,14 @@ runBackend = do
   openRouterKey <- Conferer.fetchFromConfig "openrouter.apikey" config
   openRouterModels <- Conferer.fetchFromConfig "openrouter.models" config
 
+  jwtSecret <- Conferer.fetchFromConfig "auth.jwtsecret" config
+  cookieSecure' <- Conferer.fetchFromConfig "auth.securecookie" config
+
   beamPool <- Persistence.makePool config
 
   httpManager <- newManager tlsManagerSettings
+
+  mailer <- mkMailer config
 
   let appState =
         App
@@ -42,6 +49,10 @@ runBackend = do
                 , models = openRouterModels
                 , manager = httpManager
                 }
+          , jwk = mkSessionKey jwtSecret
+          , authPepper = encodeUtf8 jwtSecret
+          , cookieSecure = cookieSecure'
+          , mailer = mailer
           }
 
   let shutdownAction = Pool.destroyAllResources beamPool

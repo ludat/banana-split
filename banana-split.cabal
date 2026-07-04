@@ -46,6 +46,7 @@ common base-settings
     http-client-tls,
     http-media,
     http-types,
+    jose,
     mtl,
     postgresql-simple,
     pretty-simple,
@@ -59,6 +60,7 @@ common base-settings
     scientific,
     servant,
     servant-elm,
+    servant-foreign,
     servant-server,
     string-conversions,
     string-interpolate,
@@ -92,6 +94,7 @@ library
     BananaSplit.Repartija
     BananaSplit.TestUtils
     BananaSplit.ULID
+    BananaSplit.User
     Preludat
 
 library database
@@ -136,12 +139,15 @@ library http
   exposed-modules:
     RunServer
     Site.Api
+    Site.Auth
     Site.Config
+    Site.Handler.Auth
     Site.Handler.Grupos
     Site.Handler.Pagos
     Site.Handler.Receipt
     Site.Handler.Repartijas
     Site.Handler.Utils
+    Site.Mailer
     Site.Server
     Site.Types
 
@@ -149,6 +155,12 @@ library http
     banana-split,
     banana-split:database,
     banana-split:receipts,
+    cookie,
+    crypton,
+    jose,
+    lens,
+    memory,
+    random,
 
 executable banana-split
   import: base-settings, threaded-rts

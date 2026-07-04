@@ -3,69 +3,34 @@ module BananaSplit.Persistence.SpecHook (
   hook,
 ) where
 
-import Conferer qualified
-import Database.Beam.Postgres (Pg, runBeamPostgres)
-import Database.PostgreSQL.Simple (Connection, close, connectPostgreSQL, execute_)
+import Data.Pool qualified as Pool
+import Database.Beam.Postgres (Pg)
+import Database.Beam.Postgres qualified as Beam
+import Database.PostgreSQL.Simple qualified as Pg
 import Protolude
 import Test.Hspec
 
-import BananaSplit.PgRoll (init, startAndComplete)
-import Site.Config (createConfig)
+import BananaSplit.Persistence qualified as Persistence
+import BananaSplit.PgRoll qualified as PgRoll
+import Site.Config qualified as Config
 
 hook :: SpecWith RunDb -> Spec
 hook =
-  aroundAll_ setupDbAndReset . around withTestDbConn
+  aroundAll setupDb . aroundWith withTestDbConn
 
 newtype RunDb = RunDb (forall a. Pg a -> IO a)
 
-setupDbAndReset :: IO () -> IO ()
-setupDbAndReset action = do
-  config <- createConfig "test"
-  init config
-  startAndComplete config
-  dbUrl <- Conferer.fetchFromConfig "database.url" config
-  conn <- connectPostgreSQL dbUrl
-  resetTestDb conn
-  action
+setupDb :: ActionWith Pg.Connection -> IO ()
+setupDb action = do
+  config <- Config.createConfig "test"
+  PgRoll.init config
+  PgRoll.startAndComplete config
+  pool <- Persistence.makePool config
+  Pool.withResource pool $ \conn -> do
+    action conn
 
-getTestDbUrl :: IO ByteString
-getTestDbUrl = do
-  config <- createConfig "test"
-  Conferer.fetchFromConfig "database.url" config
-
-connectTestDb :: IO Connection
-connectTestDb = do
-  dbUrl <- getTestDbUrl
-  connectPostgreSQL dbUrl
-
-resetTestDb :: Connection -> IO ()
-resetTestDb conn = do
-  -- void $ execute_ conn "TRUNCATE TABLE repartija_claims CASCADE"
-  -- void $ execute_ conn "TRUNCATE TABLE repartija_items CASCADE"
-  -- void $ execute_ conn "TRUNCATE TABLE repartijas CASCADE"
-  -- void $ execute_ conn "TRUNCATE TABLE distribuciones_montos_especificos_items CASCADE"
-  -- void $ execute_ conn "TRUNCATE TABLE distribuciones_montos_especificos CASCADE"
-  -- void $ execute_ conn "TRUNCATE TABLE distribuciones_monto_equitativo_items CASCADE"
-  -- void $ execute_ conn "TRUNCATE TABLE distribuciones_monto_equitativo CASCADE"
-  void $ execute_ conn "TRUNCATE TABLE distribuciones CASCADE"
-  -- void $ execute_ conn "TRUNCATE TABLE pagos CASCADE"
-  -- void $ execute_ conn "TRUNCATE TABLE participantes CASCADE"
-  void $ execute_ conn "TRUNCATE TABLE grupos CASCADE"
-
--- | Combinator that sets up a test database connection and resets it after the test
-withTestDbConn :: ActionWith RunDb -> IO ()
-withTestDbConn action = do
-  bracket
-    ( do
-        c <- connectTestDb
-        _ <- runBeamPostgres c $ liftIO $ execute_ c "BEGIN"
-        pure c
-    )
-    ( \c -> do
-        _ <- runBeamPostgres c $ liftIO $ execute_ c "ROLLBACK"
-        close c
-        pure ()
-    )
-    ( \conn -> do
-        action $ RunDb $ runBeamPostgres conn
-    )
+withTestDbConn :: ActionWith RunDb -> ActionWith Pg.Connection
+withTestDbConn action = \conn -> do
+  _ <- Pg.execute_ conn "BEGIN"
+  (action $ RunDb $ Beam.runBeamPostgres conn)
+    `finally` Pg.execute_ conn "ROLLBACK"

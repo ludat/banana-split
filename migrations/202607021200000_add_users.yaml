@@ -1,0 +1,28 @@
+operations:
+  - create_table:
+      name: "users"
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "email"
+          type: "text"
+          nullable: false
+          unique: true
+        - name: "nombre"
+          type: "text"
+          nullable: false
+        - name: "created_at"
+          type: "timestamptz"
+          nullable: false
+          default: "now()"
+  - add_column:
+      table: participantes
+      column:
+        name: user__id
+        type: text
+        nullable: true
+        references:
+          table: users
+          column: id
+          name: fk_participantes_user__id

@@ -8,8 +8,9 @@ own file, so they can be imported by `Effect.elm`
 
 -}
 
-import Generated.Api exposing (ULID)
+import Generated.Api exposing (ULID, User)
 import Models.Store.Types exposing (StoreMsg)
+import RemoteData exposing (WebData)
 import Route.Path as Route
 import Time exposing (Posix)
 import Utils.Toasts.Types exposing (Toast, ToastMsg)
@@ -23,5 +24,8 @@ type Msg
     | NavigateTo Route.Path
     | SetCurrentUser { grupoId : ULID, userId : ULID }
     | CurrentUserLoaded { grupoId : ULID, userId : Maybe ULID }
+    | GotCurrentUser (WebData User)
+    | Logout
+    | LoggedOut
     | MarkChangelogRead
     | Tick Posix

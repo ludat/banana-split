@@ -33,6 +33,75 @@ jsonEncCreateGrupoParams  val =
 
 
 
+type alias LoginParams  =
+   { email: String
+   }
+
+jsonDecLoginParams : Json.Decode.Decoder ( LoginParams )
+jsonDecLoginParams =
+   Json.Decode.succeed (\pemail -> {email = pemail}) |> custom (Json.Decode.string)
+
+jsonEncLoginParams : LoginParams -> Value
+jsonEncLoginParams  val =
+   Json.Encode.string val.email
+
+
+type alias LoginChallenge  =
+   { challenge: String
+   }
+
+jsonDecLoginChallenge : Json.Decode.Decoder ( LoginChallenge )
+jsonDecLoginChallenge =
+   Json.Decode.succeed (\pchallenge -> {challenge = pchallenge}) |> custom (Json.Decode.string)
+
+jsonEncLoginChallenge : LoginChallenge -> Value
+jsonEncLoginChallenge  val =
+   Json.Encode.string val.challenge
+
+
+type alias VerifyParams  =
+   { challenge: String
+   , code: String
+   }
+
+jsonDecVerifyParams : Json.Decode.Decoder ( VerifyParams )
+jsonDecVerifyParams =
+   Json.Decode.succeed (\pchallenge pcode -> {challenge = pchallenge, code = pcode})
+   |> required "challenge" (Json.Decode.string)
+   |> required "code" (Json.Decode.string)
+
+jsonEncVerifyParams : VerifyParams -> Value
+jsonEncVerifyParams  val =
+   Json.Encode.object
+   [ ("challenge", Json.Encode.string val.challenge)
+   , ("code", Json.Encode.string val.code)
+   ]
+
+
+
+type alias User  =
+   { id: ULID
+   , email: String
+   , nombre: String
+   }
+
+jsonDecUser : Json.Decode.Decoder ( User )
+jsonDecUser =
+   Json.Decode.succeed (\pid pemail pnombre -> {id = pid, email = pemail, nombre = pnombre})
+   |> required "id" (jsonDecULID)
+   |> required "email" (Json.Decode.string)
+   |> required "nombre" (Json.Decode.string)
+
+jsonEncUser : User -> Value
+jsonEncUser  val =
+   Json.Encode.object
+   [ ("id", jsonEncULID val.id)
+   , ("email", Json.Encode.string val.email)
+   , ("nombre", Json.Encode.string val.nombre)
+   ]
+
+
+
 type alias UpdateGrupoParams  =
    { nombre: String
    , monedaPorDefecto: Moneda
@@ -1286,6 +1355,121 @@ postReceiptParseimage body toMsg =
                 Http.jsonBody (jsonEncReceiptImageRequest body)
             , expect =
                 Http.expectJson toMsg jsonDecReceiptImageResponse
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthLogin : LoginParams -> (Result Http.Error  (LoginChallenge)  -> msg) -> Cmd msg
+postAuthLogin body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "login"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncLoginParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecLoginChallenge
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthVerify : VerifyParams -> (Result Http.Error  (User)  -> msg) -> Cmd msg
+postAuthVerify body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "verify"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncVerifyParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecUser
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthLogout : (Result Http.Error  (String)  -> msg) -> Cmd msg
+postAuthLogout toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "logout"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg Json.Decode.string
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+getMe : (Result Http.Error  (User)  -> msg) -> Cmd msg
+getMe toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "me"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecUser
             , timeout =
                 Nothing
             , tracker =
