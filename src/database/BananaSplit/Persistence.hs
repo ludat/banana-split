@@ -7,7 +7,10 @@ module BananaSplit.Persistence (
   runMigration,
   recomputePagos,
   addParticipante,
+  claimParticipante,
+  unclaimParticipante,
   createGrupo,
+  createGrupoForUser,
   db,
   deletePago,
   deleteRepartijaClaim,
@@ -17,6 +20,7 @@ module BananaSplit.Persistence (
   fetchUserById,
   fetchUserByEmail,
   createUser,
+  updateUser,
   findOrCreateUser,
   fetchGrupoIdFromClaim,
   fetchGrupoIdFromRepartija,
@@ -38,8 +42,8 @@ import Conferer qualified
 import Data.Decimal qualified as Decimal
 import Data.List.NonEmpty qualified as NE
 import Data.Pool qualified as Pool
-import Data.Text qualified as Text
 import Data.String (String)
+import Data.Text qualified as Text
 import Data.Time (getCurrentTime)
 import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
@@ -102,23 +106,50 @@ newtype MissingPGRollSchema = MissingPGRollSchema
   deriving anyclass (Exception)
 
 createGrupo :: Text -> Text -> Pg M.Grupo
-createGrupo nombre participante = do
+createGrupo nombre participanteNombre =
+  createGrupoWith
+    nombre
+    [M.Participante{M.id = nullUlid, M.nombre = participanteNombre, M.user = Nothing}]
+
+-- | Like 'createGrupo', but for a signed-in creator: the seeded participante
+-- is named after the user and born already claimed by them.
+createGrupoForUser :: Text -> M.User -> Pg M.Grupo
+createGrupoForUser nombre user =
+  createGrupoWith
+    nombre
+    [M.Participante{M.id = nullUlid, M.nombre = user.nombre, M.user = Just user}]
+
+-- | Create a grupo seeded with the given participantes. Their ids are ignored
+-- (pass 'nullUlid'): fresh ones are assigned on insert and returned in the
+-- resulting grupo.
+createGrupoWith :: Text -> [M.Participante] -> Pg M.Grupo
+createGrupoWith nombre participantes = do
   newId <- liftIO ULID.getULID
   runInsert
     $ insert db.grupos
     $ insertValues
       [ Grupo newId nombre False (M.ARS)
       ]
-  p <-
-    addParticipante newId participante
-      `orElse` \e -> fail $ show e
-
+  savedParticipantes <- forM participantes $ \participante -> do
+    participanteId <- liftIO ULID.getULID
+    pure
+      M.Participante
+        { M.id = participanteId
+        , M.nombre = participante.nombre
+        , M.user = participante.user
+        }
+  unless (null savedParticipantes)
+    $ runInsert
+    $ insert db.participantes
+    $ insertValues
+    $ savedParticipantes
+    & fmap (\p -> Participante p.id (GrupoId newId) p.nombre (UserId (fmap (.id) p.user)))
   pure
     $ M.Grupo
       { M.id = newId
       , M.nombre = nombre
       , M.pagos = []
-      , M.participantes = [p]
+      , M.participantes = savedParticipantes
       , M.monedaPorDefecto = M.ARS
       }
 
@@ -140,7 +171,7 @@ findOrCreateUser rawEmail = do
       runInsert
         $ insert db.users
         $ insertValues
-          [ User { id = newId, email = email, nombre = email, created_at = now }
+          [ User{id = newId, email = email, nombre = email, created_at = now}
           ]
       pure
         $ M.User
@@ -148,6 +179,19 @@ findOrCreateUser rawEmail = do
           , M.email = email
           , M.nombre = email
           }
+
+-- | Update a user's display name, returning the fresh model. Assumes the user
+-- exists (the caller holds a valid session for it).
+updateUser :: ULID -> Text -> Pg M.User
+updateUser userId rawNombre = do
+  let nombre = Text.strip rawNombre
+  runUpdate
+    $ update
+      db.users
+      (\u -> u.nombre <-. val_ nombre)
+      (\u -> u.id ==. val_ userId)
+  mUser <- fetchUserById userId
+  maybe (fail $ "user vanished while updating: " <> show userId) pure mUser
 
 fetchUserById :: ULID -> Pg (Maybe M.User)
 fetchUserById userId = do
@@ -181,7 +225,7 @@ createUser rawEmail rawNombre = do
   runInsert
     $ insert db.users
     $ insertValues
-      [ User { id = newId, email = email, nombre = nombre, created_at = now }
+      [ User{id = newId, email = email, nombre = nombre, created_at = now}
       ]
   pure
     $ M.User
@@ -430,15 +474,55 @@ fetchParticipantes grupoId = do
         & orderBy_ (asc_ . (.id))
     guard_ (p.grupo ==. GrupoId (val_ grupoId))
     pure p
-  pure
-    $ fmap
-      ( \p ->
-          M.Participante
-            { M.id = p.id
-            , M.nombre = p.nombre
-            }
-      )
-      participantes
+  owners <- fetchOwners participantes
+  pure $ fmap (\p -> toModelParticipante p (ownerOf owners p)) participantes
+
+-- | The owning account of a participante, looked up in a batch already fetched
+-- with 'fetchOwners' (avoids an N+1 while reading a grupo's participantes).
+ownerOf :: [M.User] -> Participante -> Maybe M.User
+ownerOf owners p = case p.user of
+  UserId (Just uid) -> find (\u -> u.id == uid) owners
+  UserId Nothing -> Nothing
+
+-- | Fetch, in one query, every account referenced as an owner by the given
+-- participantes.
+fetchOwners :: [Participante] -> Pg [M.User]
+fetchOwners participantes = do
+  let ownerIds = participantes & mapMaybe (\p -> case p.user of UserId mUlid -> mUlid)
+  case ownerIds of
+    [] -> pure []
+    _ -> do
+      rows <- runSelectReturningList $ select $ do
+        u <- all_ db.users
+        guard_ (u.id `in_` fmap val_ ownerIds)
+        pure u
+      pure $ fmap toModelUser rows
+
+-- | Convert a persisted participante row into the domain model, attaching the
+-- owning account ('Nothing' when unclaimed).
+toModelParticipante :: Participante -> Maybe M.User -> M.Participante
+toModelParticipante p mOwner =
+  M.Participante
+    { M.id = p.id
+    , M.nombre = p.nombre
+    , M.user = mOwner
+    }
+
+-- | Read a single participante by id, as the domain model. Fails loudly if the
+-- row is gone (callers hold a reference that should still exist).
+fetchParticipanteById :: ULID -> Pg M.Participante
+fetchParticipanteById participanteId = do
+  row <- runSelectReturningOne $ select $ do
+    p <- all_ db.participantes
+    guard_ (p.id ==. val_ participanteId)
+    pure p
+  case row of
+    Nothing -> fail $ "participante vanished: " <> show participanteId
+    Just p -> do
+      mOwner <- case p.user of
+        UserId (Just uid) -> fetchUserById uid
+        UserId Nothing -> pure Nothing
+      pure $ toModelParticipante p mOwner
 
 addParticipante :: ULID -> Text -> Pg (Either Text M.Participante)
 addParticipante grupoId name = do
@@ -453,7 +537,65 @@ addParticipante grupoId name = do
     $ M.Participante
       { M.id = newId
       , M.nombre = name
+      , M.user = Nothing
       }
+
+-- | Claim a participante as belonging to a user. A user owns at most one
+-- participante per grupo, enforced as a hard rule: the claim is refused if the
+-- user already owns another participante in the same grupo (they must unclaim it
+-- first). See 'M.ClaimRejection' for the ways it can be refused.
+--
+-- Re-claiming the participante you already own is a no-op that succeeds.
+claimParticipante :: ULID -> ULID -> ULID -> Pg (Either M.ClaimRejection M.Participante)
+claimParticipante grupoId participanteId userId = do
+  mParticipante <- runSelectReturningOne $ select $ do
+    p <- all_ db.participantes
+    guard_ (p.id ==. val_ participanteId)
+    guard_ (p.grupo ==. GrupoId (val_ grupoId))
+    pure p
+  case mParticipante of
+    Nothing -> pure $ Left M.ParticipanteNotFound
+    Just p ->
+      case p.user of
+        UserId (Just ownerId)
+          -- Re-claiming your own participante succeeds without changes.
+          | ownerId == userId -> Right <$> fetchParticipanteById participanteId
+          | otherwise -> pure $ Left M.ClaimedByOtherUser
+        UserId Nothing -> do
+          -- Refuse if the user already owns another participante in this grupo.
+          existingClaim <- runSelectReturningOne $ select $ do
+            other <- all_ db.participantes
+            guard_ (other.grupo ==. GrupoId (val_ grupoId))
+            guard_ (other.user ==. UserId (val_ (Just userId)))
+            pure other.id
+          case existingClaim of
+            Just _ -> pure $ Left M.AlreadyOwnAnotherParticipante
+            Nothing -> do
+              runUpdate
+                $ update
+                  db.participantes
+                  (\row -> row.user <-. UserId (val_ (Just userId)))
+                  (\row -> row.id ==. val_ participanteId)
+              Right <$> fetchParticipanteById participanteId
+
+-- | Drop a user's claim on a participante. Only clears the owner when the row is
+-- actually owned by @userId@, so it can't be used to steal or clear someone
+-- else's claim. Returns the refreshed participante either way.
+unclaimParticipante :: ULID -> ULID -> ULID -> Pg M.Participante
+unclaimParticipante grupoId participanteId userId = do
+  runUpdate
+    $ update
+      db.participantes
+      (\row -> row.user <-. UserId (val_ Nothing))
+      ( \row ->
+          row.id
+            ==. val_ participanteId
+            &&. row.grupo
+            ==. GrupoId (val_ grupoId)
+            &&. row.user
+            ==. UserId (val_ (Just userId))
+      )
+  fetchParticipanteById participanteId
 
 deleteShallowParticipante :: ULID -> ULID -> Pg M.ParticipanteId
 deleteShallowParticipante _grupoId participanteId = do

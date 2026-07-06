@@ -12,6 +12,7 @@ import Date exposing (Date)
 import Generated.Api exposing (ULID, User)
 import Models.Store.Types exposing (Store)
 import RemoteData exposing (WebData)
+import Set exposing (Set)
 import Time exposing (Posix, Zone)
 import Utils.Toasts.Types exposing (Toasts)
 
@@ -21,6 +22,7 @@ type alias Model =
     , store : Store
     , userId : Maybe ULID
     , currentUser : WebData User
+    , autoSelectedGrupos : Set ULID
     , now : Posix
     , today : Date
     , timezone : Zone

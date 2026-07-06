@@ -10,13 +10,15 @@ module Shared exposing
 
 import Date
 import Effect exposing (Effect, incoming)
-import Generated.Api as Api exposing (ULID)
+import Generated.Api as Api exposing (ClaimParticipanteResult(..), ClaimRejection(..), ULID)
 import Json.Decode
 import Json.Encode
+import Models.Grupo
 import Models.Store as Store
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path
+import Set
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Time
@@ -66,6 +68,7 @@ init possiblyFlags _ =
       , store = Store.empty
       , userId = Nothing
       , currentUser = Loading
+      , autoSelectedGrupos = Set.empty
       , now = now
       , today = Date.fromPosix timezone now
       , timezoneName = flags.timeZone
@@ -89,7 +92,7 @@ type alias Msg =
 
 
 update : Route () -> Msg -> Model -> ( Model, Effect Msg )
-update _ msg model =
+update route msg model =
     case msg of
         Shared.Msg.NoOp ->
             ( model
@@ -119,8 +122,11 @@ update _ msg model =
             let
                 ( store, cmd ) =
                     Store.update storeMsg model.store
+
+                ( newModel, autoEffect ) =
+                    maybeAutoSelect route { model | store = store }
             in
-            ( { model | store = store }, cmd )
+            ( newModel, Effect.batch [ cmd, autoEffect ] )
 
         SetCurrentUser { grupoId, userId } ->
             let
@@ -132,7 +138,13 @@ update _ msg model =
                     else
                         Just userId
             in
-            ( { model | userId = newUserId }
+            ( { model
+                | userId = newUserId
+
+                -- An explicit choice (including "—") sticks for the session:
+                -- guard the grupo so the owned participante won't override it.
+                , autoSelectedGrupos = Set.insert grupoId model.autoSelectedGrupos
+              }
             , case newUserId of
                 Just uid ->
                     Effect.saveCurrentUser grupoId uid
@@ -142,16 +154,32 @@ update _ msg model =
             )
 
         CurrentUserLoaded { userId } ->
-            ( { model
-                | userId = userId
-              }
-            , Effect.none
-            )
+            maybeAutoSelect route { model | userId = userId }
 
         GotCurrentUser currentUser ->
-            ( { model | currentUser = currentUser }
-            , Effect.none
+            maybeAutoSelect route { model | currentUser = currentUser }
+
+        ClaimParticipante { grupoId, participanteId } ->
+            ( model
+            , Effect.sendCmd <|
+                Api.putGrupoByIdParticipantesByParticipanteIdClaim grupoId
+                    participanteId
+                    (RemoteData.fromResult >> GotClaimResult { grupoId = grupoId })
             )
+
+        UnclaimParticipante { grupoId, participanteId } ->
+            ( model
+            , Effect.sendCmd <|
+                Api.deleteGrupoByIdParticipantesByParticipanteIdClaim grupoId
+                    participanteId
+                    (RemoteData.fromResult >> GotUnclaimResult { grupoId = grupoId })
+            )
+
+        GotClaimResult { grupoId } result ->
+            handleClaimResult grupoId result model
+
+        GotUnclaimResult { grupoId } result ->
+            handleUnclaimResult grupoId result model
 
         Logout ->
             ( { model | currentUser = Loading }
@@ -172,6 +200,127 @@ update _ msg model =
             ( { model | now = datetime, today = Date.fromPosix model.timezone datetime }
             , Effect.none
             )
+
+
+{-| When a logged-in user opens a grupo where they own a participante, select it
+as the active "Ver como" participante automatically — but only when they haven't
+picked one yet this session (`userId == Nothing` and the grupo isn't already in
+`autoSelectedGrupos`). An explicit pick (see `SetCurrentUser`) marks the grupo so
+this never overrides it. Fires opportunistically whenever the current user, the
+local pick, or the store changes.
+-}
+maybeAutoSelect : Route () -> Model -> ( Model, Effect Msg )
+maybeAutoSelect route model =
+    let
+        noop =
+            ( model, Effect.none )
+    in
+    case ( model.userId, model.currentUser ) of
+        ( Nothing, Success u ) ->
+            case Models.Grupo.grupoIdFromPath route.path of
+                Just grupoId ->
+                    if Set.member grupoId model.autoSelectedGrupos then
+                        noop
+
+                    else
+                        case Store.getGrupo grupoId model.store of
+                            Success grupo ->
+                                case Models.Grupo.ownedParticipante u.id grupo of
+                                    Just p ->
+                                        ( { model
+                                            | userId = Just p.id
+                                            , autoSelectedGrupos = Set.insert grupoId model.autoSelectedGrupos
+                                          }
+                                        , Effect.saveCurrentUser grupoId p.id
+                                        )
+
+                                    Nothing ->
+                                        noop
+
+                            _ ->
+                                noop
+
+                Nothing ->
+                    noop
+
+        _ ->
+            noop
+
+
+{-| Handle a claim response. On acceptance we switch "Ver como" to the claimed
+participante and remember the choice; on a typed rejection we show the matching
+message (the UI normally prevents rejections, so these cover stale state/races).
+-}
+handleClaimResult : ULID -> WebData ClaimParticipanteResult -> Model -> ( Model, Effect Msg )
+handleClaimResult grupoId result model =
+    case result of
+        Success (ClaimAccepted p) ->
+            ( { model
+                | userId = Just p.id
+                , autoSelectedGrupos = Set.insert grupoId model.autoSelectedGrupos
+              }
+            , Effect.batch
+                [ Store.refreshGrupo grupoId
+                , Effect.saveCurrentUser grupoId p.id
+                , Effect.sendToast { level = ToastSuccess, content = "Ahora sos " ++ p.nombre }
+                ]
+            )
+
+        Success (ClaimRejected reason) ->
+            ( model
+            , Effect.sendToast { level = ToastDanger, content = claimRejectionMessage reason }
+            )
+
+        Failure _ ->
+            ( model
+            , Effect.sendToast { level = ToastDanger, content = genericClaimError }
+            )
+
+        _ ->
+            ( model, Effect.none )
+
+
+{-| Handle an unclaim response. Just refresh the grupo (keeping whatever view was
+active) and confirm.
+-}
+handleUnclaimResult : ULID -> WebData Api.Participante -> Model -> ( Model, Effect Msg )
+handleUnclaimResult grupoId result model =
+    case result of
+        Success p ->
+            ( model
+            , Effect.batch
+                [ Store.refreshGrupo grupoId
+                , Effect.sendToast { level = ToastSuccess, content = "Dejaste de reclamar a " ++ p.nombre }
+                ]
+            )
+
+        Failure _ ->
+            ( model
+            , Effect.sendToast { level = ToastDanger, content = genericClaimError }
+            )
+
+        _ ->
+            ( model, Effect.none )
+
+
+{-| A user-facing message for each way a claim can be refused.
+-}
+claimRejectionMessage : ClaimRejection -> String
+claimRejectionMessage reason =
+    case reason of
+        ClaimedByOtherUser ->
+            "Ese participante ya fue reclamado por otra persona"
+
+        AlreadyOwnAnotherParticipante ->
+            "Ya reclamaste otro participante en este grupo. Dejá de reclamarlo primero."
+
+        ParticipanteNotFound ->
+            "No encontramos ese participante"
+
+
+genericClaimError : String
+genericClaimError =
+    "No pudimos completar la operación, probá de nuevo"
 
 
 

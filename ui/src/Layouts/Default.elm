@@ -204,6 +204,11 @@ viewUserIcon currentUser =
                     , li [] [ hr [ class "dropdown-divider" ] [] ]
                     , li []
                         [ button
+                            [ type_ "button", class "dropdown-item", onClick (NavigateAndClose Path.Cuenta) ]
+                            [ text "Mi cuenta" ]
+                        ]
+                    , li []
+                        [ button
                             [ type_ "button", class "dropdown-item", onClick DoLogout ]
                             [ text "Cerrar sesión" ]
                         ]
@@ -310,6 +315,7 @@ viewOffcanvas model unread currentUser =
                         Success user ->
                             [ span [ class "nav-link disabled text-truncate" ]
                                 [ text ("Sesión: " ++ user.email) ]
+                            , menuLink (NavigateAndClose Path.Cuenta) [ text "Mi cuenta" ]
                             , menuLink DoLogout [ text "Cerrar sesión" ]
                             ]
 

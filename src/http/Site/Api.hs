@@ -78,6 +78,16 @@ data Api routes
       routes :- "auth" :> "logout" :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] Text)
   , _routeMe ::
       routes :- AuthProtect "session" :> "me" :> Get '[JSON] User
+  , _routeMeUpdate ::
+      routes :- AuthProtect "session" :> "me" :> ReqBody '[JSON] UpdateMeParams :> Put '[JSON] User
+  , -- Like '_routeGrupoPost' but for a signed-in creator: instead of naming the
+    -- first participante, it is derived from the account and born claimed.
+    _routeMeGrupoPost ::
+      routes :- AuthProtect "session" :> "me" :> "grupos" :> ReqBody '[JSON] CreateGrupoAsUserParams :> Post '[JSON] Grupo
+  , _routeParticipanteClaim ::
+      routes :- AuthProtect "session" :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Put '[JSON] ClaimParticipanteResult
+  , _routeParticipanteUnclaim ::
+      routes :- AuthProtect "session" :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Delete '[JSON] Participante
   , _routeHealth ::
       routes :- "health" :> Get '[JSON] Text
       -- , _routeRepartijaItemDesdoblar ::
@@ -121,9 +131,23 @@ data VerifyParams = VerifyParams
   }
   deriving (Show, Eq, Generic)
 
+-- | Editable account details. Email is the login identity (changing it would
+-- need the ownership-proof flow), so only the display name is editable here.
+data UpdateMeParams = UpdateMeParams
+  { nombre :: Text
+  }
+  deriving (Show, Eq, Generic)
+
 data CreateGrupoParams = CreateGrupoParams
   { grupoName :: Text
   , grupoParticipante :: Text
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Params to create a grupo as the signed-in user ('_routeMeGrupoPost'): the
+-- seeded participante comes from the account, so only the grupo name travels.
+data CreateGrupoAsUserParams = CreateGrupoAsUserParams
+  { grupoName :: Text
   }
   deriving (Show, Eq, Generic)
 
@@ -163,14 +187,25 @@ data ReceiptImageResponse
       }
   deriving (Show, Eq, Generic)
 
+-- | The outcome of a claim ("this is me") on a participante. Delivered as a 200
+-- so the typed rejection reaches the frontend (see 'ReceiptImageResponse' for
+-- the same success|error pattern).
+data ClaimParticipanteResult
+  = ClaimAccepted Participante
+  | ClaimRejected ClaimRejection
+  deriving (Show, Eq, Generic)
+
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
 Elm.deriveBoth Elm.defaultOptions ''SigninParams
 Elm.deriveBoth Elm.defaultOptions ''SignupParams
 Elm.deriveBoth Elm.defaultOptions ''LoginChallenge
 Elm.deriveBoth Elm.defaultOptions ''VerifyParams
+Elm.deriveBoth Elm.defaultOptions ''UpdateMeParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
+Elm.deriveBoth Elm.defaultOptions ''CreateGrupoAsUserParams
 Elm.deriveBoth Elm.defaultOptions ''UpdateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
 Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageResponse
+Elm.deriveBoth Elm.defaultOptions ''ClaimParticipanteResult

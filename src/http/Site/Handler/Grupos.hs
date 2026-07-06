@@ -1,11 +1,14 @@
 module Site.Handler.Grupos (
   CreateGrupoParams,
+  handleClaimParticipante,
   handleCreateGrupo,
+  handleCreateGrupoAsUser,
   handleCreateParticipante,
   handleDeleteParticipante,
   handleFreezeGrupo,
   handleGetNetos,
   handleShowGrupo,
+  handleUnclaimParticipante,
   handleUnfreezeGrupo,
   handleUpdateGrupo,
 ) where
@@ -16,13 +19,16 @@ import Servant
 import BananaSplit
 import BananaSplit.Persistence (
   addParticipante,
+  claimParticipante,
   createGrupo,
+  createGrupoForUser,
   deleteShallowParticipante,
   fetchGrupo,
   fetchPago,
   fetchShallowPagos,
   fetchTransaccionesCongeladas,
   freezeGrupo,
+  unclaimParticipante,
   unfreezeGrupo,
   updateGrupo,
  )
@@ -33,6 +39,12 @@ import Site.Types
 handleCreateGrupo :: CreateGrupoParams -> AppHandler Grupo
 handleCreateGrupo CreateGrupoParams{grupoName, grupoParticipante} = do
   runBeam $ createGrupo grupoName grupoParticipante
+
+-- | Create a grupo as the signed-in user: the seeded participante is named
+-- after the account and born already claimed by it.
+handleCreateGrupoAsUser :: User -> CreateGrupoAsUserParams -> AppHandler Grupo
+handleCreateGrupoAsUser user CreateGrupoAsUserParams{grupoName} = do
+  runBeam $ createGrupoForUser grupoName user
 
 handleGetNetos :: ULID -> AppHandler ResumenGrupo
 handleGetNetos grupoId = do
@@ -90,6 +102,25 @@ handleCreateParticipante :: ULID -> ParticipanteAddParams -> AppHandler Particip
 handleCreateParticipante grupoId ParticipanteAddParams{name} = do
   runBeam (addParticipante grupoId name)
     `Site.Handler.Utils.orElse` (\_e -> throwJsonError err400 "falle")
+
+-- | Claim a participante as "this is me" for the signed-in user. Identity comes
+-- from the session, never the request. A user owns at most one participante per
+-- grupo: claiming a second one is refused — they must unclaim the first — as is
+-- claiming one already owned by a different account. The typed outcome
+-- ('ClaimParticipanteResult') is returned as a 200 so the frontend can react to
+-- the specific 'ClaimRejection'.
+handleClaimParticipante :: User -> ULID -> ULID -> AppHandler ClaimParticipanteResult
+handleClaimParticipante user grupoId participanteId = do
+  result <- runBeam $ claimParticipante grupoId participanteId user.id
+  pure $ case result of
+    Left rejection -> ClaimRejected rejection
+    Right participante -> ClaimAccepted participante
+
+-- | Release the signed-in user's claim on a participante. Only affects rows the
+-- user actually owns, so it can't clear someone else's claim.
+handleUnclaimParticipante :: User -> ULID -> ULID -> AppHandler Participante
+handleUnclaimParticipante user grupoId participanteId = do
+  runBeam $ unclaimParticipante grupoId participanteId user.id
 
 handleFreezeGrupo :: ULID -> AppHandler ShallowGrupo
 handleFreezeGrupo grupoId = do

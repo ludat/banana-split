@@ -9,15 +9,16 @@ module Site.Handler.Auth (
   handleVerify,
   handleLogout,
   handleMe,
+  handleUpdateMe,
 ) where
 
 import Data.Text qualified as Text
 import Servant
 
 import BananaSplit
-import BananaSplit.Persistence (createUser, fetchUserByEmail, fetchUserById)
+import BananaSplit.Persistence (createUser, fetchUserByEmail, fetchUserById, updateUser)
 import Preludat
-import Site.Api (LoginChallenge (..), SigninParams (..), SignupParams (..), VerifyParams (..))
+import Site.Api (LoginChallenge (..), SigninParams (..), SignupParams (..), UpdateMeParams (..), VerifyParams (..))
 import Site.Auth (ChallengeFlow (..), clearSessionCookie, generateLoginCode, issueLoginChallenge, issueToken, renderSessionCookie, verifyLoginChallenge)
 import Site.Handler.Utils (runBeam, throwJsonError)
 import Site.Mailer (Mailer (..))
@@ -30,30 +31,27 @@ newtype SessionTokenError = SessionTokenError Text
   deriving stock (Show)
   deriving anyclass (Exception)
 
--- | Step 1 of signup: a new account. We reject an email that already exists up
--- front (before emailing anything) so the user gets immediate, useful feedback
--- instead of only finding out after entering a code. The account itself is not
--- created until the code is verified.
+-- | Step 1 of signup. Deliberately does /not/ look at the database: whether the
+-- email is already taken is not revealed here, only after the caller proves they
+-- own the address by entering the emailed code (see 'handleVerify'). So the
+-- response is identical for taken and free emails — no account enumeration. The
+-- account itself is created only once the code is verified.
 handleSignup :: SignupParams -> AppHandler LoginChallenge
 handleSignup params = do
   let email = normalizeEmail params.email
   let nombre = Text.strip params.nombre
-  when (Text.null nombre) $
-    throwJsonError err400 "Ingresá tu nombre"
-  existing <- runBeam $ fetchUserByEmail email
-  for_ existing $ \_ ->
-    throwJsonError err409 "Ya existe una cuenta con ese email. Iniciá sesión."
+  when (Text.null nombre)
+    $ throwJsonError err400 "Ingresá tu nombre"
   issueChallenge (SignupFlow nombre) email
 
--- | Step 1 of signin: an existing account. We reject an unknown email up front
--- (symmetric with signup) so we never email a code for an account that can't
--- be logged into.
+-- | Step 1 of signin. Like 'handleSignup', it does not touch the database:
+-- whether an account exists is only disclosed at verify time, after ownership of
+-- the email is proven. So a code is emailed uniformly (the owner of an
+-- account-less address simply gets one they can't use), and the HTTP response
+-- never distinguishes existing from unknown emails.
 handleSignin :: SigninParams -> AppHandler LoginChallenge
 handleSignin params = do
   let email = normalizeEmail params.email
-  existing <- runBeam $ fetchUserByEmail email
-  when (isNothing existing) $
-    throwJsonError err404 "No encontramos una cuenta con ese email. Registrate."
   issueChallenge SigninFlow email
 
 -- | Shared tail of both step-1 handlers: mint a code, sign a challenge that
@@ -108,10 +106,21 @@ handleLogout = do
   pure $ addHeader (clearSessionCookie secure) "ok"
 
 -- | Current user. Reads the DB so the UI stays fresh even if the token's
--- claims have gone stale (e.g. after a future rename).
+-- claims have gone stale (e.g. after a rename).
 handleMe :: User -> AppHandler User
 handleMe sessionUser = do
   fresh <- runBeam $ fetchUserById sessionUser.id
   case fresh of
     Nothing -> throwJsonError err401 "user not found"
     Just user -> pure user
+
+-- | Edit the signed-in user's display name. Identity comes from the session
+-- (not the request body), so a user can only edit their own account. The
+-- session cookie keeps its now-stale name claim, which is harmless: nothing
+-- trusts it — @/me@ and every future load re-read from the DB.
+handleUpdateMe :: User -> UpdateMeParams -> AppHandler User
+handleUpdateMe sessionUser params = do
+  let nombre = Text.strip params.nombre
+  when (Text.null nombre)
+    $ throwJsonError err400 "Ingresá tu nombre"
+  runBeam $ updateUser sessionUser.id nombre

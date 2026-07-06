@@ -89,9 +89,9 @@ update msg model =
             , Effect.sendToast { level = ToastSuccess, content = "Te enviamos un código para confirmar" }
             )
 
-        GotChallenge (Err err) ->
+        GotChallenge (Err _) ->
             ( { model | submitting = False }
-            , Effect.sendToast { level = ToastDanger, content = signinError err }
+            , Effect.sendToast { level = ToastDanger, content = "No pudimos enviar el código, probá de nuevo" }
             )
 
         SubmitCode ->
@@ -115,9 +115,9 @@ update msg model =
                 ]
             )
 
-        GotVerifyResult (Err _) ->
+        GotVerifyResult (Err err) ->
             ( { model | submitting = False }
-            , Effect.sendToast { level = ToastDanger, content = "Código inválido o vencido" }
+            , Effect.sendToast { level = ToastDanger, content = verifyError err }
             )
 
         BackToEmail ->
@@ -126,17 +126,18 @@ update msg model =
             )
 
 
-{-| The signin step-1 endpoint drops the response body on error, so we map the
-status code back to the message the backend would have shown.
+{-| Whether an account exists is only revealed at verify time (after the code
+proves the caller owns the email), so that's where the "no account" message
+lives. The endpoint drops the response body on error, so we key off the status.
 -}
-signinError : Http.Error -> String
-signinError err =
+verifyError : Http.Error -> String
+verifyError err =
     case err of
         Http.BadStatus 404 ->
             "No encontramos una cuenta con ese email. Registrate."
 
         _ ->
-            "No pudimos enviar el código, probá de nuevo"
+            "Código inválido o vencido"
 
 
 view : Model -> View Msg

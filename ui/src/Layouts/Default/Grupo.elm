@@ -3,18 +3,18 @@ module Layouts.Default.Grupo exposing (Model, Msg, Props, layout)
 import Components.Bootstrap as Bs
 import Css
 import Effect exposing (Effect)
-import Generated.Api exposing (ShallowGrupo, ULID)
+import Generated.Api exposing (ShallowGrupo, ULID, User)
 import Html exposing (Html, a, button, div, h2, i, li, node, ol, option, p, select, strong, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
 import Html.Events exposing (on, onClick, preventDefaultOn)
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
-import Models.Grupo exposing (GrupoLike, grupoIdFromPath)
+import Models.Grupo exposing (GrupoLike, grupoIdFromPath, ownedParticipante)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import QRCode
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared.Model as Shared
@@ -32,7 +32,7 @@ layout _ shared route =
     Layout.new
         { init = \() -> init
         , update = update
-        , view = view shared.store route.path shared.userId shared.origin
+        , view = view shared.store route.path shared.userId shared.origin shared.currentUser
         , subscriptions = subscriptions
         }
         |> Layout.withParentProps {}
@@ -119,9 +119,10 @@ view :
     -> Path.Path
     -> Maybe ULID
     -> String
+    -> WebData User
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view store currentPath activeUser origin { toContentMsg, model, content } =
+view store currentPath activeUser origin currentUser { toContentMsg, model, content } =
     let
         remoteGrupo =
             grupoIdFromPath currentPath
@@ -143,7 +144,7 @@ view store currentPath activeUser origin { toContentMsg, model, content } =
         , case remoteGrupo of
             Success grupo ->
                 Html.map toContentMsg <|
-                    viewGroupHeader model origin currentPath activeUser store grupo
+                    viewGroupHeader model origin currentPath activeUser currentUser store grupo
 
             _ ->
                 text ""
@@ -168,8 +169,8 @@ view store currentPath activeUser origin { toContentMsg, model, content } =
     }
 
 
-viewGroupHeader : Model -> String -> Path.Path -> Maybe ULID -> Store -> ShallowGrupo -> Html Msg
-viewGroupHeader model origin currentPath activeUser store grupo =
+viewGroupHeader : Model -> String -> Path.Path -> Maybe ULID -> WebData User -> Store -> ShallowGrupo -> Html Msg
+viewGroupHeader model origin currentPath activeUser currentUser store grupo =
     let
         info =
             headerInfo currentPath store grupo
@@ -253,6 +254,7 @@ viewGroupHeader model origin currentPath activeUser store grupo =
                                    )
                             )
                         ]
+                    , viewVerComoWarning currentUser activeUser grupo
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
                         [ viewShareDropdown
                             { title = info.share.title
@@ -285,6 +287,54 @@ viewGroupHeader model origin currentPath activeUser store grupo =
           else
             text ""
         ]
+
+
+{-| Inline warning shown next to the "Ver como" toggle when a logged-in user is
+acting as a participante that isn't theirs. If that participante is unclaimed we
+offer a quick "reclamar"; if it's taken by someone else we just warn.
+-}
+viewVerComoWarning : WebData User -> Maybe ULID -> ShallowGrupo -> Html Msg
+viewVerComoWarning currentUser activeUser grupo =
+    case ( currentUser, activeUser ) of
+        ( Success u, Just uid ) ->
+            case grupo.participantes |> List.filter (\p -> p.id == uid) |> List.head of
+                Just p ->
+                    if (p.user |> Maybe.map .id) == Just u.id then
+                        text ""
+
+                    else
+                        let
+                            -- Only offer a quick "reclamar" when the participante
+                            -- is unclaimed AND the user doesn't already own one in
+                            -- the grupo (a user owns at most one).
+                            canClaim =
+                                p.user == Nothing && ownedParticipante u.id grupo == Nothing
+                        in
+                        div [ class "d-flex align-items-center gap-1 text-warning small" ]
+                            (i [ class "bi bi-exclamation-triangle" ] []
+                                :: text "No sos vos"
+                                :: (if canClaim then
+                                        [ button
+                                            [ type_ "button"
+                                            , class "btn btn-sm btn-link p-0 text-decoration-none align-baseline"
+                                            , onClick
+                                                (ForwardSharedMessage <|
+                                                    Shared.ClaimParticipante { grupoId = grupo.id, participanteId = p.id }
+                                                )
+                                            ]
+                                            [ text "reclamar" ]
+                                        ]
+
+                                    else
+                                        []
+                                   )
+                            )
+
+                Nothing ->
+                    text ""
+
+        _ ->
+            text ""
 
 
 {-| A single breadcrumb segment. `path` is `Just` when the segment should be a
@@ -437,6 +487,13 @@ headerInfo currentPath store grupo =
             }
 
         Path.Signup ->
+            { crumbs = []
+            , title = "Banana split"
+            , showTabs = False
+            , share = grupoShare
+            }
+
+        Path.Cuenta ->
             { crumbs = []
             , title = "Banana split"
             , showTabs = False

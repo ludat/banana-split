@@ -2,11 +2,15 @@ module Pages.Signup exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (LoginChallenge, User)
-import Html exposing (Html, a, div, form, label, p, text)
-import Html.Attributes as Attr exposing (class, for, id, placeholder, type_)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Form exposing (Form, Msg(..))
+import Form.Field
+import Form.Validate as V exposing (Validation)
+import Generated.Api as Api exposing (LoginChallenge, SignupParams, User)
+import Html exposing (Html, a, div, input, label, p, text)
+import Html.Attributes as Attr exposing (class, classList, for, id, placeholder, type_)
+import Html.Events exposing (on, onClick, onInput, onSubmit)
 import Http
+import Json.Decode
 import Layouts
 import Page exposing (Page)
 import RemoteData
@@ -14,6 +18,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Shared.Msg
+import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
@@ -41,9 +46,8 @@ type Step
 
 
 type alias Model =
-    { nombre : String
-    , email : String
-    , code : String
+    { detailsForm : Form CustomFormError SignupParams
+    , codeForm : Form CustomFormError String
     , challenge : String
     , step : Step
     , submitting : Bool
@@ -52,18 +56,42 @@ type alias Model =
 
 init : () -> ( Model, Effect Msg )
 init () =
-    ( { nombre = "", email = "", code = "", challenge = "", step = EnterDetails, submitting = False }
+    ( { detailsForm = Form.initial [] validateDetails
+      , codeForm = Form.initial [] validateCode
+      , challenge = ""
+      , step = EnterDetails
+      , submitting = False
+      }
     , Effect.none
     )
 
 
+validateDetails : Validation CustomFormError SignupParams
+validateDetails =
+    V.succeed SignupParams
+        |> V.andMap
+            (V.field "nombre"
+                (V.string
+                    |> V.map String.trim
+                    |> V.andThen V.nonEmpty
+                )
+            )
+        |> V.andMap (V.field "email" (V.string |> V.andThen V.nonEmpty))
+
+
+validateCode : Validation CustomFormError String
+validateCode =
+    V.field "code"
+        (V.string
+            |> V.map String.trim
+            |> V.andThen V.nonEmpty
+        )
+
+
 type Msg
-    = NombreChanged String
-    | EmailChanged String
-    | CodeChanged String
-    | SubmitDetails
+    = DetailsFormMsg Form.Msg
+    | CodeFormMsg Form.Msg
     | GotChallenge (Result Http.Error LoginChallenge)
-    | SubmitCode
     | GotVerifyResult (Result Http.Error User)
     | BackToDetails
 
@@ -71,27 +99,55 @@ type Msg
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        NombreChanged nombre ->
-            ( { model | nombre = nombre }, Effect.none )
+        DetailsFormMsg Form.Submit ->
+            let
+                detailsForm =
+                    Form.update validateDetails Form.Submit model.detailsForm
+            in
+            case Form.getOutput model.detailsForm of
+                Just params ->
+                    if model.submitting then
+                        ( { model | detailsForm = detailsForm }, Effect.none )
 
-        EmailChanged email ->
-            ( { model | email = email }, Effect.none )
+                    else
+                        ( { model | detailsForm = detailsForm, submitting = True }
+                        , Effect.sendCmd (Api.postAuthSignup params GotChallenge)
+                        )
 
-        CodeChanged code ->
-            ( { model | code = code }, Effect.none )
+                Nothing ->
+                    ( { model | detailsForm = detailsForm }, Effect.none )
 
-        SubmitDetails ->
-            if String.trim model.nombre == "" || String.trim model.email == "" then
-                ( model, Effect.none )
+        DetailsFormMsg formMsg ->
+            ( { model | detailsForm = Form.update validateDetails formMsg model.detailsForm }
+            , Effect.none
+            )
 
-            else
-                ( { model | submitting = True }
-                , Effect.sendCmd
-                    (Api.postAuthSignup
-                        { nombre = String.trim model.nombre, email = model.email }
-                        GotChallenge
-                    )
-                )
+        CodeFormMsg Form.Submit ->
+            let
+                codeForm =
+                    Form.update validateCode Form.Submit model.codeForm
+            in
+            case Form.getOutput model.codeForm of
+                Just code ->
+                    if model.submitting then
+                        ( { model | codeForm = codeForm }, Effect.none )
+
+                    else
+                        ( { model | codeForm = codeForm, submitting = True }
+                        , Effect.sendCmd
+                            (Api.postAuthVerify
+                                { challenge = model.challenge, code = code }
+                                GotVerifyResult
+                            )
+                        )
+
+                Nothing ->
+                    ( { model | codeForm = codeForm }, Effect.none )
+
+        CodeFormMsg formMsg ->
+            ( { model | codeForm = Form.update validateCode formMsg model.codeForm }
+            , Effect.none
+            )
 
         GotChallenge (Ok { challenge }) ->
             ( { model | submitting = False, step = EnterCode, challenge = challenge }
@@ -100,21 +156,8 @@ update msg model =
 
         GotChallenge (Err err) ->
             ( { model | submitting = False }
-            , Effect.sendToast { level = ToastDanger, content = signupError err }
+            , Effect.sendToast { level = ToastDanger, content = challengeError err }
             )
-
-        SubmitCode ->
-            if String.trim model.code == "" then
-                ( model, Effect.none )
-
-            else
-                ( { model | submitting = True }
-                , Effect.sendCmd
-                    (Api.postAuthVerify
-                        { challenge = model.challenge, code = String.trim model.code }
-                        GotVerifyResult
-                    )
-                )
 
         GotVerifyResult (Ok user) ->
             ( { model | submitting = False }
@@ -124,31 +167,48 @@ update msg model =
                 ]
             )
 
-        GotVerifyResult (Err _) ->
+        GotVerifyResult (Err err) ->
             ( { model | submitting = False }
-            , Effect.sendToast { level = ToastDanger, content = "Código inválido o vencido" }
+            , Effect.sendToast { level = ToastDanger, content = verifyError err }
             )
 
         BackToDetails ->
-            ( { model | step = EnterDetails, code = "", challenge = "", submitting = False }
+            ( { model
+                | step = EnterDetails
+                , codeForm = Form.initial [] validateCode
+                , challenge = ""
+                , submitting = False
+              }
             , Effect.none
             )
 
 
-{-| The signup step-1 endpoint drops the response body on error, so we map the
-status code back to the message the backend would have shown.
+{-| Step 1 never checks whether the email is taken (that would leak account
+existence before the caller proves they own the address), so the only error it
+reports is the empty-name 400.
 -}
-signupError : Http.Error -> String
-signupError err =
+challengeError : Http.Error -> String
+challengeError err =
     case err of
-        Http.BadStatus 409 ->
-            "Ya existe una cuenta con ese email. Iniciá sesión."
-
         Http.BadStatus 400 ->
             "Ingresá tu nombre"
 
         _ ->
             "No pudimos enviar el código, probá de nuevo"
+
+
+{-| That the email is already taken is only revealed at verify time, after the
+code proves the caller owns it. The endpoint drops the response body on error,
+so we key off the status.
+-}
+verifyError : Http.Error -> String
+verifyError err =
+    case err of
+        Http.BadStatus 409 ->
+            "Ya existe una cuenta con ese email. Iniciá sesión."
+
+        _ ->
+            "Código inválido o vencido"
 
 
 view : Model -> View Msg
@@ -178,34 +238,25 @@ view model =
 
 viewDetailsStep : Model -> Html Msg
 viewDetailsStep model =
+    let
+        nombreField =
+            Form.getFieldAsString "nombre" model.detailsForm
+
+        emailField =
+            Form.getFieldAsString "email" model.detailsForm
+    in
     div []
-        [ form [ onSubmit SubmitDetails ]
-            [ div [ class "mb-3" ]
-                [ label [ for "nombre", class "form-label" ] [ text "Nombre" ]
-                , Html.input
-                    [ id "nombre"
-                    , type_ "text"
-                    , class "form-control"
-                    , placeholder "Juan Pérez"
-                    , Attr.value model.nombre
-                    , onInput NombreChanged
-                    ]
-                    []
-                ]
-            , div [ class "mb-3" ]
-                [ label [ for "email", class "form-label" ] [ text "Email" ]
-                , Html.input
-                    [ id "email"
-                    , type_ "text"
-                    , class "form-control"
-                    , placeholder "juan@ejemplo.com"
-                    , Attr.value model.email
-                    , onInput EmailChanged
-                    ]
-                    []
-                , div [ class "form-text" ]
-                    [ text "Te enviamos un código para confirmar tu email." ]
-                ]
+        [ Html.form [ onSubmit (DetailsFormMsg Form.Submit) ]
+            [ Html.map DetailsFormMsg <|
+                viewTextFormItem "Nombre"
+                    [ placeholder "Juan Pérez" ]
+                    nombreField
+                    Nothing
+            , Html.map DetailsFormMsg <|
+                viewTextFormItem "Email"
+                    [ placeholder "juan@ejemplo.com" ]
+                    emailField
+                    (Just "Te enviamos un código para confirmar tu email.")
             , Bs.btn Bs.Primary
                 [ type_ "submit", Attr.disabled model.submitting ]
                 [ text
@@ -226,23 +277,24 @@ viewDetailsStep model =
 
 viewCodeStep : Model -> Html Msg
 viewCodeStep model =
-    form [ onSubmit SubmitCode ]
-        [ div [ class "mb-3" ]
-            [ label [ for "code", class "form-label" ] [ text "Código" ]
-            , Html.input
-                [ id "code"
-                , type_ "text"
+    let
+        codeField =
+            Form.getFieldAsString "code" model.codeForm
+
+        email =
+            Form.getFieldAsString "email" model.detailsForm
+                |> .value
+                |> Maybe.withDefault ""
+    in
+    Html.form [ onSubmit (CodeFormMsg Form.Submit) ]
+        [ Html.map CodeFormMsg <|
+            viewTextFormItem "Código"
+                [ placeholder "123456"
                 , Attr.attribute "inputmode" "numeric"
                 , Attr.attribute "autocomplete" "one-time-code"
-                , class "form-control"
-                , placeholder "123456"
-                , Attr.value model.code
-                , onInput CodeChanged
                 ]
-                []
-            , div [ class "form-text" ]
-                [ text ("Enviado a " ++ model.email ++ ". Vence en 15 minutos.") ]
-            ]
+                codeField
+                (Just ("Enviado a " ++ email ++ ". Vence en 15 minutos."))
         , div [ class "d-flex gap-2" ]
             [ Bs.btn Bs.Primary
                 [ type_ "submit", Attr.disabled model.submitting ]
@@ -258,4 +310,35 @@ viewCodeStep model =
                 [ type_ "button", onClick BackToDetails ]
                 [ text "Cambiar datos" ]
             ]
+        ]
+
+
+viewTextFormItem : String -> List (Html.Attribute Form.Msg) -> Form.FieldState CustomFormError String -> Maybe String -> Html Form.Msg
+viewTextFormItem labelText extraAttrs field helpText =
+    div [ class "mb-3" ]
+        [ label [ for field.path, class "form-label" ] [ text labelText ]
+        , input
+            ([ type_ "text"
+             , id field.path
+             , class "form-control"
+             , classList [ ( "is-invalid", hasErrorField field ) ]
+             , Attr.value (Maybe.withDefault "" field.value)
+             , onInput (\v -> Input field.path Form.Text (Form.Field.String v))
+             , on "focus" (Json.Decode.succeed (Focus field.path))
+             , on "blur" (Json.Decode.succeed (Blur field.path))
+             ]
+                ++ extraAttrs
+            )
+            []
+        , if hasErrorField field then
+            div [ class "invalid-feedback" ] [ errorForField field ]
+
+          else
+            text ""
+        , case helpText of
+            Just help ->
+                div [ class "form-text" ] [ text help ]
+
+            Nothing ->
+                text ""
         ]

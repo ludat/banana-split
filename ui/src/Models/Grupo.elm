@@ -1,4 +1,4 @@
-module Models.Grupo exposing (GrupoLike, grupoIdFromPath, lookupNombreParticipante, lookupParticipante)
+module Models.Grupo exposing (GrupoLike, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
 
 import Generated.Api exposing (Participante, ParticipanteId, ULID)
 import Route.Path as Path
@@ -54,15 +54,35 @@ grupoIdFromPath path =
         Path.Signup ->
             Nothing
 
+        Path.Cuenta ->
+            Nothing
+
 
 lookupParticipante : GrupoLike g -> ParticipanteId -> Participante
 lookupParticipante grupo participanteId =
     grupo.participantes
         |> List.filter (\p -> p.id == participanteId)
         |> List.head
-        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido" }
+        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido", user = Nothing }
 
 
 lookupNombreParticipante : GrupoLike g -> ParticipanteId -> String
 lookupNombreParticipante grupo participanteId =
     lookupParticipante grupo participanteId |> .nombre
+
+
+{-| Whether a participante is claimed by the given account (its `user`).
+-}
+isOwnedBy : ULID -> Participante -> Bool
+isOwnedBy accountUserId participante =
+    (participante.user |> Maybe.map .id) == Just accountUserId
+
+
+{-| The participante the given account has claimed in this grupo, if any. A user
+owns at most one participante per grupo.
+-}
+ownedParticipante : ULID -> GrupoLike r -> Maybe Participante
+ownedParticipante accountUserId grupo =
+    grupo.participantes
+        |> List.filter (isOwnedBy accountUserId)
+        |> List.head

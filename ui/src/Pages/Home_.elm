@@ -6,7 +6,7 @@ import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form, Msg(..))
 import Form.Field
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
-import Generated.Api as Api exposing (CreateGrupoParams, Netos, ShallowGrupo)
+import Generated.Api as Api exposing (Netos, ShallowGrupo)
 import Html exposing (Html, a, div, input, label, text)
 import Html.Attributes as Attr exposing (class, classList, for, id, placeholder, required, type_)
 import Html.Events exposing (onClick)
@@ -34,32 +34,48 @@ globalGrupoId =
 page : Shared.Model -> Route () -> Page Model Msg
 page shared _ =
     Page.new
-        { init = init shared.store
-        , update = update
+        { init = init shared
+        , update = update shared
         , subscriptions = subscriptions
         , view = view shared
         }
         |> Page.withLayout (\_ -> Layouts.Default {})
 
 
-type alias Model =
-    { form : Form CustomFormError CreateGrupoParams
+{-| What the crear-grupo form produces. For an anonymous creator the first
+participante's name is asked in the form; a signed-in creator gets one derived
+from their account instead ('participante' is Nothing), via the dedicated
+endpoint.
+-}
+type alias CrearGrupoForm =
+    { nombre : String
+    , participante : Maybe String
     }
 
 
-init : Store -> () -> ( Model, Effect Msg )
-init store () =
-    ( { form = Form.initial [] validate
+type alias Model =
+    { form : Form CustomFormError CrearGrupoForm
+    }
+
+
+init : Shared.Model -> () -> ( Model, Effect Msg )
+init shared () =
+    ( { form = Form.initial [] (validate (isLoggedIn shared))
       }
     , Effect.batch
         [ Effect.setUnsavedChangesWarning False
 
         -- Loaded unconditionally so the panel has data whenever the async
         -- /api/me resolves the session to logged-in (init can't react to that).
-        , Store.ensureGrupo globalGrupoId store
-        , Store.ensureResumen globalGrupoId store
+        , Store.ensureGrupo globalGrupoId shared.store
+        , Store.ensureResumen globalGrupoId shared.store
         ]
     )
+
+
+isLoggedIn : Shared.Model -> Bool
+isLoggedIn shared =
+    RemoteData.isSuccess shared.currentUser
 
 
 type Msg
@@ -68,15 +84,25 @@ type Msg
     | GrupoCreated Api.Grupo
 
 
-validate : Validation CustomFormError CreateGrupoParams
-validate =
-    succeed CreateGrupoParams
+validate : Bool -> Validation CustomFormError CrearGrupoForm
+validate loggedIn =
+    succeed CrearGrupoForm
         |> andMap (field "nombre" (string |> andThen nonEmpty))
-        |> andMap (field "participante" (string |> andThen nonEmpty))
+        |> andMap
+            (if loggedIn then
+                succeed Nothing
+
+             else
+                field "participante" (string |> andThen nonEmpty |> Form.Validate.map Just)
+            )
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
+update shared msg model =
+    let
+        validation =
+            validate (isLoggedIn shared)
+    in
     case msg of
         NoOp ->
             ( model
@@ -85,32 +111,40 @@ update msg model =
 
         UpdateForm Form.Submit ->
             case Form.getOutput model.form of
-                Just createGrupoParams ->
-                    ( { model | form = Form.update validate Form.Submit model.form }
-                    , Effect.sendCmd <|
-                        Api.postGrupo createGrupoParams
-                            (\r ->
-                                case r of
-                                    Ok grupo ->
-                                        GrupoCreated grupo
+                Just crearGrupo ->
+                    let
+                        toMsg r =
+                            case r of
+                                Ok grupo ->
+                                    GrupoCreated grupo
 
-                                    Err _ ->
-                                        NoOp
-                            )
+                                Err _ ->
+                                    NoOp
+                    in
+                    ( { model | form = Form.update validation Form.Submit model.form }
+                    , Effect.sendCmd <|
+                        case crearGrupo.participante of
+                            Just participante ->
+                                Api.postGrupo
+                                    { grupoName = crearGrupo.nombre, grupoParticipante = participante }
+                                    toMsg
+
+                            Nothing ->
+                                Api.postMeGrupos { grupoName = crearGrupo.nombre } toMsg
                     )
 
                 Nothing ->
-                    ( { model | form = Form.update validate Form.Submit model.form }
+                    ( { model | form = Form.update validation Form.Submit model.form }
                     , Effect.none
                     )
 
         UpdateForm formMsg ->
-            ( { model | form = Form.update validate formMsg model.form }
+            ( { model | form = Form.update validation formMsg model.form }
             , Effect.none
             )
 
         GrupoCreated grupo ->
-            ( { model | form = Form.initial [] validate }
+            ( { model | form = Form.initial [] validation }
             , Effect.batch
                 [ -- Automatically select the first participante as current user
                   case grupo.participantes of
@@ -138,11 +172,11 @@ view shared model =
                 case shared.currentUser of
                     Success _ ->
                         [ div [ class "col-12 col-md-8 col-lg-6" ] [ viewGlobalPanel shared.store ]
-                        , div [ class "col-12 col-md-8 col-lg-6" ] [ viewCrearGrupo model ]
+                        , div [ class "col-12 col-md-8 col-lg-6" ] [ viewCrearGrupo shared model ]
                         ]
 
                     _ ->
-                        [ div [ class "col-12 col-md-6" ] [ viewCrearGrupo model ] ]
+                        [ div [ class "col-12 col-md-6" ] [ viewCrearGrupo shared model ] ]
             ]
         ]
     }
@@ -212,8 +246,8 @@ linkButton variant path label =
     a [ class ("btn " ++ variant), Path.href path ] [ text label ]
 
 
-viewCrearGrupo : Model -> Html Msg
-viewCrearGrupo model =
+viewCrearGrupo : Shared.Model -> Model -> Html Msg
+viewCrearGrupo shared model =
     let
         nombreField =
             Form.getFieldAsString "nombre" model.form
@@ -239,21 +273,27 @@ viewCrearGrupo model =
                         []
                 , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField nombreField ]
                 ]
-            , div [ class "mb-3" ]
-                [ label [ for "participante", class "form-label" ] [ text "Participante" ]
-                , Html.map UpdateForm <|
-                    input
-                        [ id "participante"
-                        , type_ "text"
-                        , classList [ ( "form-control", True ), ( "is-invalid", hasErrorField participanteField ) ]
-                        , placeholder "Juan"
-                        , required True
-                        , Attr.value (Maybe.withDefault "" participanteField.value)
-                        , Html.Events.onInput (Form.Input participanteField.path Form.Text << Form.Field.String)
+            , case shared.currentUser of
+                Success user ->
+                    div [ class "mb-3 form-text" ]
+                        [ text ("Vas a participar del grupo como " ++ user.nombre ++ ".") ]
+
+                _ ->
+                    div [ class "mb-3" ]
+                        [ label [ for "participante", class "form-label" ] [ text "Participante" ]
+                        , Html.map UpdateForm <|
+                            input
+                                [ id "participante"
+                                , type_ "text"
+                                , classList [ ( "form-control", True ), ( "is-invalid", hasErrorField participanteField ) ]
+                                , placeholder "Juan"
+                                , required True
+                                , Attr.value (Maybe.withDefault "" participanteField.value)
+                                , Html.Events.onInput (Form.Input participanteField.path Form.Text << Form.Field.String)
+                                ]
+                                []
+                        , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField participanteField ]
                         ]
-                        []
-                , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField participanteField ]
-                ]
             , Bs.btn Bs.Primary
                 [ onClick <| UpdateForm Submit ]
                 [ text "Crear" ]

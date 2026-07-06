@@ -8,7 +8,7 @@ own file, so they can be imported by `Effect.elm`
 
 -}
 
-import Generated.Api exposing (ULID, User)
+import Generated.Api exposing (ClaimParticipanteResult, Participante, ULID, User)
 import Models.Store.Types exposing (StoreMsg)
 import RemoteData exposing (WebData)
 import Route.Path as Route
@@ -25,6 +25,10 @@ type Msg
     | SetCurrentUser { grupoId : ULID, userId : ULID }
     | CurrentUserLoaded { grupoId : ULID, userId : Maybe ULID }
     | GotCurrentUser (WebData User)
+    | ClaimParticipante { grupoId : ULID, participanteId : ULID }
+    | UnclaimParticipante { grupoId : ULID, participanteId : ULID }
+    | GotClaimResult { grupoId : ULID } (WebData ClaimParticipanteResult)
+    | GotUnclaimResult { grupoId : ULID } (WebData Participante)
     | Logout
     | LoggedOut
     | MarkChangelogRead
