@@ -1,4 +1,4 @@
-module Pages.Login exposing (Model, Msg, page)
+module Pages.Login exposing (Model, Msg, Step, page)
 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)

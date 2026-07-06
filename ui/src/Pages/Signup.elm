@@ -1,4 +1,4 @@
-module Pages.Signup exposing (Model, Msg, page)
+module Pages.Signup exposing (Model, Msg, Step, page)
 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)

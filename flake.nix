@@ -56,6 +56,7 @@
               MIP.source = inputs.MIP + /MIP;
               conferer.source = inputs.conferer + /packages/conferer;
               conferer-warp.source = inputs.conferer + /packages/warp;
+              jose.source = "0.12";
             };
 
             # my-haskell-package development shell configuration

@@ -1,4 +1,4 @@
-module Pages.Home_ exposing (Model, Msg, page)
+module Pages.Home_ exposing (CrearGrupoForm, Model, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
@@ -208,14 +208,6 @@ viewGlobalPanel store =
 
 viewGlobalContent : ShallowGrupo -> Api.ResumenGrupo -> Html Msg
 viewGlobalContent grupo resumen =
-    let
-        netosDefault : Maybe (Netos Api.Monto)
-        netosDefault =
-            resumen.netos
-                |> List.filter (\( m, _ ) -> m == grupo.monedaPorDefecto)
-                |> List.head
-                |> Maybe.map Tuple.second
-    in
     div []
         [ if resumen.cantidadPagos == 0 then
             Bs.alert Bs.AlertInfo
@@ -226,6 +218,14 @@ viewGlobalContent grupo resumen =
                 ]
 
           else
+            let
+                netosDefault : Maybe (Netos Api.Monto)
+                netosDefault =
+                    resumen.netos
+                        |> List.filter (\( m, _ ) -> m == grupo.monedaPorDefecto)
+                        |> List.head
+                        |> Maybe.map Tuple.second
+            in
             case netosDefault of
                 Just netos ->
                     div [ class "mb-3" ] [ viewNetosBarras grupo netos ]
@@ -251,9 +251,6 @@ viewCrearGrupo shared model =
     let
         nombreField =
             Form.getFieldAsString "nombre" model.form
-
-        participanteField =
-            Form.getFieldAsString "participante" model.form
     in
     Bs.card []
         [ Bs.cardHeader [] [ text "Crear grupo" ]
@@ -279,6 +276,10 @@ viewCrearGrupo shared model =
                         [ text ("Vas a participar del grupo como " ++ user.nombre ++ ".") ]
 
                 _ ->
+                    let
+                        participanteField =
+                            Form.getFieldAsString "participante" model.form
+                    in
                     div [ class "mb-3" ]
                         [ label [ for "participante", class "form-label" ] [ text "Participante" ]
                         , Html.map UpdateForm <|
