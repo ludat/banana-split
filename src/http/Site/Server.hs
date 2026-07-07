@@ -58,6 +58,7 @@ serverT =
       , _routeMe = handleMe
       , _routeMeUpdate = handleUpdateMe
       , _routeMeGrupoPost = handleCreateGrupoAsUser
+      , _routeMeGruposGet = handleGetMisGrupos
       , _routeParticipanteClaim = handleClaimParticipante
       , _routeParticipanteUnclaim = handleUnclaimParticipante
       , _routeHealth = pure "ok"

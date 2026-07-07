@@ -1651,6 +1651,35 @@ postMeGrupos body toMsg =
                 Nothing
             }
 
+getMeGrupos : (Result Http.Error  ((List ShallowGrupo))  -> msg) -> Cmd msg
+getMeGrupos toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "me"
+                    , "grupos"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg (Json.Decode.list (jsonDecShallowGrupo))
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
 putGrupoByIdParticipantesByParticipanteIdClaim : ULID -> ULID -> (Result Http.Error  (ClaimParticipanteResult)  -> msg) -> Cmd msg
 putGrupoByIdParticipantesByParticipanteIdClaim capture_id capture_participanteId toMsg =
     let

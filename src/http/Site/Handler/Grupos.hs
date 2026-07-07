@@ -6,6 +6,7 @@ module Site.Handler.Grupos (
   handleCreateParticipante,
   handleDeleteParticipante,
   handleFreezeGrupo,
+  handleGetMisGrupos,
   handleGetNetos,
   handleShowGrupo,
   handleUnclaimParticipante,
@@ -24,6 +25,7 @@ import BananaSplit.Persistence (
   createGrupoForUser,
   deleteShallowParticipante,
   fetchGrupo,
+  fetchGruposForUser,
   fetchPago,
   fetchShallowPagos,
   fetchTransaccionesCongeladas,
@@ -102,6 +104,11 @@ handleCreateParticipante :: ULID -> ParticipanteAddParams -> AppHandler Particip
 handleCreateParticipante grupoId ParticipanteAddParams{name} = do
   runBeam (addParticipante grupoId name)
     `Site.Handler.Utils.orElse` (\_e -> throwJsonError err400 "falle")
+
+-- | List the grupos where the signed-in user has claimed a participante.
+handleGetMisGrupos :: User -> AppHandler [ShallowGrupo]
+handleGetMisGrupos user = do
+  runBeam $ fetchGruposForUser user.id
 
 -- | Claim a participante as "this is me" for the signed-in user. Identity comes
 -- from the session, never the request. A user owns at most one participante per

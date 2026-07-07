@@ -1,34 +1,22 @@
 module Pages.Home_ exposing (CrearGrupoForm, Model, Msg, page)
 
-import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
 import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form, Msg(..))
 import Form.Field
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
-import Generated.Api as Api exposing (Netos, ShallowGrupo)
+import Generated.Api as Api exposing (ShallowGrupo)
 import Html exposing (Html, a, div, input, label, text)
 import Html.Attributes as Attr exposing (class, classList, for, id, placeholder, required, type_)
 import Html.Events exposing (onClick)
 import Layouts
-import Models.Store as Store
-import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import View exposing (View)
-
-
-{-| The id of the singleton global group. On the backend it's the `GrupoGlobal`
-sentinel, serialized as the literal string "global", so it works with every
-regular grupo endpoint and page.
--}
-globalGrupoId : String
-globalGrupoId =
-    "global"
 
 
 page : Shared.Model -> Route () -> Page Model Msg
@@ -55,20 +43,22 @@ type alias CrearGrupoForm =
 
 type alias Model =
     { form : Form CustomFormError CrearGrupoForm
+    , misGrupos : WebData (List ShallowGrupo)
     }
 
 
 init : Shared.Model -> () -> ( Model, Effect Msg )
 init shared () =
     ( { form = Form.initial [] (validate (isLoggedIn shared))
+      , misGrupos = RemoteData.Loading
       }
     , Effect.batch
         [ Effect.setUnsavedChangesWarning False
 
-        -- Loaded unconditionally so the panel has data whenever the async
-        -- /api/me resolves the session to logged-in (init can't react to that).
-        , Store.ensureGrupo globalGrupoId shared.store
-        , Store.ensureResumen globalGrupoId shared.store
+        -- Loaded unconditionally so the "Mis grupos" card has data whenever the
+        -- async /api/me resolves the session to logged-in (init can't react to
+        -- that).
+        , Effect.sendCmd <| Api.getMeGrupos (RemoteData.fromResult >> GotMisGrupos)
         ]
     )
 
@@ -82,6 +72,7 @@ type Msg
     = NoOp
     | UpdateForm Form.Msg
     | GrupoCreated Api.Grupo
+    | GotMisGrupos (WebData (List ShallowGrupo))
 
 
 validate : Bool -> Validation CustomFormError CrearGrupoForm
@@ -106,6 +97,11 @@ update shared msg model =
     case msg of
         NoOp ->
             ( model
+            , Effect.none
+            )
+
+        GotMisGrupos misGrupos ->
+            ( { model | misGrupos = misGrupos }
             , Effect.none
             )
 
@@ -170,8 +166,8 @@ view shared model =
         [ div [ class "container py-4" ]
             [ div [ class "row justify-content-center g-4" ] <|
                 case shared.currentUser of
-                    Success _ ->
-                        [ div [ class "col-12 col-md-8 col-lg-6" ] [ viewGlobalPanel shared.store ]
+                    Success user ->
+                        [ div [ class "col-12 col-md-8 col-lg-6" ] [ viewMisGrupos user model.misGrupos ]
                         , div [ class "col-12 col-md-8 col-lg-6" ] [ viewCrearGrupo shared model ]
                         ]
 
@@ -182,68 +178,56 @@ view shared model =
     }
 
 
-{-| The global group summary shown to logged-in users: balances plus entry
-points into the existing (reused) grupo pages for the global group.
+{-| The grupos where the signed-in user claimed a participante, each linking to
+its grupo page and showing which participante they are there.
 -}
-viewGlobalPanel : Store -> Html Msg
-viewGlobalPanel store =
+viewMisGrupos : Api.User -> WebData (List ShallowGrupo) -> Html Msg
+viewMisGrupos user misGrupos =
     Bs.card []
-        [ Bs.cardHeader [] [ text "Grupo global" ]
-        , Bs.cardBody []
-            [ case ( Store.getGrupo globalGrupoId store, Store.getResumen globalGrupoId store ) of
-                ( Success grupo, Success resumen ) ->
-                    viewGlobalContent grupo resumen
+        [ Bs.cardHeader [] [ text "Mis grupos" ]
+        , case misGrupos of
+            Success [] ->
+                Bs.cardBody []
+                    [ Bs.alert Bs.AlertInfo
+                        []
+                        [ text "Todavía no estás en ningún grupo. Creá uno o reclamá tu participante en un grupo existente." ]
+                    ]
 
-                ( Failure _, _ ) ->
-                    Bs.alert Bs.AlertDanger [] [ text "Error cargando el grupo global." ]
+            Success grupos ->
+                div [ class "list-group list-group-flush" ]
+                    (List.map (viewMisGruposItem user) grupos)
 
-                ( _, Failure _ ) ->
-                    Bs.alert Bs.AlertDanger [] [ text "Error cargando el grupo global." ]
+            Failure _ ->
+                Bs.cardBody []
+                    [ Bs.alert Bs.AlertDanger [] [ text "Error cargando tus grupos." ] ]
 
-                _ ->
-                    div [ class "text-muted" ] [ text "Cargando..." ]
-            ]
+            _ ->
+                Bs.cardBody []
+                    [ div [ class "text-muted" ] [ text "Cargando..." ] ]
         ]
 
 
-viewGlobalContent : ShallowGrupo -> Api.ResumenGrupo -> Html Msg
-viewGlobalContent grupo resumen =
-    div []
-        [ if resumen.cantidadPagos == 0 then
-            Bs.alert Bs.AlertInfo
-                []
-                [ text "Todavía no hay pagos en el grupo global. "
-                , a [ Path.href <| Path.Grupos_GrupoId__Pagos_New { grupoId = globalGrupoId } ]
-                    [ text "¡Registrá el primero!" ]
-                ]
-
-          else
-            let
-                netosDefault : Maybe (Netos Api.Monto)
-                netosDefault =
-                    resumen.netos
-                        |> List.filter (\( m, _ ) -> m == grupo.monedaPorDefecto)
-                        |> List.head
-                        |> Maybe.map Tuple.second
-            in
-            case netosDefault of
-                Just netos ->
-                    div [ class "mb-3" ] [ viewNetosBarras grupo netos ]
-
-                Nothing ->
-                    text ""
-        , div [ class "d-flex flex-wrap gap-2" ]
-            [ linkButton "btn-primary" (Path.Grupos_GrupoId__Pagos_New { grupoId = globalGrupoId }) "Registrar pago"
-            , linkButton "btn-outline-secondary" (Path.Grupos_GrupoId__Liquidaciones { grupoId = globalGrupoId }) "Saldar deudas"
-            , linkButton "btn-outline-secondary" (Path.Grupos_GrupoId__Pagos { grupoId = globalGrupoId }) "Ver pagos"
-            , linkButton "btn-outline-secondary" (Path.Grupos_GrupoId__Participantes { grupoId = globalGrupoId }) "Participantes"
-            ]
+viewMisGruposItem : Api.User -> ShallowGrupo -> Html Msg
+viewMisGruposItem user grupo =
+    let
+        claimedNombre =
+            grupo.participantes
+                |> List.filter (\p -> p.user |> Maybe.map (\owner -> owner.id == user.id) |> Maybe.withDefault False)
+                |> List.head
+                |> Maybe.map .nombre
+    in
+    a
+        [ class "list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+        , Path.href <| Path.Grupos_Id_ { id = grupo.id }
         ]
+        [ text grupo.nombre
+        , case claimedNombre of
+            Just nombre ->
+                Html.small [ class "text-muted" ] [ text ("como " ++ nombre) ]
 
-
-linkButton : String -> Path.Path -> String -> Html Msg
-linkButton variant path label =
-    a [ class ("btn " ++ variant), Path.href path ] [ text label ]
+            Nothing ->
+                text ""
+        ]
 
 
 viewCrearGrupo : Shared.Model -> Model -> Html Msg

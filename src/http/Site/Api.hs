@@ -84,6 +84,10 @@ data Api routes
     -- first participante, it is derived from the account and born claimed.
     _routeMeGrupoPost ::
       routes :- AuthProtect "session" :> "me" :> "grupos" :> ReqBody '[JSON] CreateGrupoAsUserParams :> Post '[JSON] Grupo
+  , -- The grupos where the signed-in user has claimed a participante, i.e.
+    -- "my groups" for the home screen.
+    _routeMeGruposGet ::
+      routes :- AuthProtect "session" :> "me" :> "grupos" :> Get '[JSON] [ShallowGrupo]
   , _routeParticipanteClaim ::
       routes :- AuthProtect "session" :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Put '[JSON] ClaimParticipanteResult
   , _routeParticipanteUnclaim ::

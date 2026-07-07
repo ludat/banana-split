@@ -17,6 +17,7 @@ module BananaSplit.Persistence (
   deleteShallowParticipante,
   deleteTransaccionCongelada,
   fetchGrupo,
+  fetchGruposForUser,
   fetchUserById,
   fetchUserByEmail,
   createUser,
@@ -262,6 +263,30 @@ fetchGrupo aGrupoId = do
           , M.isFrozen = grupo.is_frozen
           , M.monedaPorDefecto = grupo.moneda_por_defecto
           }
+
+-- | Grupos where the user has claimed a participante ("this is me"), oldest
+-- first. A user owns at most one participante per grupo, so the join can't
+-- produce duplicates.
+fetchGruposForUser :: ULID -> Pg [M.ShallowGrupo]
+fetchGruposForUser userId = do
+  grupos <- runSelectReturningList $ select $ do
+    grupo <-
+      all_ db.grupos
+        & orderBy_ (asc_ . (.id))
+    p <- all_ db.participantes
+    guard_ (p.grupo ==. GrupoId grupo.id)
+    guard_ (p.user ==. UserId (val_ (Just userId)))
+    pure grupo
+  forM grupos $ \grupo -> do
+    participantes <- fetchParticipantes grupo.id
+    pure
+      $ M.ShallowGrupo
+        { M.id = grupo.id
+        , M.nombre = grupo.nombre
+        , M.participantes = participantes
+        , M.isFrozen = grupo.is_frozen
+        , M.monedaPorDefecto = grupo.moneda_por_defecto
+        }
 
 fetchPago :: ULID -> Pg M.Pago
 fetchPago pagoId = do
