@@ -1,4 +1,7 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE TypeFamilies #-}
@@ -8,34 +11,37 @@ module Site.Auth (
   issueToken,
   verifyToken,
   generateLoginCode,
-  ChallengeFlow (..),
+  ChallengePayload (..),
   issueLoginChallenge,
+  openChallenge,
+  checkChallengeCode,
   verifyLoginChallenge,
+  issueRegistrationToken,
+  verifyRegistrationToken,
   renderSessionCookie,
   clearSessionCookie,
   authHandler,
   AuthContext,
 ) where
 
-import Control.Lens (at, (&), (?~), (^.))
-import Control.Monad (guard)
-import Control.Monad.Except (throwError)
-import Control.Monad.IO.Class (liftIO)
-import Crypto.Hash (SHA256, hashWith)
+import Control.Lens ((.~), (?~))
 import Crypto.JWT
-import Data.Aeson (Value (String), toJSON)
+import Crypto.Number.Generate (generateMax)
+import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), Value (Object, String), withObject, (.:))
+import Data.Aeson.Key (Key)
+import Data.Aeson.KeyMap qualified as KeyMap
 import Data.ByteArray (constEq)
 import Data.ByteArray.Encoding (Base (Base16), convertToBase)
 import Data.ByteString.Builder (toLazyByteString)
 import Data.ByteString.Lazy qualified as BSL
 import Data.List qualified as List
+import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Time (NominalDiffTime, addUTCTime, getCurrentTime, secondsToDiffTime)
 import Network.HTTP.Types.Header (hCookie)
 import Network.Wai (Request, requestHeaders)
 import Servant (AuthProtect, err401, errBody, errHeaders)
 import Servant.Server.Experimental.Auth (AuthHandler, AuthServerData, mkAuthHandler)
-import System.Random (randomRIO)
 import Web.Cookie (
   SetCookie,
   defaultSetCookie,
@@ -70,28 +76,24 @@ sessionDurationSeconds = 90 * 24 * 60 * 60
 sessionCookieName :: ByteString
 sessionCookieName = "session"
 
--- | How long a login challenge stays valid after the code is emailed.
 loginChallengeDurationSeconds :: NominalDiffTime
-loginChallengeDurationSeconds = 15 * 60
+loginChallengeDurationSeconds = 5 * 60
 
--- | Marks a JWT as a login challenge, so a session token can never be replayed
--- as a challenge (or vice versa).
-loginPurpose :: Value
-loginPurpose = String "login-challenge"
+data TokenPurpose
+  = LoginChallenge
+  | Registration
+  deriving (Eq, Show, Generic)
+  deriving anyclass (ToJSON, FromJSON)
 
--- | Which flow a challenge belongs to. Signup carries the display name the
--- caller typed so it survives the (stateless) round-trip to the verify step;
--- signin needs nothing beyond the email already in the challenge.
-data ChallengeFlow
-  = SignupFlow Text
-  | SigninFlow
-  deriving (Show, Eq)
+hs256ValidationSettings :: JWTValidationSettings
+hs256ValidationSettings =
+  defaultJWTValidationSettings (const True)
+    & validationSettingsAlgorithms
+    .~ Set.singleton HS256
 
--- | A fresh 6-digit login code — short enough to read out over the phone or
--- type on a device that can't open a link.
 generateLoginCode :: IO Text
 generateLoginCode = do
-  n <- randomRIO (0, 999999 :: Int)
+  n <- generateMax 1_000_000
   pure $ Text.justifyRight 6 '0' (show n)
 
 -- | One-way commitment to a code, bound to the email and peppered with the
@@ -109,77 +111,215 @@ codeCommitment pepper email code =
     <> ":"
     <> encodeUtf8 code
 
--- | Sign a short-lived challenge for @email@ that commits to @code@ without
--- containing it. The client keeps the returned challenge and later presents it
--- together with the code (which arrived out-of-band by email) to log in. The
--- flow (and, for signup, the display name) rides inside the signed challenge so
--- it can't be tampered with between the two steps.
-issueLoginChallenge :: JWK -> ByteString -> ChallengeFlow -> Text -> Text -> IO (Either JWTError Text)
-issueLoginChallenge key pepper flow email code = do
+-- | The signed-JWT payload of a login challenge. Embedding 'ClaimsSet' as a
+-- typed subtype (rather than stuffing extra fields into its deprecated
+-- unregistered-claims map) is jose's supported way to carry custom claims:
+-- 'signJWT'/'verifyJWT' serialise the whole record. The @purpose@ marker is
+-- re-checked on decode, so a session token can never be replayed as a
+-- challenge — its JSON shape simply won't parse as a 'ChallengeClaims'.
+data ChallengeClaims = ChallengeClaims
+  { stdClaims :: ClaimsSet
+  , email :: Text
+  , commitment :: Text
+  -- ^ The peppered commitment to the code (see 'codeCommitment'), never the code.
+  }
+
+instance HasClaimsSet ChallengeClaims where
+  claimsSet f c = fmap (\std -> c{stdClaims = std}) (f (c.stdClaims))
+
+instance ToJSON ChallengeClaims where
+  toJSON c =
+    insertClaims
+      [ ("purpose", toJSON LoginChallenge)
+      , ("email", String c.email)
+      , ("code", String c.commitment)
+      ]
+      (toJSON c.stdClaims)
+
+instance FromJSON ChallengeClaims where
+  parseJSON = withObject "ChallengeClaims" $ \o -> do
+    purpose <- o .: "purpose"
+    when (purpose /= LoginChallenge) (fail "not a login challenge")
+    std <- parseJSON (Object o)
+    email <- o .: "email"
+    commitment <- o .: "code"
+    pure
+      ChallengeClaims
+        { stdClaims = std
+        , email = email
+        , commitment = commitment
+        }
+
+-- | The signed-JWT payload of a registration token: proof that an email's
+-- ownership was verified (via the login-code round-trip), exchangeable for
+-- account creation. Separate @purpose@ from a challenge or a session, so none
+-- can be replayed as another.
+data RegistrationClaims = RegistrationClaims
+  { regStdClaims :: ClaimsSet
+  , regEmail :: Text
+  }
+
+instance HasClaimsSet RegistrationClaims where
+  claimsSet f c = fmap (\std -> c{regStdClaims = std}) (f (c.regStdClaims))
+
+instance ToJSON RegistrationClaims where
+  toJSON c =
+    insertClaims
+      [ ("purpose", toJSON Registration)
+      , ("email", String c.regEmail)
+      ]
+      (toJSON c.regStdClaims)
+
+instance FromJSON RegistrationClaims where
+  parseJSON = withObject "RegistrationClaims" $ \o -> do
+    purpose <- o .: "purpose"
+    when (purpose /= Registration) (fail "not a registration token")
+    std <- parseJSON (Object o)
+    email <- o .: "email"
+    pure RegistrationClaims{regStdClaims = std, regEmail = email}
+
+-- | The signed-JWT payload of a session token: the standard claims plus the
+-- 'User' identity it authenticates.
+data SessionClaims = SessionClaims
+  { sessionStdClaims :: ClaimsSet
+  , sessionUser :: User
+  }
+
+instance HasClaimsSet SessionClaims where
+  claimsSet f s = fmap (\std -> s{sessionStdClaims = std}) (f (sessionStdClaims s))
+
+instance ToJSON SessionClaims where
+  toJSON s =
+    insertClaims
+      [ ("uid", toJSON s.sessionUser.id)
+      , ("email", toJSON s.sessionUser.email)
+      , ("nombre", toJSON s.sessionUser.nombre)
+      ]
+      (toJSON s.sessionStdClaims)
+
+instance FromJSON SessionClaims where
+  parseJSON = withObject "SessionClaims" $ \o -> do
+    std <- parseJSON (Object o)
+    uid <- o .: "uid"
+    email <- o .: "email"
+    nombre <- o .: "nombre"
+    pure
+      SessionClaims
+        { sessionStdClaims = std
+        , sessionUser = User{id = uid, email = email, nombre = nombre}
+        }
+
+insertClaims :: [(Key, Value)] -> Value -> Value
+insertClaims extra (Object o) = Object (foldr (\(k, v) -> KeyMap.insert k v) o extra)
+insertClaims _ other = other
+
+issueLoginChallenge :: JWK -> ByteString -> Text -> Text -> IO (Either JWTError Text)
+issueLoginChallenge key pepper email code = do
   now <- getCurrentTime
-  let withFlow =
-        case flow of
-          SigninFlow -> addClaim "flow" (String "signin")
-          SignupFlow nombre ->
-            addClaim "flow" (String "signup") . addClaim "nombre" (String nombre)
-  let claims =
+  let std =
         emptyClaimsSet
-          & claimIat ?~ NumericDate now
-          & claimExp ?~ NumericDate (addUTCTime loginChallengeDurationSeconds now)
-          & addClaim "purpose" loginPurpose
-          & addClaim "email" (String email)
-          & addClaim "code" (String (codeCommitment pepper email code))
-          & withFlow
+          & claimIat
+          ?~ NumericDate now
+            & claimExp
+          ?~ NumericDate (addUTCTime loginChallengeDurationSeconds now)
+  let payload =
+        ChallengeClaims
+          { stdClaims = std
+          , email = email
+          , commitment = codeCommitment pepper email code
+          }
   signed <-
     runJOSE
-      $ signClaims key (newJWSHeader (RequiredProtection, HS256)) claims
+      $ signJWT key (newJWSHeader (RequiredProtection, HS256)) payload
   pure $ fmap (decodeUtf8 . BSL.toStrict . encodeCompact) (signed :: Either JWTError SignedJWT)
 
--- | Check a challenge + submitted code and recover the flow + email if they
--- match. Returns 'Nothing' on a bad signature, expiry, wrong purpose, unknown
--- flow, or wrong code.
-verifyLoginChallenge :: JWK -> ByteString -> Text -> Text -> IO (Maybe (ChallengeFlow, Text))
-verifyLoginChallenge key pepper challenge code = do
+data ChallengePayload = ChallengePayload
+  { email :: Text
+  , codeCommitmentExpected :: Text
+  }
+  deriving (Show, Eq)
+
+openChallenge :: JWK -> Text -> IO (Maybe ChallengePayload)
+openChallenge key challenge = do
   result <-
     runJOSE $ do
       jwt <- decodeCompact (BSL.fromStrict (encodeUtf8 challenge))
-      verifyClaims (defaultJWTValidationSettings (const True)) key (jwt :: SignedJWT)
-  pure $ case result :: Either JWTError ClaimsSet of
+      verifyJWT hs256ValidationSettings key (jwt :: SignedJWT)
+  pure $ case result :: Either JWTError ChallengeClaims of
     Left _ -> Nothing
-    Right claims -> do
-      guard (claims ^. unregisteredClaims . at "purpose" == Just loginPurpose)
-      email <- stringClaim claims "email"
-      expected <- stringClaim claims "code"
-      -- Constant-time so a wrong code leaks nothing through timing.
-      guard (constEq (encodeUtf8 expected) (encodeUtf8 (codeCommitment pepper email code)))
-      flow <- case stringClaim claims "flow" of
-        Just "signin" -> Just SigninFlow
-        Just "signup" -> SignupFlow <$> stringClaim claims "nombre"
-        _ -> Nothing
-      pure (flow, email)
+    Right claims ->
+      Just
+        ChallengePayload
+          { email = claims.email
+          , codeCommitmentExpected = claims.commitment
+          }
 
-stringClaim :: ClaimsSet -> Text -> Maybe Text
-stringClaim claims name =
-  case claims ^. unregisteredClaims . at name of
-    Just (String t) -> Just t
-    _ -> Nothing
+-- | Constant-time check that @code@ matches the challenge's commitment, so a
+-- wrong code leaks nothing through timing.
+checkChallengeCode :: ByteString -> ChallengePayload -> Text -> Bool
+checkChallengeCode pepper payload code =
+  constEq
+    (encodeUtf8 payload.codeCommitmentExpected)
+    (encodeUtf8 (codeCommitment pepper payload.email code))
+
+-- | Check a challenge + submitted code and recover the email if they match.
+-- Returns 'Nothing' on a bad signature, expiry, wrong purpose, or wrong code.
+-- (Composition of 'openChallenge' and 'checkChallengeCode' for callers that
+-- don't need the two phases separately.)
+verifyLoginChallenge :: JWK -> ByteString -> Text -> Text -> IO (Maybe Text)
+verifyLoginChallenge key pepper challenge code = do
+  mPayload <- openChallenge key challenge
+  pure $ do
+    payload <- mPayload
+    guard (checkChallengeCode pepper payload code)
+    pure payload.email
 
 -- | Sign a session token carrying the user's identity. Written so a
 -- verification step could be inserted later without changing the shape.
 issueToken :: JWK -> User -> IO (Either JWTError Text)
 issueToken key user = do
   now <- getCurrentTime
-  let claims =
+  let std =
         emptyClaimsSet
-          & claimIat ?~ NumericDate now
-          & claimExp ?~ NumericDate (addUTCTime sessionDurationSeconds now)
-          & addClaim "uid" (toJSON (show user.id :: Text))
-          & addClaim "email" (String user.email)
-          & addClaim "nombre" (String user.nombre)
+          & claimIat
+          ?~ NumericDate now
+            & claimExp
+          ?~ NumericDate (addUTCTime sessionDurationSeconds now)
+  let payload = SessionClaims{sessionStdClaims = std, sessionUser = user}
   signed <-
     runJOSE
-      $ signClaims key (newJWSHeader (RequiredProtection, HS256)) claims
+      $ signJWT key (newJWSHeader (RequiredProtection, HS256)) payload
   pure $ fmap (decodeUtf8 . BSL.toStrict . encodeCompact) (signed :: Either JWTError SignedJWT)
+
+-- | Sign a short-lived token attesting that @email@'s ownership was just
+-- verified, to be exchanged (with a display name) for a freshly created
+-- account. Handed to the client only when a verified email has no account yet.
+issueRegistrationToken :: JWK -> Text -> IO (Either JWTError Text)
+issueRegistrationToken key email = do
+  now <- getCurrentTime
+  let std =
+        emptyClaimsSet
+          & claimIat
+          ?~ NumericDate now
+            & claimExp
+          ?~ NumericDate (addUTCTime loginChallengeDurationSeconds now)
+  let payload = RegistrationClaims{regStdClaims = std, regEmail = email}
+  signed <-
+    runJOSE
+      $ signJWT key (newJWSHeader (RequiredProtection, HS256)) payload
+  pure $ fmap (decodeUtf8 . BSL.toStrict . encodeCompact) (signed :: Either JWTError SignedJWT)
+
+-- | Verify a registration token and recover the email whose ownership it
+-- attests. 'Nothing' on a bad signature, expiry, or wrong purpose.
+verifyRegistrationToken :: JWK -> Text -> IO (Maybe Text)
+verifyRegistrationToken key token = do
+  result <-
+    runJOSE $ do
+      jwt <- decodeCompact (BSL.fromStrict (encodeUtf8 token))
+      verifyJWT hs256ValidationSettings key (jwt :: SignedJWT)
+  pure $ case result :: Either JWTError RegistrationClaims of
+    Left _ -> Nothing
+    Right claims -> Just claims.regEmail
 
 -- | Verify a token's signature and expiry and rebuild the 'User' from its
 -- claims. No database access — identity comes entirely from the token.
@@ -188,25 +328,11 @@ verifyToken key raw = do
   result <-
     runJOSE $ do
       jwt <- decodeCompact (BSL.fromStrict raw)
-      verifyClaims (defaultJWTValidationSettings (const True)) key (jwt :: SignedJWT)
-  pure $ case result :: Either JWTError ClaimsSet of
+      verifyJWT hs256ValidationSettings key (jwt :: SignedJWT)
+  pure $ case result :: Either JWTError SessionClaims of
     Left _ -> Nothing
-    Right claims -> claimsToUser claims
+    Right claims -> Just claims.sessionUser
 
-claimsToUser :: ClaimsSet -> Maybe User
-claimsToUser claims = do
-  uidText <- textClaim "uid"
-  email <- textClaim "email"
-  nombre <- textClaim "nombre"
-  uid <- readMaybe (toS uidText :: [Char])
-  pure User{id = uid, email = email, nombre = nombre}
-  where
-    textClaim name =
-      case claims ^. unregisteredClaims . at name of
-        Just (String t) -> Just t
-        _ -> Nothing
-
--- | @Set-Cookie@ value that stores the session token.
 renderSessionCookie :: Bool -> Text -> Text
 renderSessionCookie secure token =
   renderCookie
@@ -215,7 +341,6 @@ renderSessionCookie secure token =
       , setCookieMaxAge = Just (secondsToDiffTime (round sessionDurationSeconds))
       }
 
--- | @Set-Cookie@ value that immediately expires the session (logout).
 clearSessionCookie :: Bool -> Text
 clearSessionCookie secure =
   renderCookie

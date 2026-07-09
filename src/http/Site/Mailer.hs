@@ -129,5 +129,5 @@ loginEmailHtml code =
   Text.unlines
     [ "<p>Usá este código para iniciar sesión en Banana Split:</p>"
     , "<p><strong style=\"font-size:1.5em;letter-spacing:0.2em\">" <> code <> "</strong></p>"
-    , "<p>Vence en 15 minutos.</p>"
+    , "<p>Vence en 5 minutos.</p>"
     ]

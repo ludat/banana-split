@@ -4,7 +4,7 @@ import Components.Bootstrap as Bs
 import Css
 import Effect exposing (Effect)
 import Generated.Api exposing (ShallowGrupo, ULID, User)
-import Html exposing (Html, a, button, div, h2, i, li, node, ol, option, p, select, strong, text, ul)
+import Html exposing (Html, a, button, div, h2, i, label, li, node, ol, option, p, select, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
 import Html.Events exposing (on, onClick, preventDefaultOn)
 import Json.Decode as Decode
@@ -43,15 +43,13 @@ layout _ shared route =
 
 
 type alias Model =
-    { openDropdown : Maybe String
-    , qrShare : Maybe { title : String, url : String }
+    { qrShare : Maybe { title : String, url : String }
     }
 
 
 init : ( Model, Effect Msg )
 init =
-    ( { openDropdown = Nothing
-      , qrShare = Nothing
+    ( { qrShare = Nothing
       }
     , Effect.none
     )
@@ -63,7 +61,6 @@ init =
 
 type Msg
     = ForwardSharedMessage Shared.Msg
-    | ToggleDropdown String
     | ShareUrl { title : String, url : String }
     | OpenQrShare { title : String, url : String }
     | CloseQrShare
@@ -73,20 +70,8 @@ update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
         ForwardSharedMessage sharedMsg ->
-            ( { model | openDropdown = Nothing }
+            ( model
             , Effect.sendSharedMsg sharedMsg
-            )
-
-        ToggleDropdown name ->
-            ( { model
-                | openDropdown =
-                    if model.openDropdown == Just name then
-                        Nothing
-
-                    else
-                        Just name
-              }
-            , Effect.none
             )
 
         ShareUrl data ->
@@ -144,7 +129,7 @@ view store currentPath activeUser origin currentUser { toContentMsg, model, cont
         , case remoteGrupo of
             Success grupo ->
                 Html.map toContentMsg <|
-                    viewGroupHeader model origin currentPath activeUser currentUser store grupo
+                    viewGroupHeader origin currentPath activeUser currentUser store grupo
 
             _ ->
                 text ""
@@ -169,8 +154,8 @@ view store currentPath activeUser origin currentUser { toContentMsg, model, cont
     }
 
 
-viewGroupHeader : Model -> String -> Path.Path -> Maybe ULID -> WebData User -> Store -> ShallowGrupo -> Html Msg
-viewGroupHeader model origin currentPath activeUser currentUser store grupo =
+viewGroupHeader : String -> Path.Path -> Maybe ULID -> WebData User -> Store -> ShallowGrupo -> Html Msg
+viewGroupHeader origin currentPath activeUser currentUser store grupo =
     let
         info =
             headerInfo currentPath store grupo
@@ -183,76 +168,9 @@ viewGroupHeader model origin currentPath activeUser currentUser store grupo =
                     , h2 [ class "mb-0 fw-bold" ] [ text info.title ]
                     ]
                 , div [ class "d-flex flex-column align-items-end gap-2" ]
-                    [ div
-                        [ classList
-                            [ ( "dropdown", True )
-                            , ( "show", model.openDropdown == Just "ver-como" )
-                            ]
-                        ]
-                        [ button
-                            [ type_ "button"
-                            , class "btn btn-link btn-sm text-muted text-decoration-none p-0 dropdown-toggle"
-                            , Attr.attribute "aria-expanded"
-                                (if model.openDropdown == Just "ver-como" then
-                                    "true"
-
-                                 else
-                                    "false"
-                                )
-                            , onClick (ToggleDropdown "ver-como")
-                            ]
-                            [ text "Ver como: "
-                            , strong []
-                                [ text
-                                    (activeUser
-                                        |> Maybe.andThen
-                                            (\uid ->
-                                                grupo.participantes
-                                                    |> List.filter (\p -> p.id == uid)
-                                                    |> List.head
-                                                    |> Maybe.map .nombre
-                                            )
-                                        |> Maybe.withDefault "—"
-                                    )
-                                ]
-                            ]
-                        , ul
-                            [ classList
-                                [ ( "dropdown-menu", True )
-                                , ( "dropdown-menu-end", True )
-                                , ( "show", model.openDropdown == Just "ver-como" )
-                                ]
-                            ]
-                            (li [ class "px-2 py-1" ]
-                                [ button
-                                    [ type_ "button"
-                                    , class "dropdown-item rounded"
-                                    , classList [ ( "active", activeUser == Nothing ) ]
-                                    , onClick
-                                        (ForwardSharedMessage <|
-                                            Shared.SetCurrentUser { grupoId = grupo.id, userId = "" }
-                                        )
-                                    ]
-                                    [ text "—" ]
-                                ]
-                                :: (grupo.participantes
-                                        |> List.map
-                                            (\p ->
-                                                li [ class "px-2 py-1" ]
-                                                    [ button
-                                                        [ type_ "button"
-                                                        , class "dropdown-item rounded"
-                                                        , classList [ ( "active", activeUser == Just p.id ) ]
-                                                        , onClick
-                                                            (ForwardSharedMessage <|
-                                                                Shared.SetCurrentUser { grupoId = grupo.id, userId = p.id }
-                                                            )
-                                                        ]
-                                                        [ text p.nombre ]
-                                                    ]
-                                            )
-                                   )
-                            )
+                    [ label [ class "d-flex align-items-center gap-2 small text-muted text-nowrap" ]
+                        [ text "Ver como:"
+                        , viewGlobalUserSelector activeUser grupo
                         ]
                     , viewVerComoWarning currentUser activeUser grupo
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
@@ -480,13 +398,6 @@ headerInfo currentPath store grupo =
             }
 
         Path.Login ->
-            { crumbs = []
-            , title = "Banana split"
-            , showTabs = False
-            , share = grupoShare
-            }
-
-        Path.Signup ->
             { crumbs = []
             , title = "Banana split"
             , showTabs = False

@@ -51,9 +51,6 @@ grupoIdFromPath path =
         Path.Login ->
             Nothing
 
-        Path.Signup ->
-            Nothing
-
         Path.Cuenta ->
             Nothing
 

@@ -9,6 +9,7 @@
 
 module BananaSplit.Persistence.Schema where
 
+import Data.Aeson (FromJSON, ToJSON)
 import Data.String (String)
 import Data.Time (Day, UTCTime)
 import Database.Beam as Beam
@@ -23,6 +24,7 @@ import Preludat
 data BananaSplitDb f = BananaSplitDb
   { grupos :: f (TableEntity GrupoT)
   , users :: f (TableEntity UserT)
+  , login_attempts :: f (TableEntity LoginAttemptT)
   , participantes :: f (TableEntity ParticipanteT)
   , pagos :: f (TableEntity PagoT)
   , distribuciones :: f (TableEntity DistribucionT)
@@ -93,6 +95,30 @@ deriving instance Eq (PrimaryKey UserT (Nullable Identity))
 instance Table UserT where
   data PrimaryKey UserT f = UserId (Columnar f ULID) deriving (Generic, Beamable)
   primaryKey = UserId . (.id)
+
+data LoginEvent
+  = VerifyFailure
+  | CodeSent
+  deriving stock (Show, Eq, Generic)
+  deriving anyclass (ToJSON, FromJSON)
+
+data LoginAttemptT f = LoginAttempt
+  { id :: Columnar f ULID
+  , email :: Columnar f Text
+  , details :: Columnar f (PgJSONB LoginEvent)
+  , created_at :: Columnar f UTCTime
+  }
+  deriving (Generic, Beamable)
+
+type LoginAttempt = LoginAttemptT Identity
+
+deriving instance Show LoginAttempt
+
+deriving instance Eq LoginAttempt
+
+instance Table LoginAttemptT where
+  data PrimaryKey LoginAttemptT f = LoginAttemptId (Columnar f ULID) deriving (Generic, Beamable)
+  primaryKey = LoginAttemptId . (.id)
 
 data ParticipanteT f = Participante
   { id :: Columnar f ULID

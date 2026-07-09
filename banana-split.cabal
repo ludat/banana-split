@@ -182,10 +182,12 @@ test-suite spec
     BananaSplit.DeudasSpec
     BananaSplit.MonedaSpec
     BananaSplit.Persistence.GrupoSpec
+    BananaSplit.Persistence.LoginAttemptsSpec
     BananaSplit.Persistence.PagosSpec
     BananaSplit.Persistence.SpecHook
     BananaSplit.RepartijaSpec
     BananaSplitSpec
+    Site.AuthSpec
     Site.Handler.GruposSpec
 
   build-depends:
@@ -194,5 +196,6 @@ test-suite spec
     banana-split:database,
     banana-split:http,
     hspec,
+    lens,
 
   build-tool-depends: hspec-discover:hspec-discover

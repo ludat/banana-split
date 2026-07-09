@@ -4,9 +4,9 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Site.Handler.Auth (
-  handleSignup,
-  handleSignin,
+  handleRequestCode,
   handleVerify,
+  handleRegister,
   handleLogout,
   handleMe,
   handleUpdateMe,
@@ -16,108 +16,117 @@ import Data.Text qualified as Text
 import Servant
 
 import BananaSplit
-import BananaSplit.Persistence (createUser, fetchUserByEmail, fetchUserById, updateUser)
+import BananaSplit.Persistence (LoginEvent (..), clearAttempts, countRecentAttempts, createUser, fetchUserByEmail, fetchUserById, recordAttempt, updateUser)
 import Preludat
-import Site.Api (LoginChallenge (..), SigninParams (..), SignupParams (..), UpdateMeParams (..), VerifyParams (..))
-import Site.Auth (ChallengeFlow (..), clearSessionCookie, generateLoginCode, issueLoginChallenge, issueToken, renderSessionCookie, verifyLoginChallenge)
+import Site.Api (LoginChallenge (..), RegisterParams (..), RequestCodeParams (..), UpdateMeParams (..), VerifyParams (..), VerifyResult (..))
+import Site.Auth (ChallengePayload (..), checkChallengeCode, clearSessionCookie, generateLoginCode, issueLoginChallenge, issueRegistrationToken, issueToken, openChallenge, renderSessionCookie, verifyRegistrationToken)
 import Site.Handler.Utils (runBeam, throwJsonError)
 import Site.Mailer (Mailer (..))
 import Site.Types
 
--- | Signing a session token can only fail because of a misconfiguration (e.g.
--- an @auth.jwtsecret@ shorter than the 32 bytes HS256 requires), never because
--- of client input. So it's a real exception, not a handled 4xx/5xx.
 newtype SessionTokenError = SessionTokenError Text
   deriving stock (Show)
   deriving anyclass (Exception)
 
--- | Step 1 of signup. Deliberately does /not/ look at the database: whether the
--- email is already taken is not revealed here, only after the caller proves they
--- own the address by entering the emailed code (see 'handleVerify'). So the
--- response is identical for taken and free emails — no account enumeration. The
--- account itself is created only once the code is verified.
-handleSignup :: SignupParams -> AppHandler LoginChallenge
-handleSignup params = do
-  let email = normalizeEmail params.email
-  let nombre = Text.strip params.nombre
-  when (Text.null nombre)
-    $ throwJsonError err400 "Ingresá tu nombre"
-  issueChallenge (SignupFlow nombre) email
+-- | How many login events (codes emailed + wrong codes submitted, counted
+-- together) an email may pile up within the window before both @request-code@
+-- and @verify@ start rejecting with 429 — one budget covering both code
+-- brute-forcing and email-bombing (see 'countRecentAttempts' for the window).
+maxLoginAttempts :: Int
+maxLoginAttempts = 10
 
--- | Step 1 of signin. Like 'handleSignup', it does not touch the database:
--- whether an account exists is only disclosed at verify time, after ownership of
--- the email is proven. So a code is emailed uniformly (the owner of an
--- account-less address simply gets one they can't use), and the HTTP response
--- never distinguishes existing from unknown emails.
-handleSignin :: SigninParams -> AppHandler LoginChallenge
-handleSignin params = do
+-- | Step 1: email a login code. Deliberately does /not/ look at the database, so
+-- it can't reveal whether an account exists — that is disclosed only at verify
+-- time, and only to the proven owner of the address.
+handleRequestCode :: RequestCodeParams -> AppHandler LoginChallenge
+handleRequestCode params = do
   let email = normalizeEmail params.email
-  issueChallenge SigninFlow email
-
--- | Shared tail of both step-1 handlers: mint a code, sign a challenge that
--- carries the flow, and email the code.
-issueChallenge :: ChallengeFlow -> Text -> AppHandler LoginChallenge
-issueChallenge flow email = do
   key <- asks (.jwk)
   pepper <- asks (.authPepper)
   mailer <- asks (.mailer)
+  -- Throttle login events for this address, so the endpoint can't be used to
+  -- email-bomb a victim or run up SMTP costs.
+  attempts <- runBeam $ countRecentAttempts email
+  when (attempts >= maxLoginAttempts)
+    $ throwJsonError err429 "Pediste demasiados códigos. Esperá unos minutos y volvé a intentar."
   code <- liftIO generateLoginCode
-  eChallenge <- liftIO $ issueLoginChallenge key pepper flow email code
-  case eChallenge of
-    Left err ->
-      liftIO $ throwIO $ SessionTokenError $ "could not sign login challenge: " <> show err
-    Right challenge -> do
-      liftIO $ mailer.sendLoginCode email code
-      pure $ LoginChallenge challenge
+  challenge <-
+    liftIO
+      $ issueLoginChallenge key pepper email code
+      `orElse` (throwIO . SessionTokenError . ("Could not sign login challenge: " <>) . show)
+  runBeam $ recordAttempt email CodeSent
+  liftIO $ mailer.sendLoginCode email code
+  pure $ LoginChallenge challenge
 
--- | Step 2 of both flows: exchange a challenge + its emailed code for a
--- session. The flow rides inside the challenge, so this is where a signup
--- actually creates the account and a signin actually looks one up — re-checking
--- existence to close the gap since step 1.
-handleVerify ::
-  VerifyParams
-  -> AppHandler (Headers '[Header "Set-Cookie" Text] User)
+-- | Step 2: prove ownership of the challenge's email with the code, then branch
+-- on whether an account exists — log in, or hand back a registration token for a
+-- new one. The rate-limit check sits between signature recovery and the
+-- constant-time code check, so the 6-digit code can't be brute-forced.
+handleVerify :: VerifyParams -> AppHandler (Headers '[Header "Set-Cookie" Text] VerifyResult)
 handleVerify params = do
   key <- asks (.jwk)
   pepper <- asks (.authPepper)
   secure <- asks (.cookieSecure)
-  mResult <- liftIO $ verifyLoginChallenge key pepper params.challenge params.code
-  (flow, email) <- maybe (throwJsonError err401 "Código inválido o vencido") pure mResult
-  user <- case flow of
-    SigninFlow -> do
-      existing <- runBeam $ fetchUserByEmail email
-      maybe (throwJsonError err404 "No encontramos una cuenta con ese email") pure existing
-    SignupFlow nombre -> do
-      existing <- runBeam $ fetchUserByEmail email
-      case existing of
-        Just _ -> throwJsonError err409 "Ya existe una cuenta con ese email. Iniciá sesión."
-        Nothing -> runBeam $ createUser email nombre
-  eToken <- liftIO $ issueToken key user
-  case eToken of
-    Left err ->
-      liftIO $ throwIO $ SessionTokenError $ "could not sign session token: " <> show err
-    Right token ->
-      pure $ addHeader (renderSessionCookie secure token) user
+  payload <-
+    liftIO (openChallenge key params.challenge)
+      `orElseMay` throwJsonError err401 "Código inválido o vencido"
+  let email = payload.email
+  attempts <- runBeam $ countRecentAttempts email
+  when (attempts >= maxLoginAttempts)
+    $ throwJsonError err429 "Demasiados intentos. Esperá unos minutos y volvé a intentar."
+  unless (checkChallengeCode pepper payload params.code) $ do
+    runBeam $ recordAttempt email VerifyFailure
+    throwJsonError err401 "Código inválido o vencido"
+  -- Ownership proven: drop this email's attempts so a legit fumble doesn't count.
+  runBeam $ clearAttempts email
+  existing <- runBeam $ fetchUserByEmail email
+  case existing of
+    Just user -> do
+      token <-
+        liftIO
+          $ issueToken key user
+          `orElse` (throwIO . SessionTokenError . ("Could not sign session token: " <>) . show)
+      pure $ addHeader (renderSessionCookie secure token) (VerifyLoggedIn user)
+    Nothing -> do
+      regToken <-
+        liftIO
+          $ issueRegistrationToken key email
+          `orElse` (throwIO . SessionTokenError . ("Could not sign registration token: " <>) . show)
+      pure $ noHeader (VerifyNeedsRegistration regToken)
 
--- | Logout just expires the cookie client-side; JWTs are stateless.
+-- | Step 3 (new accounts only): exchange the registration token + a chosen
+-- display name for a created account and a session. Identity comes from the
+-- (verified) token, not the request body.
+handleRegister :: RegisterParams -> AppHandler (Headers '[Header "Set-Cookie" Text] User)
+handleRegister params = do
+  key <- asks (.jwk)
+  secure <- asks (.cookieSecure)
+  let nombre = Text.strip params.nombre
+  when (Text.null nombre)
+    $ throwJsonError err400 "Ingresá tu nombre"
+  email <-
+    liftIO (verifyRegistrationToken key params.registrationToken)
+      `orElseMay` throwJsonError err401 "Tu registro venció. Volvé a empezar."
+  existing <- runBeam $ fetchUserByEmail email
+  when (isJust existing)
+    $ throwJsonError err409 "Ya existe una cuenta con ese email. Iniciá sesión."
+  user <- runBeam $ createUser email nombre
+  token <-
+    liftIO
+      $ issueToken key user
+      `orElse` (throwIO . SessionTokenError . ("Could not sign session token: " <>) . show)
+  pure $ addHeader (renderSessionCookie secure token) user
+
 handleLogout :: AppHandler (Headers '[Header "Set-Cookie" Text] Text)
 handleLogout = do
   secure <- asks (.cookieSecure)
   pure $ addHeader (clearSessionCookie secure) "ok"
 
--- | Current user. Reads the DB so the UI stays fresh even if the token's
--- claims have gone stale (e.g. after a rename).
 handleMe :: User -> AppHandler User
 handleMe sessionUser = do
-  fresh <- runBeam $ fetchUserById sessionUser.id
-  case fresh of
-    Nothing -> throwJsonError err401 "user not found"
-    Just user -> pure user
+  runBeam (fetchUserById sessionUser.id)
+    `orElseMay` throwJsonError err401 "user not found"
 
--- | Edit the signed-in user's display name. Identity comes from the session
--- (not the request body), so a user can only edit their own account. The
--- session cookie keeps its now-stale name claim, which is harmless: nothing
--- trusts it — @/me@ and every future load re-read from the DB.
 handleUpdateMe :: User -> UpdateMeParams -> AppHandler User
 handleUpdateMe sessionUser params = do
   let nombre = Text.strip params.nombre

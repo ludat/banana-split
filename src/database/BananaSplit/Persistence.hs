@@ -1,8 +1,14 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE TypeApplications #-}
 
 module BananaSplit.Persistence (
   MissingPGRollSchema (..),
+  LoginEvent (..),
+  countRecentAttempts,
+  recordAttempt,
+  clearAttempts,
+  deleteOldLoginAttempts,
   makePool,
   runMigration,
   recomputePagos,
@@ -45,7 +51,7 @@ import Data.List.NonEmpty qualified as NE
 import Data.Pool qualified as Pool
 import Data.String (String)
 import Data.Text qualified as Text
-import Data.Time (getCurrentTime)
+import Data.Time (NominalDiffTime, addUTCTime, getCurrentTime)
 import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres
@@ -72,6 +78,9 @@ runMigration config args = do
       putText "Done"
     ["recompute-pagos"] -> do
       recomputePagos conn
+      putText "Done"
+    ["prune-login-attempts"] -> do
+      runBeamPostgres conn deleteOldLoginAttempts
       putText "Done"
     _ -> do
       putText $ "Unknown migration: " <> show args
@@ -242,6 +251,56 @@ toModelUser u =
     , M.email = u.email
     , M.nombre = u.nombre
     }
+
+attemptWindow :: NominalDiffTime
+attemptWindow = 15 * 60
+
+countRecentAttempts :: Text -> Pg Int
+countRecentAttempts rawEmail = do
+  let email = M.normalizeEmail rawEmail
+  now <- liftIO getCurrentTime
+  let cutoff = now & addUTCTime (negate attemptWindow)
+  mCount <-
+    runSelectReturningOne
+      $ select
+      $ aggregate_ (\_ -> as_ @Int64 countAll_)
+      $ do
+        a <- all_ db.login_attempts
+        guard_ (a.email ==. val_ email &&. a.created_at >=. val_ cutoff)
+        pure a
+  pure $ maybe 0 fromIntegral mCount
+
+recordAttempt :: Text -> LoginEvent -> Pg ()
+recordAttempt rawEmail event = do
+  let email = M.normalizeEmail rawEmail
+  newId <- liftIO ULID.getULID
+  now <- liftIO getCurrentTime
+  runInsert
+    $ insert db.login_attempts
+    $ insertValues
+      [LoginAttempt{id = newId, email = email, details = PgJSONB event, created_at = now}]
+  let cutoff = now & addUTCTime (negate attemptWindow)
+  runDelete
+    $ delete
+      db.login_attempts
+      (\a -> a.email ==. val_ email &&. a.created_at <. val_ cutoff)
+
+clearAttempts :: Text -> Pg ()
+clearAttempts rawEmail = do
+  let email = M.normalizeEmail rawEmail
+  runDelete
+    $ delete
+      db.login_attempts
+      (\a -> a.email ==. val_ email)
+
+deleteOldLoginAttempts :: Pg ()
+deleteOldLoginAttempts = do
+  now <- liftIO getCurrentTime
+  let cutoff = now & addUTCTime (negate attemptWindow)
+  runDelete
+    $ delete
+      db.login_attempts
+      (\a -> a.created_at <. val_ cutoff)
 
 fetchGrupo :: ULID -> Pg (Maybe M.ShallowGrupo)
 fetchGrupo aGrupoId = do

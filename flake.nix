@@ -80,6 +80,7 @@
                     fourmolu
                     glpk
                     libpq
+                    mailpit
                     ;
                 };
             };

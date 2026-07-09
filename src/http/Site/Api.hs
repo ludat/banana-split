@@ -67,13 +67,14 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "transacciones-congeladas" :> Capture "transaccionId" ULID :> "saldar" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
   , _routeReceiptImageParse ::
       routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
-  , -- Auth
-    _routeAuthSignup ::
-      routes :- "auth" :> "signup" :> ReqBody '[JSON] SignupParams :> Post '[JSON] LoginChallenge
-  , _routeAuthSignin ::
-      routes :- "auth" :> "signin" :> ReqBody '[JSON] SigninParams :> Post '[JSON] LoginChallenge
+  , -- Auth. A single email-first flow: request a code, prove ownership by
+    -- verifying it, then either log in (existing account) or register (new one).
+    _routeAuthRequestCode ::
+      routes :- "auth" :> "request-code" :> ReqBody '[JSON] RequestCodeParams :> Post '[JSON] LoginChallenge
   , _routeAuthVerify ::
-      routes :- "auth" :> "verify" :> ReqBody '[JSON] VerifyParams :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] User)
+      routes :- "auth" :> "verify" :> ReqBody '[JSON] VerifyParams :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] VerifyResult)
+  , _routeAuthRegister ::
+      routes :- "auth" :> "register" :> ReqBody '[JSON] RegisterParams :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] User)
   , _routeAuthLogout ::
       routes :- "auth" :> "logout" :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] Text)
   , _routeMe ::
@@ -106,24 +107,17 @@ data ParticipanteAddParams = ParticipanteAddParams
   }
   deriving (Show, Eq, Generic)
 
--- | Signin: an existing user asks for a login code by email.
-data SigninParams = SigninParams
+-- | Step 1: ask for a login code by email. The same request whether or not an
+-- account exists, so it never reveals which — existence is only disclosed at
+-- verify time, to the proven owner of the address.
+data RequestCodeParams = RequestCodeParams
   { email :: Text
   }
   deriving (Show, Eq, Generic)
 
--- | Signup: a new user provides a display name alongside their email. The name
--- travels through the challenge so it can be persisted once the code is
--- verified.
-data SignupParams = SignupParams
-  { nombre :: Text
-  , email :: Text
-  }
-  deriving (Show, Eq, Generic)
-
--- | Returned by @login@: the client holds this challenge and later submits it
--- back together with the emailed code. It commits to the code without
--- containing it (see "Site.Auth"), so it is safe to hand to the browser.
+-- | Returned by @request-code@: the client holds this challenge and later
+-- submits it back together with the emailed code. It commits to the code
+-- without containing it (see "Site.Auth"), so it is safe to hand to the browser.
 data LoginChallenge = LoginChallenge
   { challenge :: Text
   }
@@ -132,6 +126,24 @@ data LoginChallenge = LoginChallenge
 data VerifyParams = VerifyParams
   { challenge :: Text
   , code :: Text
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Step 2 outcome, once email ownership is proven: either the account already
+-- existed (now logged in — a session cookie rides on the response) or it does
+-- not yet, in which case the caller gets a short-lived registration token to
+-- exchange for a new account (see 'RegisterParams'). Delivered as a 200 so the
+-- typed branch reaches the frontend (same pattern as 'ClaimParticipanteResult').
+data VerifyResult
+  = VerifyLoggedIn User
+  | VerifyNeedsRegistration Text
+  deriving (Show, Eq, Generic)
+
+-- | Step 3 (new accounts only): exchange the registration token from
+-- 'VerifyNeedsRegistration' plus a chosen display name for a created account.
+data RegisterParams = RegisterParams
+  { registrationToken :: Text
+  , nombre :: Text
   }
   deriving (Show, Eq, Generic)
 
@@ -200,10 +212,11 @@ data ClaimParticipanteResult
   deriving (Show, Eq, Generic)
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
-Elm.deriveBoth Elm.defaultOptions ''SigninParams
-Elm.deriveBoth Elm.defaultOptions ''SignupParams
+Elm.deriveBoth Elm.defaultOptions ''RequestCodeParams
 Elm.deriveBoth Elm.defaultOptions ''LoginChallenge
 Elm.deriveBoth Elm.defaultOptions ''VerifyParams
+Elm.deriveBoth Elm.defaultOptions ''VerifyResult
+Elm.deriveBoth Elm.defaultOptions ''RegisterParams
 Elm.deriveBoth Elm.defaultOptions ''UpdateMeParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoAsUserParams

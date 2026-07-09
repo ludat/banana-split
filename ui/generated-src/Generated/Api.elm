@@ -46,37 +46,17 @@ jsonEncCreateGrupoAsUserParams  val =
    Json.Encode.string val.grupoName
 
 
-type alias SigninParams  =
+type alias RequestCodeParams  =
    { email: String
    }
 
-jsonDecSigninParams : Json.Decode.Decoder ( SigninParams )
-jsonDecSigninParams =
+jsonDecRequestCodeParams : Json.Decode.Decoder ( RequestCodeParams )
+jsonDecRequestCodeParams =
    Json.Decode.succeed (\pemail -> {email = pemail}) |> custom (Json.Decode.string)
 
-jsonEncSigninParams : SigninParams -> Value
-jsonEncSigninParams  val =
+jsonEncRequestCodeParams : RequestCodeParams -> Value
+jsonEncRequestCodeParams  val =
    Json.Encode.string val.email
-
-
-type alias SignupParams  =
-   { nombre: String
-   , email: String
-   }
-
-jsonDecSignupParams : Json.Decode.Decoder ( SignupParams )
-jsonDecSignupParams =
-   Json.Decode.succeed (\pnombre pemail -> {nombre = pnombre, email = pemail})
-   |> required "nombre" (Json.Decode.string)
-   |> required "email" (Json.Decode.string)
-
-jsonEncSignupParams : SignupParams -> Value
-jsonEncSignupParams  val =
-   Json.Encode.object
-   [ ("nombre", Json.Encode.string val.nombre)
-   , ("email", Json.Encode.string val.email)
-   ]
-
 
 
 type alias LoginChallenge  =
@@ -108,6 +88,47 @@ jsonEncVerifyParams  val =
    Json.Encode.object
    [ ("challenge", Json.Encode.string val.challenge)
    , ("code", Json.Encode.string val.code)
+   ]
+
+
+
+type VerifyResult  =
+    VerifyLoggedIn User
+    | VerifyNeedsRegistration String
+
+jsonDecVerifyResult : Json.Decode.Decoder ( VerifyResult )
+jsonDecVerifyResult =
+    let jsonDecDictVerifyResult = Dict.fromList
+            [ ("VerifyLoggedIn", Json.Decode.lazy (\_ -> Json.Decode.map VerifyLoggedIn (jsonDecUser)))
+            , ("VerifyNeedsRegistration", Json.Decode.lazy (\_ -> Json.Decode.map VerifyNeedsRegistration (Json.Decode.string)))
+            ]
+    in  decodeSumObjectWithSingleField  "VerifyResult" jsonDecDictVerifyResult
+
+jsonEncVerifyResult : VerifyResult -> Value
+jsonEncVerifyResult  val =
+    let keyval v = case v of
+                    VerifyLoggedIn v1 -> ("VerifyLoggedIn", encodeValue (jsonEncUser v1))
+                    VerifyNeedsRegistration v1 -> ("VerifyNeedsRegistration", encodeValue (Json.Encode.string v1))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type alias RegisterParams  =
+   { registrationToken: String
+   , nombre: String
+   }
+
+jsonDecRegisterParams : Json.Decode.Decoder ( RegisterParams )
+jsonDecRegisterParams =
+   Json.Decode.succeed (\pregistrationToken pnombre -> {registrationToken = pregistrationToken, nombre = pnombre})
+   |> required "registrationToken" (Json.Decode.string)
+   |> required "nombre" (Json.Decode.string)
+
+jsonEncRegisterParams : RegisterParams -> Value
+jsonEncRegisterParams  val =
+   Json.Encode.object
+   [ ("registrationToken", Json.Encode.string val.registrationToken)
+   , ("nombre", Json.Encode.string val.nombre)
    ]
 
 
@@ -1450,8 +1471,8 @@ postReceiptParseimage body toMsg =
                 Nothing
             }
 
-postAuthSignup : SignupParams -> (Result Http.Error  (LoginChallenge)  -> msg) -> Cmd msg
-postAuthSignup body toMsg =
+postAuthRequestcode : RequestCodeParams -> (Result Http.Error  (LoginChallenge)  -> msg) -> Cmd msg
+postAuthRequestcode body toMsg =
     let
         params =
             List.filterMap identity
@@ -1466,11 +1487,11 @@ postAuthSignup body toMsg =
             , url =
                 Url.Builder.crossOrigin "/api"
                     [ "auth"
-                    , "signup"
+                    , "request-code"
                     ]
                     params
             , body =
-                Http.jsonBody (jsonEncSignupParams body)
+                Http.jsonBody (jsonEncRequestCodeParams body)
             , expect =
                 Http.expectJson toMsg jsonDecLoginChallenge
             , timeout =
@@ -1479,36 +1500,7 @@ postAuthSignup body toMsg =
                 Nothing
             }
 
-postAuthSignin : SigninParams -> (Result Http.Error  (LoginChallenge)  -> msg) -> Cmd msg
-postAuthSignin body toMsg =
-    let
-        params =
-            List.filterMap identity
-            (List.concat
-                [])
-    in
-        Http.request
-            { method =
-                "POST"
-            , headers =
-                []
-            , url =
-                Url.Builder.crossOrigin "/api"
-                    [ "auth"
-                    , "signin"
-                    ]
-                    params
-            , body =
-                Http.jsonBody (jsonEncSigninParams body)
-            , expect =
-                Http.expectJson toMsg jsonDecLoginChallenge
-            , timeout =
-                Nothing
-            , tracker =
-                Nothing
-            }
-
-postAuthVerify : VerifyParams -> (Result Http.Error  (User)  -> msg) -> Cmd msg
+postAuthVerify : VerifyParams -> (Result Http.Error  (VerifyResult)  -> msg) -> Cmd msg
 postAuthVerify body toMsg =
     let
         params =
@@ -1529,6 +1521,35 @@ postAuthVerify body toMsg =
                     params
             , body =
                 Http.jsonBody (jsonEncVerifyParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecVerifyResult
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthRegister : RegisterParams -> (Result Http.Error  (User)  -> msg) -> Cmd msg
+postAuthRegister body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "register"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncRegisterParams body)
             , expect =
                 Http.expectJson toMsg jsonDecUser
             , timeout =
