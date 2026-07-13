@@ -15,6 +15,7 @@ import Protolude
 import Servant
 
 import BananaSplit
+import Site.Auth (Session)
 
 type HXTrigger = Header "HX-Trigger" Text
 
@@ -77,22 +78,26 @@ data Api routes
       routes :- "auth" :> "register" :> ReqBody '[JSON] RegisterParams :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] User)
   , _routeAuthLogout ::
       routes :- "auth" :> "logout" :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] Text)
+  , -- Sliding session: called on every app load; re-issues the cookie only when
+    -- the token is past half its life, otherwise just returns the user.
+    _routeAuthRefresh ::
+      routes :- AuthProtect Session :> "auth" :> "refresh" :> Post '[JSON] (Headers '[Header "Set-Cookie" Text] User)
   , _routeMe ::
-      routes :- AuthProtect "session" :> "me" :> Get '[JSON] User
+      routes :- AuthProtect User :> "me" :> Get '[JSON] User
   , _routeMeUpdate ::
-      routes :- AuthProtect "session" :> "me" :> ReqBody '[JSON] UpdateMeParams :> Put '[JSON] User
+      routes :- AuthProtect User :> "me" :> ReqBody '[JSON] UpdateMeParams :> Put '[JSON] User
   , -- Like '_routeGrupoPost' but for a signed-in creator: instead of naming the
     -- first participante, it is derived from the account and born claimed.
     _routeMeGrupoPost ::
-      routes :- AuthProtect "session" :> "me" :> "grupos" :> ReqBody '[JSON] CreateGrupoAsUserParams :> Post '[JSON] Grupo
+      routes :- AuthProtect User :> "me" :> "grupos" :> ReqBody '[JSON] CreateGrupoAsUserParams :> Post '[JSON] Grupo
   , -- The grupos where the signed-in user has claimed a participante, i.e.
     -- "my groups" for the home screen.
     _routeMeGruposGet ::
-      routes :- AuthProtect "session" :> "me" :> "grupos" :> Get '[JSON] [ShallowGrupo]
+      routes :- AuthProtect User :> "me" :> "grupos" :> Get '[JSON] [ShallowGrupo]
   , _routeParticipanteClaim ::
-      routes :- AuthProtect "session" :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Put '[JSON] ClaimParticipanteResult
+      routes :- AuthProtect User :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Put '[JSON] ClaimParticipanteResult
   , _routeParticipanteUnclaim ::
-      routes :- AuthProtect "session" :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Delete '[JSON] Participante
+      routes :- AuthProtect User :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Delete '[JSON] Participante
   , _routeHealth ::
       routes :- "health" :> Get '[JSON] Text
       -- , _routeRepartijaItemDesdoblar ::

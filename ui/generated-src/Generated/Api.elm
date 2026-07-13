@@ -1587,6 +1587,35 @@ postAuthLogout toMsg =
                 Nothing
             }
 
+postAuthRefresh : (Result Http.Error  (User)  -> msg) -> Cmd msg
+postAuthRefresh toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "refresh"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecUser
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
 getMe : (Result Http.Error  (User)  -> msg) -> Cmd msg
 getMe toMsg =
     let

@@ -79,7 +79,7 @@ init possiblyFlags _ =
                 |> Maybe.map (\ms -> Date.fromPosix timezone (Time.millisToPosix ms))
       , origin = flags.origin
       }
-    , Effect.sendCmd (Api.getMe (RemoteData.fromResult >> GotCurrentUser))
+    , Effect.sendCmd (Api.postAuthRefresh (RemoteData.fromResult >> GotCurrentUser))
     )
 
 

@@ -7,24 +7,30 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Site.Auth (
-  mkSessionKey,
-  issueToken,
-  verifyToken,
-  generateLoginCode,
-  ChallengePayload (..),
-  issueLoginChallenge,
-  openChallenge,
-  checkChallengeCode,
-  verifyLoginChallenge,
-  issueRegistrationToken,
-  verifyRegistrationToken,
-  renderSessionCookie,
-  clearSessionCookie,
-  authHandler,
   AuthContext,
+  ChallengePayload (..),
+  Session (..),
+  authHandler,
+  checkChallengeCode,
+  clearSessionCookie,
+  generateLoginCode,
+  issueLoginChallenge,
+  issueRegistrationToken,
+  issueToken,
+  mkSessionKey,
+  openChallenge,
+  sessionAuthHandler,
+  renderSessionCookie,
+  sessionDurationSeconds,
+  sessionRefreshThreshold,
+  shouldRefreshSession,
+  verifyLoginChallenge,
+  verifyRegistrationToken,
+  verifySession,
+  verifyToken,
 ) where
 
-import Control.Lens ((.~), (?~))
+import Control.Lens ((.~), (?~), (^.))
 import Crypto.JWT
 import Crypto.Number.Generate (generateMax)
 import Data.Aeson (FromJSON (parseJSON), ToJSON (toJSON), Value (Object, String), withObject, (.:))
@@ -37,10 +43,18 @@ import Data.ByteString.Lazy qualified as BSL
 import Data.List qualified as List
 import Data.Set qualified as Set
 import Data.Text qualified as Text
-import Data.Time (NominalDiffTime, addUTCTime, getCurrentTime, secondsToDiffTime)
+import Data.Time (
+  NominalDiffTime,
+  UTCTime,
+  addUTCTime,
+  diffUTCTime,
+  getCurrentTime,
+  secondsToDiffTime,
+ )
 import Network.HTTP.Types.Header (hCookie)
 import Network.Wai (Request, requestHeaders)
-import Servant (AuthProtect, err401, errBody, errHeaders)
+import Servant (AuthProtect, ServerError, err401, errBody, errHeaders)
+import Servant qualified
 import Servant.Server.Experimental.Auth (AuthHandler, AuthServerData, mkAuthHandler)
 import Web.Cookie (
   SetCookie,
@@ -61,10 +75,15 @@ import BananaSplit
 import Preludat
 import Site.Types (App (..))
 
--- | The servant Context entries needed to serve @AuthProtect "session"@ routes.
-type AuthContext = '[AuthHandler Request User]
+-- | The servant Context entries needed to serve @AuthProtect@ routes.
+type AuthContext = '[AuthHandler Request User, AuthHandler Request Session]
 
-type instance AuthServerData (AuthProtect "session") = User
+-- Routes are tagged with the payload their handler wants — @AuthProtect User@
+-- for identity only, @AuthProtect Session@ when the expiry matters too —
+-- rather than with a name, so the type family is forced to be the identity.
+type instance AuthServerData (AuthProtect User) = User
+
+type instance AuthServerData (AuthProtect Session) = Session
 
 -- | Build the symmetric signing key from the configured secret.
 mkSessionKey :: Text -> JWK
@@ -72,6 +91,16 @@ mkSessionKey secret = fromOctets (encodeUtf8 secret)
 
 sessionDurationSeconds :: NominalDiffTime
 sessionDurationSeconds = 90 * 24 * 60 * 60
+
+-- | Re-issue the session cookie once the token has less than this much life
+-- left: any visit either leaves at least this much validity or renews in full.
+sessionRefreshThreshold :: NominalDiffTime
+sessionRefreshThreshold = sessionDurationSeconds / 2
+
+-- | Whether a session expiring at @expiresAt@ is old enough (seen from @now@)
+-- to deserve a fresh cookie.
+shouldRefreshSession :: UTCTime -> UTCTime -> Bool
+shouldRefreshSession now expiresAt = diffUTCTime expiresAt now < sessionRefreshThreshold
 
 sessionCookieName :: ByteString
 sessionCookieName = "session"
@@ -321,17 +350,32 @@ verifyRegistrationToken key token = do
     Left _ -> Nothing
     Right claims -> Just claims.regEmail
 
--- | Verify a token's signature and expiry and rebuild the 'User' from its
--- claims. No database access — identity comes entirely from the token.
-verifyToken :: JWK -> ByteString -> IO (Maybe User)
-verifyToken key raw = do
+-- | What a verified session token attests: who the user is, and until when.
+-- The expiry is what lets the refresh endpoint decide whether to re-issue.
+data Session = Session
+  { user :: User
+  , expiresAt :: UTCTime
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Verify a token's signature and expiry and rebuild the 'Session' from
+-- its claims. No database access — identity comes entirely from the token.
+-- A token without an @exp@ claim is rejected (we never issue one).
+verifySession :: JWK -> ByteString -> IO (Maybe Session)
+verifySession key raw = do
   result <-
     runJOSE $ do
       jwt <- decodeCompact (BSL.fromStrict raw)
       verifyJWT hs256ValidationSettings key (jwt :: SignedJWT)
   pure $ case result :: Either JWTError SessionClaims of
     Left _ -> Nothing
-    Right claims -> Just claims.sessionUser
+    Right claims -> do
+      NumericDate expiresAt <- claims.sessionStdClaims ^. claimExp
+      pure Session{user = claims.sessionUser, expiresAt = expiresAt}
+
+-- | 'verifySession' for callers that only need the identity.
+verifyToken :: JWK -> ByteString -> IO (Maybe User)
+verifyToken key = fmap (fmap (.user)) . verifySession key
 
 renderSessionCookie :: Bool -> Text -> Text
 renderSessionCookie secure token =
@@ -367,20 +411,31 @@ sessionTokenFromRequest req = do
   cookieHeader <- List.lookup hCookie (requestHeaders req)
   List.lookup sessionCookieName (parseCookies cookieHeader)
 
--- | Servant auth handler for @AuthProtect "session"@: pull the session cookie,
+-- | Servant auth handler for @AuthProtect User@: pull the session cookie,
 -- verify it, and hand the 'User' to the protected handler (401 otherwise).
 authHandler :: App -> AuthHandler Request User
-authHandler app = mkAuthHandler $ \req ->
+authHandler app = mkAuthHandler $ authenticateWith (verifyToken app.jwk)
+
+-- | Like 'authHandler' but for @AuthProtect Session@: same cookie, same
+-- verification, but the handler also gets the token's expiry (so the refresh
+-- endpoint can decide whether to re-issue).
+sessionAuthHandler :: App -> AuthHandler Request Session
+sessionAuthHandler app = mkAuthHandler $ authenticateWith (verifySession app.jwk)
+
+-- | The cookie-extraction + 401 logic shared by both auth handlers.
+authenticateWith :: (ByteString -> IO (Maybe a)) -> Request -> Servant.Handler a
+authenticateWith verify req =
   case sessionTokenFromRequest req of
     Nothing -> throwError unauthorized
     Just token -> do
-      mUser <- liftIO $ verifyToken app.jwk token
-      case mUser of
+      mResult <- liftIO $ verify token
+      case mResult of
         Nothing -> throwError unauthorized
-        Just user -> pure user
-  where
-    unauthorized =
-      err401
-        { errBody = "{\"error\":\"not authenticated\"}"
-        , errHeaders = [("Content-Type", "application/json")]
-        }
+        Just result -> pure result
+
+unauthorized :: ServerError
+unauthorized =
+  err401
+    { errBody = "{\"error\":\"not authenticated\"}"
+    , errHeaders = [("Content-Type", "application/json")]
+    }

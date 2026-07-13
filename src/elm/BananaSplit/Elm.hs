@@ -1,6 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE TypeOperators #-}
@@ -26,7 +27,7 @@ import Site.Api
 -- session lives in an httpOnly cookie the browser sends automatically, so the
 -- Elm side needs nothing extra: this pass-through simply skips the combinator.
 instance
-  forall lang ftype (tag :: Symbol) api.
+  forall lang ftype k (tag :: k) api.
   (HasForeign lang ftype api) =>
   HasForeign lang ftype (AuthProtect tag :> api)
   where

@@ -4,22 +4,53 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Site.Handler.Auth (
-  handleRequestCode,
-  handleVerify,
-  handleRegister,
   handleLogout,
   handleMe,
+  handleRefresh,
+  handleRegister,
+  handleRequestCode,
   handleUpdateMe,
+  handleVerify,
 ) where
 
 import Data.Text qualified as Text
+import Data.Time (getCurrentTime)
 import Servant
 
 import BananaSplit
-import BananaSplit.Persistence (LoginEvent (..), clearAttempts, countRecentAttempts, createUser, fetchUserByEmail, fetchUserById, recordAttempt, updateUser)
+import BananaSplit.Persistence (
+  LoginEvent (..),
+  clearAttempts,
+  countRecentAttempts,
+  createUser,
+  fetchUserByEmail,
+  fetchUserById,
+  recordAttempt,
+  updateUser,
+ )
 import Preludat
-import Site.Api (LoginChallenge (..), RegisterParams (..), RequestCodeParams (..), UpdateMeParams (..), VerifyParams (..), VerifyResult (..))
-import Site.Auth (ChallengePayload (..), checkChallengeCode, clearSessionCookie, generateLoginCode, issueLoginChallenge, issueRegistrationToken, issueToken, openChallenge, renderSessionCookie, verifyRegistrationToken)
+import Site.Api (
+  LoginChallenge (..),
+  RegisterParams (..),
+  RequestCodeParams (..),
+  UpdateMeParams (..),
+  VerifyParams (..),
+  VerifyResult (..),
+ )
+import Site.Auth (
+  ChallengePayload (..),
+  Session (..),
+  checkChallengeCode,
+  clearSessionCookie,
+  generateLoginCode,
+  issueLoginChallenge,
+  issueRegistrationToken,
+  issueToken,
+  openChallenge,
+  renderSessionCookie,
+  shouldRefreshSession,
+  verifyRegistrationToken,
+ )
 import Site.Handler.Utils (runBeam, throwJsonError)
 import Site.Mailer (Mailer (..))
 import Site.Types
@@ -126,6 +157,27 @@ handleMe :: User -> AppHandler User
 handleMe sessionUser = do
   runBeam (fetchUserById sessionUser.id)
     `orElseMay` throwJsonError err401 "user not found"
+
+-- | Sliding session: re-issue the cookie once the token is past half its life,
+-- so active users never re-login. The user is re-fetched so deleted accounts
+-- can't renew and renamed ones get corrected claims. No rate limiting needed:
+-- the endpoint only does anything for a validly signed cookie.
+handleRefresh :: Session -> AppHandler (Headers '[Header "Set-Cookie" Text] User)
+handleRefresh session = do
+  user <-
+    runBeam (fetchUserById session.user.id)
+      `orElseMay` throwJsonError err401 "user not found"
+  now <- liftIO getCurrentTime
+  if shouldRefreshSession now session.expiresAt
+    then do
+      key <- asks (.jwk)
+      secure <- asks (.cookieSecure)
+      token <-
+        liftIO
+          $ issueToken key user
+          `orElse` (throwIO . SessionTokenError . ("Could not sign session token: " <>) . show)
+      pure $ addHeader (renderSessionCookie secure token) user
+    else pure $ noHeader user
 
 handleUpdateMe :: User -> UpdateMeParams -> AppHandler User
 handleUpdateMe sessionUser params = do

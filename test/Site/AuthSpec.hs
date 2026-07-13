@@ -9,19 +9,23 @@ import Crypto.JWT
 import Data.Aeson (Value (String), toJSON)
 import Data.ByteString.Lazy qualified as BSL
 import Data.Text qualified as Text
-import Data.Time (addUTCTime, getCurrentTime)
+import Data.Time (addUTCTime, diffUTCTime, getCurrentTime)
 import Protolude
 import Test.Hspec
 
 import BananaSplit (User (..), nullUlid)
 import Site.Auth (
+  Session (..),
   generateLoginCode,
   issueLoginChallenge,
   issueRegistrationToken,
   issueToken,
   mkSessionKey,
+  sessionDurationSeconds,
+  shouldRefreshSession,
   verifyLoginChallenge,
   verifyRegistrationToken,
+  verifySession,
   verifyToken,
  )
 
@@ -98,6 +102,31 @@ spec = do
       Right token <- issueToken otherKey testUser
       result <- verifyToken testKey (encodeUtf8 token)
       result `shouldBe` Nothing
+
+  describe "verifySession" $ do
+    it "recovers the user and an expiry a full session out from a fresh token" $ do
+      now <- getCurrentTime
+      Right token <- issueToken testKey testUser
+      Just info <- verifySession testKey (encodeUtf8 token)
+      info.user `shouldBe` testUser
+      -- The expiry was stamped between `now` and this assertion, so allow a
+      -- small window around now + sessionDurationSeconds.
+      let expected = addUTCTime sessionDurationSeconds now
+      abs (diffUTCTime info.expiresAt expected) `shouldSatisfy` (< 60)
+
+    it "rejects a token signed with a different key" $ do
+      Right token <- issueToken otherKey testUser
+      result <- verifySession testKey (encodeUtf8 token)
+      result `shouldBe` Nothing
+
+  describe "shouldRefreshSession" $ do
+    it "leaves a young token alone (~89 days remaining)" $ do
+      now <- getCurrentTime
+      shouldRefreshSession now (addUTCTime (89 * 24 * 60 * 60) now) `shouldBe` False
+
+    it "refreshes a token past half its life (~44 days remaining)" $ do
+      now <- getCurrentTime
+      shouldRefreshSession now (addUTCTime (44 * 24 * 60 * 60) now) `shouldBe` True
 
   describe "algorithm pinning" $ do
     -- The security-relevant assertion: a token with a *valid* HS512 signature

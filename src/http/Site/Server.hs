@@ -17,7 +17,7 @@ import Servant.Server.Generic
 import WaiAppStatic.Types (StaticSettings (..))
 
 import Site.Api
-import Site.Auth (AuthContext, authHandler)
+import Site.Auth (AuthContext, authHandler, sessionAuthHandler)
 import Site.Handler.Auth
 import Site.Handler.Grupos
 import Site.Handler.Pagos
@@ -55,6 +55,7 @@ serverT =
       , _routeAuthVerify = handleVerify
       , _routeAuthRegister = handleRegister
       , _routeAuthLogout = handleLogout
+      , _routeAuthRefresh = handleRefresh
       , _routeMe = handleMe
       , _routeMeUpdate = handleUpdateMe
       , _routeMeGrupoPost = handleCreateGrupoAsUser
@@ -80,7 +81,7 @@ nt :: App -> AppHandler a -> Handler a
 nt s x = runReaderT x s
 
 authContext :: App -> Context AuthContext
-authContext appState = authHandler appState :. EmptyContext
+authContext appState = authHandler appState :. sessionAuthHandler appState :. EmptyContext
 
 app :: App -> Application
 app appState =
