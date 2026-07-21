@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 -- | A tiny record-of-functions abstraction over "how do we deliver a login
 -- token to a user". The concrete implementation is chosen from configuration
 -- (Conferer) at startup, so dev can print to the console while prod sends a
