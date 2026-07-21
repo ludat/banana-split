@@ -70,6 +70,7 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy VerifyResult)
     , DefineElm (Proxy :: Proxy RegisterParams)
     , DefineElm (Proxy :: Proxy UpdateMeParams)
+    , DefineElm (Proxy :: Proxy Email)
     , DefineElm (Proxy :: Proxy User)
     , DefineElm (Proxy :: Proxy UpdateGrupoParams)
     , DefineElm (Proxy :: Proxy ReceiptImageRequest)

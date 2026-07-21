@@ -71,7 +71,7 @@ maxLoginAttempts = 10
 -- time, and only to the proven owner of the address.
 handleRequestCode :: RequestCodeParams -> AppHandler LoginChallenge
 handleRequestCode params = do
-  let email = normalizeEmail params.email
+  let email = params.email
   key <- asks (.jwk)
   pepper <- asks (.authPepper)
   mailer <- asks (.mailer)

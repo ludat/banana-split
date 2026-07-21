@@ -90,6 +90,7 @@ library
     BananaSplit
     BananaSplit.Core
     BananaSplit.Deudas
+    BananaSplit.Email
     BananaSplit.Monto
     BananaSplit.Moneda
     BananaSplit.Participante

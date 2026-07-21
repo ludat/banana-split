@@ -116,7 +116,7 @@ data ParticipanteAddParams = ParticipanteAddParams
 -- account exists, so it never reveals which — existence is only disclosed at
 -- verify time, to the proven owner of the address.
 data RequestCodeParams = RequestCodeParams
-  { email :: Text
+  { email :: Email
   }
   deriving (Show, Eq, Generic)
 

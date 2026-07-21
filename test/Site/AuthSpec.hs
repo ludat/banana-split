@@ -152,7 +152,7 @@ signTokenWith alg key user = do
           & claimIat ?~ NumericDate now
           & claimExp ?~ NumericDate (addUTCTime 3600 now)
           & addClaim "uid" (toJSON (show user.id :: Text))
-          & addClaim "email" (String user.email)
+          & addClaim "email" (toJSON user.email)
           & addClaim "nombre" (String user.nombre)
   signed <- runJOSE $ signClaims key (newJWSHeader (RequiredProtection, alg)) claims
   pure $ fmap (decodeUtf8 . BSL.toStrict . encodeCompact) (signed :: Either JWTError SignedJWT)

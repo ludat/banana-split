@@ -21,8 +21,10 @@ import Network.Mail.SMTP (Address (..))
 import Network.Mail.SMTP qualified as SMTP
 import Protolude
 
+import BananaSplit.Email (Email, unEmail)
+
 newtype Mailer = Mailer
-  { sendLoginCode :: Text -> Text -> IO ()
+  { sendLoginCode :: Email -> Text -> IO ()
   }
 
 data SmtpSettings = SmtpSettings
@@ -83,7 +85,7 @@ consoleMailer =
         putText $
           unlines
             [ "┌─ Banana Split login code ──────────────────────────"
-            , "│ email: " <> email
+            , "│ email: " <> unEmail email
             , "│ code:  " <> code
             , "└────────────────────────────────────────────────────"
             ]
@@ -99,7 +101,7 @@ smtpMailer settings =
         deliver settings $
           SMTP.simpleMail
             settings.from
-            [Address Nothing email]
+            [Address Nothing (unEmail email)]
             []
             []
             "Tu código de acceso a Banana Split"

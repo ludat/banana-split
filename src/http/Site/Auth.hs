@@ -129,14 +129,14 @@ generateLoginCode = do
 -- server secret. Because the pepper never leaves the server, someone who reads
 -- the challenge JWT still cannot brute-force the 6-digit code offline — the
 -- only avenue is submitting guesses, which the short expiry bounds.
-codeCommitment :: ByteString -> Text -> Text -> Text
+codeCommitment :: ByteString -> Email -> Text -> Text
 codeCommitment pepper email code =
   decodeUtf8
     $ convertToBase Base16
     $ hashWith SHA256
     $ pepper
     <> ":"
-    <> encodeUtf8 email
+    <> encodeUtf8 (unEmail email)
     <> ":"
     <> encodeUtf8 code
 
@@ -148,7 +148,7 @@ codeCommitment pepper email code =
 -- challenge — its JSON shape simply won't parse as a 'ChallengeClaims'.
 data ChallengeClaims = ChallengeClaims
   { stdClaims :: ClaimsSet
-  , email :: Text
+  , email :: Email
   , commitment :: Text
   -- ^ The peppered commitment to the code (see 'codeCommitment'), never the code.
   }
@@ -160,7 +160,7 @@ instance ToJSON ChallengeClaims where
   toJSON c =
     insertClaims
       [ ("purpose", toJSON LoginChallenge)
-      , ("email", String c.email)
+      , ("email", toJSON c.email)
       , ("code", String c.commitment)
       ]
       (toJSON c.stdClaims)
@@ -185,7 +185,7 @@ instance FromJSON ChallengeClaims where
 -- can be replayed as another.
 data RegistrationClaims = RegistrationClaims
   { regStdClaims :: ClaimsSet
-  , regEmail :: Text
+  , regEmail :: Email
   }
 
 instance HasClaimsSet RegistrationClaims where
@@ -195,7 +195,7 @@ instance ToJSON RegistrationClaims where
   toJSON c =
     insertClaims
       [ ("purpose", toJSON Registration)
-      , ("email", String c.regEmail)
+      , ("email", toJSON c.regEmail)
       ]
       (toJSON c.regStdClaims)
 
@@ -242,7 +242,7 @@ insertClaims :: [(Key, Value)] -> Value -> Value
 insertClaims extra (Object o) = Object (foldr (\(k, v) -> KeyMap.insert k v) o extra)
 insertClaims _ other = other
 
-issueLoginChallenge :: JWK -> ByteString -> Text -> Text -> IO (Either JWTError Text)
+issueLoginChallenge :: JWK -> ByteString -> Email -> Text -> IO (Either JWTError Text)
 issueLoginChallenge key pepper email code = do
   now <- getCurrentTime
   let std =
@@ -263,7 +263,7 @@ issueLoginChallenge key pepper email code = do
   pure $ fmap (decodeUtf8 . BSL.toStrict . encodeCompact) (signed :: Either JWTError SignedJWT)
 
 data ChallengePayload = ChallengePayload
-  { email :: Text
+  { email :: Email
   , codeCommitmentExpected :: Text
   }
   deriving (Show, Eq)
@@ -295,7 +295,7 @@ checkChallengeCode pepper payload code =
 -- Returns 'Nothing' on a bad signature, expiry, wrong purpose, or wrong code.
 -- (Composition of 'openChallenge' and 'checkChallengeCode' for callers that
 -- don't need the two phases separately.)
-verifyLoginChallenge :: JWK -> ByteString -> Text -> Text -> IO (Maybe Text)
+verifyLoginChallenge :: JWK -> ByteString -> Text -> Text -> IO (Maybe Email)
 verifyLoginChallenge key pepper challenge code = do
   mPayload <- openChallenge key challenge
   pure $ do
@@ -323,7 +323,7 @@ issueToken key user = do
 -- | Sign a short-lived token attesting that @email@'s ownership was just
 -- verified, to be exchanged (with a display name) for a freshly created
 -- account. Handed to the client only when a verified email has no account yet.
-issueRegistrationToken :: JWK -> Text -> IO (Either JWTError Text)
+issueRegistrationToken :: JWK -> Email -> IO (Either JWTError Text)
 issueRegistrationToken key email = do
   now <- getCurrentTime
   let std =
@@ -340,7 +340,7 @@ issueRegistrationToken key email = do
 
 -- | Verify a registration token and recover the email whose ownership it
 -- attests. 'Nothing' on a bad signature, expiry, or wrong purpose.
-verifyRegistrationToken :: JWK -> Text -> IO (Maybe Text)
+verifyRegistrationToken :: JWK -> Text -> IO (Maybe Email)
 verifyRegistrationToken key token = do
   result <-
     runJOSE $ do

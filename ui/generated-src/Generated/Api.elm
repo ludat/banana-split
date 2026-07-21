@@ -47,16 +47,16 @@ jsonEncCreateGrupoAsUserParams  val =
 
 
 type alias RequestCodeParams  =
-   { email: String
+   { email: Email
    }
 
 jsonDecRequestCodeParams : Json.Decode.Decoder ( RequestCodeParams )
 jsonDecRequestCodeParams =
-   Json.Decode.succeed (\pemail -> {email = pemail}) |> custom (Json.Decode.string)
+   Json.Decode.succeed (\pemail -> {email = pemail}) |> custom (jsonDecEmail)
 
 jsonEncRequestCodeParams : RequestCodeParams -> Value
 jsonEncRequestCodeParams  val =
-   Json.Encode.string val.email
+   jsonEncEmail val.email
 
 
 type alias LoginChallenge  =
@@ -146,9 +146,20 @@ jsonEncUpdateMeParams  val =
    Json.Encode.string val.nombre
 
 
+type alias Email  = String
+
+jsonDecEmail : Json.Decode.Decoder ( Email )
+jsonDecEmail =
+    Json.Decode.string
+
+jsonEncEmail : Email -> Value
+jsonEncEmail  val = Json.Encode.string val
+
+
+
 type alias User  =
    { id: ULID
-   , email: String
+   , email: Email
    , nombre: String
    }
 
@@ -156,14 +167,14 @@ jsonDecUser : Json.Decode.Decoder ( User )
 jsonDecUser =
    Json.Decode.succeed (\pid pemail pnombre -> {id = pid, email = pemail, nombre = pnombre})
    |> required "id" (jsonDecULID)
-   |> required "email" (Json.Decode.string)
+   |> required "email" (jsonDecEmail)
    |> required "nombre" (Json.Decode.string)
 
 jsonEncUser : User -> Value
 jsonEncUser  val =
    Json.Encode.object
    [ ("id", jsonEncULID val.id)
-   , ("email", Json.Encode.string val.email)
+   , ("email", jsonEncEmail val.email)
    , ("nombre", Json.Encode.string val.nombre)
    ]
 

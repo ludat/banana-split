@@ -183,18 +183,16 @@ fetchUserById userId = do
     pure u
   pure $ fmap toModelUser existing
 
-fetchUserByEmail :: Text -> Pg (Maybe M.User)
-fetchUserByEmail rawEmail = do
-  let email = M.normalizeEmail rawEmail
+fetchUserByEmail :: M.Email -> Pg (Maybe M.User)
+fetchUserByEmail email = do
   existing <- runSelectReturningOne $ select $ do
     u <- all_ db.users
     guard_ (u.email ==. val_ email)
     pure u
   pure $ fmap toModelUser existing
 
-createUser :: Text -> Text -> Pg M.User
-createUser rawEmail rawNombre = do
-  let email = M.normalizeEmail rawEmail
+createUser :: M.Email -> Text -> Pg M.User
+createUser email rawNombre = do
   let nombre = Text.strip rawNombre
   newId <- liftIO ULID.getULID
   now <- liftIO getCurrentTime
@@ -221,9 +219,8 @@ toModelUser u =
 attemptWindow :: NominalDiffTime
 attemptWindow = 15 * 60
 
-countRecentAttempts :: Text -> Pg Int
-countRecentAttempts rawEmail = do
-  let email = M.normalizeEmail rawEmail
+countRecentAttempts :: M.Email -> Pg Int
+countRecentAttempts email = do
   now <- liftIO getCurrentTime
   let cutoff = now & addUTCTime (negate attemptWindow)
   mCount <-
@@ -236,9 +233,8 @@ countRecentAttempts rawEmail = do
         pure a
   pure $ maybe 0 fromIntegral mCount
 
-recordAttempt :: Text -> LoginEvent -> Pg ()
-recordAttempt rawEmail event = do
-  let email = M.normalizeEmail rawEmail
+recordAttempt :: M.Email -> LoginEvent -> Pg ()
+recordAttempt email event = do
   newId <- liftIO ULID.getULID
   now <- liftIO getCurrentTime
   runInsert
@@ -251,9 +247,8 @@ recordAttempt rawEmail event = do
       db.login_attempts
       (\a -> a.email ==. val_ email &&. a.created_at <. val_ cutoff)
 
-clearAttempts :: Text -> Pg ()
-clearAttempts rawEmail = do
-  let email = M.normalizeEmail rawEmail
+clearAttempts :: M.Email -> Pg ()
+clearAttempts email = do
   runDelete
     $ delete
       db.login_attempts

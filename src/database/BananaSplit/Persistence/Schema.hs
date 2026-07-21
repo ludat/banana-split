@@ -70,7 +70,7 @@ instance Beam.Table GrupoT where
 
 data UserT f = User
   { id :: Columnar f ULID
-  , email :: Columnar f Text
+  , email :: Columnar f M.Email
   , nombre :: Columnar f Text
   , created_at :: Columnar f UTCTime
   }
@@ -104,7 +104,7 @@ data LoginEvent
 
 data LoginAttemptT f = LoginAttempt
   { id :: Columnar f ULID
-  , email :: Columnar f Text
+  , email :: Columnar f M.Email
   , details :: Columnar f (PgJSONB LoginEvent)
   , created_at :: Columnar f UTCTime
   }
@@ -473,3 +473,14 @@ instance FromBackendRow Postgres M.Moneda where
   fromBackendRow = read <$> fromBackendRow
 
 instance HasSqlEqualityCheck Postgres M.Moneda
+
+-- Emails are stored as plain @text@: delegate the column encoding to 'Text'
+-- (via 'M.unEmail') rather than 'show', and re-wrap on the way out through
+-- 'M.mkEmail' so a value read back is always canonical.
+instance HasSqlValueSyntax PgValueSyntax M.Email where
+  sqlValueSyntax = sqlValueSyntax . M.unEmail
+
+instance FromBackendRow Postgres M.Email where
+  fromBackendRow = M.mkEmail <$> fromBackendRow
+
+instance HasSqlEqualityCheck Postgres M.Email

@@ -1,6 +1,7 @@
 module BananaSplit (
   module BananaSplit.Core,
   module BananaSplit.Deudas,
+  module BananaSplit.Email,
   module BananaSplit.Moneda,
   module BananaSplit.Monto,
   module BananaSplit.Participante,
@@ -11,6 +12,7 @@ module BananaSplit (
 
 import BananaSplit.Core
 import BananaSplit.Deudas
+import BananaSplit.Email
 import BananaSplit.Moneda
 import BananaSplit.Monto
 import BananaSplit.Participante

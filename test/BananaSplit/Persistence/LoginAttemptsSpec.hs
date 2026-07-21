@@ -1,3 +1,5 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module BananaSplit.Persistence.LoginAttemptsSpec (
   spec,
 ) where
