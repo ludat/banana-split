@@ -1,6 +1,7 @@
-module Models.Grupo exposing (GrupoLike, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
+module Models.Grupo exposing (GrupoLike, currentParticipante, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
 
-import Generated.Api exposing (Participante, ParticipanteId, ULID)
+import Generated.Api exposing (Participante, ParticipanteId, ULID, User)
+import RemoteData exposing (RemoteData(..), WebData)
 import Route.Path as Path
 
 
@@ -83,3 +84,23 @@ ownedParticipante accountUserId grupo =
     grupo.participantes
         |> List.filter (isOwnedBy accountUserId)
         |> List.head
+
+
+{-| The participante the current session should act as in a grupo: an explicit
+manual pick when present, otherwise the participante the logged-in account owns
+in that grupo (if any). The derived value is never persisted — only the manual
+pick is.
+-}
+currentParticipante : Maybe ULID -> WebData User -> GrupoLike r -> Maybe ULID
+currentParticipante manualPick currentUser grupo =
+    case manualPick of
+        Just pid ->
+            Just pid
+
+        Nothing ->
+            case currentUser of
+                Success u ->
+                    ownedParticipante u.id grupo |> Maybe.map .id
+
+                _ ->
+                    Nothing

@@ -31,7 +31,7 @@ page shared route =
         { init = \() -> init route shared.store
         , update = update shared.store (PagoDetalleModal.context shared route)
         , subscriptions = subscriptions
-        , view = view shared.store shared.userId
+        , view = view shared.store (Shared.currentParticipante shared route.params.id)
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
         |> Page.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)

@@ -118,7 +118,7 @@ update shared msg model =
         Saved (Ok user) ->
             ( { model | saving = False, form = seedForm user }
             , Effect.batch
-                [ Effect.sendSharedMsg (Shared.Msg.GotCurrentUser (Success user))
+                [ Effect.sendSharedMsg (Shared.Msg.CurrentUserLoaded (Ok user))
                 , Effect.sendToast { level = ToastSuccess, content = "Guardamos tus cambios" }
                 ]
             )

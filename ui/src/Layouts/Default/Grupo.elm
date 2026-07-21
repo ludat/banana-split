@@ -10,7 +10,7 @@ import Html.Events exposing (on, onClick, preventDefaultOn)
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
-import Models.Grupo exposing (GrupoLike, grupoIdFromPath, ownedParticipante)
+import Models.Grupo exposing (GrupoLike, currentParticipante, grupoIdFromPath, ownedParticipante)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import QRCode
@@ -32,7 +32,7 @@ layout _ shared route =
     Layout.new
         { init = \() -> init
         , update = update
-        , view = view shared.store route.path shared.userId shared.origin shared.currentUser
+        , view = view shared.store route.path shared.participanteId shared.origin shared.currentUser
         , subscriptions = subscriptions
         }
         |> Layout.withParentProps {}
@@ -107,12 +107,22 @@ view :
     -> WebData User
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view store currentPath activeUser origin currentUser { toContentMsg, model, content } =
+view store currentPath manualPick origin currentUser { toContentMsg, model, content } =
     let
         remoteGrupo =
             grupoIdFromPath currentPath
                 |> Maybe.map (\grupoId -> Store.getGrupo grupoId store)
                 |> Maybe.withDefault NotAsked
+
+        -- The participante to act as: the manual pick, or the participante the
+        -- logged-in account owns in this grupo (derived, never persisted).
+        activeUser =
+            case remoteGrupo of
+                Success grupo ->
+                    currentParticipante manualPick currentUser grupo
+
+                _ ->
+                    manualPick
     in
     { title = content.title
     , body =
@@ -627,9 +637,17 @@ viewGlobalUserSelector activeUser grupo =
         , on "change"
             (Decode.at [ "target", "value" ] Decode.string
                 |> Decode.map
-                    (\userId ->
+                    (\value ->
                         ForwardSharedMessage <|
-                            Shared.SetCurrentUser { grupoId = grupo.id, userId = userId }
+                            Shared.SetCurrentParticipante
+                                { grupoId = grupo.id
+                                , participanteId =
+                                    if value == "" then
+                                        Nothing
+
+                                    else
+                                        Just value
+                                }
                     )
             )
         ]

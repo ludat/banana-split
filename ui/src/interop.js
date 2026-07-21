@@ -68,7 +68,7 @@ export const flags = ({ env }) => {
   const lastReadRaw = localStorage.getItem("banana-split:lastReadChangelog");
   return {
     now: now.getTime(),
-    offset: now.getTimezoneOffset(),
+    offset: - now.getTimezoneOffset(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     lastReadChangelog: lastReadRaw ? parseInt(lastReadRaw, 10) : null,
     origin: window.location.origin,
@@ -82,9 +82,9 @@ export const onReady = ({ app, env }) => {
 
       switch (tag) {
         case "SAVE_CURRENT_USER":
-          // data: { grupoId: string, userId: string }
-          if (data.grupoId && data.userId) {
-            localStorage.setItem(makeStorageKey(data.grupoId), data.userId);
+          // data: { grupoId: string, participanteId: string }
+          if (data.grupoId && data.participanteId) {
+            localStorage.setItem(makeStorageKey(data.grupoId), data.participanteId);
           }
           break;
 
@@ -98,12 +98,12 @@ export const onReady = ({ app, env }) => {
         case "GET_CURRENT_USER":
           // data: { grupoId: string }
           if (data.grupoId) {
-            const userId = localStorage.getItem(makeStorageKey(data.grupoId));
+            const participanteId = localStorage.getItem(makeStorageKey(data.grupoId));
             app.ports.incoming.send({
               tag: "CURRENT_USER_LOADED",
               data: {
                 grupoId: data.grupoId,
-                userId: userId,
+                participanteId: participanteId,
               },
             });
           }

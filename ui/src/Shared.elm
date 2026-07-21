@@ -2,6 +2,7 @@ module Shared exposing
     ( Flags
     , Model
     , Msg
+    , currentParticipante
     , decoder
     , init
     , subscriptions
@@ -15,10 +16,9 @@ import Json.Decode
 import Json.Encode
 import Models.Grupo
 import Models.Store as Store
-import RemoteData exposing (RemoteData(..), WebData)
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path
-import Set
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Time
@@ -56,7 +56,14 @@ init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
 init possiblyFlags _ =
     let
         flags =
-            Result.withDefault { now = 0, offset = 0, timeZone = "UTC", lastReadChangelog = Nothing, origin = "" } possiblyFlags
+            possiblyFlags
+                |> Result.withDefault
+                    { now = 0
+                    , offset = 0
+                    , timeZone = "UTC"
+                    , lastReadChangelog = Nothing
+                    , origin = ""
+                    }
 
         now =
             Time.millisToPosix flags.now
@@ -66,9 +73,8 @@ init possiblyFlags _ =
     in
     ( { toasties = Toast.initialState
       , store = Store.empty
-      , userId = Nothing
+      , participanteId = Nothing
       , currentUser = Loading
-      , autoSelectedGrupos = Set.empty
       , now = now
       , today = Date.fromPosix timezone now
       , timezoneName = flags.timeZone
@@ -79,7 +85,7 @@ init possiblyFlags _ =
                 |> Maybe.map (\ms -> Date.fromPosix timezone (Time.millisToPosix ms))
       , origin = flags.origin
       }
-    , Effect.sendCmd (Api.postAuthRefresh (RemoteData.fromResult >> GotCurrentUser))
+    , Effect.sendCmd (Api.postAuthRefresh CurrentUserLoaded)
     )
 
 
@@ -92,7 +98,7 @@ type alias Msg =
 
 
 update : Route () -> Msg -> Model -> ( Model, Effect Msg )
-update route msg model =
+update _ msg model =
     case msg of
         Shared.Msg.NoOp ->
             ( model
@@ -122,49 +128,55 @@ update route msg model =
             let
                 ( store, cmd ) =
                     Store.update storeMsg model.store
-
-                ( newModel, autoEffect ) =
-                    maybeAutoSelect route { model | store = store }
             in
-            ( newModel, Effect.batch [ cmd, autoEffect ] )
+            ( { model | store = store }, Effect.batch [ cmd ] )
 
-        SetCurrentUser { grupoId, userId } ->
-            let
-                newUserId : Maybe ULID
-                newUserId =
-                    if userId == "" then
-                        Nothing
+        SetCurrentParticipante { grupoId, participanteId } ->
+            case participanteId of
+                Just pid ->
+                    let
+                        -- The participante the logged-in account owns in this grupo, if
+                        -- any. Picking it is the same as the default derivation, so we
+                        -- clear the stored pick instead of persisting a redundant one.
+                        ownedId =
+                            case ( model.currentUser, Store.getGrupo grupoId model.store ) of
+                                ( Success u, Success grupo ) ->
+                                    Models.Grupo.ownedParticipante u.id grupo |> Maybe.map .id
+
+                                _ ->
+                                    Nothing
+                    in
+                    if Just pid == ownedId then
+                        ( { model | participanteId = Nothing }
+                        , Effect.clearCurrentUser grupoId
+                        )
 
                     else
-                        Just userId
-            in
-            ( { model
-                | userId = newUserId
-
-                -- An explicit choice (including "—") sticks for the session:
-                -- guard the grupo so the owned participante won't override it.
-                , autoSelectedGrupos = Set.insert grupoId model.autoSelectedGrupos
-              }
-            , case newUserId of
-                Just uid ->
-                    Effect.saveCurrentUser grupoId uid
+                        ( { model | participanteId = Just pid }
+                        , Effect.saveCurrentUser grupoId pid
+                        )
 
                 Nothing ->
-                    Effect.clearCurrentUser grupoId
+                    ( { model | participanteId = Nothing }
+                    , Effect.clearCurrentUser grupoId
+                    )
+
+        CurrentParticipanteLoaded { participanteId } ->
+            ( { model | participanteId = participanteId }
+            , Effect.none
             )
 
-        CurrentUserLoaded { userId } ->
-            maybeAutoSelect route { model | userId = userId }
-
-        GotCurrentUser currentUser ->
-            maybeAutoSelect route { model | currentUser = currentUser }
+        CurrentUserLoaded currentUser ->
+            ( { model | currentUser = RemoteData.fromResult currentUser }
+            , Effect.none
+            )
 
         ClaimParticipante { grupoId, participanteId } ->
             ( model
             , Effect.sendCmd <|
                 Api.putGrupoByIdParticipantesByParticipanteIdClaim grupoId
                     participanteId
-                    (RemoteData.fromResult >> GotClaimResult { grupoId = grupoId })
+                    (GotClaimResult { grupoId = grupoId })
             )
 
         UnclaimParticipante { grupoId, participanteId } ->
@@ -172,14 +184,46 @@ update route msg model =
             , Effect.sendCmd <|
                 Api.deleteGrupoByIdParticipantesByParticipanteIdClaim grupoId
                     participanteId
-                    (RemoteData.fromResult >> GotUnclaimResult { grupoId = grupoId })
+                    (GotUnclaimResult { grupoId = grupoId })
             )
 
         GotClaimResult { grupoId } result ->
-            handleClaimResult grupoId result model
+            case result of
+                Ok (ClaimAccepted p) ->
+                    ( { model
+                        | participanteId = Just p.id
+                      }
+                    , Effect.batch
+                        [ Store.refreshGrupo grupoId
+                        , Effect.saveCurrentUser grupoId p.id
+                        , Effect.sendToast { level = ToastSuccess, content = "Ahora sos " ++ p.nombre }
+                        ]
+                    )
+
+                Ok (ClaimRejected reason) ->
+                    ( model
+                    , Effect.sendToast { level = ToastDanger, content = claimRejectionMessage reason }
+                    )
+
+                Err _ ->
+                    ( model
+                    , Effect.sendToast { level = ToastDanger, content = genericClaimError }
+                    )
 
         GotUnclaimResult { grupoId } result ->
-            handleUnclaimResult grupoId result model
+            case result of
+                Ok p ->
+                    ( model
+                    , Effect.batch
+                        [ Store.refreshGrupo grupoId
+                        , Effect.sendToast { level = ToastSuccess, content = "Dejaste de reclamar a " ++ p.nombre }
+                        ]
+                    )
+
+                Err _ ->
+                    ( model
+                    , Effect.sendToast { level = ToastDanger, content = genericClaimError }
+                    )
 
         Logout ->
             ( { model | currentUser = Loading }
@@ -202,105 +246,19 @@ update route msg model =
             )
 
 
-{-| When a logged-in user opens a grupo where they own a participante, select it
-as the active "Ver como" participante automatically — but only when they haven't
-picked one yet this session (`userId == Nothing` and the grupo isn't already in
-`autoSelectedGrupos`). An explicit pick (see `SetCurrentUser`) marks the grupo so
-this never overrides it. Fires opportunistically whenever the current user, the
-local pick, or the store changes.
+{-| The participante the current session should act as in a grupo: the stored
+manual pick when present, otherwise the participante the logged-in account owns
+in that grupo (resolving the grupo from the store). Only the manual pick is ever
+persisted; the owned fallback is derived at read-time.
 -}
-maybeAutoSelect : Route () -> Model -> ( Model, Effect Msg )
-maybeAutoSelect route model =
-    let
-        noop =
-            ( model, Effect.none )
-    in
-    case ( model.userId, model.currentUser ) of
-        ( Nothing, Success u ) ->
-            case Models.Grupo.grupoIdFromPath route.path of
-                Just grupoId ->
-                    if Set.member grupoId model.autoSelectedGrupos then
-                        noop
-
-                    else
-                        case Store.getGrupo grupoId model.store of
-                            Success grupo ->
-                                case Models.Grupo.ownedParticipante u.id grupo of
-                                    Just p ->
-                                        ( { model
-                                            | userId = Just p.id
-                                            , autoSelectedGrupos = Set.insert grupoId model.autoSelectedGrupos
-                                          }
-                                        , Effect.saveCurrentUser grupoId p.id
-                                        )
-
-                                    Nothing ->
-                                        noop
-
-                            _ ->
-                                noop
-
-                Nothing ->
-                    noop
+currentParticipante : Model -> ULID -> Maybe ULID
+currentParticipante model grupoId =
+    case Store.getGrupo grupoId model.store of
+        Success grupo ->
+            Models.Grupo.currentParticipante model.participanteId model.currentUser grupo
 
         _ ->
-            noop
-
-
-{-| Handle a claim response. On acceptance we switch "Ver como" to the claimed
-participante and remember the choice; on a typed rejection we show the matching
-message (the UI normally prevents rejections, so these cover stale state/races).
--}
-handleClaimResult : ULID -> WebData ClaimParticipanteResult -> Model -> ( Model, Effect Msg )
-handleClaimResult grupoId result model =
-    case result of
-        Success (ClaimAccepted p) ->
-            ( { model
-                | userId = Just p.id
-                , autoSelectedGrupos = Set.insert grupoId model.autoSelectedGrupos
-              }
-            , Effect.batch
-                [ Store.refreshGrupo grupoId
-                , Effect.saveCurrentUser grupoId p.id
-                , Effect.sendToast { level = ToastSuccess, content = "Ahora sos " ++ p.nombre }
-                ]
-            )
-
-        Success (ClaimRejected reason) ->
-            ( model
-            , Effect.sendToast { level = ToastDanger, content = claimRejectionMessage reason }
-            )
-
-        Failure _ ->
-            ( model
-            , Effect.sendToast { level = ToastDanger, content = genericClaimError }
-            )
-
-        _ ->
-            ( model, Effect.none )
-
-
-{-| Handle an unclaim response. Just refresh the grupo (keeping whatever view was
-active) and confirm.
--}
-handleUnclaimResult : ULID -> WebData Api.Participante -> Model -> ( Model, Effect Msg )
-handleUnclaimResult grupoId result model =
-    case result of
-        Success p ->
-            ( model
-            , Effect.batch
-                [ Store.refreshGrupo grupoId
-                , Effect.sendToast { level = ToastSuccess, content = "Dejaste de reclamar a " ++ p.nombre }
-                ]
-            )
-
-        Failure _ ->
-            ( model
-            , Effect.sendToast { level = ToastDanger, content = genericClaimError }
-            )
-
-        _ ->
-            ( model, Effect.none )
+            model.participanteId
 
 
 {-| A user-facing message for each way a claim can be refused.
@@ -339,18 +297,18 @@ decodeIncomingPortMessage : { tag : String, data : Json.Encode.Value } -> Maybe 
 decodeIncomingPortMessage { tag, data } =
     case tag of
         "CURRENT_USER_LOADED" ->
-            Json.Decode.decodeValue
-                (Json.Decode.map2
-                    (\grupoId userId ->
-                        CurrentUserLoaded
-                            { grupoId = grupoId
-                            , userId = userId
-                            }
+            data
+                |> Json.Decode.decodeValue
+                    (Json.Decode.map2
+                        (\grupoId participanteId ->
+                            CurrentParticipanteLoaded
+                                { grupoId = grupoId
+                                , participanteId = participanteId
+                                }
+                        )
+                        (Json.Decode.field "grupoId" Json.Decode.string)
+                        (Json.Decode.field "participanteId" (Json.Decode.nullable Json.Decode.string))
                     )
-                    (Json.Decode.field "grupoId" Json.Decode.string)
-                    (Json.Decode.field "userId" (Json.Decode.nullable Json.Decode.string))
-                )
-                data
                 |> Result.toMaybe
 
         "SHARE_LINK_COPIED" ->

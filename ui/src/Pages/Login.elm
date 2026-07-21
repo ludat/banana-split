@@ -9,7 +9,6 @@ import Html.Events exposing (onClick, onInput, onSubmit)
 import Http
 import Layouts
 import Page exposing (Page)
-import RemoteData
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
@@ -175,7 +174,7 @@ update msg model =
 logIn : User -> Effect Msg
 logIn user =
     Effect.batch
-        [ Effect.sendSharedMsg (Shared.Msg.GotCurrentUser (RemoteData.Success user))
+        [ Effect.sendSharedMsg (Shared.Msg.CurrentUserLoaded (Ok user))
         , Effect.pushRoutePath Path.Home_
         ]
 

@@ -198,7 +198,7 @@ saveCurrentUser grupoId userId =
             , data =
                 Json.Encode.object
                     [ ( "grupoId", Json.Encode.string grupoId )
-                    , ( "userId", Json.Encode.string userId )
+                    , ( "participanteId", Json.Encode.string userId )
                     ]
             }
 
