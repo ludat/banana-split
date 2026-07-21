@@ -2,17 +2,22 @@ module Pages.Login exposing (Model, Msg, Step, page)
 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (LoginChallenge, User, VerifyResult(..))
-import Html exposing (Html, div, form, label, p, text)
-import Html.Attributes as Attr exposing (class, for, id, placeholder, type_)
-import Html.Events exposing (onClick, onInput, onSubmit)
+import Form exposing (Form, Msg(..))
+import Form.Field
+import Form.Validate as V exposing (Validation)
+import Generated.Api as Api exposing (LoginChallenge, RequestCodeParams, User, VerifyResult(..))
+import Html exposing (Attribute, Html, div, input, label, p, text)
+import Html.Attributes as Attr exposing (class, classList, disabled, for, id, placeholder, type_)
+import Html.Events exposing (on, onClick, onInput, onSubmit)
 import Http
+import Json.Decode
 import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Shared.Msg
+import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
@@ -43,9 +48,10 @@ type Step
 
 
 type alias Model =
-    { email : String
-    , code : String
-    , nombre : String
+    { loginForm : Form CustomFormError RequestCodeParams
+    , confirmationForm : Form CustomFormError String
+    , registrationForm : Form CustomFormError String
+    , email : String
     , challenge : String
     , registrationToken : String
     , step : Step
@@ -55,9 +61,10 @@ type alias Model =
 
 init : () -> ( Model, Effect Msg )
 init () =
-    ( { email = ""
-      , code = ""
-      , nombre = ""
+    ( { loginForm = Form.initial [] validateLogin
+      , confirmationForm = Form.initial [] validateConfirmation
+      , registrationForm = Form.initial [] validateRegistration
+      , email = ""
       , challenge = ""
       , registrationToken = ""
       , step = EnterEmail
@@ -67,15 +74,35 @@ init () =
     )
 
 
+validateLogin : Validation CustomFormError RequestCodeParams
+validateLogin =
+    V.succeed RequestCodeParams
+        |> V.andMap (V.field "email" trimmedNonEmpty)
+
+
+validateConfirmation : Validation CustomFormError String
+validateConfirmation =
+    V.field "code" trimmedNonEmpty
+
+
+validateRegistration : Validation CustomFormError String
+validateRegistration =
+    V.field "nombre" trimmedNonEmpty
+
+
+trimmedNonEmpty : Validation CustomFormError String
+trimmedNonEmpty =
+    V.string
+        |> V.map String.trim
+        |> V.andThen V.nonEmpty
+
+
 type Msg
-    = EmailChanged String
-    | CodeChanged String
-    | NombreChanged String
-    | SubmitEmail
+    = LoginFormMsg Form.Msg
+    | ConfirmationFormMsg Form.Msg
+    | RegistrationFormMsg Form.Msg
     | GotChallenge (Result Http.Error LoginChallenge)
-    | SubmitCode
     | GotVerifyResult (Result Http.Error VerifyResult)
-    | SubmitRegister
     | GotRegistered (Result Http.Error User)
     | BackToEmail
 
@@ -83,26 +110,90 @@ type Msg
 update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
-        EmailChanged email ->
-            ( { model | email = email }, Effect.none )
+        LoginFormMsg Form.Submit ->
+            let
+                loginForm =
+                    Form.update validateLogin Form.Submit model.loginForm
+            in
+            case Form.getOutput model.loginForm of
+                Just params ->
+                    if model.submitting then
+                        ( { model | loginForm = loginForm }, Effect.none )
 
-        CodeChanged code ->
-            ( { model | code = code }, Effect.none )
+                    else
+                        ( { model | loginForm = loginForm, email = params.email, submitting = True }
+                        , Effect.sendCmd (Api.postAuthRequestcode params GotChallenge)
+                        )
 
-        NombreChanged nombre ->
-            ( { model | nombre = nombre }, Effect.none )
+                Nothing ->
+                    ( { model | loginForm = loginForm }, Effect.none )
 
-        SubmitEmail ->
-            if String.trim model.email == "" then
-                ( model, Effect.none )
+        LoginFormMsg formMsg ->
+            ( { model | loginForm = Form.update validateLogin formMsg model.loginForm }
+            , Effect.none
+            )
 
-            else
-                ( { model | submitting = True }
-                , Effect.sendCmd (Api.postAuthRequestcode { email = model.email } GotChallenge)
-                )
+        ConfirmationFormMsg Form.Submit ->
+            let
+                confirmationForm =
+                    Form.update validateConfirmation Form.Submit model.confirmationForm
+            in
+            case Form.getOutput model.confirmationForm of
+                Just code ->
+                    if model.submitting then
+                        ( { model | confirmationForm = confirmationForm }, Effect.none )
+
+                    else
+                        ( { model | confirmationForm = confirmationForm, submitting = True }
+                        , Effect.sendCmd
+                            (Api.postAuthVerify
+                                { challenge = model.challenge, code = code }
+                                GotVerifyResult
+                            )
+                        )
+
+                Nothing ->
+                    ( { model | confirmationForm = confirmationForm }, Effect.none )
+
+        ConfirmationFormMsg formMsg ->
+            ( { model | confirmationForm = Form.update validateConfirmation formMsg model.confirmationForm }
+            , Effect.none
+            )
+
+        RegistrationFormMsg Form.Submit ->
+            let
+                registrationForm =
+                    Form.update validateRegistration Form.Submit model.registrationForm
+            in
+            case Form.getOutput model.registrationForm of
+                Just nombre ->
+                    if model.submitting then
+                        ( { model | registrationForm = registrationForm }, Effect.none )
+
+                    else
+                        ( { model | registrationForm = registrationForm, submitting = True }
+                        , Effect.sendCmd
+                            (Api.postAuthRegister
+                                { registrationToken = model.registrationToken, nombre = nombre }
+                                GotRegistered
+                            )
+                        )
+
+                Nothing ->
+                    ( { model | registrationForm = registrationForm }, Effect.none )
+
+        RegistrationFormMsg formMsg ->
+            ( { model | registrationForm = Form.update validateRegistration formMsg model.registrationForm }
+            , Effect.none
+            )
 
         GotChallenge (Ok { challenge }) ->
-            ( { model | submitting = False, step = EnterCode, challenge = challenge }
+            ( { model
+                | submitting = False
+                , step = EnterCode
+                , challenge = challenge
+                , confirmationForm = Form.initial [] validateConfirmation
+              }
             , Effect.sendToast { level = ToastSuccess, content = "Te enviamos un código para confirmar" }
             )
 
@@ -111,24 +202,16 @@ update msg model =
             , Effect.sendToast { level = ToastDanger, content = "No pudimos enviar el código, probá de nuevo" }
             )
 
-        SubmitCode ->
-            if String.trim model.code == "" then
-                ( model, Effect.none )
-
-            else
-                ( { model | submitting = True }
-                , Effect.sendCmd
-                    (Api.postAuthVerify
-                        { challenge = model.challenge, code = String.trim model.code }
-                        GotVerifyResult
-                    )
-                )
-
         GotVerifyResult (Ok (VerifyLoggedIn user)) ->
             ( { model | submitting = False }, logIn user )
 
         GotVerifyResult (Ok (VerifyNeedsRegistration registrationToken)) ->
-            ( { model | submitting = False, step = EnterName, registrationToken = registrationToken }
+            ( { model
+                | submitting = False
+                , step = EnterName
+                , registrationToken = registrationToken
+                , registrationForm = Form.initial [] validateRegistration
+              }
             , Effect.sendToast { level = ToastSuccess, content = "Es tu primera vez, elegí un nombre para tu cuenta" }
             )
 
@@ -136,19 +219,6 @@ update msg model =
             ( { model | submitting = False }
             , Effect.sendToast { level = ToastDanger, content = verifyError err }
             )
-
-        SubmitRegister ->
-            if String.trim model.nombre == "" then
-                ( model, Effect.none )
-
-            else
-                ( { model | submitting = True }
-                , Effect.sendCmd
-                    (Api.postAuthRegister
-                        { registrationToken = model.registrationToken, nombre = String.trim model.nombre }
-                        GotRegistered
-                    )
-                )
 
         GotRegistered (Ok user) ->
             ( { model | submitting = False }, logIn user )
@@ -161,11 +231,11 @@ update msg model =
         BackToEmail ->
             ( { model
                 | step = EnterEmail
-                , code = ""
-                , nombre = ""
                 , challenge = ""
                 , registrationToken = ""
                 , submitting = False
+                , confirmationForm = Form.initial [] validateConfirmation
+                , registrationForm = Form.initial [] validateRegistration
               }
             , Effect.none
             )
@@ -250,23 +320,17 @@ view model =
 
 viewEmailStep : Model -> Html Msg
 viewEmailStep model =
-    form [ onSubmit SubmitEmail ]
-        [ div [ class "mb-3" ]
-            [ label [ for "email", class "form-label" ] [ text "Email" ]
-            , Html.input
-                [ id "email"
-                , type_ "text"
-                , class "form-control"
-                , placeholder "juan@ejemplo.com"
-                , Attr.value model.email
-                , onInput EmailChanged
-                ]
-                []
-            , div [ class "form-text" ]
-                [ text "Te enviamos un código para confirmar que sos vos." ]
-            ]
+    Html.form [ onSubmit (LoginFormMsg Form.Submit) ]
+        [ Html.map LoginFormMsg <|
+            viewTextField
+                { label = "Email"
+                , placeholder = "juan@ejemplo.com"
+                , help = Just "Te enviamos un código para confirmar que sos vos."
+                , inputAttrs = []
+                }
+                (Form.getFieldAsString "email" model.loginForm)
         , Bs.btn Bs.Primary
-            [ type_ "submit", Attr.disabled model.submitting ]
+            [ type_ "submit", disabled model.submitting ]
             [ text
                 (if model.submitting then
                     "Enviando…"
@@ -280,26 +344,21 @@ viewEmailStep model =
 
 viewCodeStep : Model -> Html Msg
 viewCodeStep model =
-    form [ onSubmit SubmitCode ]
-        [ div [ class "mb-3" ]
-            [ label [ for "code", class "form-label" ] [ text "Código" ]
-            , Html.input
-                [ id "code"
-                , type_ "text"
-                , Attr.attribute "inputmode" "numeric"
-                , Attr.attribute "autocomplete" "one-time-code"
-                , class "form-control"
-                , placeholder "123456"
-                , Attr.value model.code
-                , onInput CodeChanged
-                ]
-                []
-            , div [ class "form-text" ]
-                [ text ("Enviado a " ++ model.email ++ ". Vence en 5 minutos.") ]
-            ]
+    Html.form [ onSubmit (ConfirmationFormMsg Form.Submit) ]
+        [ Html.map ConfirmationFormMsg <|
+            viewTextField
+                { label = "Código"
+                , placeholder = "123456"
+                , help = Just ("Enviado a " ++ model.email ++ ". Vence en 5 minutos.")
+                , inputAttrs =
+                    [ Attr.attribute "inputmode" "numeric"
+                    , Attr.attribute "autocomplete" "one-time-code"
+                    ]
+                }
+                (Form.getFieldAsString "code" model.confirmationForm)
         , div [ class "d-flex gap-2" ]
             [ Bs.btn Bs.Primary
-                [ type_ "submit", Attr.disabled model.submitting ]
+                [ type_ "submit", disabled model.submitting ]
                 [ text
                     (if model.submitting then
                         "Confirmando…"
@@ -317,24 +376,20 @@ viewCodeStep model =
 
 viewNameStep : Model -> Html Msg
 viewNameStep model =
-    form [ onSubmit SubmitRegister ]
+    Html.form [ onSubmit (RegistrationFormMsg Form.Submit) ]
         [ p [ class "mb-3" ]
             [ text ("Confirmamos " ++ model.email ++ ". Elegí un nombre para tu cuenta.") ]
-        , div [ class "mb-3" ]
-            [ label [ for "nombre", class "form-label" ] [ text "Nombre" ]
-            , Html.input
-                [ id "nombre"
-                , type_ "text"
-                , class "form-control"
-                , placeholder "Juan"
-                , Attr.value model.nombre
-                , onInput NombreChanged
-                ]
-                []
-            ]
+        , Html.map RegistrationFormMsg <|
+            viewTextField
+                { label = "Nombre"
+                , placeholder = "Juan"
+                , help = Nothing
+                , inputAttrs = []
+                }
+                (Form.getFieldAsString "nombre" model.registrationForm)
         , div [ class "d-flex gap-2" ]
             [ Bs.btn Bs.Primary
-                [ type_ "submit", Attr.disabled model.submitting ]
+                [ type_ "submit", disabled model.submitting ]
                 [ text
                     (if model.submitting then
                         "Creando…"
@@ -347,4 +402,43 @@ viewNameStep model =
                 [ type_ "button", onClick BackToEmail ]
                 [ text "Cambiar email" ]
             ]
+        ]
+
+
+viewTextField :
+    { label : String
+    , placeholder : String
+    , help : Maybe String
+    , inputAttrs : List (Attribute Form.Msg)
+    }
+    -> Form.FieldState CustomFormError String
+    -> Html Form.Msg
+viewTextField config field =
+    div [ class "mb-3" ]
+        [ label [ for field.path, class "form-label" ] [ text config.label ]
+        , input
+            ([ type_ "text"
+             , id field.path
+             , class "form-control"
+             , placeholder config.placeholder
+             , classList [ ( "is-invalid", hasErrorField field ) ]
+             , Attr.value (Maybe.withDefault "" field.value)
+             , onInput (\v -> Input field.path Form.Text (Form.Field.String v))
+             , on "focus" (Json.Decode.succeed (Focus field.path))
+             , on "blur" (Json.Decode.succeed (Blur field.path))
+             ]
+                ++ config.inputAttrs
+            )
+            []
+        , case config.help of
+            Just helpText ->
+                div [ class "form-text" ] [ text helpText ]
+
+            Nothing ->
+                text ""
+        , if hasErrorField field then
+            div [ class "invalid-feedback" ] [ errorForField field ]
+
+          else
+            text ""
         ]
