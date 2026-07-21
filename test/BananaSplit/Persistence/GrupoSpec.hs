@@ -29,7 +29,7 @@ spec = do
 
   describe "fetchGruposForUser" $ do
     it "lists only the grupos where the user claimed a participante" $ \(RunDb runDb) -> do
-      user <- runDb $ findOrCreateUser "yo@example.com"
+      user <- runDb $ createUser "yo@example.com" "Yo"
       grupoClaimed <- runDb $ createGrupo "Con claim" "yo"
       _grupoAjeno <- runDb $ createGrupo "Sin claim" "otre"
       grupoPropio <- runDb $ createGrupoForUser "Creado con cuenta" user
@@ -44,7 +44,7 @@ spec = do
       (grupos & fmap (.id)) `shouldMatchList` [grupoClaimed.id, grupoPropio.id]
 
     it "returns nothing for a user without claims" $ \(RunDb runDb) -> do
-      user <- runDb $ findOrCreateUser "nadie@example.com"
+      user <- runDb $ createUser "nadie@example.com" "Nadie"
       _grupo <- runDb $ createGrupo "Sin claim" "otre"
 
       grupos <- runDb $ fetchGruposForUser user.id

@@ -28,7 +28,6 @@ module BananaSplit.Persistence (
   fetchUserByEmail,
   createUser,
   updateUser,
-  findOrCreateUser,
   fetchGrupoIdFromClaim,
   fetchGrupoIdFromRepartija,
   fetchPago,
@@ -163,33 +162,6 @@ createGrupoWith nombre participantes = do
       , M.monedaPorDefecto = M.ARS
       }
 
--- | Find a user by (normalized) email, creating one if it doesn't exist yet.
--- This is the whole signup/signin flow: logging in with an unknown email just
--- creates the account. New users get their nombre set to their email.
-findOrCreateUser :: Text -> Pg M.User
-findOrCreateUser rawEmail = do
-  let email = M.normalizeEmail rawEmail
-  existing <- runSelectReturningOne $ select $ do
-    u <- all_ db.users
-    guard_ (u.email ==. val_ email)
-    pure u
-  case existing of
-    Just u -> pure $ toModelUser u
-    Nothing -> do
-      newId <- liftIO ULID.getULID
-      now <- liftIO getCurrentTime
-      runInsert
-        $ insert db.users
-        $ insertValues
-          [ User{id = newId, email = email, nombre = email, created_at = now}
-          ]
-      pure
-        $ M.User
-          { M.id = newId
-          , M.email = email
-          , M.nombre = email
-          }
-
 -- | Update a user's display name, returning the fresh model. Assumes the user
 -- exists (the caller holds a valid session for it).
 updateUser :: ULID -> Text -> Pg M.User
@@ -200,8 +172,8 @@ updateUser userId rawNombre = do
       db.users
       (\u -> u.nombre <-. val_ nombre)
       (\u -> u.id ==. val_ userId)
-  mUser <- fetchUserById userId
-  maybe (fail $ "user vanished while updating: " <> show userId) pure mUser
+  fetchUserById userId
+    `orElseMay` fail ("user vanished while updating: " <> show userId)
 
 fetchUserById :: ULID -> Pg (Maybe M.User)
 fetchUserById userId = do
@@ -211,9 +183,6 @@ fetchUserById userId = do
     pure u
   pure $ fmap toModelUser existing
 
--- | Look up a user by their (normalized) email without creating anything.
--- The signup/signin handlers use this to decide whether an email is already
--- taken (signup) or actually exists (signin) before emailing a code.
 fetchUserByEmail :: Text -> Pg (Maybe M.User)
 fetchUserByEmail rawEmail = do
   let email = M.normalizeEmail rawEmail
@@ -223,9 +192,6 @@ fetchUserByEmail rawEmail = do
     pure u
   pure $ fmap toModelUser existing
 
--- | Create a brand-new user with an explicit display name. Callers must have
--- already checked the email is free (see 'fetchUserByEmail'); a duplicate email
--- will fail on the unique constraint.
 createUser :: Text -> Text -> Pg M.User
 createUser rawEmail rawNombre = do
   let email = M.normalizeEmail rawEmail
@@ -336,6 +302,9 @@ fetchGruposForUser userId = do
     guard_ (p.grupo ==. GrupoId grupo.id)
     guard_ (p.user ==. UserId (val_ (Just userId)))
     pure grupo
+  -- TODO: This is a N+1 query, we should use a JOIN to avoid it.
+  -- A simple fix would be having an empty list for participantes
+  -- since it's not used on the frontend.
   forM grupos $ \grupo -> do
     participantes <- fetchParticipantes grupo.id
     pure
@@ -631,36 +600,36 @@ addParticipante grupoId name = do
 --
 -- Re-claiming the participante you already own is a no-op that succeeds.
 claimParticipante :: ULID -> ULID -> ULID -> Pg (Either M.ClaimRejection M.Participante)
-claimParticipante grupoId participanteId userId = do
-  mParticipante <- runSelectReturningOne $ select $ do
-    p <- all_ db.participantes
-    guard_ (p.id ==. val_ participanteId)
-    guard_ (p.grupo ==. GrupoId (val_ grupoId))
-    pure p
-  case mParticipante of
-    Nothing -> pure $ Left M.ParticipanteNotFound
-    Just p ->
-      case p.user of
-        UserId (Just ownerId)
-          -- Re-claiming your own participante succeeds without changes.
-          | ownerId == userId -> Right <$> fetchParticipanteById participanteId
-          | otherwise -> pure $ Left M.ClaimedByOtherUser
-        UserId Nothing -> do
-          -- Refuse if the user already owns another participante in this grupo.
-          existingClaim <- runSelectReturningOne $ select $ do
-            other <- all_ db.participantes
-            guard_ (other.grupo ==. GrupoId (val_ grupoId))
-            guard_ (other.user ==. UserId (val_ (Just userId)))
-            pure other.id
-          case existingClaim of
-            Just _ -> pure $ Left M.AlreadyOwnAnotherParticipante
-            Nothing -> do
-              runUpdate
-                $ update
-                  db.participantes
-                  (\row -> row.user <-. UserId (val_ (Just userId)))
-                  (\row -> row.id ==. val_ participanteId)
-              Right <$> fetchParticipanteById participanteId
+claimParticipante grupoId participanteId userId = runExceptT $ do
+  p <-
+    ( runSelectReturningOne $ select $ do
+        p <- all_ db.participantes
+        guard_ (p.id ==. val_ participanteId)
+        guard_ (p.grupo ==. GrupoId (val_ grupoId))
+        pure p
+    )
+      `orElseMay` throwError M.ParticipanteNotFound
+  case p.user of
+    UserId (Just ownerId)
+      -- Re-claiming your own participante succeeds without changes.
+      | ownerId == userId -> lift $ fetchParticipanteById participanteId
+      | otherwise -> throwError M.ClaimedByOtherUser
+    UserId Nothing -> do
+      -- Refuse if the user already owns another participante in this grupo.
+      existingClaim <- runSelectReturningOne $ select $ do
+        other <- all_ db.participantes
+        guard_ (other.grupo ==. GrupoId (val_ grupoId))
+        guard_ (other.user ==. UserId (val_ (Just userId)))
+        pure other.id
+      case existingClaim of
+        Just _ -> throwError M.AlreadyOwnAnotherParticipante
+        Nothing -> do
+          runUpdate
+            $ update
+              db.participantes
+              (\row -> row.user <-. UserId (val_ (Just userId)))
+              (\row -> row.id ==. val_ participanteId)
+          lift $ fetchParticipanteById participanteId
 
 -- | Drop a user's claim on a participante. Only clears the owner when the row is
 -- actually owned by @userId@, so it can't be used to steal or clear someone
