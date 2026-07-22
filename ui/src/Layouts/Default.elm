@@ -4,7 +4,8 @@ import Changelog
 import Components.Bootstrap as Bs
 import Components.Toasts
 import Date exposing (Date)
-import Effect exposing (Effect)
+import Dict
+import Effect exposing (Effect, Location)
 import Generated.Api exposing (User)
 import Html exposing (Html, a, button, div, h5, hr, i, li, span, text, ul)
 import Html.Attributes as Attr exposing (class, classList, type_)
@@ -24,13 +25,18 @@ type alias Props =
 
 
 layout : Props -> Shared.Model -> Route () -> Layout () Model Msg contentMsg
-layout _ shared _ =
+layout _ shared route =
     Layout.new
         { init = \() -> init
         , update = update
-        , view = view shared.toasties shared.lastReadChangelog shared.today shared.currentUser
+        , view = view (currentLocation route) shared.toasties shared.lastReadChangelog shared.today shared.currentUser
         , subscriptions = subscriptions
         }
+
+
+currentLocation : Route () -> Location
+currentLocation route =
+    { path = route.path, query = route.query, hash = route.hash }
 
 
 
@@ -60,6 +66,7 @@ type Msg
     = ToastMsg ToastMsg
     | ToggleNavBar
     | NavigateAndClose Path.Path
+    | GoToLoginAndClose Location
     | OpenChangelog
     | CloseChangelog
     | MarkChangelogReadAndClose
@@ -82,6 +89,15 @@ update msg model =
         NavigateAndClose path ->
             ( { model | navBarOpen = False }
             , Effect.sendSharedMsg (Shared.NavigateTo path)
+            )
+
+        GoToLoginAndClose from ->
+            ( { model | navBarOpen = False }
+            , Effect.pushRoute
+                { path = Path.Login
+                , query = Dict.singleton "redirect" <| Route.toString from
+                , hash = Nothing
+                }
             )
 
         OpenChangelog ->
@@ -115,13 +131,14 @@ subscriptions _ =
 
 
 view :
-    Toasts
+    Location
+    -> Toasts
     -> Maybe Date
     -> Date
     -> WebData User
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view toasts lastReadChangelog now currentUser { toContentMsg, model, content } =
+view location toasts lastReadChangelog now currentUser { toContentMsg, model, content } =
     let
         recentEntries =
             Changelog.recentChangelog lastReadChangelog now
@@ -142,9 +159,9 @@ view toasts lastReadChangelog now currentUser { toContentMsg, model, content } =
             content.title
     , body =
         [ Html.map toContentMsg <|
-            viewNavbar unread currentUser
+            viewNavbar location unread currentUser
         , Html.map toContentMsg <|
-            viewOffcanvas model unread currentUser
+            viewOffcanvas location model unread currentUser
         , Html.map toContentMsg <|
             viewChangelogModal model.changelogOpen modalEntries
         , Html.map toContentMsg <|
@@ -154,8 +171,8 @@ view toasts lastReadChangelog now currentUser { toContentMsg, model, content } =
     }
 
 
-viewNavbar : Int -> WebData User -> Html Msg
-viewNavbar unread currentUser =
+viewNavbar : Location -> Int -> WebData User -> Html Msg
+viewNavbar location unread currentUser =
     Bs.navbar []
         [ button
             [ type_ "button"
@@ -181,13 +198,13 @@ viewNavbar unread currentUser =
 
               else
                 text ""
-            , viewUserIcon currentUser
+            , viewUserIcon location currentUser
             ]
         ]
 
 
-viewUserIcon : WebData User -> Html Msg
-viewUserIcon currentUser =
+viewUserIcon : Location -> WebData User -> Html Msg
+viewUserIcon location currentUser =
     let
         icon =
             case currentUser of
@@ -217,7 +234,7 @@ viewUserIcon currentUser =
                 _ ->
                     [ li []
                         [ button
-                            [ type_ "button", class "dropdown-item", onClick (NavigateAndClose Path.Login) ]
+                            [ type_ "button", class "dropdown-item", onClick (GoToLoginAndClose location) ]
                             [ text "Iniciar sesión" ]
                         ]
                     ]
@@ -238,8 +255,8 @@ viewUserIcon currentUser =
 {-| The global app menu shown in the offcanvas, identical on every page. Items
 that don't have a page/feature yet render as non-functional placeholders.
 -}
-viewOffcanvas : Model -> Int -> WebData User -> Html Msg
-viewOffcanvas model unread currentUser =
+viewOffcanvas : Location -> Model -> Int -> WebData User -> Html Msg
+viewOffcanvas location model unread currentUser =
     let
         menuLink : Msg -> List (Html Msg) -> Html Msg
         menuLink msg children =
@@ -320,7 +337,7 @@ viewOffcanvas model unread currentUser =
                             ]
 
                         _ ->
-                            [ menuLink (NavigateAndClose Path.Login) [ text "Iniciar sesión" ] ]
+                            [ menuLink (GoToLoginAndClose location) [ text "Iniciar sesión" ] ]
                 , div [ class "nav nav-pills flex-column border-top pt-2 mt-auto" ]
                     [ menuPlaceholder "Idioma: Español" ]
                 , div [ class "nav nav-pills flex-column border-top pt-2" ]

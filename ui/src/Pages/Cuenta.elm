@@ -1,6 +1,7 @@
 module Pages.Cuenta exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
+import Dict
 import Effect exposing (Effect)
 import Form exposing (Form, Msg(..))
 import Form.Field
@@ -175,7 +176,14 @@ viewBody currentUser model =
         _ ->
             p [ class "mb-0" ]
                 [ text "Necesitás iniciar sesión para ver tu cuenta. "
-                , Html.a [ Path.href Path.Login ] [ text "Iniciar sesión" ]
+                , Html.a
+                    [ Route.href
+                        { path = Path.Login
+                        , query = Dict.singleton "redirect" (Path.toString Path.Cuenta)
+                        , hash = Nothing
+                        }
+                    ]
+                    [ text "Iniciar sesión" ]
                 ]
 
 

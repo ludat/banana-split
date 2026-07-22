@@ -1,5 +1,6 @@
 port module Effect exposing
     ( Effect
+    , Location
     , back
     , batch
     , clearCurrentUser
@@ -111,14 +112,16 @@ sendMsg msg =
 -- ROUTING
 
 
-{-| Set the new route, and make the back button go back to the current route.
--}
-pushRoute :
+type alias Location =
     { path : Route.Path.Path
     , query : Dict String String
     , hash : Maybe String
     }
-    -> Effect msg
+
+
+{-| Set the new route, and make the back button go back to the current route.
+-}
+pushRoute : { path : Route.Path.Path, query : Dict String String, hash : Maybe String } -> Effect msg
 pushRoute route =
     PushUrl (Route.toString route)
 
@@ -133,12 +136,7 @@ pushRoutePath path =
 {-| Set the new route, but replace the previous one, so clicking the back
 button **won't** go back to the previous route.
 -}
-replaceRoute :
-    { path : Route.Path.Path
-    , query : Dict String String
-    , hash : Maybe String
-    }
-    -> Effect msg
+replaceRoute : { path : Route.Path.Path, query : Dict String String, hash : Maybe String } -> Effect msg
 replaceRoute route =
     ReplaceUrl (Route.toString route)
 

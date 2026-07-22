@@ -18,7 +18,6 @@ import Models.Grupo
 import Models.Store as Store
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
-import Route.Path
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Time
@@ -232,7 +231,7 @@ update _ msg model =
 
         LoggedOut ->
             ( { model | currentUser = NotAsked }
-            , Effect.pushRoutePath Route.Path.Login
+            , Effect.none
             )
 
         MarkChangelogRead ->

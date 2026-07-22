@@ -1,7 +1,8 @@
 module Pages.Login exposing (Model, Msg, Step, page)
 
 import Components.Bootstrap as Bs
-import Effect exposing (Effect)
+import Dict
+import Effect exposing (Effect, Location)
 import Form exposing (Form, Msg(..))
 import Form.Field
 import Form.Validate as V exposing (Validation)
@@ -15,22 +16,63 @@ import Layouts
 import Page exposing (Page)
 import Route exposing (Route)
 import Route.Path as Path
+import Route.Query
 import Shared
 import Shared.Msg
+import Url
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
 
 page : Shared.Model -> Route () -> Page Model Msg
-page _ _ =
+page shared route =
     Page.new
-        { init = init
+        { init = init (redirectTarget shared.origin route)
         , update = update
         , subscriptions = \_ -> Sub.none
         , view = view
         }
         |> Page.withLayout (\_ -> Layouts.Minimal {})
+
+
+{-| Where to land after a successful login. The `redirect` query param is
+untrusted (anyone can craft the URL), so we only honour it when it resolves to a
+real, same-origin internal route; anything else (external URLs, unknown paths)
+falls back to Home, which closes the open-redirect hole.
+-}
+redirectTarget : String -> Route () -> Location
+redirectTarget origin route =
+    Dict.get "redirect" route.query
+        |> Maybe.andThen (localTarget origin)
+        |> Maybe.withDefault homeTarget
+
+
+homeTarget : Location
+homeTarget =
+    { path = Path.Home_, query = Dict.empty, hash = Nothing }
+
+
+localTarget : String -> String -> Maybe Location
+localTarget origin redirect =
+    -- Require an app-local path first (a single leading slash), then resolve it
+    -- against our own origin so an external or malformed URL can't slip through.
+    if String.startsWith "/" redirect && not (String.startsWith "//" redirect) then
+        Url.fromString (origin ++ redirect)
+            |> Maybe.andThen
+                (\url ->
+                    Path.fromString url.path
+                        |> Maybe.map
+                            (\path ->
+                                { path = path
+                                , query = Route.Query.fromUrl url
+                                , hash = url.fragment
+                                }
+                            )
+                )
+
+    else
+        Nothing
 
 
 
@@ -56,11 +98,12 @@ type alias Model =
     , registrationToken : String
     , step : Step
     , submitting : Bool
+    , redirectTo : Location
     }
 
 
-init : () -> ( Model, Effect Msg )
-init () =
+init : Location -> () -> ( Model, Effect Msg )
+init redirectTo () =
     ( { loginForm = Form.initial [] validateLogin
       , confirmationForm = Form.initial [] validateConfirmation
       , registrationForm = Form.initial [] validateRegistration
@@ -69,6 +112,7 @@ init () =
       , registrationToken = ""
       , step = EnterEmail
       , submitting = False
+      , redirectTo = redirectTo
       }
     , Effect.none
     )
@@ -203,7 +247,7 @@ update msg model =
             )
 
         GotVerifyResult (Ok (VerifyLoggedIn user)) ->
-            ( { model | submitting = False }, logIn user )
+            ( { model | submitting = False }, logIn model.redirectTo user )
 
         GotVerifyResult (Ok (VerifyNeedsRegistration registrationToken)) ->
             ( { model
@@ -221,7 +265,7 @@ update msg model =
             )
 
         GotRegistered (Ok user) ->
-            ( { model | submitting = False }, logIn user )
+            ( { model | submitting = False }, logIn model.redirectTo user )
 
         GotRegistered (Err err) ->
             ( { model | submitting = False }
@@ -241,11 +285,11 @@ update msg model =
             )
 
 
-logIn : User -> Effect Msg
-logIn user =
+logIn : Location -> User -> Effect Msg
+logIn redirectTo user =
     Effect.batch
         [ Effect.sendSharedMsg (Shared.Msg.CurrentUserLoaded (Ok user))
-        , Effect.pushRoutePath Path.Home_
+        , Effect.pushRoute redirectTo
         ]
 
 
