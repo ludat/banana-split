@@ -6,7 +6,6 @@ module Models.Monto exposing
     , sub
     , toFloat
     , toRawString
-    , toSignedString
     , toString
     , validateMonto
     , zero
