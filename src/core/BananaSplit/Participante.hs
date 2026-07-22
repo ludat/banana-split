@@ -20,20 +20,13 @@ data Participante = Participante
   { id :: ULID
   , nombre :: Text
   , user :: Maybe User
-  -- ^ The account that has claimed this participante ("this is me"), if any.
   }
   deriving (Show, Eq, Generic)
 
--- | Why a claim ("this is me") on a participante was refused. A user owns at
--- most one participante per grupo, and a participante can be owned by at most one
--- account.
 data ClaimRejection
-  = -- | The participante is already claimed by a different account.
-    ClaimedByOtherUser
-  | -- | The requesting user already owns another participante in this grupo.
-    AlreadyOwnAnotherParticipante
-  | -- | No such participante in the grupo.
-    ParticipanteNotFound
+  = ClaimedByOtherUser
+  | AlreadyOwnAnotherParticipante
+  | ParticipanteNotFound
   deriving (Show, Eq, Generic)
 
 newtype ParticipanteId = ParticipanteId ULID

@@ -474,9 +474,6 @@ instance FromBackendRow Postgres M.Moneda where
 
 instance HasSqlEqualityCheck Postgres M.Moneda
 
--- Emails are stored as plain @text@: delegate the column encoding to 'Text'
--- (via 'M.unEmail') rather than 'show', and re-wrap on the way out through
--- 'M.mkEmail' so a value read back is always canonical.
 instance HasSqlValueSyntax PgValueSyntax M.Email where
   sqlValueSyntax = sqlValueSyntax . M.unEmail
 
