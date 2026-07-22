@@ -20,15 +20,21 @@ import Site.Api
 import Site.Auth (AuthContext, authHandler, sessionAuthHandler)
 import Site.Handler.Auth
 import Site.Handler.Grupos
+import Site.Handler.InboundEmail (WebhookApi, handleInboundEmail)
 import Site.Handler.Pagos
 import Site.Handler.Receipt
 import Site.Handler.Repartijas
 import Site.Types
 
-serverT :: ServerT ("api" :> ToServantApi Api :<|> Raw) AppHandler
+-- | The full HTTP surface: the Elm-facing 'Api' plus the provider-facing
+-- 'WebhookApi' (kept separate so servant-elm never sees it), both under @\/api@,
+-- and the static site as a fallback.
+type ServedApi = "api" :> (ToServantApi Api :<|> WebhookApi) :<|> Raw
+
+serverT :: ServerT ServedApi AppHandler
 serverT =
-  genericServerT
-    Api
+  ( genericServerT
+      Api
       { _routeGrupoGet = handleShowGrupo
       , _routeGrupoPost = handleCreateGrupo
       , _routeGrupoGetNetos = handleGetNetos
@@ -68,13 +74,15 @@ serverT =
       -- , _routePagoEdit = handlePagoEdit
       -- , _routePagoDelete = handlePagoDelete
       }
+      :<|> handleInboundEmail
+  )
     :<|> serveDirectoryWith
       (defaultWebAppSettings "./public")
         { ss404Handler = Just $ \_req cb -> do
             cb $ responseFile ok200 [("Content-Type", "text/html")] "./public/index.html" Nothing
         }
 
-proxyApi :: Proxy ("api" :> ToServantApi Api :<|> Raw)
+proxyApi :: Proxy ServedApi
 proxyApi = Proxy
 
 nt :: App -> AppHandler a -> Handler a
