@@ -42,6 +42,10 @@ changelog =
       , title = "Usá `=` para hacer cuentas mientras cargas un pago"
       , description = "Ahora mientras escribís un monto podés escribir = seguido de una cuenta matemática y se va a reemplazar por el resultado."
       }
+    , { date = Date.fromCalendarDate 2026 Jul 22
+      , title = "Habemus usuarios"
+      , description = "Ahora podés loguearte a la app con tu email y ver todos tus grupos en la pantalla principal."
+      }
     ]
 
 
