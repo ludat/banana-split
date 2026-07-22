@@ -1,5 +1,3 @@
-{-# LANGUAGE OverloadedStrings #-}
-
 module Site.Handler.Utils (
   err200,
   err423,

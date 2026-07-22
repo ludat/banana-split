@@ -8,7 +8,8 @@ own file, so they can be imported by `Effect.elm`
 
 -}
 
-import Generated.Api exposing (ULID)
+import Generated.Api exposing (ClaimParticipanteResult, Participante, ULID, User)
+import Http
 import Models.Store.Types exposing (StoreMsg)
 import Route.Path as Route
 import Time exposing (Posix)
@@ -21,7 +22,14 @@ type Msg
     | ToastMsg ToastMsg
     | StoreMsg StoreMsg
     | NavigateTo Route.Path
-    | SetCurrentUser { grupoId : ULID, userId : ULID }
-    | CurrentUserLoaded { grupoId : ULID, userId : Maybe ULID }
+    | SetCurrentParticipante { grupoId : ULID, participanteId : Maybe ULID }
+    | CurrentParticipanteLoaded { grupoId : ULID, participanteId : Maybe ULID }
+    | CurrentUserLoaded (Result Http.Error User)
+    | ClaimParticipante { grupoId : ULID, participanteId : ULID }
+    | UnclaimParticipante { grupoId : ULID, participanteId : ULID }
+    | GotClaimResult { grupoId : ULID } (Result Http.Error ClaimParticipanteResult)
+    | GotUnclaimResult { grupoId : ULID } (Result Http.Error Participante)
+    | Logout
+    | LoggedOut
     | MarkChangelogRead
     | Tick Posix

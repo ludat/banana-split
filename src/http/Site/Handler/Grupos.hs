@@ -1,11 +1,15 @@
 module Site.Handler.Grupos (
   CreateGrupoParams,
+  handleClaimParticipante,
   handleCreateGrupo,
+  handleCreateGrupoAsUser,
   handleCreateParticipante,
   handleDeleteParticipante,
   handleFreezeGrupo,
+  handleGetMisGrupos,
   handleGetNetos,
   handleShowGrupo,
+  handleUnclaimParticipante,
   handleUnfreezeGrupo,
   handleUpdateGrupo,
 ) where
@@ -16,13 +20,17 @@ import Servant
 import BananaSplit
 import BananaSplit.Persistence (
   addParticipante,
+  claimParticipante,
   createGrupo,
+  createGrupoForUser,
   deleteShallowParticipante,
   fetchGrupo,
+  fetchGruposForUser,
   fetchPago,
   fetchShallowPagos,
   fetchTransaccionesCongeladas,
   freezeGrupo,
+  unclaimParticipante,
   unfreezeGrupo,
   updateGrupo,
  )
@@ -33,6 +41,10 @@ import Site.Types
 handleCreateGrupo :: CreateGrupoParams -> AppHandler Grupo
 handleCreateGrupo CreateGrupoParams{grupoName, grupoParticipante} = do
   runBeam $ createGrupo grupoName grupoParticipante
+
+handleCreateGrupoAsUser :: User -> CreateGrupoAsUserParams -> AppHandler Grupo
+handleCreateGrupoAsUser user CreateGrupoAsUserParams{grupoName} = do
+  runBeam $ createGrupoForUser grupoName user
 
 handleGetNetos :: ULID -> AppHandler ResumenGrupo
 handleGetNetos grupoId = do
@@ -90,6 +102,21 @@ handleCreateParticipante :: ULID -> ParticipanteAddParams -> AppHandler Particip
 handleCreateParticipante grupoId ParticipanteAddParams{name} = do
   runBeam (addParticipante grupoId name)
     `Site.Handler.Utils.orElse` (\_e -> throwJsonError err400 "falle")
+
+handleGetMisGrupos :: User -> AppHandler [ShallowGrupo]
+handleGetMisGrupos user = do
+  runBeam $ fetchGruposForUser user.id
+
+handleClaimParticipante :: User -> ULID -> ULID -> AppHandler ClaimParticipanteResult
+handleClaimParticipante user grupoId participanteId = do
+  result <- runBeam $ claimParticipante grupoId participanteId user.id
+  pure $ case result of
+    Left rejection -> ClaimRejected rejection
+    Right participante -> ClaimAccepted participante
+
+handleUnclaimParticipante :: User -> ULID -> ULID -> AppHandler Participante
+handleUnclaimParticipante user grupoId participanteId = do
+  runBeam $ unclaimParticipante grupoId participanteId user.id
 
 handleFreezeGrupo :: ULID -> AppHandler ShallowGrupo
 handleFreezeGrupo grupoId = do

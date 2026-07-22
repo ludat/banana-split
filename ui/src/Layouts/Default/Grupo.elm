@@ -3,18 +3,18 @@ module Layouts.Default.Grupo exposing (Model, Msg, Props, layout)
 import Components.Bootstrap as Bs
 import Css
 import Effect exposing (Effect)
-import Generated.Api exposing (ShallowGrupo, ULID)
-import Html exposing (Html, a, button, div, h2, i, li, node, ol, option, p, select, strong, text, ul)
+import Generated.Api exposing (ShallowGrupo, ULID, User)
+import Html exposing (Html, a, button, div, h2, i, label, li, node, ol, option, p, select, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
 import Html.Events exposing (on, onClick, preventDefaultOn)
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
-import Models.Grupo exposing (GrupoLike, grupoIdFromPath)
+import Models.Grupo exposing (GrupoLike, currentParticipante, grupoIdFromPath, ownedParticipante)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import QRCode
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared.Model as Shared
@@ -32,7 +32,7 @@ layout _ shared route =
     Layout.new
         { init = \() -> init
         , update = update
-        , view = view shared.store route.path shared.userId shared.origin
+        , view = view shared.store route.path shared.participanteId shared.origin shared.currentUser
         , subscriptions = subscriptions
         }
         |> Layout.withParentProps {}
@@ -43,15 +43,13 @@ layout _ shared route =
 
 
 type alias Model =
-    { openDropdown : Maybe String
-    , qrShare : Maybe { title : String, url : String }
+    { qrShare : Maybe { title : String, url : String }
     }
 
 
 init : ( Model, Effect Msg )
 init =
-    ( { openDropdown = Nothing
-      , qrShare = Nothing
+    ( { qrShare = Nothing
       }
     , Effect.none
     )
@@ -63,7 +61,6 @@ init =
 
 type Msg
     = ForwardSharedMessage Shared.Msg
-    | ToggleDropdown String
     | ShareUrl { title : String, url : String }
     | OpenQrShare { title : String, url : String }
     | CloseQrShare
@@ -73,20 +70,8 @@ update : Msg -> Model -> ( Model, Effect Msg )
 update msg model =
     case msg of
         ForwardSharedMessage sharedMsg ->
-            ( { model | openDropdown = Nothing }
+            ( model
             , Effect.sendSharedMsg sharedMsg
-            )
-
-        ToggleDropdown name ->
-            ( { model
-                | openDropdown =
-                    if model.openDropdown == Just name then
-                        Nothing
-
-                    else
-                        Just name
-              }
-            , Effect.none
             )
 
         ShareUrl data ->
@@ -119,14 +104,25 @@ view :
     -> Path.Path
     -> Maybe ULID
     -> String
+    -> WebData User
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view store currentPath activeUser origin { toContentMsg, model, content } =
+view store currentPath manualPick origin currentUser { toContentMsg, model, content } =
     let
         remoteGrupo =
             grupoIdFromPath currentPath
                 |> Maybe.map (\grupoId -> Store.getGrupo grupoId store)
                 |> Maybe.withDefault NotAsked
+
+        -- The participante to act as: the manual pick, or the participante the
+        -- logged-in account owns in this grupo (derived, never persisted).
+        activeUser =
+            case remoteGrupo of
+                Success grupo ->
+                    currentParticipante manualPick currentUser grupo
+
+                _ ->
+                    manualPick
     in
     { title = content.title
     , body =
@@ -143,7 +139,7 @@ view store currentPath activeUser origin { toContentMsg, model, content } =
         , case remoteGrupo of
             Success grupo ->
                 Html.map toContentMsg <|
-                    viewGroupHeader model origin currentPath activeUser store grupo
+                    viewGroupHeader origin currentPath activeUser currentUser store grupo
 
             _ ->
                 text ""
@@ -168,8 +164,8 @@ view store currentPath activeUser origin { toContentMsg, model, content } =
     }
 
 
-viewGroupHeader : Model -> String -> Path.Path -> Maybe ULID -> Store -> ShallowGrupo -> Html Msg
-viewGroupHeader model origin currentPath activeUser store grupo =
+viewGroupHeader : String -> Path.Path -> Maybe ULID -> WebData User -> Store -> ShallowGrupo -> Html Msg
+viewGroupHeader origin currentPath activeUser currentUser store grupo =
     let
         info =
             headerInfo currentPath store grupo
@@ -182,77 +178,11 @@ viewGroupHeader model origin currentPath activeUser store grupo =
                     , h2 [ class "mb-0 fw-bold" ] [ text info.title ]
                     ]
                 , div [ class "d-flex flex-column align-items-end gap-2" ]
-                    [ div
-                        [ classList
-                            [ ( "dropdown", True )
-                            , ( "show", model.openDropdown == Just "ver-como" )
-                            ]
+                    [ label [ class "d-flex align-items-center gap-2 small text-muted text-nowrap" ]
+                        [ text "Ver como:"
+                        , viewGlobalUserSelector activeUser grupo
                         ]
-                        [ button
-                            [ type_ "button"
-                            , class "btn btn-link btn-sm text-muted text-decoration-none p-0 dropdown-toggle"
-                            , Attr.attribute "aria-expanded"
-                                (if model.openDropdown == Just "ver-como" then
-                                    "true"
-
-                                 else
-                                    "false"
-                                )
-                            , onClick (ToggleDropdown "ver-como")
-                            ]
-                            [ text "Ver como: "
-                            , strong []
-                                [ text
-                                    (activeUser
-                                        |> Maybe.andThen
-                                            (\uid ->
-                                                grupo.participantes
-                                                    |> List.filter (\p -> p.id == uid)
-                                                    |> List.head
-                                                    |> Maybe.map .nombre
-                                            )
-                                        |> Maybe.withDefault "—"
-                                    )
-                                ]
-                            ]
-                        , ul
-                            [ classList
-                                [ ( "dropdown-menu", True )
-                                , ( "dropdown-menu-end", True )
-                                , ( "show", model.openDropdown == Just "ver-como" )
-                                ]
-                            ]
-                            (li [ class "px-2 py-1" ]
-                                [ button
-                                    [ type_ "button"
-                                    , class "dropdown-item rounded"
-                                    , classList [ ( "active", activeUser == Nothing ) ]
-                                    , onClick
-                                        (ForwardSharedMessage <|
-                                            Shared.SetCurrentUser { grupoId = grupo.id, userId = "" }
-                                        )
-                                    ]
-                                    [ text "—" ]
-                                ]
-                                :: (grupo.participantes
-                                        |> List.map
-                                            (\p ->
-                                                li [ class "px-2 py-1" ]
-                                                    [ button
-                                                        [ type_ "button"
-                                                        , class "dropdown-item rounded"
-                                                        , classList [ ( "active", activeUser == Just p.id ) ]
-                                                        , onClick
-                                                            (ForwardSharedMessage <|
-                                                                Shared.SetCurrentUser { grupoId = grupo.id, userId = p.id }
-                                                            )
-                                                        ]
-                                                        [ text p.nombre ]
-                                                    ]
-                                            )
-                                   )
-                            )
-                        ]
+                    , viewVerComoWarning currentUser activeUser grupo
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
                         [ viewShareDropdown
                             { title = info.share.title
@@ -285,6 +215,54 @@ viewGroupHeader model origin currentPath activeUser store grupo =
           else
             text ""
         ]
+
+
+{-| Inline warning shown next to the "Ver como" toggle when a logged-in user is
+acting as a participante that isn't theirs. If that participante is unclaimed we
+offer a quick "reclamar"; if it's taken by someone else we just warn.
+-}
+viewVerComoWarning : WebData User -> Maybe ULID -> ShallowGrupo -> Html Msg
+viewVerComoWarning currentUser activeUser grupo =
+    case ( currentUser, activeUser ) of
+        ( Success u, Just uid ) ->
+            case grupo.participantes |> List.filter (\p -> p.id == uid) |> List.head of
+                Just p ->
+                    if (p.user |> Maybe.map .id) == Just u.id then
+                        text ""
+
+                    else
+                        let
+                            -- Only offer a quick "reclamar" when the participante
+                            -- is unclaimed AND the user doesn't already own one in
+                            -- the grupo (a user owns at most one).
+                            canClaim =
+                                p.user == Nothing && ownedParticipante u.id grupo == Nothing
+                        in
+                        div [ class "d-flex align-items-center gap-1 text-warning small" ]
+                            (i [ class "bi bi-exclamation-triangle" ] []
+                                :: text "No sos vos"
+                                :: (if canClaim then
+                                        [ button
+                                            [ type_ "button"
+                                            , class "btn btn-sm btn-link p-0 text-decoration-none align-baseline"
+                                            , onClick
+                                                (ForwardSharedMessage <|
+                                                    Shared.ClaimParticipante { grupoId = grupo.id, participanteId = p.id }
+                                                )
+                                            ]
+                                            [ text "reclamar" ]
+                                        ]
+
+                                    else
+                                        []
+                                   )
+                            )
+
+                Nothing ->
+                    text ""
+
+        _ ->
+            text ""
 
 
 {-| A single breadcrumb segment. `path` is `Just` when the segment should be a
@@ -423,6 +401,20 @@ headerInfo currentPath store grupo =
             }
 
         Path.Home_ ->
+            { crumbs = []
+            , title = "Banana split"
+            , showTabs = False
+            , share = grupoShare
+            }
+
+        Path.Login ->
+            { crumbs = []
+            , title = "Banana split"
+            , showTabs = False
+            , share = grupoShare
+            }
+
+        Path.Cuenta ->
             { crumbs = []
             , title = "Banana split"
             , showTabs = False
@@ -645,9 +637,17 @@ viewGlobalUserSelector activeUser grupo =
         , on "change"
             (Decode.at [ "target", "value" ] Decode.string
                 |> Decode.map
-                    (\userId ->
+                    (\value ->
                         ForwardSharedMessage <|
-                            Shared.SetCurrentUser { grupoId = grupo.id, userId = userId }
+                            Shared.SetCurrentParticipante
+                                { grupoId = grupo.id
+                                , participanteId =
+                                    if value == "" then
+                                        Nothing
+
+                                    else
+                                        Just value
+                                }
                     )
             )
         ]

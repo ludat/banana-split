@@ -1,0 +1,50 @@
+operations:
+  - create_table:
+      name: "users"
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "email"
+          type: "text"
+          nullable: false
+          unique: true
+        - name: "nombre"
+          type: "text"
+          nullable: false
+        - name: "created_at"
+          type: "timestamptz"
+          nullable: false
+          default: "now()"
+  - add_column:
+      table: participantes
+      column:
+        name: user__id
+        type: text
+        nullable: true
+        references:
+          table: users
+          column: id
+          name: fk_participantes_user__id
+  - create_table:
+      name: "login_attempts"
+      columns:
+        - name: "id"
+          type: "text"
+          pk: true
+        - name: "email"
+          type: "text"
+          nullable: false
+        - name: "details"
+          type: "jsonb"
+          nullable: false
+        - name: "created_at"
+          type: "timestamptz"
+          nullable: false
+          default: "now()"
+  - create_index:
+      name: idx_login_attempts_email_created_at
+      table: login_attempts
+      columns:
+        email: {}
+        created_at: {}

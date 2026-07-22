@@ -1,3 +1,13 @@
+{-# LANGUAGE DataKinds #-}
+{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE TypeOperators #-}
+{-# LANGUAGE UndecidableInstances #-}
+{-# OPTIONS_GHC -Wno-orphans #-}
+
 module BananaSplit.Elm (
   generateElmFiles,
 ) where
@@ -7,9 +17,23 @@ import Elm.TyRep
 import Protolude
 import Servant
 import Servant.Elm
+import Servant.Foreign (Foreign, HasForeign (..))
 
 import BananaSplit
 import Site.Api
+
+-- | servant-elm has no 'HasForeign' instance for 'AuthProtect', so codegen
+-- would stop compiling once an auth-protected route enters the API. The
+-- session lives in an httpOnly cookie the browser sends automatically, so the
+-- Elm side needs nothing extra: this pass-through simply skips the combinator.
+instance
+  forall lang ftype k (tag :: k) api.
+  (HasForeign lang ftype api) =>
+  HasForeign lang ftype (AuthProtect tag :> api)
+  where
+  type Foreign ftype (AuthProtect tag :> api) = Foreign ftype api
+  foreignFor lang ftype Proxy req =
+    foreignFor lang ftype (Proxy :: Proxy api) req
 
 generateElmFiles :: IO ()
 generateElmFiles = do
@@ -39,10 +63,21 @@ generateElmFiles = do
     )
     "ui/generated-src/"
     [ DefineElm (Proxy :: Proxy CreateGrupoParams)
+    , DefineElm (Proxy :: Proxy CreateGrupoAsUserParams)
+    , DefineElm (Proxy :: Proxy RequestCodeParams)
+    , DefineElm (Proxy :: Proxy LoginChallenge)
+    , DefineElm (Proxy :: Proxy VerifyParams)
+    , DefineElm (Proxy :: Proxy VerifyResult)
+    , DefineElm (Proxy :: Proxy RegisterParams)
+    , DefineElm (Proxy :: Proxy UpdateMeParams)
+    , DefineElm (Proxy :: Proxy Email)
+    , DefineElm (Proxy :: Proxy User)
     , DefineElm (Proxy :: Proxy UpdateGrupoParams)
     , DefineElm (Proxy :: Proxy ReceiptImageRequest)
     , DefineElm (Proxy :: Proxy ReceiptImageResponse)
     , DefineElm (Proxy :: Proxy ParticipanteAddParams)
+    , DefineElm (Proxy :: Proxy ClaimRejection)
+    , DefineElm (Proxy :: Proxy ClaimParticipanteResult)
     , DefineElm (Proxy :: Proxy ResumenGrupo)
     , DefineElm (Proxy :: Proxy (Netos Monto))
     , DefineElm (Proxy :: Proxy (PorMoneda (Netos Monto)))

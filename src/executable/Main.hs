@@ -19,6 +19,8 @@ main = do
       RunServer.runBackend
     ["server"] -> do
       RunServer.runBackend
+    ["generate"] -> do
+      Elm.generateElmFiles
     "migrations" : rest -> do
       config <- createConfig "dev"
       PgRoll.rawCall config rest

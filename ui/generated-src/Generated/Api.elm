@@ -33,6 +33,153 @@ jsonEncCreateGrupoParams  val =
 
 
 
+type alias CreateGrupoAsUserParams  =
+   { grupoName: String
+   }
+
+jsonDecCreateGrupoAsUserParams : Json.Decode.Decoder ( CreateGrupoAsUserParams )
+jsonDecCreateGrupoAsUserParams =
+   Json.Decode.succeed (\pgrupoName -> {grupoName = pgrupoName}) |> custom (Json.Decode.string)
+
+jsonEncCreateGrupoAsUserParams : CreateGrupoAsUserParams -> Value
+jsonEncCreateGrupoAsUserParams  val =
+   Json.Encode.string val.grupoName
+
+
+type alias RequestCodeParams  =
+   { email: Email
+   }
+
+jsonDecRequestCodeParams : Json.Decode.Decoder ( RequestCodeParams )
+jsonDecRequestCodeParams =
+   Json.Decode.succeed (\pemail -> {email = pemail}) |> custom (jsonDecEmail)
+
+jsonEncRequestCodeParams : RequestCodeParams -> Value
+jsonEncRequestCodeParams  val =
+   jsonEncEmail val.email
+
+
+type alias LoginChallenge  =
+   { challenge: String
+   }
+
+jsonDecLoginChallenge : Json.Decode.Decoder ( LoginChallenge )
+jsonDecLoginChallenge =
+   Json.Decode.succeed (\pchallenge -> {challenge = pchallenge}) |> custom (Json.Decode.string)
+
+jsonEncLoginChallenge : LoginChallenge -> Value
+jsonEncLoginChallenge  val =
+   Json.Encode.string val.challenge
+
+
+type alias VerifyParams  =
+   { challenge: String
+   , code: String
+   }
+
+jsonDecVerifyParams : Json.Decode.Decoder ( VerifyParams )
+jsonDecVerifyParams =
+   Json.Decode.succeed (\pchallenge pcode -> {challenge = pchallenge, code = pcode})
+   |> required "challenge" (Json.Decode.string)
+   |> required "code" (Json.Decode.string)
+
+jsonEncVerifyParams : VerifyParams -> Value
+jsonEncVerifyParams  val =
+   Json.Encode.object
+   [ ("challenge", Json.Encode.string val.challenge)
+   , ("code", Json.Encode.string val.code)
+   ]
+
+
+
+type VerifyResult  =
+    VerifyLoggedIn User
+    | VerifyNeedsRegistration String
+
+jsonDecVerifyResult : Json.Decode.Decoder ( VerifyResult )
+jsonDecVerifyResult =
+    let jsonDecDictVerifyResult = Dict.fromList
+            [ ("VerifyLoggedIn", Json.Decode.lazy (\_ -> Json.Decode.map VerifyLoggedIn (jsonDecUser)))
+            , ("VerifyNeedsRegistration", Json.Decode.lazy (\_ -> Json.Decode.map VerifyNeedsRegistration (Json.Decode.string)))
+            ]
+    in  decodeSumObjectWithSingleField  "VerifyResult" jsonDecDictVerifyResult
+
+jsonEncVerifyResult : VerifyResult -> Value
+jsonEncVerifyResult  val =
+    let keyval v = case v of
+                    VerifyLoggedIn v1 -> ("VerifyLoggedIn", encodeValue (jsonEncUser v1))
+                    VerifyNeedsRegistration v1 -> ("VerifyNeedsRegistration", encodeValue (Json.Encode.string v1))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type alias RegisterParams  =
+   { registrationToken: String
+   , nombre: String
+   }
+
+jsonDecRegisterParams : Json.Decode.Decoder ( RegisterParams )
+jsonDecRegisterParams =
+   Json.Decode.succeed (\pregistrationToken pnombre -> {registrationToken = pregistrationToken, nombre = pnombre})
+   |> required "registrationToken" (Json.Decode.string)
+   |> required "nombre" (Json.Decode.string)
+
+jsonEncRegisterParams : RegisterParams -> Value
+jsonEncRegisterParams  val =
+   Json.Encode.object
+   [ ("registrationToken", Json.Encode.string val.registrationToken)
+   , ("nombre", Json.Encode.string val.nombre)
+   ]
+
+
+
+type alias UpdateMeParams  =
+   { nombre: String
+   }
+
+jsonDecUpdateMeParams : Json.Decode.Decoder ( UpdateMeParams )
+jsonDecUpdateMeParams =
+   Json.Decode.succeed (\pnombre -> {nombre = pnombre}) |> custom (Json.Decode.string)
+
+jsonEncUpdateMeParams : UpdateMeParams -> Value
+jsonEncUpdateMeParams  val =
+   Json.Encode.string val.nombre
+
+
+type alias Email  = String
+
+jsonDecEmail : Json.Decode.Decoder ( Email )
+jsonDecEmail =
+    Json.Decode.string
+
+jsonEncEmail : Email -> Value
+jsonEncEmail  val = Json.Encode.string val
+
+
+
+type alias User  =
+   { id: ULID
+   , email: Email
+   , nombre: String
+   }
+
+jsonDecUser : Json.Decode.Decoder ( User )
+jsonDecUser =
+   Json.Decode.succeed (\pid pemail pnombre -> {id = pid, email = pemail, nombre = pnombre})
+   |> required "id" (jsonDecULID)
+   |> required "email" (jsonDecEmail)
+   |> required "nombre" (Json.Decode.string)
+
+jsonEncUser : User -> Value
+jsonEncUser  val =
+   Json.Encode.object
+   [ ("id", jsonEncULID val.id)
+   , ("email", jsonEncEmail val.email)
+   , ("nombre", Json.Encode.string val.nombre)
+   ]
+
+
+
 type alias UpdateGrupoParams  =
    { nombre: String
    , monedaPorDefecto: Moneda
@@ -98,6 +245,46 @@ jsonDecParticipanteAddParams =
 jsonEncParticipanteAddParams : ParticipanteAddParams -> Value
 jsonEncParticipanteAddParams  val =
    Json.Encode.string val.name
+
+
+type ClaimRejection  =
+    ClaimedByOtherUser 
+    | AlreadyOwnAnotherParticipante 
+    | ParticipanteNotFound 
+
+jsonDecClaimRejection : Json.Decode.Decoder ( ClaimRejection )
+jsonDecClaimRejection = 
+    let jsonDecDictClaimRejection = Dict.fromList [("ClaimedByOtherUser", ClaimedByOtherUser), ("AlreadyOwnAnotherParticipante", AlreadyOwnAnotherParticipante), ("ParticipanteNotFound", ParticipanteNotFound)]
+    in  decodeSumUnaries "ClaimRejection" jsonDecDictClaimRejection
+
+jsonEncClaimRejection : ClaimRejection -> Value
+jsonEncClaimRejection  val =
+    case val of
+        ClaimedByOtherUser -> Json.Encode.string "ClaimedByOtherUser"
+        AlreadyOwnAnotherParticipante -> Json.Encode.string "AlreadyOwnAnotherParticipante"
+        ParticipanteNotFound -> Json.Encode.string "ParticipanteNotFound"
+
+
+
+type ClaimParticipanteResult  =
+    ClaimAccepted Participante
+    | ClaimRejected ClaimRejection
+
+jsonDecClaimParticipanteResult : Json.Decode.Decoder ( ClaimParticipanteResult )
+jsonDecClaimParticipanteResult =
+    let jsonDecDictClaimParticipanteResult = Dict.fromList
+            [ ("ClaimAccepted", Json.Decode.lazy (\_ -> Json.Decode.map ClaimAccepted (jsonDecParticipante)))
+            , ("ClaimRejected", Json.Decode.lazy (\_ -> Json.Decode.map ClaimRejected (jsonDecClaimRejection)))
+            ]
+    in  decodeSumObjectWithSingleField  "ClaimParticipanteResult" jsonDecDictClaimParticipanteResult
+
+jsonEncClaimParticipanteResult : ClaimParticipanteResult -> Value
+jsonEncClaimParticipanteResult  val =
+    let keyval v = case v of
+                    ClaimAccepted v1 -> ("ClaimAccepted", encodeValue (jsonEncParticipante v1))
+                    ClaimRejected v1 -> ("ClaimRejected", encodeValue (jsonEncClaimRejection v1))
+    in encodeSumObjectWithSingleField keyval val
+
 
 
 type alias ResumenGrupo  =
@@ -341,19 +528,22 @@ jsonEncShallowGrupo  val =
 type alias Participante  =
    { id: ULID
    , nombre: String
+   , user: (Maybe User)
    }
 
 jsonDecParticipante : Json.Decode.Decoder ( Participante )
 jsonDecParticipante =
-   Json.Decode.succeed (\pid pnombre -> {id = pid, nombre = pnombre})
+   Json.Decode.succeed (\pid pnombre puser -> {id = pid, nombre = pnombre, user = puser})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
+   |> fnullable "user" (jsonDecUser)
 
 jsonEncParticipante : Participante -> Value
 jsonEncParticipante  val =
    Json.Encode.object
    [ ("id", jsonEncULID val.id)
    , ("nombre", Json.Encode.string val.nombre)
+   , ("user", (maybeEncode (jsonEncUser)) val.user)
    ]
 
 
@@ -1286,6 +1476,329 @@ postReceiptParseimage body toMsg =
                 Http.jsonBody (jsonEncReceiptImageRequest body)
             , expect =
                 Http.expectJson toMsg jsonDecReceiptImageResponse
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthRequestcode : RequestCodeParams -> (Result Http.Error  (LoginChallenge)  -> msg) -> Cmd msg
+postAuthRequestcode body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "request-code"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncRequestCodeParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecLoginChallenge
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthVerify : VerifyParams -> (Result Http.Error  (VerifyResult)  -> msg) -> Cmd msg
+postAuthVerify body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "verify"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncVerifyParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecVerifyResult
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthRegister : RegisterParams -> (Result Http.Error  (User)  -> msg) -> Cmd msg
+postAuthRegister body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "register"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncRegisterParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecUser
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthLogout : (Result Http.Error  (String)  -> msg) -> Cmd msg
+postAuthLogout toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "logout"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg Json.Decode.string
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postAuthRefresh : (Result Http.Error  (User)  -> msg) -> Cmd msg
+postAuthRefresh toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "auth"
+                    , "refresh"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecUser
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+getMe : (Result Http.Error  (User)  -> msg) -> Cmd msg
+getMe toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "me"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecUser
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+putMe : UpdateMeParams -> (Result Http.Error  (User)  -> msg) -> Cmd msg
+putMe body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "me"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncUpdateMeParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecUser
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postMeGrupos : CreateGrupoAsUserParams -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
+postMeGrupos body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "me"
+                    , "grupos"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncCreateGrupoAsUserParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecGrupo
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+getMeGrupos : (Result Http.Error  ((List ShallowGrupo))  -> msg) -> Cmd msg
+getMeGrupos toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "me"
+                    , "grupos"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg (Json.Decode.list (jsonDecShallowGrupo))
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+putGrupoByIdParticipantesByParticipanteIdClaim : ULID -> ULID -> (Result Http.Error  (ClaimParticipanteResult)  -> msg) -> Cmd msg
+putGrupoByIdParticipantesByParticipanteIdClaim capture_id capture_participanteId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "participantes"
+                    , (capture_participanteId)
+                    , "claim"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecClaimParticipanteResult
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+deleteGrupoByIdParticipantesByParticipanteIdClaim : ULID -> ULID -> (Result Http.Error  (Participante)  -> msg) -> Cmd msg
+deleteGrupoByIdParticipantesByParticipanteIdClaim capture_id capture_participanteId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "DELETE"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "participantes"
+                    , (capture_participanteId)
+                    , "claim"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecParticipante
             , timeout =
                 Nothing
             , tracker =

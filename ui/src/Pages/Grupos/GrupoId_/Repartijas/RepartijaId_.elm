@@ -29,9 +29,9 @@ page : Shared.Model -> Route { grupoId : String, repartijaId : String } -> Page 
 page shared route =
     Page.new
         { init = \() -> init route.params.grupoId route.params.repartijaId shared.store
-        , update = update shared.userId shared.store
+        , update = update (Shared.currentParticipante shared route.params.grupoId) shared.store
         , subscriptions = subscriptions
-        , view = view shared.userId shared.store
+        , view = view (Shared.currentParticipante shared route.params.grupoId) shared.store
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 

@@ -4,6 +4,7 @@
 module BananaSplit.Participante (
   Participante (..),
   ParticipanteId (..),
+  ClaimRejection (..),
   participanteId2ULID,
 ) where
 
@@ -13,11 +14,19 @@ import Protolude
 
 import BananaSplit.ULID (ULID)
 import BananaSplit.ULID qualified as ULID
+import BananaSplit.User (User)
 
 data Participante = Participante
   { id :: ULID
   , nombre :: Text
+  , user :: Maybe User
   }
+  deriving (Show, Eq, Generic)
+
+data ClaimRejection
+  = ClaimedByOtherUser
+  | AlreadyOwnAnotherParticipante
+  | ParticipanteNotFound
   deriving (Show, Eq, Generic)
 
 newtype ParticipanteId = ParticipanteId ULID
@@ -33,3 +42,4 @@ participanteId2ULID (ParticipanteId ulid) = ulid
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteId
 Elm.deriveBoth Elm.defaultOptions ''Participante
+Elm.deriveBoth Elm.defaultOptions ''ClaimRejection

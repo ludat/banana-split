@@ -1,19 +1,33 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE TypeApplications #-}
 
 module BananaSplit.Persistence (
   MissingPGRollSchema (..),
+  LoginEvent (..),
+  countRecentAttempts,
+  recordAttempt,
+  clearAttempts,
+  deleteOldLoginAttempts,
   makePool,
   runMigration,
   recomputePagos,
   addParticipante,
+  claimParticipante,
+  unclaimParticipante,
   createGrupo,
+  createGrupoForUser,
   db,
   deletePago,
   deleteRepartijaClaim,
   deleteShallowParticipante,
   deleteTransaccionCongelada,
   fetchGrupo,
+  fetchGruposForUser,
+  fetchUserById,
+  fetchUserByEmail,
+  createUser,
+  updateUser,
   fetchGrupoIdFromClaim,
   fetchGrupoIdFromRepartija,
   fetchPago,
@@ -35,6 +49,8 @@ import Data.Decimal qualified as Decimal
 import Data.List.NonEmpty qualified as NE
 import Data.Pool qualified as Pool
 import Data.String (String)
+import Data.Text qualified as Text
+import Data.Time (NominalDiffTime, addUTCTime, getCurrentTime)
 import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres
@@ -61,6 +77,9 @@ runMigration config args = do
       putText "Done"
     ["recompute-pagos"] -> do
       recomputePagos conn
+      putText "Done"
+    ["prune-login-attempts"] -> do
+      runBeamPostgres conn deleteOldLoginAttempts
       putText "Done"
     _ -> do
       putText $ "Unknown migration: " <> show args
@@ -96,25 +115,146 @@ newtype MissingPGRollSchema = MissingPGRollSchema
   deriving anyclass (Exception)
 
 createGrupo :: Text -> Text -> Pg M.Grupo
-createGrupo nombre participante = do
+createGrupo nombre participanteNombre =
+  createGrupoWith
+    nombre
+    [M.Participante{M.id = nullUlid, M.nombre = participanteNombre, M.user = Nothing}]
+
+createGrupoForUser :: Text -> M.User -> Pg M.Grupo
+createGrupoForUser nombre user =
+  createGrupoWith
+    nombre
+    [M.Participante{M.id = nullUlid, M.nombre = user.nombre, M.user = Just user}]
+
+createGrupoWith :: Text -> [M.Participante] -> Pg M.Grupo
+createGrupoWith nombre participantes = do
   newId <- liftIO ULID.getULID
   runInsert
     $ insert db.grupos
     $ insertValues
       [ Grupo newId nombre False (M.ARS)
       ]
-  p <-
-    addParticipante newId participante
-      `orElse` \e -> fail $ show e
-
+  savedParticipantes <- forM participantes $ \participante -> do
+    participanteId <- liftIO ULID.getULID
+    pure
+      M.Participante
+        { M.id = participanteId
+        , M.nombre = participante.nombre
+        , M.user = participante.user
+        }
+  unless (null savedParticipantes)
+    $ runInsert
+    $ insert db.participantes
+    $ insertValues
+    $ savedParticipantes
+    & fmap (\p -> Participante p.id (GrupoId newId) p.nombre (UserId (fmap (.id) p.user)))
   pure
     $ M.Grupo
       { M.id = newId
       , M.nombre = nombre
       , M.pagos = []
-      , M.participantes = [p]
+      , M.participantes = savedParticipantes
       , M.monedaPorDefecto = M.ARS
       }
+
+updateUser :: ULID -> Text -> Pg M.User
+updateUser userId rawNombre = do
+  let nombre = Text.strip rawNombre
+  runUpdate
+    $ update
+      db.users
+      (\u -> u.nombre <-. val_ nombre)
+      (\u -> u.id ==. val_ userId)
+  fetchUserById userId
+    `orElseMay` fail ("user vanished while updating: " <> show userId)
+
+fetchUserById :: ULID -> Pg (Maybe M.User)
+fetchUserById userId = do
+  existing <- runSelectReturningOne $ select $ do
+    u <- all_ db.users
+    guard_ (u.id ==. val_ userId)
+    pure u
+  pure $ fmap toModelUser existing
+
+fetchUserByEmail :: M.Email -> Pg (Maybe M.User)
+fetchUserByEmail email = do
+  existing <- runSelectReturningOne $ select $ do
+    u <- all_ db.users
+    guard_ (u.email ==. val_ email)
+    pure u
+  pure $ fmap toModelUser existing
+
+createUser :: M.Email -> Text -> Pg M.User
+createUser email rawNombre = do
+  let nombre = Text.strip rawNombre
+  newId <- liftIO ULID.getULID
+  now <- liftIO getCurrentTime
+  runInsert
+    $ insert db.users
+    $ insertValues
+      [ User{id = newId, email = email, nombre = nombre, created_at = now}
+      ]
+  pure
+    $ M.User
+      { M.id = newId
+      , M.email = email
+      , M.nombre = nombre
+      }
+
+toModelUser :: User -> M.User
+toModelUser u =
+  M.User
+    { M.id = u.id
+    , M.email = u.email
+    , M.nombre = u.nombre
+    }
+
+attemptWindow :: NominalDiffTime
+attemptWindow = 15 * 60
+
+countRecentAttempts :: M.Email -> Pg Int
+countRecentAttempts email = do
+  now <- liftIO getCurrentTime
+  let cutoff = now & addUTCTime (negate attemptWindow)
+  mCount <-
+    runSelectReturningOne
+      $ select
+      $ aggregate_ (\_ -> as_ @Int64 countAll_)
+      $ do
+        a <- all_ db.login_attempts
+        guard_ (a.email ==. val_ email &&. a.created_at >=. val_ cutoff)
+        pure a
+  pure $ maybe 0 fromIntegral mCount
+
+recordAttempt :: M.Email -> LoginEvent -> Pg ()
+recordAttempt email event = do
+  newId <- liftIO ULID.getULID
+  now <- liftIO getCurrentTime
+  runInsert
+    $ insert db.login_attempts
+    $ insertValues
+      [LoginAttempt{id = newId, email = email, details = PgJSONB event, created_at = now}]
+  let cutoff = now & addUTCTime (negate attemptWindow)
+  runDelete
+    $ delete
+      db.login_attempts
+      (\a -> a.email ==. val_ email &&. a.created_at <. val_ cutoff)
+
+clearAttempts :: M.Email -> Pg ()
+clearAttempts email = do
+  runDelete
+    $ delete
+      db.login_attempts
+      (\a -> a.email ==. val_ email)
+
+deleteOldLoginAttempts :: Pg ()
+deleteOldLoginAttempts = do
+  now <- liftIO getCurrentTime
+  let cutoff = now & addUTCTime (negate attemptWindow)
+  runDelete
+    $ delete
+      db.login_attempts
+      (\a -> a.created_at <. val_ cutoff)
 
 fetchGrupo :: ULID -> Pg (Maybe M.ShallowGrupo)
 fetchGrupo aGrupoId = do
@@ -136,6 +276,30 @@ fetchGrupo aGrupoId = do
           , M.isFrozen = grupo.is_frozen
           , M.monedaPorDefecto = grupo.moneda_por_defecto
           }
+
+fetchGruposForUser :: ULID -> Pg [M.ShallowGrupo]
+fetchGruposForUser userId = do
+  grupos <- runSelectReturningList $ select $ do
+    grupo <-
+      all_ db.grupos
+        & orderBy_ (asc_ . (.id))
+    p <- all_ db.participantes
+    guard_ (p.grupo ==. GrupoId grupo.id)
+    guard_ (p.user ==. UserId (val_ (Just userId)))
+    pure grupo
+  -- FIXME: This is a N+1 query, we should use a JOIN to avoid it.
+  -- A simple fix would be having an empty list for participantes
+  -- since it's not used on the frontend.
+  forM grupos $ \grupo -> do
+    participantes <- fetchParticipantes grupo.id
+    pure
+      $ M.ShallowGrupo
+        { M.id = grupo.id
+        , M.nombre = grupo.nombre
+        , M.participantes = participantes
+        , M.isFrozen = grupo.is_frozen
+        , M.monedaPorDefecto = grupo.moneda_por_defecto
+        }
 
 fetchPago :: ULID -> Pg M.Pago
 fetchPago pagoId = do
@@ -342,21 +506,34 @@ fetchShallowPagos grupoId = do
 
 fetchParticipantes :: ULID -> Pg [M.Participante]
 fetchParticipantes grupoId = do
-  participantes <- runSelectReturningList $ select $ do
-    p <-
-      all_ db.participantes
-        & orderBy_ (asc_ . (.id))
+  rows <- runSelectReturningList $ select $ orderBy_ (\(p, _) -> asc_ p.id) $ do
+    p <- all_ db.participantes
     guard_ (p.grupo ==. GrupoId (val_ grupoId))
+    mOwner <- leftJoin_ (all_ db.users) (\u -> just_ (primaryKey u) ==. p.user)
+    pure (p, mOwner)
+  pure $ fmap (\(p, mOwner) -> toModelParticipante p (fmap toModelUser mOwner)) rows
+
+toModelParticipante :: Participante -> Maybe M.User -> M.Participante
+toModelParticipante p mOwner =
+  M.Participante
+    { M.id = p.id
+    , M.nombre = p.nombre
+    , M.user = mOwner
+    }
+
+fetchParticipanteById :: ULID -> Pg M.Participante
+fetchParticipanteById participanteId = do
+  row <- runSelectReturningOne $ select $ do
+    p <- all_ db.participantes
+    guard_ (p.id ==. val_ participanteId)
     pure p
-  pure
-    $ fmap
-      ( \p ->
-          M.Participante
-            { M.id = p.id
-            , M.nombre = p.nombre
-            }
-      )
-      participantes
+  case row of
+    Nothing -> fail $ "participante vanished: " <> show participanteId
+    Just p -> do
+      mOwner <- case p.user of
+        UserId (Just uid) -> fetchUserById uid
+        UserId Nothing -> pure Nothing
+      pure $ toModelParticipante p mOwner
 
 addParticipante :: ULID -> Text -> Pg (Either Text M.Participante)
 addParticipante grupoId name = do
@@ -364,14 +541,69 @@ addParticipante grupoId name = do
   runInsert
     $ insert db.participantes
     $ insertValues
-      [ Participante newId (GrupoId grupoId) name
+      [ Participante newId (GrupoId grupoId) name (UserId Nothing)
       ]
   pure
     $ Right
     $ M.Participante
       { M.id = newId
       , M.nombre = name
+      , M.user = Nothing
       }
+
+-- | Claim a participante as belonging to a user. A user owns at most one
+-- participante per grupo, enforced as a hard rule: the claim is refused if the
+-- user already owns another participante in the same grupo (they must unclaim it
+-- first). See 'M.ClaimRejection' for the ways it can be refused.
+--
+-- Re-claiming the participante you already own is a no-op that succeeds.
+claimParticipante :: ULID -> ULID -> ULID -> Pg (Either M.ClaimRejection M.Participante)
+claimParticipante grupoId participanteId userId = runExceptT $ do
+  p <-
+    ( runSelectReturningOne $ select $ do
+        p <- all_ db.participantes
+        guard_ (p.id ==. val_ participanteId)
+        guard_ (p.grupo ==. GrupoId (val_ grupoId))
+        pure p
+    )
+      `orElseMay` throwError M.ParticipanteNotFound
+  case p.user of
+    UserId (Just ownerId)
+      -- Re-claiming your own participante succeeds without changes.
+      | ownerId == userId -> lift $ fetchParticipanteById participanteId
+      | otherwise -> throwError M.ClaimedByOtherUser
+    UserId Nothing -> do
+      -- Refuse if the user already owns another participante in this grupo.
+      existingClaim <- runSelectReturningOne $ select $ do
+        other <- all_ db.participantes
+        guard_ (other.grupo ==. GrupoId (val_ grupoId))
+        guard_ (other.user ==. UserId (val_ (Just userId)))
+        pure other.id
+      case existingClaim of
+        Just _ -> throwError M.AlreadyOwnAnotherParticipante
+        Nothing -> do
+          runUpdate
+            $ update
+              db.participantes
+              (\row -> row.user <-. UserId (val_ (Just userId)))
+              (\row -> row.id ==. val_ participanteId)
+          lift $ fetchParticipanteById participanteId
+
+unclaimParticipante :: ULID -> ULID -> ULID -> Pg M.Participante
+unclaimParticipante grupoId participanteId userId = do
+  runUpdate
+    $ update
+      db.participantes
+      (\row -> row.user <-. UserId (val_ Nothing))
+      ( \row ->
+          row.id
+            ==. val_ participanteId
+            &&. row.grupo
+            ==. GrupoId (val_ grupoId)
+            &&. row.user
+            ==. UserId (val_ (Just userId))
+      )
+  fetchParticipanteById participanteId
 
 deleteShallowParticipante :: ULID -> ULID -> Pg M.ParticipanteId
 deleteShallowParticipante _grupoId participanteId = do

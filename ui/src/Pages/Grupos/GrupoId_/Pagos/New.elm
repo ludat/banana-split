@@ -376,7 +376,7 @@ update shared msg model =
         AddedPagoResponse (Ok pago) ->
             let
                 newModel =
-                    initializePagoForms pago.moneda participantes shared.userId (Just pago) model
+                    initializePagoForms pago.moneda participantes (Shared.currentParticipante shared model.grupoId) (Just pago) model
             in
             ( { newModel | hasUnsavedChanges = False }
             , Effect.batch
@@ -400,7 +400,7 @@ update shared msg model =
         UpdatedPagoResponse (Ok pago) ->
             let
                 newModel =
-                    initializePagoForms pago.moneda participantes shared.userId (Just pago) model
+                    initializePagoForms pago.moneda participantes (Shared.currentParticipante shared model.grupoId) (Just pago) model
             in
             ( newModel
             , Effect.batch
@@ -604,7 +604,7 @@ update shared msg model =
                         Success grupo ->
                             let
                                 newModel =
-                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes shared.userId Nothing model
+                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes (Shared.currentParticipante shared model.grupoId) Nothing model
                             in
                             ( { newModel
                                 | storedClaims = Nothing
@@ -637,7 +637,7 @@ update shared msg model =
                         ( Success grupo, Success pago ) ->
                             let
                                 newModel =
-                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes shared.userId (Just pago) model
+                                    initializePagoForms grupo.monedaPorDefecto grupo.participantes (Shared.currentParticipante shared model.grupoId) (Just pago) model
                             in
                             ( newModel
                             , Effect.none

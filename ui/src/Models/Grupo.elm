@@ -1,6 +1,7 @@
-module Models.Grupo exposing (GrupoLike, grupoIdFromPath, lookupNombreParticipante, lookupParticipante)
+module Models.Grupo exposing (GrupoLike, currentParticipante, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
 
-import Generated.Api exposing (Participante, ParticipanteId, ULID)
+import Generated.Api exposing (Participante, ParticipanteId, ULID, User)
+import RemoteData exposing (RemoteData(..), WebData)
 import Route.Path as Path
 
 
@@ -48,15 +49,58 @@ grupoIdFromPath path =
         Path.NotFound_ ->
             Nothing
 
+        Path.Login ->
+            Nothing
+
+        Path.Cuenta ->
+            Nothing
+
 
 lookupParticipante : GrupoLike g -> ParticipanteId -> Participante
 lookupParticipante grupo participanteId =
     grupo.participantes
         |> List.filter (\p -> p.id == participanteId)
         |> List.head
-        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido" }
+        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido", user = Nothing }
 
 
 lookupNombreParticipante : GrupoLike g -> ParticipanteId -> String
 lookupNombreParticipante grupo participanteId =
     lookupParticipante grupo participanteId |> .nombre
+
+
+{-| Whether a participante is claimed by the given account (its `user`).
+-}
+isOwnedBy : ULID -> Participante -> Bool
+isOwnedBy accountUserId participante =
+    (participante.user |> Maybe.map .id) == Just accountUserId
+
+
+{-| The participante the given account has claimed in this grupo, if any. A user
+owns at most one participante per grupo.
+-}
+ownedParticipante : ULID -> GrupoLike r -> Maybe Participante
+ownedParticipante accountUserId grupo =
+    grupo.participantes
+        |> List.filter (isOwnedBy accountUserId)
+        |> List.head
+
+
+{-| The participante the current session should act as in a grupo: an explicit
+manual pick when present, otherwise the participante the logged-in account owns
+in that grupo (if any). The derived value is never persisted — only the manual
+pick is.
+-}
+currentParticipante : Maybe ULID -> WebData User -> GrupoLike r -> Maybe ULID
+currentParticipante manualPick currentUser grupo =
+    case manualPick of
+        Just pid ->
+            Just pid
+
+        Nothing ->
+            case currentUser of
+                Success u ->
+                    ownedParticipante u.id grupo |> Maybe.map .id
+
+                _ ->
+                    Nothing

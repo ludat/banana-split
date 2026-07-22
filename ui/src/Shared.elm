@@ -2,6 +2,7 @@ module Shared exposing
     ( Flags
     , Model
     , Msg
+    , currentParticipante
     , decoder
     , init
     , subscriptions
@@ -10,10 +11,12 @@ module Shared exposing
 
 import Date
 import Effect exposing (Effect, incoming)
-import Generated.Api exposing (ULID)
+import Generated.Api as Api exposing (ClaimParticipanteResult(..), ClaimRejection(..), ULID)
 import Json.Decode
 import Json.Encode
+import Models.Grupo
 import Models.Store as Store
+import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
@@ -52,7 +55,14 @@ init : Result Json.Decode.Error Flags -> Route () -> ( Model, Effect Msg )
 init possiblyFlags _ =
     let
         flags =
-            Result.withDefault { now = 0, offset = 0, timeZone = "UTC", lastReadChangelog = Nothing, origin = "" } possiblyFlags
+            possiblyFlags
+                |> Result.withDefault
+                    { now = 0
+                    , offset = 0
+                    , timeZone = "UTC"
+                    , lastReadChangelog = Nothing
+                    , origin = ""
+                    }
 
         now =
             Time.millisToPosix flags.now
@@ -62,7 +72,8 @@ init possiblyFlags _ =
     in
     ( { toasties = Toast.initialState
       , store = Store.empty
-      , userId = Nothing
+      , participanteId = Nothing
+      , currentUser = Loading
       , now = now
       , today = Date.fromPosix timezone now
       , timezoneName = flags.timeZone
@@ -73,7 +84,7 @@ init possiblyFlags _ =
                 |> Maybe.map (\ms -> Date.fromPosix timezone (Time.millisToPosix ms))
       , origin = flags.origin
       }
-    , Effect.none
+    , Effect.sendCmd (Api.postAuthRefresh CurrentUserLoaded)
     )
 
 
@@ -117,31 +128,109 @@ update _ msg model =
                 ( store, cmd ) =
                     Store.update storeMsg model.store
             in
-            ( { model | store = store }, cmd )
+            ( { model | store = store }, Effect.batch [ cmd ] )
 
-        SetCurrentUser { grupoId, userId } ->
-            let
-                newUserId : Maybe ULID
-                newUserId =
-                    if userId == "" then
-                        Nothing
+        SetCurrentParticipante { grupoId, participanteId } ->
+            case participanteId of
+                Just pid ->
+                    let
+                        -- The participante the logged-in account owns in this grupo, if
+                        -- any. Picking it is the same as the default derivation, so we
+                        -- clear the stored pick instead of persisting a redundant one.
+                        ownedId =
+                            case ( model.currentUser, Store.getGrupo grupoId model.store ) of
+                                ( Success u, Success grupo ) ->
+                                    Models.Grupo.ownedParticipante u.id grupo |> Maybe.map .id
+
+                                _ ->
+                                    Nothing
+                    in
+                    if Just pid == ownedId then
+                        ( { model | participanteId = Nothing }
+                        , Effect.clearCurrentUser grupoId
+                        )
 
                     else
-                        Just userId
-            in
-            ( { model | userId = newUserId }
-            , case newUserId of
-                Just uid ->
-                    Effect.saveCurrentUser grupoId uid
+                        ( { model | participanteId = Just pid }
+                        , Effect.saveCurrentUser grupoId pid
+                        )
 
                 Nothing ->
-                    Effect.clearCurrentUser grupoId
+                    ( { model | participanteId = Nothing }
+                    , Effect.clearCurrentUser grupoId
+                    )
+
+        CurrentParticipanteLoaded { participanteId } ->
+            ( { model | participanteId = participanteId }
+            , Effect.none
             )
 
-        CurrentUserLoaded { userId } ->
-            ( { model
-                | userId = userId
-              }
+        CurrentUserLoaded currentUser ->
+            ( { model | currentUser = RemoteData.fromResult currentUser }
+            , Effect.none
+            )
+
+        ClaimParticipante { grupoId, participanteId } ->
+            ( model
+            , Effect.sendCmd <|
+                Api.putGrupoByIdParticipantesByParticipanteIdClaim grupoId
+                    participanteId
+                    (GotClaimResult { grupoId = grupoId })
+            )
+
+        UnclaimParticipante { grupoId, participanteId } ->
+            ( model
+            , Effect.sendCmd <|
+                Api.deleteGrupoByIdParticipantesByParticipanteIdClaim grupoId
+                    participanteId
+                    (GotUnclaimResult { grupoId = grupoId })
+            )
+
+        GotClaimResult { grupoId } result ->
+            case result of
+                Ok (ClaimAccepted p) ->
+                    ( { model
+                        | participanteId = Just p.id
+                      }
+                    , Effect.batch
+                        [ Store.refreshGrupo grupoId
+                        , Effect.saveCurrentUser grupoId p.id
+                        , Effect.sendToast { level = ToastSuccess, content = "Ahora sos " ++ p.nombre }
+                        ]
+                    )
+
+                Ok (ClaimRejected reason) ->
+                    ( model
+                    , Effect.sendToast { level = ToastDanger, content = claimRejectionMessage reason }
+                    )
+
+                Err _ ->
+                    ( model
+                    , Effect.sendToast { level = ToastDanger, content = genericClaimError }
+                    )
+
+        GotUnclaimResult { grupoId } result ->
+            case result of
+                Ok p ->
+                    ( model
+                    , Effect.batch
+                        [ Store.refreshGrupo grupoId
+                        , Effect.sendToast { level = ToastSuccess, content = "Dejaste de reclamar a " ++ p.nombre }
+                        ]
+                    )
+
+                Err _ ->
+                    ( model
+                    , Effect.sendToast { level = ToastDanger, content = genericClaimError }
+                    )
+
+        Logout ->
+            ( { model | currentUser = Loading }
+            , Effect.sendCmd (Api.postAuthLogout (\_ -> LoggedOut))
+            )
+
+        LoggedOut ->
+            ( { model | currentUser = NotAsked }
             , Effect.none
             )
 
@@ -154,6 +243,41 @@ update _ msg model =
             ( { model | now = datetime, today = Date.fromPosix model.timezone datetime }
             , Effect.none
             )
+
+
+{-| The participante the current session should act as in a grupo: the stored
+manual pick when present, otherwise the participante the logged-in account owns
+in that grupo (resolving the grupo from the store). Only the manual pick is ever
+persisted; the owned fallback is derived at read-time.
+-}
+currentParticipante : Model -> ULID -> Maybe ULID
+currentParticipante model grupoId =
+    case Store.getGrupo grupoId model.store of
+        Success grupo ->
+            Models.Grupo.currentParticipante model.participanteId model.currentUser grupo
+
+        _ ->
+            model.participanteId
+
+
+{-| A user-facing message for each way a claim can be refused.
+-}
+claimRejectionMessage : ClaimRejection -> String
+claimRejectionMessage reason =
+    case reason of
+        ClaimedByOtherUser ->
+            "Ese participante ya fue reclamado por otra persona"
+
+        AlreadyOwnAnotherParticipante ->
+            "Ya reclamaste otro participante en este grupo. Dejá de reclamarlo primero."
+
+        ParticipanteNotFound ->
+            "No encontramos ese participante"
+
+
+genericClaimError : String
+genericClaimError =
+    "No pudimos completar la operación, probá de nuevo"
 
 
 
@@ -172,18 +296,18 @@ decodeIncomingPortMessage : { tag : String, data : Json.Encode.Value } -> Maybe 
 decodeIncomingPortMessage { tag, data } =
     case tag of
         "CURRENT_USER_LOADED" ->
-            Json.Decode.decodeValue
-                (Json.Decode.map2
-                    (\grupoId userId ->
-                        CurrentUserLoaded
-                            { grupoId = grupoId
-                            , userId = userId
-                            }
+            data
+                |> Json.Decode.decodeValue
+                    (Json.Decode.map2
+                        (\grupoId participanteId ->
+                            CurrentParticipanteLoaded
+                                { grupoId = grupoId
+                                , participanteId = participanteId
+                                }
+                        )
+                        (Json.Decode.field "grupoId" Json.Decode.string)
+                        (Json.Decode.field "participanteId" (Json.Decode.nullable Json.Decode.string))
                     )
-                    (Json.Decode.field "grupoId" Json.Decode.string)
-                    (Json.Decode.field "userId" (Json.Decode.nullable Json.Decode.string))
-                )
-                data
                 |> Result.toMaybe
 
         "SHARE_LINK_COPIED" ->

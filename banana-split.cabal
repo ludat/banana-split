@@ -46,6 +46,8 @@ common base-settings
     http-client-tls,
     http-media,
     http-types,
+    jose,
+    mime-mail,
     mtl,
     postgresql-simple,
     pretty-simple,
@@ -59,7 +61,9 @@ common base-settings
     scientific,
     servant,
     servant-elm,
+    servant-foreign,
     servant-server,
+    smtp-mail,
     string-conversions,
     string-interpolate,
     temporary,
@@ -86,12 +90,14 @@ library
     BananaSplit
     BananaSplit.Core
     BananaSplit.Deudas
+    BananaSplit.Email
     BananaSplit.Monto
     BananaSplit.Moneda
     BananaSplit.Participante
     BananaSplit.Repartija
     BananaSplit.TestUtils
     BananaSplit.ULID
+    BananaSplit.User
     Preludat
 
 library database
@@ -136,12 +142,15 @@ library http
   exposed-modules:
     RunServer
     Site.Api
+    Site.Auth
     Site.Config
+    Site.Handler.Auth
     Site.Handler.Grupos
     Site.Handler.Pagos
     Site.Handler.Receipt
     Site.Handler.Repartijas
     Site.Handler.Utils
+    Site.Mailer
     Site.Server
     Site.Types
 
@@ -149,6 +158,12 @@ library http
     banana-split,
     banana-split:database,
     banana-split:receipts,
+    cookie,
+    crypton,
+    jose,
+    lens,
+    memory,
+    random,
 
 executable banana-split
   import: base-settings, threaded-rts
@@ -168,10 +183,12 @@ test-suite spec
     BananaSplit.DeudasSpec
     BananaSplit.MonedaSpec
     BananaSplit.Persistence.GrupoSpec
+    BananaSplit.Persistence.LoginAttemptsSpec
     BananaSplit.Persistence.PagosSpec
     BananaSplit.Persistence.SpecHook
     BananaSplit.RepartijaSpec
     BananaSplitSpec
+    Site.AuthSpec
     Site.Handler.GruposSpec
 
   build-depends:
@@ -180,5 +197,6 @@ test-suite spec
     banana-split:database,
     banana-split:http,
     hspec,
+    lens,
 
   build-tool-depends: hspec-discover:hspec-discover

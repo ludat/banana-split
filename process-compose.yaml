@@ -3,7 +3,7 @@ version: "0.5"
 processes:
   backend: &backend
     command: |
-      ghcid --command='cabal repl --enable-multi-repl exe:banana-split lib:banana-split' --run=Main.main --warnings
+      ghcid --command='cabal repl --enable-multi-repl exe:banana-split lib:banana-split' --reload=./config --run=Main.main --warnings
     availability:
       restart: "always"
     depends_on:
@@ -12,7 +12,7 @@ processes:
   tests:
     disabled: true
     command: |
-      ghcid --command='cabal repl --enable-multi-repl test:spec lib:banana-split' --run=Main.main --warnings
+      ghcid --command='cabal repl --enable-multi-repl test:spec lib:banana-split' --reload=./config --run=Main.main --warnings
     is_tty: true
   frontend:
     command: pnpm start
@@ -46,3 +46,13 @@ processes:
         command: docker compose exec database pg_isready
     shutdown:
       command: docker-compose down
+  mails:
+    command: mailpit --enable-chaos
+    readiness_probe:
+      http_get:
+        host: localhost
+        scheme: http
+        path: "/readyz"
+        port: 8025
+    availability:
+      restart: "always"
