@@ -93,12 +93,11 @@ monto-input {
             justify-self: stretch;
         }
 
-        @media (min-width: 768px) {
-            display: none;
-        }
+    }
+    @media (min-width: 768px) {
+        display: none;
     }
 }
-
 
 .navbar-item {
     @scope (&) {
