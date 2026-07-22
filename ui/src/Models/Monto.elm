@@ -1,10 +1,12 @@
 module Models.Monto exposing
     ( abs
     , add
+    , asDeltaHtml
     , diffText
     , sub
     , toFloat
     , toRawString
+    , toSignedString
     , toString
     , validateMonto
     , zero
@@ -13,6 +15,8 @@ module Models.Monto exposing
 import Form.Error as FormError
 import Form.Validate as V exposing (Validation)
 import Generated.Api exposing (Monto)
+import Html exposing (Html, span, text)
+import Html.Attributes exposing (class)
 import Numeric.Decimal as Decimal
 import Numeric.Decimal.Rounding as Decimal
 import Numeric.Nat as Nat
@@ -128,6 +132,37 @@ toString { lugaresDespuesDeLaComa, valor } =
                 "," ++ String.padLeft lugaresDespuesDeLaComa '0' (String.fromInt (modBy factor absValor))
     in
     sign ++ intPart ++ decimalPart
+
+
+{-| Like `toString`, but also prepends a `+` for positive values so the number
+reads as a delta rather than a total (e.g. "+1.000,50"). Negatives keep their
+`-` and zero stays unsigned.
+-}
+toSignedString : Monto -> String
+toSignedString monto =
+    if monto.valor > 0 then
+        "+" ++ toString monto
+
+    else
+        toString monto
+
+
+{-| Render a Monto as a signed delta (see `toSignedString`) coloured green when
+positive and red when negative, via Bootstrap's `text-success` / `text-danger`.
+Only the number is coloured; wrap it with an uncoloured currency symbol outside.
+-}
+asDeltaHtml : Monto -> Html msg
+asDeltaHtml monto =
+    span
+        [ class
+            (if monto.valor < 0 then
+                "text-danger"
+
+             else
+                "text-success"
+            )
+        ]
+        [ text (toSignedString monto) ]
 
 
 abs : Monto -> Monto

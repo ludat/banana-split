@@ -7,8 +7,8 @@ import Components.PagoDetalleModal as PagoDetalleModal
 import Date
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Moneda, Netos, ShallowGrupo, ShallowPago, ULID)
-import Html exposing (Html, a, div, i, p, text)
-import Html.Attributes exposing (class, style)
+import Html exposing (Html, a, button, div, i, li, p, span, text, ul)
+import Html.Attributes exposing (class, classList, style, type_)
 import Html.Events exposing (onClick)
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
@@ -207,51 +207,109 @@ viewLeftColumn store userId model grupo =
 
                       else
                         text ""
-                    , div [ class "mb-4" ]
-                        [ div [ class "fw-bold mb-3" ] [ text "Netos" ]
-                        , case netosForActive of
-                            Just netos ->
-                                div [ class "row g-3" ]
-                                    [ div [ class "col-12 col-md-4" ]
-                                        [ viewTuEstadoCard userId netos grupo grupo.monedaPorDefecto monedaSeleccionada ]
-                                    , div [ class "col-6 col-md-4" ]
-                                        [ viewNetoCard "Mayor pagador"
-                                            (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.reverse |> List.head)
-                                            grupo
-                                            grupo.monedaPorDefecto
-                                            monedaSeleccionada
-                                            False
-                                        ]
-                                    , div [ class "col-6 col-md-4" ]
-                                        [ viewNetoCard "Mayor deudor"
-                                            (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.head)
-                                            grupo
-                                            grupo.monedaPorDefecto
-                                            monedaSeleccionada
-                                            False
-                                        ]
-                                    ]
+                    , if List.length monedasDisponibles > 1 then
+                        viewMonedaTabs userId resumen.netos monedasDisponibles grupo.monedaPorDefecto monedaSeleccionada
 
-                            Nothing ->
-                                text ""
-                        ]
-                    , Bs.card [ class "mb-4" ]
-                        [ Bs.cardHeader [] [ text "Estado del grupo" ]
-                        , Bs.cardBody []
-                            [ if List.length monedasDisponibles > 1 then
-                                MonedaSelector.view monedasDisponibles monedaSeleccionada SelectMoneda
-
-                              else
-                                text ""
+                      else
+                        text ""
+                    , div [ class "pt-4 mb-4" ]
+                        [ div [ class "mb-4" ]
+                            [ div [ class "fw-bold mb-3" ] [ text "Netos" ]
                             , case netosForActive of
                                 Just netos ->
-                                    viewNetosBarras grupo netos
+                                    div [ class "row g-3" ]
+                                        [ div [ class "col-12 col-md-4" ]
+                                            [ viewTuEstadoCard userId netos grupo grupo.monedaPorDefecto monedaSeleccionada ]
+                                        , div [ class "col-6 col-md-4" ]
+                                            [ viewNetoCard "Mayor pagador"
+                                                (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.reverse |> List.head)
+                                                grupo
+                                                grupo.monedaPorDefecto
+                                                monedaSeleccionada
+                                                False
+                                            ]
+                                        , div [ class "col-6 col-md-4" ]
+                                            [ viewNetoCard "Mayor deudor"
+                                                (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.head)
+                                                grupo
+                                                grupo.monedaPorDefecto
+                                                monedaSeleccionada
+                                                False
+                                            ]
+                                        ]
 
                                 Nothing ->
                                     text ""
                             ]
+                        , div [ class "fw-bold mb-3" ] [ text "Estado del grupo" ]
+                        , case netosForActive of
+                            Just netos ->
+                                viewNetosBarras grupo netos
+
+                            Nothing ->
+                                text ""
                         ]
                     ]
+
+
+{-| Un neto mostrado como delta: el símbolo de la moneda apagado (para que no
+compita) seguido del monto con signo y color (verde/rojo).
+-}
+viewMontoDelta : String -> Api.Monto -> Html Msg
+viewMontoDelta simbolo monto =
+    div [ class "small" ]
+        [ span [ class "text-muted me-1" ] [ text simbolo ]
+        , span [ class "fw-semibold" ] [ Monto.asDeltaHtml monto ]
+        ]
+
+
+viewMonedaTabs : Maybe String -> Api.PorMoneda (Netos Api.Monto) -> List Moneda -> Moneda -> Moneda -> Html Msg
+viewMonedaTabs userId netosPorMoneda monedas monedaPorDefecto monedaSeleccionada =
+    let
+        tab m =
+            let
+                active =
+                    m == monedaSeleccionada
+
+                netoUsuario : Maybe Api.Monto
+                netoUsuario =
+                    userId
+                        |> Maybe.andThen
+                            (\uid ->
+                                netosPorMoneda
+                                    |> List.filter (\( mm, _ ) -> mm == m)
+                                    |> List.head
+                                    |> Maybe.map Tuple.second
+                                    |> Maybe.andThen
+                                        (\netos ->
+                                            netos |> List.filter (\( id, _ ) -> id == uid) |> List.head
+                                        )
+                                    |> Maybe.map Tuple.second
+                            )
+            in
+            li [ class "nav-item" ]
+                [ button
+                    [ type_ "button"
+                    , classList [ ( "nav-link", True ), ( "active", active ) ]
+                    , class "text-nowrap"
+                    , onClick (SelectMoneda m)
+                    ]
+                    [ div [] [ text (Moneda.nombre m) ]
+                    , case netoUsuario of
+                        Just monto ->
+                            viewMontoDelta (Moneda.simbolo monedaPorDefecto m) monto
+
+                        Nothing ->
+                            text ""
+                    ]
+                ]
+    in
+    -- On desktop these are plain nav-tabs. On mobile `.moneda-tabs` (see
+    -- styles.css) makes them fill the width and scroll horizontally instead
+    -- of wrapping.
+    ul
+        [ class "nav nav-tabs moneda-tabs" ]
+        (monedas |> List.map tab)
 
 
 viewUltimosPagosCard : Store -> Model -> ShallowGrupo -> Html Msg
@@ -320,15 +378,7 @@ viewNetoCard label maybeEntry grupo monedaPorDefecto monedaSeleccionada isCurren
                     div []
                         [ div [ class "fw-semibold text-truncate" ]
                             [ text (lookupNombreParticipante grupo participanteId) ]
-                        , div
-                            [ class "fw-bold"
-                            , if monto.valor < 0 then
-                                class "text-danger"
-
-                              else
-                                class "text-success"
-                            ]
-                            [ text (Moneda.simbolo monedaPorDefecto monedaSeleccionada ++ " " ++ Monto.toString monto) ]
+                        , viewMontoDelta (Moneda.simbolo monedaPorDefecto monedaSeleccionada) monto
                         ]
 
                 Nothing ->
@@ -353,15 +403,7 @@ viewTuEstadoCard userId netos grupo monedaPorDefecto monedaSeleccionada =
             , case maybeEntry of
                 Just ( _, monto ) ->
                     div []
-                        [ div
-                            [ class "fw-bold fs-5"
-                            , if monto.valor < 0 then
-                                class "text-danger"
-
-                              else
-                                class "text-success"
-                            ]
-                            [ text (Moneda.simbolo monedaPorDefecto monedaSeleccionada ++ " " ++ Monto.toString monto) ]
+                        [ viewMontoDelta (Moneda.simbolo monedaPorDefecto monedaSeleccionada) monto
                         , if monto.valor < 0 then
                             a
                                 [ Path.href <| Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id }
