@@ -92,14 +92,15 @@ monto-input {
             align-self: stretch;
             justify-self: stretch;
         }
+
+        @media (min-width: 768px) {
+            & {
+                display: none;
+            }
+        }
     }
 }
 
-@media (min-width: 768px) {
-    .navbar-bottom {
-        display: none;
-    }
-}
 
 .navbar-item {
     @scope (&) {
