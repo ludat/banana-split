@@ -1475,6 +1475,7 @@ viewPagadoresSection grupo model =
                 [ Html.h5 [ class "mb-0" ] [ text "Quienes pagaron" ]
                 , viewSeleccionarParticipantes "Quienes pagaron" "pagadores-seleccionar" grupo.participantes prefix form
                 ]
+            , Html.hr [ class "my-4" ] []
             , div [ class "d-flex flex-wrap gap-2 mb-3" ]
                 [ viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
                 , viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
@@ -1713,6 +1714,7 @@ viewPartesForm grupo prefix form =
             [ Html.h5 [ class "mb-0" ] [ text "Quienes participan" ]
             , viewSeleccionarParticipantes "Quienes participan" "deudores-seleccionar" grupo.participantes prefix form
             ]
+        , Html.hr [ class "my-4" ] []
         , div [ class "d-flex flex-wrap gap-2 mb-3" ]
             [ viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
             , viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
@@ -1729,7 +1731,15 @@ viewModoChip : String -> Bool -> String -> Html Msg
 viewModoChip path active label =
     button
         [ type_ "button"
-        , class "btn btn-light rounded-pill d-inline-flex align-items-center gap-2"
+        , class
+            ("btn rounded-pill d-inline-flex align-items-center gap-2 "
+                ++ (if active then
+                        "btn-secondary"
+
+                    else
+                        "btn-outline-secondary"
+                   )
+            )
         , Attr.attribute "aria-pressed"
             (if active then
                 "true"
@@ -1926,16 +1936,39 @@ viewPartesTable participantesDelGrupo prefix mode incluidos suma form =
             [ Html.thead [] [ Html.tr [] headerCells ]
             , Html.tbody []
                 (incluidos |> List.map (\participante -> viewParteRow participantesDelGrupo prefix mode participante form))
-            , if mode.mostrarMontoFijo then
+            , if mode.mostrarMontoFijo || mode.mostrarPartes then
                 let
                     sumaRow =
                         Html.tr [ class "text-body-secondary" ]
-                            ([ Html.td [] [ text "Total" ]
-                             , Html.td [ class "text-end" ]
-                                [ text ("$ " ++ (suma |> Maybe.map Monto.toString |> Maybe.withDefault "—")) ]
-                             ]
+                            (Html.td [] [ text "Total" ]
+                                :: (if mode.mostrarMontoFijo then
+                                        [ Html.td [ class "text-end" ]
+                                            [ text ("$ " ++ (suma |> Maybe.map Monto.toString |> Maybe.withDefault "—")) ]
+                                        ]
+
+                                    else
+                                        []
+                                   )
                                 ++ (if divisionVisible mode then
-                                        [ Html.td [] [] ]
+                                        [ Html.td [ class "text-end" ]
+                                            [ if mode.mostrarPartes then
+                                                let
+                                                    totalPartes =
+                                                        incluidos
+                                                            |> List.map
+                                                                (\participante ->
+                                                                    (Form.getFieldAsString (prefix ++ ".partes." ++ participante.id ++ ".cuota") form).value
+                                                                        |> Maybe.andThen String.toInt
+                                                                        |> Maybe.withDefault 0
+                                                                )
+                                                            |> List.sum
+                                                in
+                                                text (String.fromInt totalPartes ++ " partes")
+
+                                              else
+                                                text ""
+                                            ]
+                                        ]
 
                                     else
                                         []
