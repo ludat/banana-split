@@ -29,7 +29,9 @@ import Site.Types
 -- | The full HTTP surface: the Elm-facing 'Api' plus the provider-facing
 -- 'WebhookApi' (kept separate so servant-elm never sees it), both under @\/api@,
 -- and the static site as a fallback.
-type ServedApi = "api" :> (ToServantApi Api :<|> WebhookApi) :<|> Raw
+type ServedApi =
+  "api" :> (ToServantApi Api :<|> WebhookApi)
+  :<|> Raw
 
 serverT :: ServerT ServedApi AppHandler
 serverT =

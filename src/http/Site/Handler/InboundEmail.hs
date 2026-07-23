@@ -38,7 +38,7 @@ import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Time (Day, defaultTimeLocale, getCurrentTime, parseTimeM, utctDay)
 import Network.HTTP.Client (Manager, httpLbs, parseRequest, responseBody)
-import Protolude
+import Preludat
 import Servant
 
 import BananaSplit
@@ -55,6 +55,7 @@ import BananaSplit.Receipts (
  )
 import Site.Handler.Utils (runBeam)
 import Site.Types
+import Control.Monad.Error.Class (liftEither)
 
 -- | The provider-facing API, deliberately kept /out/ of 'Site.Api.Api' so it is
 -- not walked by the servant-elm code generator (the frontend never calls it).
@@ -67,38 +68,46 @@ type WebhookApi =
     :> Post '[JSON] NoContent
 
 -- | The subset of Maileroo's inbound JSON we care about. Everything else in the
--- payload is ignored. Auth-relevant booleans fail /closed/ when absent
--- (@is_spam@ defaults to 'True', @is_dmarc_aligned@ to 'False') so a truncated
--- or unexpected payload can never be mistaken for an authenticated message.
+-- payload is ignored. Fields Maileroo always sends are parsed as required, so a
+-- malformed/truncated payload fails loudly at decode time (servant answers 400,
+-- the handler never runs) rather than degrading to a default that fails later.
 data MailerooInbound = MailerooInbound
   { envelopeSender :: Text
   , recipients :: [Text]
   , headers :: Map Text [Text]
   -- ^ Header name -> values (e.g. @"From"@, @"To"@, @"Subject"@).
   , plaintext :: Maybe Text
+  -- ^ Nested under @body@; absent for an HTML-only message, hence 'Maybe'.
   , strippedPlaintext :: Maybe Text
+  -- ^ Nested under @body@; absent for an HTML-only message, hence 'Maybe'.
   , isSpam :: Bool
   , isDmarcAligned :: Bool
-  , spfResult :: Maybe Text
+  , spfResult :: Text
+  -- ^ A status string like @"pass"@.
   , dkimResult :: Bool
+  -- ^ A plain JSON boolean (@true@/@false@), unlike 'spfResult'.
   , validationUrl :: Text
   , attachments :: [MailerooAttachment]
   }
   deriving (Show, Eq, Generic)
 
 instance FromJSON MailerooInbound where
-  parseJSON = withObject "MailerooInbound" $ \o ->
+  parseJSON = withObject "MailerooInbound" $ \o -> do
+    -- The message bodies live in a nested @body@ object; everything else is top
+    -- level.
+    body <- o .: "body"
     MailerooInbound
-      <$> o .:? "envelope_sender" .!= ""
-      <*> o .:? "recipients" .!= []
-      <*> o .:? "headers" .!= mempty
-      <*> o .:? "plaintext"
-      <*> o .:? "stripped_plaintext"
-      <*> o .:? "is_spam" .!= True
-      <*> o .:? "is_dmarc_aligned" .!= False
-      <*> o .:? "spf_result"
+      <$> o .: "envelope_sender"
+      <*> o .: "recipients"
+      <*> o .: "headers"
+      <*> body .:? "plaintext"
+      <*> body .:? "stripped_plaintext"
+      <*> o .: "is_spam"
+      <*> o .: "is_dmarc_aligned"
+      <*> o .: "spf_result"
       <*> o .: "dkim_result"
       <*> o .: "validation_url"
+      -- @attachments@ is always present but null when there are none.
       <*> o .:? "attachments" .!= []
 
 data MailerooAttachment = MailerooAttachment
@@ -112,10 +121,10 @@ data MailerooAttachment = MailerooAttachment
 instance FromJSON MailerooAttachment where
   parseJSON = withObject "MailerooAttachment" $ \o ->
     MailerooAttachment
-      <$> o .:? "filename" .!= ""
-      <*> o .:? "content_type" .!= ""
-      <*> o .:? "url" .!= ""
-      <*> o .:? "size" .!= 0
+      <$> o .: "filename"
+      <*> o .: "content_type"
+      <*> o .: "url"
+      <*> o .: "size"
 
 -- | Maileroo's @validation_url@ answers with this the first (and only) time it
 -- is hit for a given message.
@@ -151,7 +160,7 @@ processInbound payload = do
   -- 2. Reject spam / unauthenticated senders. This is the anti-spoofing gate.
   when payload.isSpam $
     throwError "message was flagged as spam"
-  let spfPass = payload.spfResult == Just "pass"
+  let spfPass = payload.spfResult == "pass"
   unless (payload.isDmarcAligned || (spfPass && payload.dkimResult)) $
     throwError "message failed sender authentication (not DMARC-aligned, and SPF+DKIM did not both pass)"
 
@@ -174,14 +183,14 @@ processInbound payload = do
   -- now). A 'Left' here is the model's own (Spanish) explanation of why it
   -- couldn't parse the message.
   let subject = fromMaybe "" (firstHeader "Subject" payload.headers)
-  parsedResult <-
-    liftIO $ analyzePagoFromEmail config (mkPagoContext grupo) subject (bodyText payload)
-  parsed <- either (\err -> throwError $ "AI could not parse a pago: " <> err) pure parsedResult
+  parsed <-
+    liftIO (analyzePagoFromEmail config (mkPagoContext grupo) subject (bodyText payload))
+      `orElse` (\err -> throwError $ "AI could not parse a pago: " <> err)
 
   -- 6. Resolve the model's output into a real Pago, validating every referenced
   -- participante against the grupo. 7. Persist it.
   today <- liftIO $ utctDay <$> getCurrentTime
-  pago <- either throwError pure $ resolvePago grupo today parsed
+  pago <- liftEither (resolvePago grupo today parsed)
   saved <- lift $ runBeam $ savePago grupo.id pago
 
   pure $
