@@ -184,13 +184,15 @@ processInbound payload = do
   -- couldn't parse the message.
   let subject = fromMaybe "" (firstHeader "Subject" payload.headers)
   parsed <-
-    liftIO (analyzePagoFromEmail config (mkPagoContext grupo) subject (bodyText payload))
+    liftIO (analyzePagoFromEmail config (mkPagoContext user grupo) subject (bodyText payload))
       `orElse` (\err -> throwError $ "AI could not parse a pago: " <> err)
 
-  -- 6. Resolve the model's output into a real Pago, validating every referenced
-  -- participante against the grupo. 7. Persist it.
+  -- 6. Resolve the model's output into a real Pago. This is deliberately
+  -- permissive: we would rather save a partial pago (which savePago will flag as
+  -- invalid for the user to fix) than reject the whole message over an
+  -- unrecognised person, currency or date. 7. Persist it.
   today <- liftIO $ utctDay <$> getCurrentTime
-  pago <- liftEither (resolvePago grupo today parsed)
+  let pago = resolvePago grupo today parsed
   saved <- lift $ runBeam $ savePago grupo.id pago
 
   pure $
@@ -210,110 +212,111 @@ processInbound payload = do
       <> "\""
 
 -- | Build the compact grupo context the AI needs: its participantes (id +
--- nombre), the default currency, and the set of accepted currency codes.
-mkPagoContext :: ShallowGrupo -> EmailPagoContext
-mkPagoContext grupo =
+-- nombre), the default currency, and the set of accepted currency codes. The
+-- participante linked to @sender@ is flagged @esRemitente@ so the model can
+-- resolve first-person references in the email to a real id.
+mkPagoContext :: User -> ShallowGrupo -> EmailPagoContext
+mkPagoContext sender grupo =
   EmailPagoContext
     { grupoNombre = grupo.nombre
     , monedaPorDefecto = show grupo.monedaPorDefecto
     , monedasPermitidas = fmap show todasLasMonedas
     , participantes =
         grupo.participantes
-          <&> \p -> EmailPagoParticipante{id = show p.id, nombre = p.nombre}
+          <&> \p ->
+            EmailPagoParticipante
+              { id = show p.id
+              , nombre = p.nombre
+              , esRemitente = fmap (.id) p.user == Just sender.id
+              }
     }
 
--- | Turn the AI's parsed pago into a real 'Pago', or explain why it can't.
--- Every referenced participante id must resolve to a real participante of the
--- grupo; the currency and date fall back to the grupo default / today.
-resolvePago :: ShallowGrupo -> Day -> ParsedEmailPago -> Either Text Pago
-resolvePago grupo today parsed = do
+-- | Turn the AI's parsed pago into a real 'Pago'. This never fails: anything the
+-- model got wrong (an unknown currency or date, a person that isn't in the
+-- grupo) is dropped rather than rejected, so we always produce /some/ pago. It
+-- is born invalid ('isValid' is recomputed by savePago), so a partial result
+-- simply surfaces to the user as an invalid pago to finish editing.
+resolvePago :: ShallowGrupo -> Day -> ParsedEmailPago -> Pago
+resolvePago grupo today parsed =
   let validIds = Set.fromList $ fmap (.id) grupo.participantes
-  moneda <- resolveMoneda grupo.monedaPorDefecto parsed.moneda
-  fecha <- resolveFecha today parsed.fecha
-  pagadores <- resolveDistribucion "pagadores" parsed.nombre validIds parsed.pagadores
-  deudores <- resolveDistribucion "deudores" parsed.nombre validIds parsed.deudores
-  pure
-    Pago
+  in Pago
       { pagoId = nullUlid
       , monto = scientificToMonto parsed.monto
-      , moneda = moneda
+      , moneda = resolveMoneda grupo.monedaPorDefecto parsed.moneda
       , isValid = False -- recomputed by savePago via addIsValidPago
       , nombre = parsed.nombre
-      , fecha = fecha
-      , pagadores = pagadores
-      , deudores = deudores
+      , fecha = resolveFecha today parsed.fecha
+      , pagadores = resolveDistribucion parsed.nombre validIds parsed.pagadores
+      , deudores = resolveDistribucion parsed.nombre validIds parsed.deudores
       }
 
-resolveMoneda :: Moneda -> Maybe Text -> Either Text Moneda
-resolveMoneda def Nothing = Right def
-resolveMoneda def (Just raw)
-  | Text.null (Text.strip raw) = Right def
-  | otherwise =
-      maybe (Left $ "unknown moneda: " <> raw) Right $
-        readMaybe (Text.toUpper $ Text.strip raw)
+-- | Resolve the currency, falling back to the grupo default for anything blank
+-- or unrecognised.
+resolveMoneda :: Moneda -> Maybe Text -> Moneda
+resolveMoneda def raw =
+  fromMaybe def $ do
+    code <- Text.strip <$> raw
+    guard (not (Text.null code))
+    readMaybe (Text.toUpper code)
 
-resolveFecha :: Day -> Maybe Text -> Either Text Day
-resolveFecha today Nothing = Right today
-resolveFecha today (Just raw)
-  | Text.null (Text.strip raw) = Right today
-  | otherwise =
-      maybe (Left $ "invalid fecha (expected ISO YYYY-MM-DD): " <> raw) Right $
-        parseTimeM True defaultTimeLocale "%Y-%m-%d" (toS $ Text.strip raw)
+-- | Resolve the date, falling back to today for anything blank or not ISO
+-- @YYYY-MM-DD@.
+resolveFecha :: Day -> Maybe Text -> Day
+resolveFecha today raw =
+  fromMaybe today $ do
+    day <- Text.strip <$> raw
+    guard (not (Text.null day))
+    parseTimeM True defaultTimeLocale "%Y-%m-%d" (toS day)
 
 -- | Build one side's 'Distribucion' from whichever shape the AI chose: a parts
 -- split (participante ids validated against the grupo) or an itemized repartija
 -- (items only, no claims — like the receipt parse, so the pago stays invalid
--- until items are claimed). @side@ names the side for error messages, and
--- @nombre@ seeds the repartija's name.
-resolveDistribucion :: Text -> Text -> Set ULID -> ParsedDistribucion -> Either Text Distribucion
-resolveDistribucion side nombre validIds parsed =
+-- until items are claimed). @nombre@ seeds the repartija's name. Shares for
+-- unknown participantes are silently dropped, so the resulting distribución may
+-- end up empty — that is fine, the pago is just invalid until fixed.
+resolveDistribucion :: Text -> Set ULID -> ParsedDistribucion -> Distribucion
+resolveDistribucion nombre validIds parsed =
   case parsed of
-    ParsedPartes shares -> resolvePartes side validIds shares
-    ParsedRepartija items -> resolveRepartija side nombre items
+    ParsedPartes shares -> resolvePartes validIds shares
+    ParsedRepartija items -> resolveRepartija nombre items
 
-resolvePartes :: Text -> Set ULID -> [ParsedShare] -> Either Text Distribucion
-resolvePartes side _ [] = Left $ "the AI returned no " <> side
-resolvePartes _ validIds shares = do
-  partes <- traverse (resolveShare validIds) shares
-  pure
-    Distribucion
-      { id = nullUlid
-      , tipo = TipoDistribucionPartes (DistribucionPartes nullUlid partes)
-      }
+resolvePartes :: Set ULID -> [ParsedShare] -> Distribucion
+resolvePartes validIds shares =
+  Distribucion
+    { id = nullUlid
+    , tipo = TipoDistribucionPartes (DistribucionPartes nullUlid (mapMaybe (resolveShare validIds) shares))
+    }
 
-resolveRepartija :: Text -> Text -> [ParsedReceiptItem] -> Either Text Distribucion
-resolveRepartija side _ [] = Left $ "the AI returned an itemized " <> side <> " with no items"
-resolveRepartija _ nombre items =
-  Right
-    Distribucion
-      { id = nullUlid
-      , tipo =
-          TipoDistribucionRepartija
-            Repartija
-              { id = nullUlid
-              , nombre = nombre
-              , extra = 0
-              , distribucionDeSobras = SobrasNoDistribuir
-              , items =
-                  items
-                    <&> \item ->
-                      RepartijaItem
-                        { id = nullUlid
-                        , nombre = item.nombre
-                        , monto = scientificToMonto item.monto
-                        , cantidad = item.cantidad
-                        }
-              , claims = [] -- filled in later when consumers claim items
-              }
-      }
+resolveRepartija :: Text -> [ParsedReceiptItem] -> Distribucion
+resolveRepartija nombre items =
+  Distribucion
+    { id = nullUlid
+    , tipo =
+        TipoDistribucionRepartija
+          Repartija
+            { id = nullUlid
+            , nombre = nombre
+            , extra = 0
+            , distribucionDeSobras = SobrasNoDistribuir
+            , items =
+                items
+                  <&> \item ->
+                    RepartijaItem
+                      { id = nullUlid
+                      , nombre = item.nombre
+                      , monto = scientificToMonto item.monto
+                      , cantidad = item.cantidad
+                      }
+            , claims = [] -- filled in later when consumers claim items
+            }
+    }
 
-resolveShare :: Set ULID -> ParsedShare -> Either Text Parte
+-- | Resolve a single share to a 'Parte', or 'Nothing' if its participante id is
+-- malformed or not a member of the grupo (such shares are dropped).
+resolveShare :: Set ULID -> ParsedShare -> Maybe Parte
 resolveShare validIds share = do
-  ulid <-
-    maybe (Left $ "invalid participante id: " <> share.participanteId) Right $
-      readMaybe share.participanteId
-  unless (ulid `Set.member` validIds) $
-    Left $ "participante " <> share.participanteId <> " is not in the grupo"
+  ulid <- readMaybe share.participanteId
+  guard (ulid `Set.member` validIds)
   let pid = ParticipanteId ulid
   pure $ case (share.monto, share.partes) of
     (Just m, _) -> MontoFijo (scientificToMonto m) pid

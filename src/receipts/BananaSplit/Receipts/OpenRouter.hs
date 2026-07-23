@@ -71,7 +71,9 @@ data ParsedEmailPago = ParsedEmailPago
 --     parse), so a repartija-based pago is saved but only becomes valid once
 --     items are claimed.
 --
--- Serialised as a @tipo@-tagged object so the model emits an unambiguous shape.
+-- Serialised as a @tipo@-tagged object, but decoding does not rely on @tipo@:
+-- the model routinely forgets it, so we infer the shape from whichever of the
+-- @partes@ / @items@ keys it actually filled in (see 'FromJSON').
 data ParsedDistribucion
   = ParsedPartes [ParsedShare]
   | ParsedRepartija [ParsedReceiptItem]
@@ -84,13 +86,22 @@ instance ToJSON ParsedDistribucion where
     ParsedRepartija items ->
       object ["tipo" .= ("repartija" :: Text), "items" .= items]
 
+-- | Tolerant decoder. An explicit @tipo@ still wins when present, but when it is
+-- missing (a frequent model slip) we fall back to the presence of the
+-- shape-specific key: @items@ means a repartija, @partes@ means a parts split.
+-- Anything else decodes to an empty parts split rather than failing, in keeping
+-- with the permissive parsing this feature wants.
 instance FromJSON ParsedDistribucion where
   parseJSON = withObject "ParsedDistribucion" $ \o -> do
-    tipo <- o .: "tipo"
-    case tipo :: Text of
-      "partes" -> ParsedPartes <$> o .: "partes"
-      "repartija" -> ParsedRepartija <$> o .: "items"
-      other -> fail $ "unknown distribucion tipo: " <> toS other
+    tipo <- o .:? "tipo"
+    items <- o .:? "items"
+    partes <- o .:? "partes"
+    pure $ case (tipo :: Maybe Text, items, partes) of
+      (Just "repartija", _, _) -> ParsedRepartija (fromMaybe [] items)
+      (Just "partes", _, _) -> ParsedPartes (fromMaybe [] partes)
+      (_, Just is, _) -> ParsedRepartija is
+      (_, _, Just ps) -> ParsedPartes ps
+      _ -> ParsedPartes []
 
 -- | One person's involvement in a parts split. Exactly one of 'monto' (a fixed
 -- share) or 'partes' (an integer weight for an even/proportional split) is
@@ -117,6 +128,9 @@ data EmailPagoContext = EmailPagoContext
 data EmailPagoParticipante = EmailPagoParticipante
   { id :: Text
   , nombre :: Text
+  , esRemitente :: Bool
+  -- ^ True for the participante who wrote the email, so the model can resolve
+  -- first-person references ("yo pagué", "I paid") to their id.
   }
   deriving stock (Show, Eq, Generic)
   deriving anyclass (ToJSON, FromJSON)
@@ -239,9 +253,13 @@ analyzePagoFromEmail config context subject body =
 
       #{contextJson}
 
+      The email was written by the participante marked "esRemitente": true (if any). Resolve every first-person reference in the email ("yo", "pagué", "me deben", "I paid", "I'm owed") to THAT participante's id.
+
       Return EXACTLY this JSON shape, with your extracted data:
 
       #{exampleJson}
+
+      Always make a best-effort attempt and RETURN THE JSON even if the email is vague, incomplete or a bit inconsistent (amounts that don't quite add up, only one side mentioned, people you can't fully identify). Do NOT refuse or ask for clarification: fill in what you can and leave the rest as sensible defaults (null fecha, default moneda, an empty "partes"/"items" list, or a best guess). A partial pago is expected and useful — the user reviews and fixes it afterwards. Only return a plain-text error for a message that is clearly NOT about a shared expense at all.
 
       Field meaning:
       - nombre: a short human description of the expense.
@@ -259,8 +277,8 @@ analyzePagoFromEmail config context subject body =
       - Return ONLY the raw JSON object starting with { and ending with }.
       - DO NOT wrap the JSON in markdown code blocks or include ```json markers.
       - DO NOT add any explanatory text before or after the JSON.
-      - If you cannot confidently parse the pago (missing amount, unknown people, ambiguity), return a BRIEF plain-text explanation instead of JSON, with no JSON at all.
-      - The error text MUST be in spanish always.
+      - Missing amounts, unknown people or ambiguity are NOT reasons to refuse — fill in defaults and still return the JSON. Only return a plain-text explanation (no JSON at all) when the email is clearly not about a shared expense.
+      - Any such error text MUST be in spanish always.
       |]
 
 -- | A worked example handed to the model so it sees the exact JSON shape.
@@ -310,6 +328,7 @@ callOpenRouterJson config systemPrompt userContent =
                     }
                 ]
             }
+    liftIO $ putText $ "[openrouter] request " <> toS (encode requestBody)
     response <-
       req
         POST
@@ -322,6 +341,7 @@ callOpenRouterJson config systemPrompt userContent =
             , header "X-Title" "Banana Split"
             ]
         )
+    liftIO $ putText $ "[openrouter] response " <> Text.decodeUtf8 (responseBody response)
 
     openRouterResp <- liftEither $ left Text.pack $ eitherDecodeStrict @OpenRouterResponse $ responseBody response
 

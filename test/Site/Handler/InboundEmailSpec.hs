@@ -135,56 +135,54 @@ spec = do
 
   describe "resolvePago" $ do
     it "resolves a valid pago (fixed payer, evenly-split debtors)" $ do
-      case resolvePago testGrupo today baseParsed of
-        Left err -> expectationFailure (toS err)
-        Right pago -> do
-          pago.nombre `shouldBe` "Cena"
-          pago.monto `shouldBe` scientificToMonto 1000
-          pago.moneda `shouldBe` USD
-          pago.fecha `shouldBe` fromGregorian 2026 1 15
-          pago.pagoId `shouldBe` nullUlid
-          pago.isValid `shouldBe` False
-          partesOf pago.pagadores
-            `shouldBe` [MontoFijo (scientificToMonto 1000) (ParticipanteId p1)]
-          partesOf pago.deudores
-            `shouldBe` [Ponderado 1 (ParticipanteId p1), Ponderado 1 (ParticipanteId p2)]
+      let pago = resolvePago testGrupo today baseParsed
+      pago.nombre `shouldBe` "Cena"
+      pago.monto `shouldBe` scientificToMonto 1000
+      pago.moneda `shouldBe` USD
+      pago.fecha `shouldBe` fromGregorian 2026 1 15
+      pago.pagoId `shouldBe` nullUlid
+      pago.isValid `shouldBe` False
+      partesOf pago.pagadores
+        `shouldBe` [MontoFijo (scientificToMonto 1000) (ParticipanteId p1)]
+      partesOf pago.deudores
+        `shouldBe` [Ponderado 1 (ParticipanteId p1), Ponderado 1 (ParticipanteId p2)]
 
     it "defaults the moneda to the grupo default when omitted" $ do
       let parsed = baseParsed{moneda = Nothing} :: ParsedEmailPago
-      fmap (.moneda) (resolvePago testGrupo today parsed) `shouldBe` Right ARS
+      (resolvePago testGrupo today parsed).moneda `shouldBe` ARS
 
     it "reads a lowercase moneda code" $ do
       let parsed = baseParsed{moneda = Just "usd"} :: ParsedEmailPago
-      fmap (.moneda) (resolvePago testGrupo today parsed) `shouldBe` Right USD
+      (resolvePago testGrupo today parsed).moneda `shouldBe` USD
 
-    it "rejects an unknown moneda" $ do
+    it "falls back to the grupo default for an unknown moneda" $ do
       let parsed = baseParsed{moneda = Just "XYZ"} :: ParsedEmailPago
-      resolvePago testGrupo today parsed `shouldSatisfy` isLeft
+      (resolvePago testGrupo today parsed).moneda `shouldBe` ARS
 
     it "defaults the fecha to today when omitted" $ do
       let parsed = baseParsed{fecha = Nothing} :: ParsedEmailPago
-      fmap (.fecha) (resolvePago testGrupo today parsed) `shouldBe` Right today
+      (resolvePago testGrupo today parsed).fecha `shouldBe` today
 
-    it "rejects a non-ISO fecha" $ do
+    it "falls back to today for a non-ISO fecha" $ do
       let parsed = baseParsed{fecha = Just "15/01/2026"} :: ParsedEmailPago
-      resolvePago testGrupo today parsed `shouldSatisfy` isLeft
+      (resolvePago testGrupo today parsed).fecha `shouldBe` today
 
-    it "rejects a participante that is not in the grupo" $ do
+    it "drops a participante that is not in the grupo" $ do
       let parsed = baseParsed{pagadores = ParsedPartes [ParsedShare strangerText (Just 1000) Nothing]} :: ParsedEmailPago
-      resolvePago testGrupo today parsed `shouldSatisfy` isLeft
+      partesOf (resolvePago testGrupo today parsed).pagadores `shouldBe` []
 
-    it "rejects a malformed participante id" $ do
+    it "drops a malformed participante id" $ do
       let parsed = baseParsed{pagadores = ParsedPartes [ParsedShare "not-a-ulid" (Just 1000) Nothing]} :: ParsedEmailPago
-      resolvePago testGrupo today parsed `shouldSatisfy` isLeft
+      partesOf (resolvePago testGrupo today parsed).pagadores `shouldBe` []
 
-    it "rejects a pago with an empty parts split" $ do
+    it "keeps an empty parts split empty rather than failing" $ do
       let parsed = baseParsed{pagadores = ParsedPartes []} :: ParsedEmailPago
-      resolvePago testGrupo today parsed `shouldSatisfy` isLeft
+      partesOf (resolvePago testGrupo today parsed).pagadores `shouldBe` []
 
     it "defaults a share with neither monto nor partes to one part" $ do
       let parsed = baseParsed{deudores = ParsedPartes [ParsedShare p1Text Nothing Nothing]} :: ParsedEmailPago
-      fmap (partesOf . (.deudores)) (resolvePago testGrupo today parsed)
-        `shouldBe` Right [Ponderado 1 (ParticipanteId p1)]
+      partesOf (resolvePago testGrupo today parsed).deudores
+        `shouldBe` [Ponderado 1 (ParticipanteId p1)]
 
     it "builds an itemized repartija distribution (items only, no claims)" $ do
       let parsed =
@@ -196,20 +194,20 @@ spec = do
                     ]
               } ::
               ParsedEmailPago
-      case resolvePago testGrupo today parsed of
-        Left err -> expectationFailure (toS err)
-        Right pago -> case repartijaOf pago.deudores of
-          Nothing -> expectationFailure "expected a repartija distribution"
-          Just r -> do
-            r.nombre `shouldBe` "Cena"
-            r.claims `shouldBe` []
-            fmap (.nombre) r.items `shouldBe` ["Pizza", "Vino"]
-            fmap (.monto) r.items `shouldBe` [scientificToMonto 800, scientificToMonto 200]
-            fmap (.cantidad) r.items `shouldBe` [1, 1]
+      case repartijaOf (resolvePago testGrupo today parsed).deudores of
+        Nothing -> expectationFailure "expected a repartija distribution"
+        Just r -> do
+          r.nombre `shouldBe` "Cena"
+          r.claims `shouldBe` []
+          fmap (.nombre) r.items `shouldBe` ["Pizza", "Vino"]
+          fmap (.monto) r.items `shouldBe` [scientificToMonto 800, scientificToMonto 200]
+          fmap (.cantidad) r.items `shouldBe` [1, 1]
 
-    it "rejects an itemized side with no items" $ do
+    it "keeps an itemized side with no items empty rather than failing" $ do
       let parsed = baseParsed{deudores = ParsedRepartija []} :: ParsedEmailPago
-      resolvePago testGrupo today parsed `shouldSatisfy` isLeft
+      case repartijaOf (resolvePago testGrupo today parsed).deudores of
+        Nothing -> expectationFailure "expected a repartija distribution"
+        Just r -> r.items `shouldBe` []
 
 -- | Extract the parts of a partes-based distribución.
 partesOf :: Distribucion -> [Parte]
