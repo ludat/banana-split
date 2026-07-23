@@ -171,13 +171,12 @@ processInbound payload = do
     maybe (throwError $ "no account for address " <> unEmail fromEmail) pure maybeUser
 
   -- 4. Authorize the grupo: the +tag grupoId must be one of this user's grupos.
-  grupoId <- either throwError pure $ extractGrupoId payload
+  grupoId <- liftEither $ extractGrupoId payload
   grupos <- lift $ runBeam $ fetchGruposForUser user.id
   grupo <-
-    maybe
+    pure (find (\g -> g.id == grupoId) grupos)
+    `orElseMay`
       (throwError $ "grupo " <> show grupoId <> " is not one of " <> unEmail user.email <> "'s grupos")
-      pure
-      (find (\g -> g.id == grupoId) grupos)
 
   -- 5. Ask the AI to parse exactly one pago within this grupo (text only for
   -- now). A 'Left' here is the model's own (Spanish) explanation of why it
@@ -374,7 +373,7 @@ ciHeaders = Map.mapKeys Text.toLower
 
 bodyText :: MailerooInbound -> Text
 bodyText payload =
-  fromMaybe "" (payload.strippedPlaintext <|> payload.plaintext)
+  fromMaybe "" payload.plaintext
 
 -- | Hit @validation_url@ once and return whether it confirmed the webhook. Any
 -- network/parse failure is treated as "not validated" (fail closed).
