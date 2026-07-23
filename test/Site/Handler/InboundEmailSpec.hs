@@ -57,7 +57,7 @@ baseInbound =
     , isSpam = False
     , isDmarcAligned = True
     , spfResult = Just "pass"
-    , dkimResult = Just "pass"
+    , dkimResult = True
     , validationUrl = ""
     , attachments = []
     }

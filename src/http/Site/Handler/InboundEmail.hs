@@ -80,7 +80,7 @@ data MailerooInbound = MailerooInbound
   , isSpam :: Bool
   , isDmarcAligned :: Bool
   , spfResult :: Maybe Text
-  , dkimResult :: Maybe Text
+  , dkimResult :: Bool
   , validationUrl :: Text
   , attachments :: [MailerooAttachment]
   }
@@ -97,7 +97,7 @@ instance FromJSON MailerooInbound where
       <*> o .:? "is_spam" .!= True
       <*> o .:? "is_dmarc_aligned" .!= False
       <*> o .:? "spf_result"
-      <*> o .:? "dkim_result"
+      <*> o .: "dkim_result"
       <*> o .: "validation_url"
       <*> o .:? "attachments" .!= []
 
@@ -152,8 +152,7 @@ processInbound payload = do
   when payload.isSpam $
     throwError "message was flagged as spam"
   let spfPass = payload.spfResult == Just "pass"
-      dkimPass = payload.dkimResult == Just "pass"
-  unless (payload.isDmarcAligned || (spfPass && dkimPass)) $
+  unless (payload.isDmarcAligned || (spfPass && payload.dkimResult)) $
     throwError "message failed sender authentication (not DMARC-aligned, and SPF+DKIM did not both pass)"
 
   -- 3. Resolve the From address to a user.
