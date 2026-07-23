@@ -22,7 +22,6 @@ module BananaSplit.Receipts.OpenRouter (
 
 import Control.Arrow (left)
 import Control.Monad.Error.Class
-import Control.Monad.Fail (fail)
 import Data.Aeson
 import Data.Scientific (Scientific)
 import Data.String.Interpolate (__i)
@@ -328,7 +327,7 @@ callOpenRouterJson config systemPrompt userContent =
                     }
                 ]
             }
-    liftIO $ putText $ "[openrouter] request " <> toS (encode requestBody)
+    liftIO $ putText $ "[openrouter] request " <> Text.decodeUtf8 (toS (encode requestBody))
     response <-
       req
         POST
