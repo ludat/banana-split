@@ -168,15 +168,15 @@ spec = do
       (resolvePago testGrupo today parsed).fecha `shouldBe` today
 
     it "drops a participante that is not in the grupo" $ do
-      let parsed = baseParsed{pagadores = ParsedPartes [ParsedShare strangerText (Just 1000) Nothing]} :: ParsedEmailPago
+      let parsed = baseParsed{pagadores = [ParsedShare strangerText (Just 1000) Nothing]} :: ParsedEmailPago
       partesOf (resolvePago testGrupo today parsed).pagadores `shouldBe` []
 
     it "drops a malformed participante id" $ do
-      let parsed = baseParsed{pagadores = ParsedPartes [ParsedShare "not-a-ulid" (Just 1000) Nothing]} :: ParsedEmailPago
+      let parsed = baseParsed{pagadores = [ParsedShare "not-a-ulid" (Just 1000) Nothing]} :: ParsedEmailPago
       partesOf (resolvePago testGrupo today parsed).pagadores `shouldBe` []
 
     it "keeps an empty parts split empty rather than failing" $ do
-      let parsed = baseParsed{pagadores = ParsedPartes []} :: ParsedEmailPago
+      let parsed = baseParsed{pagadores = []} :: ParsedEmailPago
       partesOf (resolvePago testGrupo today parsed).pagadores `shouldBe` []
 
     it "defaults a share with neither monto nor partes to one part" $ do
@@ -255,7 +255,7 @@ baseParsed =
     , monto = 1000
     , moneda = Just "USD"
     , fecha = Just "2026-01-15"
-    , pagadores = ParsedPartes [ParsedShare p1Text (Just 1000) Nothing]
+    , pagadores = [ParsedShare p1Text (Just 1000) Nothing]
     , deudores =
         ParsedPartes
           [ ParsedShare p1Text Nothing (Just 1)

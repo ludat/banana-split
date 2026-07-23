@@ -50,10 +50,10 @@ import BananaSplit.Receipts (
   ParsedEmailPago (..),
   ParsedReceiptItem (..),
   ParsedShare (..),
-  ReceiptsReaderConfig (..),
   analyzePagoFromEmail,
  )
 import Site.Handler.Utils (runBeam)
+import Site.Mailer (Mailer (..))
 import Site.Types
 import Control.Monad.Error.Class (liftEither)
 
@@ -64,6 +64,9 @@ type WebhookApi =
   "webhooks"
     :> "email"
     :> "inbound"
+    :> Header "Host" Text
+    -- ^ Our own host (Maileroo POSTs to our public URL), used to build the
+    -- app link back to the created pago.
     :> ReqBody '[JSON] MailerooInbound
     :> Post '[JSON] NoContent
 
@@ -137,9 +140,9 @@ instance FromJSON MailerooValidation where
   parseJSON = withObject "MailerooValidation" $ \o ->
     MailerooValidation <$> o .:? "success" .!= False
 
-handleInboundEmail :: MailerooInbound -> AppHandler NoContent
-handleInboundEmail payload = do
-  outcome <- runExceptT $ processInbound payload
+handleInboundEmail :: Maybe Text -> MailerooInbound -> AppHandler NoContent
+handleInboundEmail host payload = do
+  outcome <- runExceptT $ processInbound host payload
   case outcome of
     Left reason -> putText $ "[inbound-email] dropped: " <> reason
     Right report -> putText $ "[inbound-email] " <> report
@@ -147,68 +150,196 @@ handleInboundEmail payload = do
   -- doesn't retry-storm. User-facing failures will go out as email later.
   pure NoContent
 
--- | The guard-then-parse pipeline. A 'Left' is a reason we dropped the message
--- (logged, and later emailed back); a 'Right' describes the pago we saved.
-processInbound :: MailerooInbound -> ExceptT Text AppHandler Text
-processInbound payload = do
+-- | Guard, parse, save — and email the sender the outcome.
+--
+-- The pre-authentication guards (spam / DMARC) stay /silent/ on failure: the
+-- From address isn't trustworthy yet, so replying would send backscatter to a
+-- possibly-forged sender. Once they pass, the From domain is authenticated, so
+-- every later outcome — the saved pago, or a Spanish reason it failed — is
+-- emailed back. A 'Left' out of here is only for the drop log.
+processInbound :: Maybe Text -> MailerooInbound -> ExceptT Text AppHandler Text
+processInbound host payload = do
   -- 1. Prove the POST came from Maileroo.
   config <- lift $ asks (.receipts)
   validated <- liftIO $ validateWebhook config.manager payload.validationUrl
   unless validated $
     throwError "validation_url did not confirm the webhook (success was not true)"
 
-  -- 2. Reject spam / unauthenticated senders. This is the anti-spoofing gate.
+  -- 2. Reject spam / unauthenticated senders. This is the anti-spoofing gate;
+  -- failures here are logged only, never replied to.
   when payload.isSpam $
     throwError "message was flagged as spam"
   let spfPass = payload.spfResult == "pass"
   unless (payload.isDmarcAligned || (spfPass && payload.dkimResult)) $
     throwError "message failed sender authentication (not DMARC-aligned, and SPF+DKIM did not both pass)"
 
+  -- The From address is now DMARC-authenticated, so it is safe to reply to. If
+  -- we can't even read it there is nobody to answer, so this stays silent too.
+  fromEmail <- liftEither $ extractFromEmail payload
+
+  -- Everything from here is repliable: run the authenticated pipeline, then email
+  -- the sender the confirmation or the (Spanish) failure reason before re-raising
+  -- for the drop log.
+  mailer <- lift $ asks (.mailer)
+  result <- lift $ runExceptT $ processPago payload fromEmail
+  case result of
+    Left reason -> do
+      liftIO $ sendReply mailer fromEmail payload (failureEmail reason)
+      throwError reason
+    Right (grupo, saved) -> do
+      liftIO $ sendReply mailer fromEmail payload (successEmail host grupo saved)
+      pure (savedLog fromEmail grupo saved)
+
+-- | The authenticated pipeline (steps 3–7). Errors thrown here are user-facing
+-- Spanish strings, because they are emailed back to the sender.
+processPago :: MailerooInbound -> Email -> ExceptT Text AppHandler (ShallowGrupo, Pago)
+processPago payload fromEmail = do
+  config <- lift $ asks (.receipts)
+
   -- 3. Resolve the From address to a user.
-  fromEmail <- either throwError pure $ extractFromEmail payload
   maybeUser <- lift $ runBeam $ fetchUserByEmail fromEmail
   user <-
-    maybe (throwError $ "no account for address " <> unEmail fromEmail) pure maybeUser
+    maybe (throwError $ "No hay ninguna cuenta asociada a la dirección " <> unEmail fromEmail <> ".") pure maybeUser
 
   -- 4. Authorize the grupo: the +tag grupoId must be one of this user's grupos.
-  grupoId <- liftEither $ extractGrupoId payload
+  grupoId <-
+    either
+      (const $ throwError "No pude identificar el grupo en la dirección de destino.")
+      pure
+      (extractGrupoId payload)
   grupos <- lift $ runBeam $ fetchGruposForUser user.id
   grupo <-
     pure (find (\g -> g.id == grupoId) grupos)
-    `orElseMay`
-      (throwError $ "grupo " <> show grupoId <> " is not one of " <> unEmail user.email <> "'s grupos")
+      `orElseMay` throwError "No perteneces a ese grupo, o el grupo no existe."
 
   -- 5. Ask the AI to parse exactly one pago within this grupo (text only for
-  -- now). A 'Left' here is the model's own (Spanish) explanation of why it
-  -- couldn't parse the message.
+  -- now). A 'Left' here is the model's own (Spanish) explanation.
   let subject = fromMaybe "" (firstHeader "Subject" payload.headers)
   parsed <-
     liftIO (analyzePagoFromEmail config (mkPagoContext user grupo) subject (bodyText payload))
-      `orElse` (\err -> throwError $ "AI could not parse a pago: " <> err)
+      `orElse` throwError
 
   -- 6. Resolve the model's output into a real Pago. This is deliberately
   -- permissive: we would rather save a partial pago (which savePago will flag as
   -- invalid for the user to fix) than reject the whole message over an
   -- unrecognised person, currency or date. 7. Persist it.
   today <- liftIO $ utctDay <$> getCurrentTime
-  let pago = resolvePago grupo today parsed
-  saved <- lift $ runBeam $ savePago grupo.id pago
+  saved <- lift $ runBeam $ savePago grupo.id (resolvePago grupo today parsed)
+  pure (grupo, saved)
 
-  pure $
-    "saved pago "
-      <> show saved.pagoId
-      <> " (\""
-      <> saved.nombre
-      <> "\", "
-      <> monto2Text saved.monto
-      <> " "
-      <> show saved.moneda
-      <> (if saved.isValid then "" else ", INVALID")
-      <> ") for "
-      <> unEmail user.email
-      <> " in grupo \""
-      <> grupo.nombre
-      <> "\""
+-- | Email the sender an outcome, threading onto the original subject when there
+-- is one. Any mailer failure is logged and swallowed — a failed reply must never
+-- become a 500 for Maileroo.
+sendReply :: Mailer -> Email -> MailerooInbound -> (Text, Text) -> IO ()
+sendReply mailer recipient payload (subject, body) = do
+  let threadedSubject = case firstHeader "Subject" payload.headers of
+        Just original | not (Text.null (Text.strip original)) -> "Re: " <> original
+        _ -> subject
+  result <- try $ mailer.sendNotice recipient threadedSubject body
+  case result of
+    Left (e :: SomeException) ->
+      putText $ "[inbound-email] failed to send reply to " <> unEmail recipient <> ": " <> show e
+    Right () -> pure ()
+
+-- | (subject, HTML body) confirming the pago we saved. Includes the parsed
+-- distribución (pagadores / deudores) so the sender can verify the part most
+-- likely to be wrong, plus a link back to the pago in the app.
+successEmail :: Maybe Text -> ShallowGrupo -> Pago -> (Text, Text)
+successEmail host grupo pago =
+  ( "Registré tu pago en " <> grupo.nombre
+  , Text.unlines $
+      [ "<p>¡Listo! Registré tu pago en el grupo <strong>" <> grupo.nombre <> "</strong>:</p>"
+      , "<ul>"
+      , "<li><strong>" <> pago.nombre <> "</strong></li>"
+      , "<li>Monto: " <> monto2Text pago.monto <> " " <> show pago.moneda <> "</li>"
+      , "<li>Fecha: " <> show pago.fecha <> "</li>"
+      , "</ul>"
+      , "<p>Revisá cómo lo repartí (es lo que más conviene verificar):</p>"
+      , "<p><strong>Pagaron:</strong></p>"
+      , "<ul>" <> renderDistribucion names pago.pagadores <> "</ul>"
+      , "<p><strong>Deben:</strong></p>"
+      , "<ul>" <> renderDistribucion names pago.deudores <> "</ul>"
+      ]
+      <> [ if pago.isValid
+             then "<p>Quedó todo listo.</p>"
+             else "<p>Quedó marcado como <strong>inválido</strong> porque falta o no cierra alguna información (por ejemplo quién pagó o quiénes deben). Abrilo en la app para completarlo.</p>"
+         ]
+      <> foldMap (\url -> ["<p><a href=\"" <> url <> "\">Ver el pago en la app</a></p>"]) (pagoLink host grupo.id pago.pagoId)
+  )
+  where
+    names = Map.fromList $ fmap (\p -> (p.id, p.nombre)) grupo.participantes
+
+-- | Render one side's distribución as HTML @\<li\>@ rows, resolving participante
+-- ids to names via @names@. An empty side is shown explicitly so the reader
+-- notices it needs completing.
+renderDistribucion :: Map ULID Text -> Distribucion -> Text
+renderDistribucion names dist =
+  case dist.tipo of
+    TipoDistribucionPartes dp
+      | null dp.partes -> "<li><em>sin asignar</em></li>"
+      | otherwise -> foldMap (renderParte names) dp.partes
+    TipoDistribucionRepartija r
+      | null r.items -> "<li><em>sin items</em></li>"
+      | otherwise -> foldMap renderItem r.items
+
+renderParte :: Map ULID Text -> Parte -> Text
+renderParte names parte =
+  "<li>" <> nameOf pid <> ": " <> detalle <> "</li>"
+  where
+    (pid, detalle) = case parte of
+      MontoFijo monto p -> (p, monto2Text monto)
+      Ponderado n p -> (p, show n <> if n == 1 then " parte" else " partes")
+      PonderadoYMontoFijo monto n p -> (p, monto2Text monto <> " + " <> show n <> " partes")
+    nameOf (ParticipanteId u) = Map.findWithDefault "¿?" u names
+
+renderItem :: RepartijaItem -> Text
+renderItem item =
+  "<li>"
+    <> item.nombre
+    <> ": "
+    <> monto2Text item.monto
+    <> (if item.cantidad > 1 then " (x" <> show item.cantidad <> ")" else "")
+    <> "</li>"
+
+-- | Build the app link to the pago from our own host header, or 'Nothing' when
+-- the host is missing. Assumes https except for local hosts.
+pagoLink :: Maybe Text -> ULID -> ULID -> Maybe Text
+pagoLink host grupoId pagoId = do
+  h <- Text.strip <$> host
+  guard (not (Text.null h))
+  let scheme
+        | "localhost" `Text.isPrefixOf` h || "127.0.0.1" `Text.isPrefixOf` h = "http://"
+        | otherwise = "https://"
+  pure $ scheme <> h <> "/grupos/" <> show grupoId <> "/pagos?pago=" <> show pagoId
+
+-- | (subject, HTML body) explaining why no pago was created.
+failureEmail :: Text -> (Text, Text)
+failureEmail reason =
+  ( "No pude registrar tu pago"
+  , Text.unlines
+      [ "<p>No pude registrar tu pago:</p>"
+      , "<p>" <> reason <> "</p>"
+      , "<p>Podés responder este correo con más detalles e intentar de nuevo.</p>"
+      ]
+  )
+
+-- | The one-line summary written to the drop/outcome log.
+savedLog :: Email -> ShallowGrupo -> Pago -> Text
+savedLog recipient grupo pago =
+  "saved pago "
+    <> show pago.pagoId
+    <> " (\""
+    <> pago.nombre
+    <> "\", "
+    <> monto2Text pago.monto
+    <> " "
+    <> show pago.moneda
+    <> (if pago.isValid then "" else ", INVALID")
+    <> ") for "
+    <> unEmail recipient
+    <> " in grupo \""
+    <> grupo.nombre
+    <> "\""
 
 -- | Build the compact grupo context the AI needs: its participantes (id +
 -- nombre), the default currency, and the set of accepted currency codes. The
@@ -245,7 +376,7 @@ resolvePago grupo today parsed =
       , isValid = False -- recomputed by savePago via addIsValidPago
       , nombre = parsed.nombre
       , fecha = resolveFecha today parsed.fecha
-      , pagadores = resolveDistribucion parsed.nombre validIds parsed.pagadores
+      , pagadores = resolvePartes validIds parsed.pagadores
       , deudores = resolveDistribucion parsed.nombre validIds parsed.deudores
       }
 

@@ -56,7 +56,10 @@ data ParsedEmailPago = ParsedEmailPago
   , moneda :: Maybe Text
   , fecha :: Maybe Text
   -- ^ ISO day (@YYYY-MM-DD@); 'Nothing' means "use today".
-  , pagadores :: ParsedDistribucion
+  , pagadores :: [ParsedShare]
+  -- ^ Who paid, as a plain list of shares. Unlike 'deudores' this is never a
+  -- repartija: the UI cannot represent an itemized paying side, so the type
+  -- rules that out entirely.
   , deudores :: ParsedDistribucion
   }
   deriving stock (Show, Eq, Generic)
@@ -239,45 +242,42 @@ analyzePagoFromEmail ::
 analyzePagoFromEmail config context subject body =
   callOpenRouterJson config systemPrompt [TextContent userText]
   where
-    contextJson = Text.decodeUtf8 $ toS $ encode context
+    participantesText =
+      Text.intercalate "\n" $
+        context.participantes <&> \p ->
+          "- " <> p.id <> " — " <> p.nombre
+            <> (if p.esRemitente then "  (remitente: quien escribió este email)" else "")
     exampleJson = Text.decodeUtf8 $ toS $ encode exampleParsedEmailPago
+    grupoNombre = context.grupoNombre
     monedasList = Text.intercalate ", " context.monedasPermitidas
     defaultMoneda = context.monedaPorDefecto
     userText = "Asunto: " <> subject <> "\n\n" <> body
     systemPrompt =
       [__i|
-      You parse a single shared expense ("pago") out of an email for a shared-expenses app, and return it as JSON.
+      You parse a single shared expense ("pago") out of an email and return ONLY the raw JSON object (no markdown, no text around it).
 
-      You are given exactly ONE grupo and its participantes. Map the people mentioned in the email to these participante ids. You MUST only ever use ids from this list:
+      Use ONLY these participante ids (copy them exactly, never invent one):
 
-      #{contextJson}
+      Grupo: #{grupoNombre}
+      #{participantesText}
 
-      The email was written by the participante marked "esRemitente": true (if any). Resolve every first-person reference in the email ("yo", "pagué", "me deben", "I paid", "I'm owed") to THAT participante's id.
+      The participante marked "(remitente: ...)" wrote the email; map first-person references ("yo", "pagué", "me deben") to their id.
 
-      Return EXACTLY this JSON shape, with your extracted data:
+      Return this exact shape:
 
       #{exampleJson}
 
-      Always make a best-effort attempt and RETURN THE JSON even if the email is vague, incomplete or a bit inconsistent (amounts that don't quite add up, only one side mentioned, people you can't fully identify). Do NOT refuse or ask for clarification: fill in what you can and leave the rest as sensible defaults (null fecha, default moneda, an empty "partes"/"items" list, or a best guess). A partial pago is expected and useful — the user reviews and fixes it afterwards. Only return a plain-text error for a message that is clearly NOT about a shared expense at all.
-
-      Field meaning:
-      - nombre: a short human description of the expense.
-      - monto: the total amount, a number with 2 decimals.
+      Fields:
+      - nombre: short description of the expense.
+      - monto: total amount, 2 decimals.
       - moneda: one of [#{monedasList}]; if unsure use "#{defaultMoneda}".
-      - fecha: ISO date YYYY-MM-DD; if unknown use null.
-      - pagadores: who PAID. deudores: who OWES / benefited from the expense.
-      - pagadores and deudores are each a distribution object, and you pick ONE of these two shapes for each based on what the email describes:
-        - Parts split: {"tipo": "partes", "partes": [{ "participanteId", "monto", "partes" }, ...]}. For each person give EITHER a fixed "monto" (their exact share, null "partes") OR an integer "partes" weight (null "monto"), never both. For an even split give each person "partes": 1 and null "monto". The montos of a "partes" pagadores list must add up to the total monto.
-        - Itemized repartija: {"tipo": "repartija", "items": [{ "nombre", "monto", "cantidad" }, ...]}. Use this when the email itemizes the individual products bought (like a receipt). List each product with its TOTAL price and its quantity; the item montos MUST add up to the total monto. Do NOT assign people to items here — consumers claim items separately later.
-      - Prefer "partes" for pagadores; use "repartija" (usually for deudores) only when the email actually lists individual products/items.
+      - fecha: ISO YYYY-MM-DD, or null if unknown.
+      - pagadores: who PAID — ALWAYS a plain array of shares [{ "participanteId", "monto", "partes" }, ...], never itemized. Per payer give EITHER a fixed "monto" (null "partes") OR an integer "partes" weight (null "monto").
+      - deudores: who OWES — an object, ONE of:
+        - {"tipo": "partes", "partes": [ ...same share shape as pagadores... ]}. Even split: each "partes": 1.
+        - {"tipo": "repartija", "items": [{ "nombre", "monto", "cantidad" }, ...]}. ONLY when the email itemizes products; item montos add up to monto; don't assign people.
 
-      CRITICAL INSTRUCTIONS:
-      - Every participanteId in a "partes" split MUST be exactly one of the ids listed above. Never invent ids or names.
-      - Return ONLY the raw JSON object starting with { and ending with }.
-      - DO NOT wrap the JSON in markdown code blocks or include ```json markers.
-      - DO NOT add any explanatory text before or after the JSON.
-      - Missing amounts, unknown people or ambiguity are NOT reasons to refuse — fill in defaults and still return the JSON. Only return a plain-text explanation (no JSON at all) when the email is clearly not about a shared expense.
-      - Any such error text MUST be in spanish always.
+      Do your best even if the email is vague: fill in what you can and leave the rest empty (pagadores [], deudores {"tipo":"partes","partes":[]}, null fecha, default moneda). Never guess people or amounts the email doesn't support — the user fixes it later. Only if the email is clearly NOT about a shared expense, reply instead with a brief plain-text error in Spanish (no JSON).
       |]
 
 -- | A worked example handed to the model so it sees the exact JSON shape.
@@ -289,7 +289,7 @@ exampleParsedEmailPago =
     , moneda = Just "ARS"
     , fecha = Just "2026-01-15"
     , pagadores =
-        ParsedPartes [ParsedShare "01ARZ3NDEKTSV4RRFFQ69G5FAV" (Just 1000.00) Nothing]
+        [ParsedShare "01ARZ3NDEKTSV4RRFFQ69G5FAV" (Just 1000.00) Nothing]
     , deudores =
         ParsedRepartija
           [ ParsedReceiptItem "Pizza" 800.00 1
