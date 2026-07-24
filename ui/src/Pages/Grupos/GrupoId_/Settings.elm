@@ -6,20 +6,22 @@ import Form exposing (Form, Msg(..))
 import Form.Field
 import Form.Init as Form
 import Form.Validate as V exposing (Validation)
-import Generated.Api as Api exposing (ShallowGrupo, ULID, UpdateGrupoParams)
-import Html exposing (Html, button, div, input, label, option, select, text)
+import Generated.Api as Api exposing (ShallowGrupo, ULID, UpdateGrupoParams, User)
+import Html exposing (Html, a, button, div, i, input, label, option, select, span, text)
 import Html.Attributes as Attr exposing (class, classList, disabled, for, id, selected, type_, value)
 import Html.Events exposing (on, onClick, onInput, onSubmit)
 import Http
 import Json.Decode
 import Layouts
+import Models.Grupo exposing (ownedParticipante)
 import Models.Moneda as Moneda
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
 import Process
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
+import Route.Path as Path
 import Shared
 import Task
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
@@ -35,7 +37,7 @@ page shared route =
         { init = \() -> init shared.store route.params.grupoId
         , update = update shared.store
         , subscriptions = subscriptions
-        , view = view shared.store
+        , view = view shared.origin shared.currentUser shared.store
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 
@@ -54,6 +56,7 @@ type Msg
     | AjustesForm Form.Msg
     | UpdateGrupoResponse (Result Http.Error ShallowGrupo)
     | CheckIfGrupoIsPresent
+    | ShareEmailAddress String
 
 
 init : Store -> ULID -> ( Model, Effect Msg )
@@ -194,14 +197,19 @@ update store msg model =
                 Failure _ ->
                     ( model, Effect.none )
 
+        ShareEmailAddress address ->
+            ( model
+            , Effect.share { title = "Cargar gastos por email", url = address }
+            )
+
 
 subscriptions : Model -> Sub Msg
 subscriptions _ =
     Sub.none
 
 
-view : Store -> Model -> View Msg
-view store model =
+view : String -> WebData User -> Store -> Model -> View Msg
+view origin currentUser store model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Loading..."
@@ -229,6 +237,7 @@ view store model =
                     [ div [ class "row justify-content-center" ]
                         [ div [ class "col-lg-8" ]
                             [ viewAjustesSection grupo model.ajustesForm
+                            , viewEmailSection origin currentUser grupo
                             , viewFreezeSection grupo
                             ]
                         ]
@@ -267,6 +276,98 @@ viewAjustesSection currentGrupo form =
                 , onClick (AjustesForm Form.Submit)
                 ]
                 [ text "Guardar" ]
+            ]
+        ]
+
+
+{-| The per-grupo inbound-email address. Sending an email here (from the
+account's own address) creates a pago in this grupo. The email domain matches
+the app's own domain, so we derive it from `origin`.
+-}
+grupoEmailAddress : String -> ULID -> String
+grupoEmailAddress origin grupoId =
+    "gasto+" ++ grupoId ++ "@" ++ emailDomain origin
+
+
+emailDomain : String -> String
+emailDomain origin =
+    origin
+        |> String.split "//"
+        |> List.drop 1
+        |> List.head
+        |> Maybe.withDefault origin
+
+
+viewEmailSection : String -> WebData User -> ShallowGrupo -> Html Msg
+viewEmailSection origin currentUser grupo =
+    let
+        address =
+            grupoEmailAddress origin grupo.id
+
+        -- The webhook resolves the sender to a user account and then requires
+        -- that user to own a participante in this grupo, so the address is only
+        -- useful to someone logged in who has claimed their participante here.
+        canUseEmail =
+            case currentUser of
+                Success user ->
+                    ownedParticipante user.id grupo /= Nothing
+
+                _ ->
+                    False
+    in
+    div [ class "card mb-4" ]
+        [ div [ class "card-header d-flex align-items-center gap-2" ]
+            [ text "Cargar gastos por email"
+            , if canUseEmail then
+                text ""
+
+              else
+                span [ class "badge text-bg-secondary" ]
+                    [ i [ class "bi bi-lock-fill me-1" ] [], text "Solo para miembros" ]
+            ]
+        , div [ class "card-body" ]
+            [ div [ class "mb-3 text-muted" ]
+                [ text "Reenviá a esta dirección los mails de tus compras —tickets, pedidos, confirmaciones de pago— o describí un gasto vos mismo, y lo cargamos como gasto automáticamente. Mandalo "
+                , Html.strong [] [ text "desde la dirección de tu cuenta" ]
+                , text "."
+                ]
+            , div
+                [ class "input-group"
+                , classList [ ( "opacity-50", not canUseEmail ) ]
+                ]
+                [ input
+                    [ type_ "text"
+                    , class "form-control"
+                    , disabled True
+                    , value address
+                    ]
+                    []
+                , button
+                    [ type_ "button"
+                    , class "btn btn-outline-secondary"
+                    , disabled (not canUseEmail)
+                    , onClick (ShareEmailAddress address)
+                    ]
+                    [ text "Copiar" ]
+                ]
+            , if canUseEmail then
+                text ""
+
+              else
+                div [ class "alert alert-secondary d-flex align-items-start gap-2 mt-3 mb-0" ]
+                    [ i [ class "bi bi-lock-fill mt-1" ] []
+                    , span []
+                        (case currentUser of
+                            Success _ ->
+                                [ text "Reclamá tu participante en este grupo para poder cargar gastos por email." ]
+
+                            _ ->
+                                [ text "Cargá gastos sin abrir la app: "
+                                , a [ Path.href Path.Login ] [ text "iniciá sesión o registrate" ]
+                                , text " y reclamá tu participante en el grupo."
+                                ]
+                        )
+                    ]
             ]
         ]
 

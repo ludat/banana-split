@@ -46,6 +46,10 @@ changelog =
       , title = "Habemus usuarios"
       , description = "Ahora podés loguearte a la app con tu email y ver todos tus grupos en la pantalla principal."
       }
+    , { date = Date.fromCalendarDate 2026 Jul 24
+      , title = "Cargá gastos reenviando emails"
+      , description = "Ahora podés reenviar a un grupo los mails de tus compras (tickets, pedidos, confirmaciones de pago) y los cargamos como gasto automáticamente, sin abrir la app. Copiá la dirección del grupo desde sus ajustes."
+      }
     ]
 
 
