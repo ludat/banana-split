@@ -50,6 +50,7 @@ import BananaSplit.Receipts (
   ParsedEmailPago (..),
   ParsedReceiptItem (..),
   ParsedShare (..),
+  ReceiptsReaderConfig (..),
   analyzePagoFromEmail,
  )
 import Site.Handler.Utils (runBeam)

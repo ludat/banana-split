@@ -120,7 +120,7 @@ instance IsElmDefinition Monto where
       )
 
 scientificToMonto :: Scientific -> Monto
-scientificToMonto = Monto . scientificToDecimal
+scientificToMonto = Monto . Decimal.roundTo' truncate 2 . scientificToDecimal
 
 scientificToDecimal :: Scientific -> Decimal
 scientificToDecimal s =
