@@ -146,6 +146,7 @@ library http
     Site.Config
     Site.Handler.Auth
     Site.Handler.Grupos
+    Site.Handler.InboundEmail
     Site.Handler.Pagos
     Site.Handler.Receipt
     Site.Handler.Repartijas
@@ -190,12 +191,14 @@ test-suite spec
     BananaSplitSpec
     Site.AuthSpec
     Site.Handler.GruposSpec
+    Site.Handler.InboundEmailSpec
 
   build-depends:
     QuickCheck,
     banana-split,
     banana-split:database,
     banana-split:http,
+    banana-split:receipts,
     hspec,
     lens,
 

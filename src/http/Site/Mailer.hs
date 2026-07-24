@@ -21,8 +21,11 @@ import Protolude
 
 import BananaSplit.Email (Email, unEmail)
 
-newtype Mailer = Mailer
+data Mailer = Mailer
   { sendLoginCode :: Email -> Text -> IO ()
+  , sendNotice :: Email -> Text -> Text -> IO ()
+  -- ^ General outcome email: recipient, subject, HTML body. Used e.g. to reply
+  -- to an inbound-email sender with the pago we created (or why we couldn't).
   }
 
 data SmtpSettings = SmtpSettings
@@ -87,6 +90,16 @@ consoleMailer =
             , "│ code:  " <> code
             , "└────────────────────────────────────────────────────"
             ]
+    , sendNotice = \email subject body -> do
+        putText $
+          unlines
+            [ "┌─ Banana Split notice ──────────────────────────────"
+            , "│ to:      " <> unEmail email
+            , "│ subject: " <> subject
+            , "├─ body ─────────────────────────────────────────────"
+            , body
+            , "└────────────────────────────────────────────────────"
+            ]
     }
 
 -- | Prod mailer: sends the code over plain SMTP, so it works with any
@@ -104,6 +117,15 @@ smtpMailer settings =
             []
             "Tu código de acceso a Banana Split"
             [Mime.htmlPart $ toS $ loginEmailHtml code]
+    , sendNotice = \email subject body ->
+        deliver settings $
+          SMTP.simpleMail
+            settings.from
+            [Address Nothing (unEmail email)]
+            []
+            []
+            subject
+            [Mime.htmlPart $ toS body]
     }
 
 deliver :: SmtpSettings -> Mail -> IO ()
