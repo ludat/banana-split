@@ -26,19 +26,20 @@ module Site.Handler.InboundEmail (
   MailerooInbound (..),
   MailerooAttachment (..),
   handleInboundEmail,
+
   -- * Pure helpers (exported for testing)
   extractFromEmail,
   extractGrupoId,
   resolvePago,
 ) where
 
+import Control.Monad.Error.Class (liftEither)
 import Data.Aeson (FromJSON (..), eitherDecode, withObject, (.!=), (.:), (.:?))
 import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Time (Day, defaultTimeLocale, getCurrentTime, parseTimeM, utctDay)
 import Network.HTTP.Client (Manager, httpLbs, parseRequest, responseBody)
-import Preludat
 import Servant
 
 import BananaSplit
@@ -53,10 +54,10 @@ import BananaSplit.Receipts (
   ReceiptsReaderConfig (..),
   analyzePagoFromEmail,
  )
+import Preludat
 import Site.Handler.Utils (runBeam)
 import Site.Mailer (Mailer (..))
 import Site.Types
-import Control.Monad.Error.Class (liftEither)
 
 -- | The provider-facing API, deliberately kept /out/ of 'Site.Api.Api' so it is
 -- not walked by the servant-elm code generator (the frontend never calls it).
@@ -66,8 +67,6 @@ type WebhookApi =
     :> "email"
     :> "inbound"
     :> Header "Host" Text
-    -- ^ Our own host (Maileroo POSTs to our public URL), used to build the
-    -- app link back to the created pago.
     :> ReqBody '[JSON] MailerooInbound
     :> Post '[JSON] NoContent
 
@@ -101,18 +100,30 @@ instance FromJSON MailerooInbound where
     -- level.
     body <- o .: "body"
     MailerooInbound
-      <$> o .: "envelope_sender"
-      <*> o .: "recipients"
-      <*> o .: "headers"
-      <*> body .:? "plaintext"
-      <*> body .:? "stripped_plaintext"
-      <*> o .: "is_spam"
-      <*> o .: "is_dmarc_aligned"
-      <*> o .: "spf_result"
-      <*> o .: "dkim_result"
-      <*> o .: "validation_url"
+      <$> o
+      .: "envelope_sender"
+      <*> o
+      .: "recipients"
+      <*> o
+      .: "headers"
+      <*> body
+      .:? "plaintext"
+      <*> body
+      .:? "stripped_plaintext"
+      <*> o
+      .: "is_spam"
+      <*> o
+      .: "is_dmarc_aligned"
+      <*> o
+      .: "spf_result"
+      <*> o
+      .: "dkim_result"
+      <*> o
+      .: "validation_url"
       -- @attachments@ is always present but null when there are none.
-      <*> o .:? "attachments" .!= []
+      <*> o
+      .:? "attachments"
+      .!= []
 
 data MailerooAttachment = MailerooAttachment
   { filename :: Text
@@ -125,10 +136,14 @@ data MailerooAttachment = MailerooAttachment
 instance FromJSON MailerooAttachment where
   parseJSON = withObject "MailerooAttachment" $ \o ->
     MailerooAttachment
-      <$> o .: "filename"
-      <*> o .: "content_type"
-      <*> o .: "url"
-      <*> o .: "size"
+      <$> o
+      .: "filename"
+      <*> o
+      .: "content_type"
+      <*> o
+      .: "url"
+      <*> o
+      .: "size"
 
 -- | Maileroo's @validation_url@ answers with this the first (and only) time it
 -- is hit for a given message.
@@ -163,16 +178,16 @@ processInbound host payload = do
   -- 1. Prove the POST came from Maileroo.
   config <- lift $ asks (.receipts)
   validated <- liftIO $ validateWebhook config.manager payload.validationUrl
-  unless validated $
-    throwError "validation_url did not confirm the webhook (success was not true)"
+  unless validated
+    $ throwError "validation_url did not confirm the webhook (success was not true)"
 
   -- 2. Reject spam / unauthenticated senders. This is the anti-spoofing gate;
   -- failures here are logged only, never replied to.
-  when payload.isSpam $
-    throwError "message was flagged as spam"
+  when payload.isSpam
+    $ throwError "message was flagged as spam"
   let spfPass = payload.spfResult == "pass"
-  unless (payload.isDmarcAligned || (spfPass && payload.dkimResult)) $
-    throwError "message failed sender authentication (not DMARC-aligned, and SPF+DKIM did not both pass)"
+  unless (payload.isDmarcAligned || (spfPass && payload.dkimResult))
+    $ throwError "message failed sender authentication (not DMARC-aligned, and SPF+DKIM did not both pass)"
 
   -- The From address is now DMARC-authenticated, so it is safe to reply to. If
   -- we can't even read it there is nobody to answer, so this stays silent too.
@@ -248,19 +263,19 @@ sendReply mailer recipient payload (subject, body) = do
 successEmail :: Maybe Text -> ShallowGrupo -> Pago -> (Text, Text)
 successEmail host grupo pago =
   ( "Registré tu pago en " <> grupo.nombre
-  , Text.unlines $
-      [ "<p>¡Listo! Registré tu pago en el grupo <strong>" <> grupo.nombre <> "</strong>:</p>"
-      , "<ul>"
-      , "<li><strong>" <> pago.nombre <> "</strong></li>"
-      , "<li>Monto: " <> monto2Text pago.monto <> " " <> show pago.moneda <> "</li>"
-      , "<li>Fecha: " <> show pago.fecha <> "</li>"
-      , "</ul>"
-      , "<p>Revisá cómo lo repartí (es lo que más conviene verificar):</p>"
-      , "<p><strong>Pagaron:</strong></p>"
-      , "<ul>" <> renderDistribucion names pago.pagadores <> "</ul>"
-      , "<p><strong>Deben:</strong></p>"
-      , "<ul>" <> renderDistribucion names pago.deudores <> "</ul>"
-      ]
+  , Text.unlines
+      $ [ "<p>¡Listo! Registré tu pago en el grupo <strong>" <> grupo.nombre <> "</strong>:</p>"
+        , "<ul>"
+        , "<li><strong>" <> pago.nombre <> "</strong></li>"
+        , "<li>Monto: " <> monto2Text pago.monto <> " " <> show pago.moneda <> "</li>"
+        , "<li>Fecha: " <> show pago.fecha <> "</li>"
+        , "</ul>"
+        , "<p>Revisá cómo lo repartí (es lo que más conviene verificar):</p>"
+        , "<p><strong>Pagaron:</strong></p>"
+        , "<ul>" <> renderDistribucion names pago.pagadores <> "</ul>"
+        , "<p><strong>Deben:</strong></p>"
+        , "<ul>" <> renderDistribucion names pago.deudores <> "</ul>"
+        ]
       <> [ if pago.isValid
              then "<p>Quedó todo listo.</p>"
              else "<p>Quedó marcado como <strong>inválido</strong> porque falta o no cierra alguna información (por ejemplo quién pagó o quiénes deben). Abrilo en la app para completarlo.</p>"
@@ -371,15 +386,15 @@ resolvePago :: ShallowGrupo -> Day -> ParsedEmailPago -> Pago
 resolvePago grupo today parsed =
   let validIds = Set.fromList $ fmap (.id) grupo.participantes
   in Pago
-      { pagoId = nullUlid
-      , monto = scientificToMonto parsed.monto
-      , moneda = resolveMoneda grupo.monedaPorDefecto parsed.moneda
-      , isValid = False -- recomputed by savePago via addIsValidPago
-      , nombre = parsed.nombre
-      , fecha = resolveFecha today parsed.fecha
-      , pagadores = resolvePartes validIds parsed.pagadores
-      , deudores = resolveDistribucion parsed.nombre validIds parsed.deudores
-      }
+       { pagoId = nullUlid
+       , monto = scientificToMonto parsed.monto
+       , moneda = resolveMoneda grupo.monedaPorDefecto parsed.moneda
+       , isValid = False -- recomputed by savePago via addIsValidPago
+       , nombre = parsed.nombre
+       , fecha = resolveFecha today parsed.fecha
+       , pagadores = resolvePartes validIds parsed.pagadores
+       , deudores = resolveDistribucion parsed.nombre validIds parsed.deudores
+       }
 
 -- | Resolve the currency, falling back to the grupo default for anything blank
 -- or unrecognised.

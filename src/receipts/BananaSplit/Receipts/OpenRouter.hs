@@ -11,6 +11,7 @@ module BananaSplit.Receipts.OpenRouter (
   ParsedReceiptItem (..),
   analyzeReceiptImage,
   analyzeReceiptText,
+
   -- * Parsing a pago out of an email
   ParsedEmailPago (..),
   ParsedDistribucion (..),
@@ -232,20 +233,23 @@ analyzeReceiptFromMessage config msg =
 -- body); image attachments are added in a later step. Returns 'Left' with a
 -- (Spanish) explanation when the model can't confidently parse the pago.
 analyzePagoFromEmail ::
-  ReceiptsReaderConfig ->
-  EmailPagoContext ->
-  -- | Email subject
-  Text ->
-  -- | Email body (plaintext)
-  Text ->
-  IO (Either Text ParsedEmailPago)
+  ReceiptsReaderConfig
+  -> EmailPagoContext
+  -> Text
+  -- ^ Email subject
+  -> Text
+  -- ^ Email body (plaintext)
+  -> IO (Either Text ParsedEmailPago)
 analyzePagoFromEmail config context subject body =
   callOpenRouterJson config systemPrompt [TextContent userText]
   where
     participantesText =
       Text.intercalate "\n" $
         context.participantes <&> \p ->
-          "- " <> p.id <> " — " <> p.nombre
+          "- "
+            <> p.id
+            <> " — "
+            <> p.nombre
             <> (if p.esRemitente then "  (remitente: quien escribió este email)" else "")
     exampleJson = Text.decodeUtf8 $ toS $ encode exampleParsedEmailPago
     grupoNombre = context.grupoNombre
@@ -303,10 +307,10 @@ exampleParsedEmailPago =
 -- ask the model to report a problem it can't resolve.
 callOpenRouterJson ::
   (FromJSON a) =>
-  ReceiptsReaderConfig ->
-  Text ->
-  [MessageContent] ->
-  IO (Either Text a)
+  ReceiptsReaderConfig
+  -> Text
+  -> [MessageContent]
+  -> IO (Either Text a)
 callOpenRouterJson config systemPrompt userContent =
   runReq defaultHttpConfig{httpConfigCheckResponse = \_ _ _ -> Nothing} $ runExceptT $ do
     (model, fallbackModels) <- case config.models of

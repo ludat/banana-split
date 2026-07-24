@@ -31,51 +31,51 @@ import Site.Types
 -- and the static site as a fallback.
 type ServedApi =
   "api" :> (ToServantApi Api :<|> WebhookApi)
-  :<|> Raw
+    :<|> Raw
 
 serverT :: ServerT ServedApi AppHandler
 serverT =
   ( genericServerT
       Api
-      { _routeGrupoGet = handleShowGrupo
-      , _routeGrupoPost = handleCreateGrupo
-      , _routeGrupoGetNetos = handleGetNetos
-      , _routeGrupoUpdate = handleUpdateGrupo
-      , _routeGrupoParticipanteAdd = handleCreateParticipante
-      , _routeGrupoParticipanteDelete = handleDeleteParticipante
-      , _routeGrupoPagoDelete = handleDeletePago
-      , _routePagoPost = handlePagoPost
-      , _routePagoGet = handlePagoGet
-      , _routePagosGet = handlePagosGet
-      , _routePagoResumenPost = handlePagoResumenPost
-      , -- , _routePagosGet = handlePagosGet
-        -- , _routeGrupoPagoAdd = handlePagoCreate
-        _routePagoUpdate = handlePagoUpdate
-      , -- , _routeRepartijaPost = handleRepartijaPost
-        _routeRepartijaGet = handleRepartijaGet
-      , _routeRepartijaClaimPut = handleRepartijaClaimPut
-      , _routeRepartijaClaimDelete = handleRepartijaClaimDelete
-      , _routeGrupoFreeze = handleFreezeGrupo
-      , _routeGrupoUnfreeze = handleUnfreezeGrupo
-      , _routeGrupoSaldarTransaccion = handleSaldarTransaccion
-      , _routeReceiptImageParse = handleReceiptImageParse
-      , _routeAuthRequestCode = handleRequestCode
-      , _routeAuthVerify = handleVerify
-      , _routeAuthRegister = handleRegister
-      , _routeAuthLogout = handleLogout
-      , _routeAuthRefresh = handleRefresh
-      , _routeMe = handleMe
-      , _routeMeUpdate = handleUpdateMe
-      , _routeMeGrupoPost = handleCreateGrupoAsUser
-      , _routeMeGruposGet = handleGetMisGrupos
-      , _routeParticipanteClaim = handleClaimParticipante
-      , _routeParticipanteUnclaim = handleUnclaimParticipante
-      , _routeHealth = pure "ok"
-      -- , _routePagoNew = handlePagoNew
-      -- , _routePagoNewPatch = handlePagoNewPatch
-      -- , _routePagoEdit = handlePagoEdit
-      -- , _routePagoDelete = handlePagoDelete
-      }
+        { _routeGrupoGet = handleShowGrupo
+        , _routeGrupoPost = handleCreateGrupo
+        , _routeGrupoGetNetos = handleGetNetos
+        , _routeGrupoUpdate = handleUpdateGrupo
+        , _routeGrupoParticipanteAdd = handleCreateParticipante
+        , _routeGrupoParticipanteDelete = handleDeleteParticipante
+        , _routeGrupoPagoDelete = handleDeletePago
+        , _routePagoPost = handlePagoPost
+        , _routePagoGet = handlePagoGet
+        , _routePagosGet = handlePagosGet
+        , _routePagoResumenPost = handlePagoResumenPost
+        , -- , _routePagosGet = handlePagosGet
+          -- , _routeGrupoPagoAdd = handlePagoCreate
+          _routePagoUpdate = handlePagoUpdate
+        , -- , _routeRepartijaPost = handleRepartijaPost
+          _routeRepartijaGet = handleRepartijaGet
+        , _routeRepartijaClaimPut = handleRepartijaClaimPut
+        , _routeRepartijaClaimDelete = handleRepartijaClaimDelete
+        , _routeGrupoFreeze = handleFreezeGrupo
+        , _routeGrupoUnfreeze = handleUnfreezeGrupo
+        , _routeGrupoSaldarTransaccion = handleSaldarTransaccion
+        , _routeReceiptImageParse = handleReceiptImageParse
+        , _routeAuthRequestCode = handleRequestCode
+        , _routeAuthVerify = handleVerify
+        , _routeAuthRegister = handleRegister
+        , _routeAuthLogout = handleLogout
+        , _routeAuthRefresh = handleRefresh
+        , _routeMe = handleMe
+        , _routeMeUpdate = handleUpdateMe
+        , _routeMeGrupoPost = handleCreateGrupoAsUser
+        , _routeMeGruposGet = handleGetMisGrupos
+        , _routeParticipanteClaim = handleClaimParticipante
+        , _routeParticipanteUnclaim = handleUnclaimParticipante
+        , _routeHealth = pure "ok"
+        -- , _routePagoNew = handlePagoNew
+        -- , _routePagoNewPatch = handlePagoNewPatch
+        -- , _routePagoEdit = handlePagoEdit
+        -- , _routePagoDelete = handlePagoDelete
+        }
       :<|> handleInboundEmail
   )
     :<|> serveDirectoryWith
