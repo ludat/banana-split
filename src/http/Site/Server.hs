@@ -87,8 +87,22 @@ serverT =
 proxyApi :: Proxy ServedApi
 proxyApi = Proxy
 
+-- | Run a handler down to a real response, catching anything it throws.
+-- Servant only turns 'throwError'd 'ServerError's into a response; a plain
+-- Haskell exception (e.g. the UTF-8 decode that used to crash receipt
+-- parsing) otherwise vanishes into whatever Warp's 'onException' does with
+-- it, with no trace of what actually broke. Catching here, before the
+-- action is handed back into Servant's own dispatch, guarantees every
+-- unhandled exception gets logged with its message instead of disappearing.
 nt :: App -> AppHandler a -> Handler a
-nt s x = runReaderT x s
+nt s x = do
+  result <- liftIO $ try $ runHandler (runReaderT x s)
+  case result of
+    Right (Right a) -> pure a
+    Right (Left err) -> throwError err
+    Left (e :: SomeException) -> do
+      liftIO $ putText $ "[handler] unhandled exception: " <> show e
+      throwError err500
 
 authContext :: App -> Context AuthContext
 authContext appState = authHandler appState :. sessionAuthHandler appState :. EmptyContext
