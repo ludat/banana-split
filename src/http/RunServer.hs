@@ -15,6 +15,7 @@ import Network.Wai.Handler.Warp qualified as Warp
 import Network.Wai.Middleware.RequestLogger (logStdoutDev)
 import Protolude
 import System.Posix (Handler (..), installHandler, sigTERM)
+import System.IO
 
 import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.Receipts (ReceiptsReaderConfig (..))
@@ -26,6 +27,12 @@ import Site.Types
 
 runBackend :: IO ()
 runBackend = do
+  
+main :: IO ()
+main = do
+  hSetBuffering stdout NoBuffering
+  hSetBuffering stderr NoBuffering
+
   config <- createConfig "dev"
 
   openRouterKey <- Conferer.fetchFromConfig "openrouter.apikey" config
