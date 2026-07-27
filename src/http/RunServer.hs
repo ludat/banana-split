@@ -68,4 +68,4 @@ runBackend = do
         )
 
   putText [i|Listening on port #{Warp.getPort settings}...|]
-  Warp.runSettings settings $ logStdoutDev $ Site.Server.app appState
+  Warp.runSettings settings $ Site.Server.app appState
