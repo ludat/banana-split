@@ -27,6 +27,14 @@ import Site.Types
 
 runBackend :: IO ()
 runBackend = do
+  -- Containers commonly have no locale configured (LANG unset or "C"/"POSIX"),
+  -- which makes GHC default stdout/stderr to an encoding that can't represent
+  -- most Unicode text. Printing anything outside that range (e.g. a Greek
+  -- receipt echoed into a log line) then throws mid-write instead of
+  -- printing, which is what was showing up as blank/truncated log lines
+  -- rather than the actual message.
+  hSetEncoding stdout utf8
+  hSetEncoding stderr utf8
   hSetBuffering stdout NoBuffering
   hSetBuffering stderr NoBuffering
 
