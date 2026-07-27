@@ -27,9 +27,6 @@ import Site.Types
 
 runBackend :: IO ()
 runBackend = do
-  
-main :: IO ()
-main = do
   hSetBuffering stdout NoBuffering
   hSetBuffering stderr NoBuffering
 
