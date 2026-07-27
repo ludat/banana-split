@@ -28,6 +28,7 @@ import Data.Scientific (Scientific)
 import Data.String.Interpolate (__i)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
+import Data.Text.Encoding.Error (lenientDecode)
 import Network.HTTP.Req
 import Protolude
 
@@ -344,7 +345,7 @@ callOpenRouterJson config systemPrompt userContent =
             , header "X-Title" "Banana Split"
             ]
         )
-    liftIO $ putText $ "[openrouter] response " <> Text.decodeUtf8 (responseBody response)
+    liftIO $ putText $ "[openrouter] response " <> Text.decodeUtf8With lenientDecode (responseBody response)
 
     openRouterResp <- liftEither $ left Text.pack $ eitherDecodeStrict @OpenRouterResponse $ responseBody response
 
