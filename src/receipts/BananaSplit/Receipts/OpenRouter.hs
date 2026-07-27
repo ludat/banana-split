@@ -353,14 +353,15 @@ callOpenRouterJson config systemPrompt userContent =
       [] -> throwError "No response from OpenRouter"
       (c : _) -> pure c
 
-    let trimmed = Text.strip contentText
     -- The prompts tell the model to answer with a bare JSON object, or a
-    -- plain-text explanation when it can't. Treat a non-@{@ answer as the latter.
-    if not (Text.isPrefixOf "{" trimmed)
-      then throwError trimmed
-      else do
-        let cleanedText =
-              contentText
-                & Text.dropWhile (/= '{')
-                & Text.dropWhileEnd (/= '}')
-        liftEither $ left Text.pack $ eitherDecodeStrict $ Text.encodeUtf8 cleanedText
+    -- plain-text explanation when it can't. Models often wrap the JSON in
+    -- markdown fences or add a bit of preamble despite being told not to, so
+    -- tolerate that by slicing out the outermost {..}; only treat the answer
+    -- as a plain-text error when there's no '{' in it at all.
+    let cleanedText =
+          contentText
+            & Text.dropWhile (/= '{')
+            & Text.dropWhileEnd (/= '}')
+    if Text.null cleanedText
+      then throwError (Text.strip contentText)
+      else liftEither $ left Text.pack $ eitherDecodeStrict $ Text.encodeUtf8 cleanedText
