@@ -317,6 +317,13 @@ headerInfo currentPath store grupo =
             , share = { path = currentPath, title = grupo.nombre }
             }
 
+        Path.Grupos_GrupoId__Metricas _ ->
+            { crumbs = [ gruposCrumb, grupoCrumb ]
+            , title = "Métricas"
+            , showTabs = True
+            , share = { path = currentPath, title = grupo.nombre }
+            }
+
         Path.Grupos_GrupoId__Participantes _ ->
             { crumbs = [ gruposCrumb, grupoCrumb ]
             , title = "Participantes"
@@ -460,6 +467,11 @@ viewTabNav currentPath grupo =
             }
             [ text "Liquidaciones" ]
         , Bs.navTab
+            { active = currentPath == Path.Grupos_GrupoId__Metricas { grupoId = grupo.id }
+            , attrs = [ Path.href <| Path.Grupos_GrupoId__Metricas { grupoId = grupo.id } ]
+            }
+            [ text "Métricas" ]
+        , Bs.navTab
             { active = currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id }
             , attrs = [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.id } ]
             }
@@ -493,7 +505,8 @@ viewBottomNav currentPath grupo =
                 ]
 
         masActive =
-            (currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id })
+            (currentPath == Path.Grupos_GrupoId__Metricas { grupoId = grupo.id })
+                || (currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id })
                 || (currentPath == Path.Grupos_GrupoId__Settings { grupoId = grupo.id })
     in
     Html.nav [ Css.navbar_bottom, Css.barra_inferior_fija ]
@@ -520,6 +533,16 @@ viewBottomNav currentPath grupo =
                 ]
             , ul [ class "dropdown-menu dropdown-menu-end shadow" ]
                 [ li []
+                    [ a
+                        [ class "dropdown-item"
+                        , classList [ ( "active", currentPath == Path.Grupos_GrupoId__Metricas { grupoId = grupo.id } ) ]
+                        , Path.href (Path.Grupos_GrupoId__Metricas { grupoId = grupo.id })
+                        ]
+                        [ i [ class "bi bi-graph-up me-2" ] []
+                        , text "Métricas"
+                        ]
+                    ]
+                , li []
                     [ a
                         [ class "dropdown-item"
                         , classList [ ( "active", currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id } ) ]

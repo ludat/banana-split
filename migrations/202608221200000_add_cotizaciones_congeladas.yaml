@@ -1,0 +1,24 @@
+operations:
+  - create_table:
+      name: cotizaciones_congeladas
+      columns:
+        - name: id
+          type: text
+          pk: true
+        - name: grupo__id
+          type: text
+          nullable: false
+          references:
+            table: grupos
+            column: id
+            name: fk_cotizaciones_congeladas_grupo__id
+            on_delete: CASCADE
+        - name: moneda
+          type: text
+          nullable: false
+        - name: valor__lugares_despues_de_la_coma
+          type: int
+          nullable: false
+        - name: valor__valor
+          type: bigint
+          nullable: false

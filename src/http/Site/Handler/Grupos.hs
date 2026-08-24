@@ -1,11 +1,13 @@
 module Site.Handler.Grupos (
   CreateGrupoParams,
   handleClaimParticipante,
+  handleConsolidacionPreview,
   handleCreateGrupo,
   handleCreateGrupoAsUser,
   handleCreateParticipante,
   handleDeleteParticipante,
   handleFreezeGrupo,
+  handleGetMetricas,
   handleGetMisGrupos,
   handleGetNetos,
   handleShowGrupo,
@@ -24,12 +26,14 @@ import BananaSplit.Persistence (
   createGrupo,
   createGrupoForUser,
   deleteShallowParticipante,
+  fetchCotizacionesCongeladas,
   fetchGrupo,
   fetchGruposForUser,
   fetchPago,
   fetchShallowPagos,
   fetchTransaccionesCongeladas,
   freezeGrupo,
+  saveCotizacionesCongeladas,
   unclaimParticipante,
   unfreezeGrupo,
   updateGrupo,
@@ -46,8 +50,9 @@ handleCreateGrupoAsUser :: User -> CreateGrupoAsUserParams -> AppHandler Grupo
 handleCreateGrupoAsUser user CreateGrupoAsUserParams{grupoName} = do
   runBeam $ createGrupoForUser grupoName user
 
-handleGetNetos :: ULID -> AppHandler ResumenGrupo
-handleGetNetos grupoId = do
+-- | El grupo completo con sus pagos, o 404 si no existe.
+fetchGrupoCompleto :: ULID -> AppHandler (ShallowGrupo, Grupo)
+fetchGrupoCompleto grupoId = do
   shallowGrupo <-
     runBeam (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
@@ -57,19 +62,26 @@ handleGetNetos grupoId = do
     forM shallowPagos $ \shallowPago ->
       fetchPago shallowPago.pagoId
 
-  let grupo =
-        Grupo
-          { id = shallowGrupo.id
-          , participantes = shallowGrupo.participantes
-          , nombre = shallowGrupo.nombre
-          , pagos = pagos
-          , monedaPorDefecto = shallowGrupo.monedaPorDefecto
-          }
+  pure
+    ( shallowGrupo
+    , Grupo
+        { id = shallowGrupo.id
+        , participantes = shallowGrupo.participantes
+        , nombre = shallowGrupo.nombre
+        , pagos = pagos
+        , monedaPorDefecto = shallowGrupo.monedaPorDefecto
+        }
+    )
+
+handleGetNetos :: ULID -> AppHandler ResumenGrupo
+handleGetNetos grupoId = do
+  (shallowGrupo, grupo) <- fetchGrupoCompleto grupoId
   let netos = calcularNetosTotales grupo
 
   if shallowGrupo.isFrozen
     then do
       transacciones <- runBeam $ fetchTransaccionesCongeladas grupoId
+      cotizaciones <- runBeam $ fetchCotizacionesCongeladas grupoId
       pure $
         ResumenGrupo
           { netos = netos
@@ -77,6 +89,7 @@ handleGetNetos grupoId = do
           , cantidadPagos = length grupo.pagos
           , transaccionesParaSaldar = transacciones
           , isFrozen = True
+          , consolidacion = resumenConsolidadoCongelado grupo cotizaciones netos transacciones
           }
     else
       pure $
@@ -86,7 +99,57 @@ handleGetNetos grupoId = do
           , cantidadPagos = length grupo.pagos
           , transaccionesParaSaldar = fmap minimizeTransactions netos
           , isFrozen = False
+          , consolidacion = Nothing
           }
+
+-- | Arma la vista consolidada de un grupo congelado con cotizaciones
+-- guardadas. Los netos se recalculan de los pagos vivos usando esas
+-- cotizaciones; las transacciones son las congeladas. Si no hay cotizaciones
+-- el freeze fue por moneda; si la conversión falla (defensivo: una moneda
+-- nueva sin cotización guardada) se muestra la vista por moneda.
+resumenConsolidadoCongelado ::
+  Grupo ->
+  PorMoneda Monto ->
+  PorMoneda (Netos Monto) ->
+  PorMoneda [Transaccion] ->
+  Maybe ResumenConsolidado
+resumenConsolidadoCongelado grupo cotizaciones netos transacciones = do
+  guard (cotizaciones /= mempty)
+  netosConsolidados <- rightToMaybe $ consolidarNetos grupo.monedaPorDefecto cotizaciones netos
+  pure $
+    ResumenConsolidado
+      { moneda = grupo.monedaPorDefecto
+      , cotizaciones = cotizaciones
+      , netos = netosConsolidados
+      , transaccionesParaSaldar = runIdentity $ forMonedaM transacciones $ \_moneda ts -> pure ts
+      }
+
+handleConsolidacionPreview :: ULID -> ConsolidacionParams -> AppHandler ResumenConsolidado
+handleConsolidacionPreview grupoId params = do
+  (_shallowGrupo, grupo) <- fetchGrupoCompleto grupoId
+  let netos = calcularNetosTotales grupo
+  case consolidarNetos grupo.monedaPorDefecto params.cotizaciones netos of
+    Left e -> throwJsonError err400 $ errorConsolidacionMessage e
+    Right netosConsolidados ->
+      pure $
+        ResumenConsolidado
+          { moneda = grupo.monedaPorDefecto
+          , cotizaciones = params.cotizaciones
+          , netos = netosConsolidados
+          , transaccionesParaSaldar = minimizeTransactions netosConsolidados
+          }
+
+errorConsolidacionMessage :: ErrorConsolidacion -> Text
+errorConsolidacionMessage = \case
+  CotizacionFaltante moneda ->
+    "Falta la cotización para " <> show moneda
+  CotizacionInvalida moneda ->
+    "La cotización para " <> show moneda <> " tiene que ser mayor a cero"
+
+handleGetMetricas :: ULID -> AppHandler MetricasGrupo
+handleGetMetricas grupoId = do
+  (_shallowGrupo, grupo) <- fetchGrupoCompleto grupoId
+  pure $ calcularMetricas grupo
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
 handleDeleteParticipante grupoId participanteId = do
@@ -118,34 +181,30 @@ handleUnclaimParticipante :: User -> ULID -> ULID -> AppHandler Participante
 handleUnclaimParticipante user grupoId participanteId = do
   runBeam $ unclaimParticipante grupoId participanteId user.id
 
-handleFreezeGrupo :: ULID -> AppHandler ShallowGrupo
-handleFreezeGrupo grupoId = do
-  shallowGrupo <-
-    runBeam (fetchGrupo grupoId)
-      `orElseMay` throwJsonError err404 "Grupo no encontrado"
-
-  pagos <- runBeam $ do
-    shallowPagos <- fetchShallowPagos grupoId
-    forM shallowPagos $ \shallowPago ->
-      fetchPago shallowPago.pagoId
-
-  let grupo =
-        Grupo
-          { id = shallowGrupo.id
-          , participantes = shallowGrupo.participantes
-          , nombre = shallowGrupo.nombre
-          , pagos = pagos
-          , monedaPorDefecto = shallowGrupo.monedaPorDefecto
-          }
+handleFreezeGrupo :: ULID -> FreezeParams -> AppHandler ShallowGrupo
+handleFreezeGrupo grupoId params = do
+  (_shallowGrupo, grupo) <- fetchGrupoCompleto grupoId
   let netos = calcularNetosTotales grupo
-  let transaccionesPorMoneda = fmap minimizeTransactions netos
 
-  runBeam
-    ( do
-        freezeGrupo grupoId transaccionesPorMoneda
-        fetchGrupo grupoId
-    )
-    `orElseMay` throwJsonError err404 "Grupo no encontrado"
+  if params.cotizaciones == mempty
+    then
+      runBeam
+        ( do
+            freezeGrupo grupoId (fmap minimizeTransactions netos)
+            fetchGrupo grupoId
+        )
+        `orElseMay` throwJsonError err404 "Grupo no encontrado"
+    else
+      case consolidarNetos grupo.monedaPorDefecto params.cotizaciones netos of
+        Left e -> throwJsonError err400 $ errorConsolidacionMessage e
+        Right netosConsolidados ->
+          runBeam
+            ( do
+                freezeGrupo grupoId (minimizeTransactions netosConsolidados `enMoneda` grupo.monedaPorDefecto)
+                saveCotizacionesCongeladas grupoId params.cotizaciones
+                fetchGrupo grupoId
+            )
+            `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
 handleUnfreezeGrupo :: ULID -> AppHandler ShallowGrupo
 handleUnfreezeGrupo grupoId = do

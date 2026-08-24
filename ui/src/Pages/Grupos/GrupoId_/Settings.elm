@@ -103,6 +103,7 @@ update store msg model =
             , Effect.sendCmd <|
                 Api.postGrupoByIdFreeze
                     model.grupoId
+                    { cotizaciones = [] }
                     FreezeGrupoResponse
             )
 

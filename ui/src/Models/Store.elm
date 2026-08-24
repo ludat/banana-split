@@ -1,8 +1,8 @@
-module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshPago, refreshPagos, refreshRepartija, refreshResumen, setPago, update, updateRepartijaForFrontend)
+module Models.Store exposing (empty, ensureGrupo, ensureMetricas, ensurePago, ensurePagos, ensureResumen, getGrupo, getMetricas, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshMetricas, refreshPago, refreshPagos, refreshRepartija, refreshResumen, setPago, update, updateRepartijaForFrontend)
 
 import Dict
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Pago, RepartijaForFrontend, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
+import Generated.Api as Api exposing (MetricasGrupo, Pago, RepartijaForFrontend, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
@@ -33,6 +33,16 @@ update msg store =
 
         InvalidateResumen grupoId ->
             ( { store | resumenes = store.resumenes |> Dict.remove grupoId }, Effect.none )
+
+        MetricasFetched grupoId metricas ->
+            ( store |> saveMetricas grupoId metricas, Effect.none )
+
+        FetchMetricas grupoId ->
+            ( store
+            , Effect.batch
+                [ Effect.sendCmd <| Api.getGrupoByIdMetricas grupoId (RemoteData.fromResult >> MetricasFetched grupoId >> StoreMsg)
+                ]
+            )
 
         PagosFetched grupoId pagos ->
             ( store |> savePagos grupoId pagos
@@ -81,6 +91,15 @@ saveResumen grupoId resumen store =
         | resumenes =
             store.resumenes
                 |> Dict.insert grupoId resumen
+    }
+
+
+saveMetricas : ULID -> WebData MetricasGrupo -> Store -> Store
+saveMetricas grupoId metricas store =
+    { store
+        | metricas =
+            store.metricas
+                |> Dict.insert grupoId metricas
     }
 
 
@@ -133,6 +152,11 @@ refreshGrupo grupoId =
 refreshResumen : ULID -> Effect msg
 refreshResumen grupoId =
     Effect.sendStoreMsg <| FetchResumen grupoId
+
+
+refreshMetricas : ULID -> Effect msg
+refreshMetricas grupoId =
+    Effect.sendStoreMsg <| FetchMetricas grupoId
 
 
 updateRepartijaForFrontend : ULID -> RepartijaForFrontend -> Effect msg
@@ -241,6 +265,22 @@ invalidateResumen grupoId =
     Effect.sendStoreMsg <| InvalidateResumen grupoId
 
 
+ensureMetricas : ULID -> Store -> Effect msg
+ensureMetricas grupoId store =
+    case getMetricas grupoId store of
+        NotAsked ->
+            Effect.sendStoreMsg <| FetchMetricas grupoId
+
+        Loading ->
+            Effect.none
+
+        Failure _ ->
+            Effect.none
+
+        Success _ ->
+            Effect.none
+
+
 invalidatePagos : ULID -> Effect msg
 invalidatePagos grupoId =
     Effect.sendStoreMsg <| InvalidatePagos grupoId
@@ -256,6 +296,13 @@ getGrupo grupoId store =
 getResumen : ULID -> Store -> WebData ResumenGrupo
 getResumen grupoId store =
     store.resumenes
+        |> Dict.get grupoId
+        |> Maybe.withDefault NotAsked
+
+
+getMetricas : ULID -> Store -> WebData MetricasGrupo
+getMetricas grupoId store =
+    store.metricas
         |> Dict.get grupoId
         |> Maybe.withDefault NotAsked
 
@@ -286,6 +333,7 @@ empty =
     { grupos = Dict.empty
     , repartijas = Dict.empty
     , resumenes = Dict.empty
+    , metricas = Dict.empty
     , pagosPorGrupo = Dict.empty
     , pagos = Dict.empty
     }

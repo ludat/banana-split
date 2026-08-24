@@ -34,6 +34,9 @@ grupoIdFromPath path =
         Path.Grupos_GrupoId__Liquidaciones params ->
             Just params.grupoId
 
+        Path.Grupos_GrupoId__Metricas params ->
+            Just params.grupoId
+
         Path.Grupos_GrupoId__Participantes params ->
             Just params.grupoId
 

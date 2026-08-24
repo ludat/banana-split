@@ -293,16 +293,18 @@ type alias ResumenGrupo  =
    , cantidadPagosInvalidos: Int
    , cantidadPagos: Int
    , isFrozen: Bool
+   , consolidacion: (Maybe ResumenConsolidado)
    }
 
 jsonDecResumenGrupo : Json.Decode.Decoder ( ResumenGrupo )
 jsonDecResumenGrupo =
-   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos pcantidadPagos pisFrozen -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos, cantidadPagos = pcantidadPagos, isFrozen = pisFrozen})
+   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos pcantidadPagos pisFrozen pconsolidacion -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos, cantidadPagos = pcantidadPagos, isFrozen = pisFrozen, consolidacion = pconsolidacion})
    |> required "transaccionesParaSaldar" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransaccion)))
    |> required "netos" (jsonDecPorMoneda (jsonDecNetos (jsonDecMonto)))
    |> required "cantidadPagosInvalidos" (Json.Decode.int)
    |> required "cantidadPagos" (Json.Decode.int)
    |> required "isFrozen" (Json.Decode.bool)
+   |> fnullable "consolidacion" (jsonDecResumenConsolidado)
 
 jsonEncResumenGrupo : ResumenGrupo -> Value
 jsonEncResumenGrupo  val =
@@ -312,8 +314,61 @@ jsonEncResumenGrupo  val =
    , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
    , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
    , ("isFrozen", Json.Encode.bool val.isFrozen)
+   , ("consolidacion", (maybeEncode (jsonEncResumenConsolidado)) val.consolidacion)
    ]
 
+
+
+type alias ResumenConsolidado  =
+   { moneda: Moneda
+   , cotizaciones: (PorMoneda Monto)
+   , netos: (Netos Monto)
+   , transaccionesParaSaldar: (List Transaccion)
+   }
+
+jsonDecResumenConsolidado : Json.Decode.Decoder ( ResumenConsolidado )
+jsonDecResumenConsolidado =
+   Json.Decode.succeed (\pmoneda pcotizaciones pnetos ptransaccionesParaSaldar -> {moneda = pmoneda, cotizaciones = pcotizaciones, netos = pnetos, transaccionesParaSaldar = ptransaccionesParaSaldar})
+   |> required "moneda" (jsonDecMoneda)
+   |> required "cotizaciones" (jsonDecPorMoneda (jsonDecMonto))
+   |> required "netos" (jsonDecNetos (jsonDecMonto))
+   |> required "transaccionesParaSaldar" (Json.Decode.list (jsonDecTransaccion))
+
+jsonEncResumenConsolidado : ResumenConsolidado -> Value
+jsonEncResumenConsolidado  val =
+   Json.Encode.object
+   [ ("moneda", jsonEncMoneda val.moneda)
+   , ("cotizaciones", (jsonEncPorMoneda (jsonEncMonto)) val.cotizaciones)
+   , ("netos", (jsonEncNetos (jsonEncMonto)) val.netos)
+   , ("transaccionesParaSaldar", (Json.Encode.list jsonEncTransaccion) val.transaccionesParaSaldar)
+   ]
+
+
+
+type alias ConsolidacionParams  =
+   { cotizaciones: (PorMoneda Monto)
+   }
+
+jsonDecConsolidacionParams : Json.Decode.Decoder ( ConsolidacionParams )
+jsonDecConsolidacionParams =
+   Json.Decode.succeed (\pcotizaciones -> {cotizaciones = pcotizaciones}) |> custom (jsonDecPorMoneda (jsonDecMonto))
+
+jsonEncConsolidacionParams : ConsolidacionParams -> Value
+jsonEncConsolidacionParams  val =
+   (jsonEncPorMoneda (jsonEncMonto)) val.cotizaciones
+
+
+type alias FreezeParams  =
+   { cotizaciones: (PorMoneda Monto)
+   }
+
+jsonDecFreezeParams : Json.Decode.Decoder ( FreezeParams )
+jsonDecFreezeParams =
+   Json.Decode.succeed (\pcotizaciones -> {cotizaciones = pcotizaciones}) |> custom (jsonDecPorMoneda (jsonDecMonto))
+
+jsonEncFreezeParams : FreezeParams -> Value
+jsonEncFreezeParams  val =
+   (jsonEncPorMoneda (jsonEncMonto)) val.cotizaciones
 
 
 type alias Netos a = (List (ParticipanteId, a))
@@ -362,6 +417,123 @@ jsonEncMoneda  val =
         UYU -> Json.Encode.string "UYU"
         CLP -> Json.Encode.string "CLP"
         GBP -> Json.Encode.string "GBP"
+
+
+
+type alias MetricasGrupo  =
+   { porMoneda: (PorMoneda MetricasPorMoneda)
+   }
+
+jsonDecMetricasGrupo : Json.Decode.Decoder ( MetricasGrupo )
+jsonDecMetricasGrupo =
+   Json.Decode.succeed (\pporMoneda -> {porMoneda = pporMoneda}) |> custom (jsonDecPorMoneda (jsonDecMetricasPorMoneda))
+
+jsonEncMetricasGrupo : MetricasGrupo -> Value
+jsonEncMetricasGrupo  val =
+   (jsonEncPorMoneda (jsonEncMetricasPorMoneda)) val.porMoneda
+
+
+type alias MetricasPorMoneda  =
+   { totalPagadoPorParticipante: (Netos Monto)
+   , totalPagosSaldadosPorParticipante: (Netos Monto)
+   , totalGastadoPorParticipante: (Netos Monto)
+   , generosidad: (List (ParticipanteId, Float))
+   , busiestMes: (Maybe BusiestMes)
+   , busiestDia: (Maybe BusiestDia)
+   , theBigOne: (Maybe BigOne)
+   }
+
+jsonDecMetricasPorMoneda : Json.Decode.Decoder ( MetricasPorMoneda )
+jsonDecMetricasPorMoneda =
+   Json.Decode.succeed (\ptotalPagadoPorParticipante ptotalPagosSaldadosPorParticipante ptotalGastadoPorParticipante pgenerosidad pbusiestMes pbusiestDia ptheBigOne -> {totalPagadoPorParticipante = ptotalPagadoPorParticipante, totalPagosSaldadosPorParticipante = ptotalPagosSaldadosPorParticipante, totalGastadoPorParticipante = ptotalGastadoPorParticipante, generosidad = pgenerosidad, busiestMes = pbusiestMes, busiestDia = pbusiestDia, theBigOne = ptheBigOne})
+   |> required "totalPagadoPorParticipante" (jsonDecNetos (jsonDecMonto))
+   |> required "totalPagosSaldadosPorParticipante" (jsonDecNetos (jsonDecMonto))
+   |> required "totalGastadoPorParticipante" (jsonDecNetos (jsonDecMonto))
+   |> required "generosidad" (Json.Decode.list (Json.Decode.map2 tuple2 (Json.Decode.index 0 (jsonDecParticipanteId)) (Json.Decode.index 1 (Json.Decode.float))))
+   |> fnullable "busiestMes" (jsonDecBusiestMes)
+   |> fnullable "busiestDia" (jsonDecBusiestDia)
+   |> fnullable "theBigOne" (jsonDecBigOne)
+
+jsonEncMetricasPorMoneda : MetricasPorMoneda -> Value
+jsonEncMetricasPorMoneda  val =
+   Json.Encode.object
+   [ ("totalPagadoPorParticipante", (jsonEncNetos (jsonEncMonto)) val.totalPagadoPorParticipante)
+   , ("totalPagosSaldadosPorParticipante", (jsonEncNetos (jsonEncMonto)) val.totalPagosSaldadosPorParticipante)
+   , ("totalGastadoPorParticipante", (jsonEncNetos (jsonEncMonto)) val.totalGastadoPorParticipante)
+   , ("generosidad", (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(jsonEncParticipanteId) t1,(Json.Encode.float) t2])) val.generosidad)
+   , ("busiestMes", (maybeEncode (jsonEncBusiestMes)) val.busiestMes)
+   , ("busiestDia", (maybeEncode (jsonEncBusiestDia)) val.busiestDia)
+   , ("theBigOne", (maybeEncode (jsonEncBigOne)) val.theBigOne)
+   ]
+
+
+
+type alias BigOne  =
+   { pagoId: ULID
+   , monto: Monto
+   , nombre: String
+   , fecha: Day
+   }
+
+jsonDecBigOne : Json.Decode.Decoder ( BigOne )
+jsonDecBigOne =
+   Json.Decode.succeed (\ppagoId pmonto pnombre pfecha -> {pagoId = ppagoId, monto = pmonto, nombre = pnombre, fecha = pfecha})
+   |> required "pagoId" (jsonDecULID)
+   |> required "monto" (jsonDecMonto)
+   |> required "nombre" (Json.Decode.string)
+   |> required "fecha" (jsonDecDay)
+
+jsonEncBigOne : BigOne -> Value
+jsonEncBigOne  val =
+   Json.Encode.object
+   [ ("pagoId", jsonEncULID val.pagoId)
+   , ("monto", jsonEncMonto val.monto)
+   , ("nombre", Json.Encode.string val.nombre)
+   , ("fecha", jsonEncDay val.fecha)
+   ]
+
+
+
+type alias BusiestMes  =
+   { anio: Int
+   , mes: Int
+   , total: Monto
+   }
+
+jsonDecBusiestMes : Json.Decode.Decoder ( BusiestMes )
+jsonDecBusiestMes =
+   Json.Decode.succeed (\panio pmes ptotal -> {anio = panio, mes = pmes, total = ptotal})
+   |> required "anio" (Json.Decode.int)
+   |> required "mes" (Json.Decode.int)
+   |> required "total" (jsonDecMonto)
+
+jsonEncBusiestMes : BusiestMes -> Value
+jsonEncBusiestMes  val =
+   Json.Encode.object
+   [ ("anio", Json.Encode.int val.anio)
+   , ("mes", Json.Encode.int val.mes)
+   , ("total", jsonEncMonto val.total)
+   ]
+
+
+
+type alias BusiestDia  =
+   { dia: Day
+   , total: Monto
+   }
+
+jsonDecBusiestDia : Json.Decode.Decoder ( BusiestDia )
+jsonDecBusiestDia =
+   Json.Decode.succeed (\pdia ptotal -> {dia = pdia, total = ptotal})
+   |> required "dia" (jsonDecDay)
+   |> required "total" (jsonDecMonto)
+
+jsonEncBusiestDia : BusiestDia -> Value
+jsonEncBusiestDia  val =
+   Json.Encode.object
+   [ ("dia", jsonEncDay val.dia)
+   , ("total", jsonEncMonto val.total)
+   ]
 
 
 
@@ -1001,6 +1173,36 @@ getGrupoByIdResumen capture_id toMsg =
                 Nothing
             }
 
+getGrupoByIdMetricas : ULID -> (Result Http.Error  (MetricasGrupo)  -> msg) -> Cmd msg
+getGrupoByIdMetricas capture_id toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "metricas"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecMetricasGrupo
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
 putGrupoById : ULID -> UpdateGrupoParams -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
 putGrupoById capture_id body toMsg =
     let
@@ -1361,8 +1563,8 @@ deleteRepartijasClaimsByClaimId capture_claimId toMsg =
                 Nothing
             }
 
-postGrupoByIdFreeze : ULID -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
-postGrupoByIdFreeze capture_id toMsg =
+postGrupoByIdFreeze : ULID -> FreezeParams -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
+postGrupoByIdFreeze capture_id body toMsg =
     let
         params =
             List.filterMap identity
@@ -1382,9 +1584,40 @@ postGrupoByIdFreeze capture_id toMsg =
                     ]
                     params
             , body =
-                Http.emptyBody
+                Http.jsonBody (jsonEncFreezeParams body)
             , expect =
                 Http.expectJson toMsg jsonDecShallowGrupo
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postGrupoByIdConsolidacionPreview : ULID -> ConsolidacionParams -> (Result Http.Error  (ResumenConsolidado)  -> msg) -> Cmd msg
+postGrupoByIdConsolidacionPreview capture_id body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "consolidacion"
+                    , "preview"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncConsolidacionParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecResumenConsolidado
             , timeout =
                 Nothing
             , tracker =

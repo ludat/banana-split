@@ -3,6 +3,7 @@ module Models.Monto exposing
     , add
     , asDeltaHtml
     , diffText
+    , fromString
     , sub
     , toFloat
     , toRawString
@@ -43,6 +44,18 @@ validateMonto =
                     Err e ->
                         V.fail <| FormError.value <| FormError.CustomError <| DecimalError e
             )
+
+
+{-| Parse user input into a Monto, like `validateMonto` but outside a form.
+-}
+fromString : String -> Maybe Monto
+fromString t =
+    case Decimal.fromString Decimal.HalfUp (Nat.fromIntOrZero 2) t of
+        Ok n ->
+            Just (Monto (Nat.toInt (Decimal.getPrecision n)) (Decimal.toInt n))
+
+        Err _ ->
+            Nothing
 
 
 {-| Lift a Monto into the Decimal type for arithmetic.

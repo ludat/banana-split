@@ -33,8 +33,10 @@ module BananaSplit.Persistence (
   fetchPago,
   fetchRepartija,
   fetchShallowPagos,
+  fetchCotizacionesCongeladas,
   fetchTransaccionesCongeladas,
   freezeGrupo,
+  saveCotizacionesCongeladas,
   savePago,
   saveRepartija,
   saveRepartijaClaim,
@@ -1053,6 +1055,10 @@ freezeGrupo grupoId transaccionesPorMoneda = do
     $ delete
       db.transacciones_congeladas
       (\tc -> tc.grupo ==. GrupoId (val_ grupoId))
+  runDelete
+    $ delete
+      db.cotizaciones_congeladas
+      (\c -> c.grupo ==. GrupoId (val_ grupoId))
   runUpdate
     $ update
       db.grupos
@@ -1081,6 +1087,10 @@ unfreezeGrupo grupoId = do
     $ delete
       db.transacciones_congeladas
       (\tc -> tc.grupo ==. GrupoId (val_ grupoId))
+  runDelete
+    $ delete
+      db.cotizaciones_congeladas
+      (\c -> c.grupo ==. GrupoId (val_ grupoId))
   runUpdate
     $ update
       db.grupos
@@ -1119,6 +1129,39 @@ fetchTransaccionesCongeladas grupoId = do
           ]
             `M.enMoneda` tc.moneda
       )
+    & mconcat
+
+-- | Guarda las cotizaciones usadas en una congelación consolidada.
+-- Su presencia es la señal de que el freeze fue consolidado.
+saveCotizacionesCongeladas :: ULID -> M.PorMoneda M.Monto -> Pg ()
+saveCotizacionesCongeladas grupoId cotizaciones = do
+  runDelete
+    $ delete
+      db.cotizaciones_congeladas
+      (\c -> c.grupo ==. GrupoId (val_ grupoId))
+  rows <- liftIO $ M.forMonedaM cotizaciones $ \moneda valor -> do
+    cid <- ULID.getULID
+    pure
+      [ CotizacionCongelada
+          { id = cid
+          , grupo = GrupoId grupoId
+          , moneda = moneda
+          , valor = deconstructMonto valor
+          }
+      ]
+  runInsert
+    $ insert db.cotizaciones_congeladas
+    $ insertValues rows
+
+fetchCotizacionesCongeladas :: ULID -> Pg (M.PorMoneda M.Monto)
+fetchCotizacionesCongeladas grupoId = do
+  rows <- runSelectReturningList $ select $ do
+    c <- all_ db.cotizaciones_congeladas
+    guard_ (c.grupo ==. GrupoId (val_ grupoId))
+    pure c
+  pure
+    $ rows
+    & fmap (\c -> constructMonto c.valor `M.enMoneda` c.moneda)
     & mconcat
 
 deleteTransaccionCongelada :: ULID -> Pg ()
