@@ -31,6 +31,8 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> Get '[JSON] ShallowGrupo
   , _routeGrupoGetNetos ::
       routes :- "grupo" :> Capture "id" ULID :> "resumen" :> Get '[JSON] ResumenGrupo
+  , _routeGrupoGetMetricas ::
+      routes :- "grupo" :> Capture "id" ULID :> "metricas" :> Get '[JSON] MetricasGrupo
   , _routeGrupoUpdate ::
       routes :- "grupo" :> Capture "id" ULID :> ReqBody '[JSON] UpdateGrupoParams :> Put '[JSON] ShallowGrupo
   , _routeGrupoParticipanteAdd ::
@@ -61,7 +63,9 @@ data Api routes
   , -- , _routeRepartijaToPago ::
     --   routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
     _routeGrupoFreeze ::
-      routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Post '[JSON] ShallowGrupo
+      routes :- "grupo" :> Capture "id" ULID :> "freeze" :> ReqBody '[JSON] FreezeParams :> Post '[JSON] ShallowGrupo
+  , _routeGrupoConsolidacionPreview ::
+      routes :- "grupo" :> Capture "id" ULID :> "consolidacion" :> "preview" :> ReqBody '[JSON] ConsolidacionParams :> Post '[JSON] ResumenConsolidado
   , _routeGrupoUnfreeze ::
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] ShallowGrupo
   , _routeGrupoSaldarTransaccion ::
@@ -184,6 +188,31 @@ data ResumenGrupo = ResumenGrupo
   , cantidadPagosInvalidos :: Int
   , cantidadPagos :: Int
   , isFrozen :: Bool
+  , consolidacion :: Maybe ResumenConsolidado
+  -- ^ Solo presente cuando el grupo fue congelado consolidando monedas.
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Cotizaciones para consolidar los netos en la moneda por defecto del
+-- grupo: cada entrada dice cuánto vale 1 unidad de esa moneda en la moneda
+-- destino.
+data ConsolidacionParams = ConsolidacionParams
+  { cotizaciones :: PorMoneda Monto
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Sin cotizaciones (mapa vacío) el freeze es por moneda (como siempre);
+-- con cotizaciones se congela una única liquidación consolidada.
+data FreezeParams = FreezeParams
+  { cotizaciones :: PorMoneda Monto
+  }
+  deriving (Show, Eq, Generic)
+
+data ResumenConsolidado = ResumenConsolidado
+  { moneda :: Moneda
+  , cotizaciones :: PorMoneda Monto
+  , netos :: Netos Monto
+  , transaccionesParaSaldar :: [Transaccion]
   }
   deriving (Show, Eq, Generic)
 
@@ -226,6 +255,9 @@ Elm.deriveBoth Elm.defaultOptions ''UpdateMeParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoAsUserParams
 Elm.deriveBoth Elm.defaultOptions ''UpdateGrupoParams
+Elm.deriveBoth Elm.defaultOptions ''ConsolidacionParams
+Elm.deriveBoth Elm.defaultOptions ''FreezeParams
+Elm.deriveBoth Elm.defaultOptions ''ResumenConsolidado
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
 Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest

@@ -38,6 +38,7 @@ data BananaSplitDb f = BananaSplitDb
   , repartija_items :: f (TableEntity RepartijaItemT)
   , repartija_claims :: f (TableEntity RepartijaClaimT)
   , transacciones_congeladas :: f (TableEntity TransaccionCongeladaT)
+  , cotizaciones_congeladas :: f (TableEntity CotizacionCongeladaT)
   }
   deriving (Generic, Database be)
 
@@ -457,6 +458,29 @@ instance Table TransaccionCongeladaT where
   data PrimaryKey TransaccionCongeladaT f = TransaccionCongeladaId (Columnar f ULID)
     deriving (Generic, Beamable)
   primaryKey = TransaccionCongeladaId . (.id)
+
+-- | Cotización usada al congelar un grupo consolidado: cuánto vale 1 unidad
+-- de la moneda en la moneda por defecto del grupo.
+data CotizacionCongeladaT f = CotizacionCongelada
+  { id :: Columnar f ULID
+  , grupo :: PrimaryKey GrupoT f
+  , moneda :: Columnar f M.Moneda
+  , valor :: MontoT f
+  }
+  deriving (Generic, Beamable)
+
+type CotizacionCongelada = CotizacionCongeladaT Identity
+
+type CotizacionCongeladaId = PrimaryKey CotizacionCongeladaT Identity
+
+deriving instance Show CotizacionCongelada
+
+deriving instance Show CotizacionCongeladaId
+
+instance Table CotizacionCongeladaT where
+  data PrimaryKey CotizacionCongeladaT f = CotizacionCongeladaId (Columnar f ULID)
+    deriving (Generic, Beamable)
+  primaryKey = CotizacionCongeladaId . (.id)
 
 instance HasSqlValueSyntax PgValueSyntax ULID where
   sqlValueSyntax = autoSqlValueSyntax

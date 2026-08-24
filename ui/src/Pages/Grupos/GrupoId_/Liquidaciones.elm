@@ -1,6 +1,7 @@
 module Pages.Grupos.GrupoId_.Liquidaciones exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
+import Components.Cotizaciones
 import Components.MonedaSelector as MonedaSelector exposing (MonedaSeleccionada(..))
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Moneda, Pago, PorMoneda, ResumenGrupo, ShallowGrupo, Transaccion, ULID)
@@ -160,31 +161,45 @@ viewContent hoy store model grupo =
             Bs.alert Bs.AlertDanger [] [ text "Error cargando los datos del grupo." ]
 
         Success resumen ->
-            let
-                monedasDisponibles : List Moneda
-                monedasDisponibles =
-                    resumen.netos
-                        |> List.map Tuple.first
-                        |> List.filter (\m -> m /= grupo.monedaPorDefecto)
-                        |> (::) grupo.monedaPorDefecto
+            case resumen.consolidacion of
+                -- Congelado consolidado: una sola liquidación en la moneda por
+                -- defecto, sin selector de monedas.
+                Just consolidacion ->
+                    div []
+                        [ div [ class "mb-3" ]
+                            [ Components.Cotizaciones.view consolidacion.moneda consolidacion.cotizaciones ]
+                        , viewTransferencias hoy
+                            grupo.monedaPorDefecto
+                            grupo
+                            { resumen | transaccionesParaSaldar = [ ( consolidacion.moneda, consolidacion.transaccionesParaSaldar ) ] }
+                        ]
 
-                monedaSeleccionada : Moneda
-                monedaSeleccionada =
-                    MonedaSelector.resolve model.monedaSeleccionada grupo.monedaPorDefecto
+                Nothing ->
+                    let
+                        monedasDisponibles : List Moneda
+                        monedasDisponibles =
+                            resumen.netos
+                                |> List.map Tuple.first
+                                |> List.filter (\m -> m /= grupo.monedaPorDefecto)
+                                |> (::) grupo.monedaPorDefecto
 
-                transForActive : PorMoneda (List Transaccion)
-                transForActive =
-                    resumen.transaccionesParaSaldar
-                        |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
-            in
-            div []
-                [ if List.length monedasDisponibles > 1 then
-                    MonedaSelector.view monedasDisponibles monedaSeleccionada SelectMoneda
+                        monedaSeleccionada : Moneda
+                        monedaSeleccionada =
+                            MonedaSelector.resolve model.monedaSeleccionada grupo.monedaPorDefecto
 
-                  else
-                    text ""
-                , viewTransferencias hoy grupo.monedaPorDefecto grupo { resumen | transaccionesParaSaldar = transForActive }
-                ]
+                        transForActive : PorMoneda (List Transaccion)
+                        transForActive =
+                            resumen.transaccionesParaSaldar
+                                |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
+                    in
+                    div []
+                        [ if List.length monedasDisponibles > 1 then
+                            MonedaSelector.view monedasDisponibles monedaSeleccionada SelectMoneda
+
+                          else
+                            text ""
+                        , viewTransferencias hoy grupo.monedaPorDefecto grupo { resumen | transaccionesParaSaldar = transForActive }
+                        ]
 
 
 viewTransferencias : Day -> Moneda -> GrupoLike g -> ResumenGrupo -> Html Msg

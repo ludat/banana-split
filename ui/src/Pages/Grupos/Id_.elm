@@ -2,14 +2,17 @@ module Pages.Grupos.Id_ exposing (Model, Msg, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
+import Components.Cotizaciones
 import Components.MonedaSelector as MonedaSelector exposing (MonedaSeleccionada(..))
 import Components.PagoDetalleModal as PagoDetalleModal
 import Date
+import Dict exposing (Dict)
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Moneda, Netos, ShallowGrupo, ShallowPago, ULID)
-import Html exposing (Html, a, button, div, i, li, p, span, text, ul)
-import Html.Attributes exposing (class, classList, style, type_)
-import Html.Events exposing (onClick)
+import Generated.Api as Api exposing (Moneda, Netos, ResumenConsolidado, ShallowGrupo, ShallowPago, ULID)
+import Html exposing (Html, a, button, div, i, input, li, p, span, text, ul)
+import Html.Attributes exposing (class, classList, disabled, style, type_, value)
+import Html.Events exposing (onClick, onInput)
+import Http
 import Layouts
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Moneda as Moneda
@@ -17,11 +20,14 @@ import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Utils.Day
+import Utils.Http exposing (viewHttpError)
+import Utils.Toasts as Toasts
+import Utils.Toasts.Types as Toasts
 import View exposing (View)
 
 
@@ -41,6 +47,10 @@ type alias Model =
     { grupoId : String
     , monedaSeleccionada : MonedaSeleccionada
     , pagoModal : PagoDetalleModal.Model
+    , consolidarAbierto : Bool
+    , cotizacionesInput : Dict String String
+    , preview : WebData ResumenConsolidado
+    , congelando : Bool
     }
 
 
@@ -56,6 +66,10 @@ init route store =
     ( { grupoId = grupoId
       , monedaSeleccionada = MonedaDefaultDelGrupo
       , pagoModal = pagoModal
+      , consolidarAbierto = False
+      , cotizacionesInput = Dict.empty
+      , preview = NotAsked
+      , congelando = False
       }
     , Effect.batch
         [ Store.ensureResumen grupoId store
@@ -72,14 +86,79 @@ type Msg
     = SelectMoneda Moneda
     | OpenPago ULID
     | PagoModalMsg PagoDetalleModal.Msg
+    | AbrirConsolidar
+    | CotizacionInput Moneda String
+    | VerConsolidado (Api.PorMoneda Api.Monto)
+    | PreviewResponse (Result Http.Error ResumenConsolidado)
+    | CongelarConsolidado (Api.PorMoneda Api.Monto)
+    | CongelarConsolidadoResponse (Result Http.Error ShallowGrupo)
 
 
 update : Store -> PagoDetalleModal.Context -> Msg -> Model -> ( Model, Effect Msg )
 update store ctx msg model =
     case msg of
         SelectMoneda moneda ->
-            ( { model | monedaSeleccionada = MonedaSeleccionadaPorUsuario moneda }
+            ( { model
+                | monedaSeleccionada = MonedaSeleccionadaPorUsuario moneda
+                , consolidarAbierto = False
+              }
             , Effect.none
+            )
+
+        AbrirConsolidar ->
+            ( { model | consolidarAbierto = True }
+            , Effect.none
+            )
+
+        CotizacionInput moneda valor ->
+            -- Cambiar una cotización invalida el preview: el botón de congelar
+            -- usa las cotizaciones del preview, no las de los inputs.
+            ( { model
+                | cotizacionesInput = Dict.insert (Moneda.toString moneda) valor model.cotizacionesInput
+                , preview = NotAsked
+              }
+            , Effect.none
+            )
+
+        VerConsolidado cotizaciones ->
+            ( { model | preview = Loading }
+            , Effect.sendCmd <|
+                Api.postGrupoByIdConsolidacionPreview
+                    model.grupoId
+                    { cotizaciones = cotizaciones }
+                    PreviewResponse
+            )
+
+        PreviewResponse result ->
+            ( { model | preview = RemoteData.fromResult result }
+            , Effect.none
+            )
+
+        CongelarConsolidado cotizaciones ->
+            ( { model | congelando = True }
+            , Effect.sendCmd <|
+                Api.postGrupoByIdFreeze
+                    model.grupoId
+                    { cotizaciones = cotizaciones }
+                    CongelarConsolidadoResponse
+            )
+
+        CongelarConsolidadoResponse (Ok _) ->
+            ( { model
+                | congelando = False
+                , consolidarAbierto = False
+                , preview = NotAsked
+              }
+            , Effect.batch
+                [ Store.refreshResumen model.grupoId
+                , Store.refreshGrupo model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Grupo congelado con la liquidación consolidada"
+                ]
+            )
+
+        CongelarConsolidadoResponse (Err _) ->
+            ( { model | congelando = False }
+            , Toasts.pushToast Toasts.ToastDanger "No se pudo congelar el grupo"
             )
 
         OpenPago pagoId ->
@@ -166,90 +245,246 @@ viewLeftColumn store userId model grupo =
 
             else
                 let
-                    monedasDisponibles : List Moneda
-                    monedasDisponibles =
-                        resumen.netos
-                            |> List.map Tuple.first
-                            |> List.filter (\m -> m /= grupo.monedaPorDefecto)
-                            |> (::) grupo.monedaPorDefecto
+                    alerts =
+                        [ if resumen.cantidadPagosInvalidos > 0 then
+                            Bs.alert Bs.AlertDanger
+                                [ class "mb-3" ]
+                                [ text <|
+                                    if resumen.cantidadPagosInvalidos == 1 then
+                                        "Tenés 1 pago inválido, ese no se cuenta para las deudas."
 
-                    monedaSeleccionada : Moneda
-                    monedaSeleccionada =
-                        MonedaSelector.resolve model.monedaSeleccionada grupo.monedaPorDefecto
+                                    else
+                                        "Tenés "
+                                            ++ String.fromInt resumen.cantidadPagosInvalidos
+                                            ++ " pagos inválidos, esos no se cuentan para las deudas."
+                                ]
 
-                    netosForActive : Maybe (Netos Api.Monto)
-                    netosForActive =
-                        resumen.netos
-                            |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
-                            |> List.head
-                            |> Maybe.map Tuple.second
-                in
-                div []
-                    [ if resumen.cantidadPagosInvalidos > 0 then
-                        Bs.alert Bs.AlertDanger
-                            [ class "mb-3" ]
-                            [ text <|
-                                if resumen.cantidadPagosInvalidos == 1 then
-                                    "Tenés 1 pago inválido, ese no se cuenta para las deudas."
+                          else
+                            text ""
+                        , if resumen.isFrozen then
+                            Bs.alert Bs.AlertWarning
+                                [ class "mb-3" ]
+                                [ text "Este grupo está congelado. Las deudas están fijas y no se pueden agregar, editar ni eliminar pagos." ]
 
-                                else
-                                    "Tenés "
-                                        ++ String.fromInt resumen.cantidadPagosInvalidos
-                                        ++ " pagos inválidos, esos no se cuentan para las deudas."
-                            ]
-
-                      else
-                        text ""
-                    , if resumen.isFrozen then
-                        Bs.alert Bs.AlertWarning
-                            [ class "mb-3" ]
-                            [ text "Este grupo está congelado. Las deudas están fijas y no se pueden agregar, editar ni eliminar pagos." ]
-
-                      else
-                        text ""
-                    , if List.length monedasDisponibles > 1 then
-                        viewMonedaTabs userId resumen.netos monedasDisponibles grupo.monedaPorDefecto monedaSeleccionada
-
-                      else
-                        text ""
-                    , div [ class "pt-4 mb-4" ]
-                        [ div [ class "mb-4" ]
-                            [ div [ class "fw-bold mb-3" ] [ text "Netos" ]
-                            , case netosForActive of
-                                Just netos ->
-                                    div [ class "row g-3" ]
-                                        [ div [ class "col-12 col-md-4" ]
-                                            [ viewTuEstadoCard userId netos grupo grupo.monedaPorDefecto monedaSeleccionada ]
-                                        , div [ class "col-6 col-md-4" ]
-                                            [ viewNetoCard "Mayor pagador"
-                                                (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.reverse |> List.head)
-                                                grupo
-                                                grupo.monedaPorDefecto
-                                                monedaSeleccionada
-                                                False
-                                            ]
-                                        , div [ class "col-6 col-md-4" ]
-                                            [ viewNetoCard "Mayor deudor"
-                                                (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.head)
-                                                grupo
-                                                grupo.monedaPorDefecto
-                                                monedaSeleccionada
-                                                False
-                                            ]
-                                        ]
-
-                                Nothing ->
-                                    text ""
-                            ]
-                        , div [ class "fw-bold mb-3" ] [ text "Estado del grupo" ]
-                        , case netosForActive of
-                            Just netos ->
-                                viewNetosBarras grupo netos
-
-                            Nothing ->
-                                text ""
+                          else
+                            text ""
                         ]
+                in
+                case resumen.consolidacion of
+                    -- Congelado consolidando monedas: una sola vista en la
+                    -- moneda por defecto, sin tabs por moneda.
+                    Just consolidacion ->
+                        div []
+                            (alerts
+                                ++ [ div [ class "mb-3" ]
+                                        [ Components.Cotizaciones.view consolidacion.moneda consolidacion.cotizaciones ]
+                                   , viewNetosSection userId grupo consolidacion.moneda consolidacion.netos
+                                   ]
+                            )
+
+                    Nothing ->
+                        let
+                            monedasDisponibles : List Moneda
+                            monedasDisponibles =
+                                resumen.netos
+                                    |> List.map Tuple.first
+                                    |> List.filter (\m -> m /= grupo.monedaPorDefecto)
+                                    |> (::) grupo.monedaPorDefecto
+
+                            monedaSeleccionada : Moneda
+                            monedaSeleccionada =
+                                MonedaSelector.resolve model.monedaSeleccionada grupo.monedaPorDefecto
+
+                            -- Consolidar solo tiene sentido con varias monedas
+                            -- y con el grupo todavía sin congelar.
+                            conConsolidar =
+                                not resumen.isFrozen
+
+                            consolidarActivo =
+                                conConsolidar && model.consolidarAbierto
+                        in
+                        div []
+                            (alerts
+                                ++ [ if List.length monedasDisponibles > 1 then
+                                        viewMonedaTabs userId resumen.netos monedasDisponibles grupo.monedaPorDefecto monedaSeleccionada conConsolidar consolidarActivo
+
+                                     else
+                                        text ""
+                                   , if consolidarActivo then
+                                        viewConsolidarPanel userId grupo resumen model
+
+                                     else
+                                        case
+                                            resumen.netos
+                                                |> List.filter (\( m, _ ) -> m == monedaSeleccionada)
+                                                |> List.head
+                                                |> Maybe.map Tuple.second
+                                        of
+                                            Just netos ->
+                                                viewNetosSection userId grupo monedaSeleccionada netos
+
+                                            Nothing ->
+                                                text ""
+                                   ]
+                            )
+
+
+{-| Las cards de netos y las barras de estado del grupo para una moneda.
+-}
+viewNetosSection : Maybe String -> ShallowGrupo -> Moneda -> Netos Api.Monto -> Html Msg
+viewNetosSection userId grupo monedaSeleccionada netos =
+    div [ class "pt-4 mb-4" ]
+        [ div [ class "mb-4" ]
+            [ div [ class "fw-bold mb-3" ] [ text "Netos" ]
+            , div [ class "row g-3" ]
+                [ div [ class "col-12 col-md-4" ]
+                    [ viewTuEstadoCard userId netos grupo grupo.monedaPorDefecto monedaSeleccionada ]
+                , div [ class "col-6 col-md-4" ]
+                    [ viewNetoCard "Mayor pagador"
+                        (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.reverse |> List.head)
+                        grupo
+                        grupo.monedaPorDefecto
+                        monedaSeleccionada
+                        False
                     ]
+                , div [ class "col-6 col-md-4" ]
+                    [ viewNetoCard "Mayor deudor"
+                        (netos |> List.sortBy (\( _, m ) -> Monto.toFloat m) |> List.head)
+                        grupo
+                        grupo.monedaPorDefecto
+                        monedaSeleccionada
+                        False
+                    ]
+                ]
+            ]
+        , div [ class "fw-bold mb-3" ] [ text "Estado del grupo" ]
+        , viewNetosBarras grupo netos
+        ]
+
+
+{-| El panel de la pestaña "Consolidar": inputs de cotizaciones, preview de la
+liquidación consolidada y el botón para congelar con esas cotizaciones.
+-}
+viewConsolidarPanel : Maybe String -> ShallowGrupo -> Api.ResumenGrupo -> Model -> Html Msg
+viewConsolidarPanel userId grupo resumen model =
+    let
+        monedasAConvertir : List Moneda
+        monedasAConvertir =
+            resumen.netos
+                |> List.map Tuple.first
+                |> List.filter (\m -> m /= grupo.monedaPorDefecto)
+
+        rawInput moneda =
+            model.cotizacionesInput
+                |> Dict.get (Moneda.toString moneda)
+                |> Maybe.withDefault ""
+
+        parseCotizacion raw =
+            Monto.fromString raw
+                |> Maybe.andThen
+                    (\monto ->
+                        if monto.valor > 0 then
+                            Just monto
+
+                        else
+                            Nothing
+                    )
+
+        cotizaciones : Maybe (Api.PorMoneda Api.Monto)
+        cotizaciones =
+            monedasAConvertir
+                |> List.map (\m -> parseCotizacion (rawInput m) |> Maybe.map (Tuple.pair m))
+                |> List.foldr (Maybe.map2 (::)) (Just [])
+
+        viewCotizacionInput moneda =
+            let
+                raw =
+                    rawInput moneda
+
+                esInvalida =
+                    raw /= "" && parseCotizacion raw == Nothing
+            in
+            div [ class "input-group mb-2", style "max-width" "22rem" ]
+                [ span [ class "input-group-text" ]
+                    [ text ("1 " ++ Moneda.simboloUnico moneda ++ " =") ]
+                , input
+                    [ type_ "text"
+                    , class "form-control"
+                    , classList [ ( "is-invalid", esInvalida ) ]
+                    , value raw
+                    , onInput (CotizacionInput moneda)
+                    ]
+                    []
+                , span [ class "input-group-text" ]
+                    [ text (Moneda.simbolo grupo.monedaPorDefecto grupo.monedaPorDefecto) ]
+                ]
+    in
+    div [ class "pt-4 mb-4" ]
+        [ p [ class "text-muted" ]
+            [ text <|
+                "Convertí todos los netos a "
+                    ++ Moneda.nombre grupo.monedaPorDefecto
+                    ++ " usando las cotizaciones que acuerden entre ustedes."
+            ]
+        , div [ class "mb-3" ] (monedasAConvertir |> List.map viewCotizacionInput)
+        , case ( cotizaciones, model.preview ) of
+            ( Just cotis, NotAsked ) ->
+                Bs.btn Bs.Primary
+                    [ onClick (VerConsolidado cotis) ]
+                    [ text "Ver consolidado" ]
+
+            ( Nothing, _ ) ->
+                Bs.btn Bs.Primary
+                    [ disabled True ]
+                    [ text "Ver consolidado" ]
+
+            ( Just _, _ ) ->
+                text ""
+        , case model.preview of
+            NotAsked ->
+                text ""
+
+            Loading ->
+                div [ class "text-muted" ] [ text "Calculando..." ]
+
+            Failure e ->
+                viewHttpError e
+
+            Success preview ->
+                div []
+                    [ viewNetosSection userId grupo preview.moneda preview.netos
+                    , div [ class "fw-bold mb-3" ] [ text "Transacciones para saldar" ]
+                    , div [ class "mb-4" ]
+                        (preview.transaccionesParaSaldar
+                            |> List.map (viewTransaccionPreview grupo preview.moneda)
+                        )
+                    , Bs.btn Bs.Primary
+                        [ onClick (CongelarConsolidado preview.cotizaciones)
+                        , disabled model.congelando
+                        ]
+                        [ text "Congelar con estas cotizaciones" ]
+                    , div [ class "text-muted small mt-2" ]
+                        [ text "Congelar fija esta liquidación para todo el grupo. No se podrán agregar, editar ni eliminar pagos mientras esté congelado." ]
+                    ]
+        ]
+
+
+viewTransaccionPreview : GrupoLike g -> Moneda -> Api.Transaccion -> Html Msg
+viewTransaccionPreview grupo moneda transaccion =
+    div
+        [ style "display" "grid"
+        , style "grid-template-columns" "1fr auto 1fr"
+        , style "align-items" "center"
+        , style "margin-bottom" "0.5rem"
+        ]
+        [ div [ class "text-end" ]
+            [ div [] [ text (lookupNombreParticipante grupo transaccion.from) ]
+            , div [ class "text-danger small" ]
+                [ text (Moneda.simbolo moneda moneda ++ " " ++ Monto.toString transaccion.monto) ]
+            ]
+        , i [ class "bi bi-arrow-right", style "margin" "0 0.75rem" ] []
+        , span [] [ text (lookupNombreParticipante grupo transaccion.to) ]
+        ]
 
 
 {-| Un neto mostrado como delta: el símbolo de la moneda apagado (para que no
@@ -263,13 +498,13 @@ viewMontoDelta simbolo monto =
         ]
 
 
-viewMonedaTabs : Maybe String -> Api.PorMoneda (Netos Api.Monto) -> List Moneda -> Moneda -> Moneda -> Html Msg
-viewMonedaTabs userId netosPorMoneda monedas monedaPorDefecto monedaSeleccionada =
+viewMonedaTabs : Maybe String -> Api.PorMoneda (Netos Api.Monto) -> List Moneda -> Moneda -> Moneda -> Bool -> Bool -> Html Msg
+viewMonedaTabs userId netosPorMoneda monedas monedaPorDefecto monedaSeleccionada conConsolidar consolidarActivo =
     let
         tab m =
             let
                 active =
-                    m == monedaSeleccionada
+                    not consolidarActivo && m == monedaSeleccionada
 
                 netoUsuario : Maybe Api.Monto
                 netoUsuario =
@@ -309,7 +544,23 @@ viewMonedaTabs userId netosPorMoneda monedas monedaPorDefecto monedaSeleccionada
     -- of wrapping.
     ul
         [ class "nav nav-tabs moneda-tabs" ]
-        (monedas |> List.map tab)
+        ((monedas |> List.map tab)
+            ++ (if conConsolidar then
+                    [ li [ class "nav-item" ]
+                        [ button
+                            [ type_ "button"
+                            , classList [ ( "nav-link", True ), ( "active", consolidarActivo ) ]
+                            , class "text-nowrap"
+                            , onClick AbrirConsolidar
+                            ]
+                            [ div [] [ i [ class "bi bi-arrow-left-right me-1" ] [], text "Consolidar" ] ]
+                        ]
+                    ]
+
+                else
+                    []
+               )
+        )
 
 
 viewUltimosPagosCard : Store -> Model -> ShallowGrupo -> Html Msg

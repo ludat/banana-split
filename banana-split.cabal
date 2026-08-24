@@ -88,9 +88,11 @@ library
   hs-source-dirs: src/core/
   exposed-modules:
     BananaSplit
+    BananaSplit.Consolidacion
     BananaSplit.Core
     BananaSplit.Deudas
     BananaSplit.Email
+    BananaSplit.Metricas
     BananaSplit.Monto
     BananaSplit.Moneda
     BananaSplit.Participante
@@ -181,8 +183,11 @@ test-suite spec
   hs-source-dirs: test
   main-is: Spec.hs
   other-modules:
+    BananaSplit.ConsolidacionSpec
     BananaSplit.DeudasSpec
+    BananaSplit.MetricasSpec
     BananaSplit.MonedaSpec
+    BananaSplit.Persistence.CotizacionesSpec
     BananaSplit.Persistence.GrupoSpec
     BananaSplit.Persistence.LoginAttemptsSpec
     BananaSplit.Persistence.PagosSpec
