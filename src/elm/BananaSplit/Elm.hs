@@ -46,7 +46,8 @@ generateElmFiles = do
             ETyCon (ETCon "Char") -> "String.fromChar"
             ETyApp (ETyCon (ETCon "Maybe")) v -> "(Maybe.map " <> defaultElmToString v <> " >> Maybe.withDefault \"\")"
             ETyCon (ETCon "ULID") -> ""
-            e -> panic $ show e
+            ETyCon (ETCon "Moneda") -> "(\\moneda -> Json.Decode.decodeValue Json.Decode.string (jsonEncMoneda moneda) |> Result.withDefault \"\")"
+            e -> panic $ "Missing elmToString for " <> show e
         , urlPrefix = Static "/api"
         }
     )
@@ -81,6 +82,8 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy ResumenGrupo)
     , DefineElm (Proxy :: Proxy (Netos Monto))
     , DefineElm (Proxy :: Proxy (PorMoneda (Netos Monto)))
+    , DefineElm (Proxy :: Proxy TasaDeCambio)
+    , DefineElm (Proxy :: Proxy ConsolidadoNetos)
     , DefineElm (Proxy :: Proxy Moneda)
     , DefineElm (Proxy :: Proxy ResumenPago)
     , DefineElm (Proxy :: Proxy ResumenNetos)

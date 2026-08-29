@@ -1,4 +1,4 @@
-module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshPago, refreshPagos, refreshRepartija, refreshResumen, setPago, update, updateRepartijaForFrontend)
+module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshPago, refreshPagos, refreshRepartija, refreshResumen, setGrupo, setPago, update, updateRepartijaForFrontend)
 
 import Dict
 import Effect exposing (Effect)
@@ -109,6 +109,11 @@ savePago pagoId pago store =
             store.pagos
                 |> Dict.insert pagoId pago
     }
+
+
+setGrupo : ULID -> ShallowGrupo -> Effect msg
+setGrupo grupoId grupo =
+    Effect.sendStoreMsg <| GrupoFetched grupoId (Success grupo)
 
 
 setPago : ULID -> Pago -> Effect msg

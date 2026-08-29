@@ -38,6 +38,7 @@ data BananaSplitDb f = BananaSplitDb
   , repartija_items :: f (TableEntity RepartijaItemT)
   , repartija_claims :: f (TableEntity RepartijaClaimT)
   , transacciones_congeladas :: f (TableEntity TransaccionCongeladaT)
+  , tasas_de_cambio :: f (TableEntity TasaDeCambioT)
   }
   deriving (Generic, Database be)
 
@@ -457,6 +458,29 @@ instance Table TransaccionCongeladaT where
   data PrimaryKey TransaccionCongeladaT f = TransaccionCongeladaId (Columnar f ULID)
     deriving (Generic, Beamable)
   primaryKey = TransaccionCongeladaId . (.id)
+
+data TasaDeCambioT f = TasaDeCambio
+  { id :: Columnar f ULID
+  , grupo :: PrimaryKey GrupoT f
+  , moneda_from :: Columnar f M.Moneda
+  , moneda_to :: Columnar f M.Moneda
+  , monto_from :: MontoT f
+  , monto_to :: MontoT f
+  }
+  deriving (Generic, Beamable)
+
+type TasaDeCambio = TasaDeCambioT Identity
+
+type TasaDeCambioId = PrimaryKey TasaDeCambioT Identity
+
+deriving instance Show TasaDeCambio
+
+deriving instance Show TasaDeCambioId
+
+instance Table TasaDeCambioT where
+  data PrimaryKey TasaDeCambioT f = TasaDeCambioId (Columnar f ULID)
+    deriving (Generic, Beamable)
+  primaryKey = TasaDeCambioId . (.id)
 
 instance HasSqlValueSyntax PgValueSyntax ULID where
   sqlValueSyntax = autoSqlValueSyntax

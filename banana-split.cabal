@@ -95,6 +95,7 @@ library
     BananaSplit.Moneda
     BananaSplit.Participante
     BananaSplit.Repartija
+    BananaSplit.TasaDeCambio
     BananaSplit.TestUtils
     BananaSplit.ULID
     BananaSplit.User
@@ -187,7 +188,9 @@ test-suite spec
     BananaSplit.Persistence.LoginAttemptsSpec
     BananaSplit.Persistence.PagosSpec
     BananaSplit.Persistence.SpecHook
+    BananaSplit.Persistence.TasasDeCambioSpec
     BananaSplit.RepartijaSpec
+    BananaSplit.TasaDeCambioSpec
     BananaSplitSpec
     Site.AuthSpec
     Site.Handler.GruposSpec

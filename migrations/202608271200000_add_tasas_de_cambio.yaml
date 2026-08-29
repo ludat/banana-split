@@ -1,0 +1,45 @@
+operations:
+  - create_table:
+      name: tasas_de_cambio
+      constraints:
+        - name: tasas_de_cambio__grupo__monedas__unique
+          type: unique
+          columns:
+            - grupo__id
+            - moneda_from
+            - moneda_to
+        # El COLLATE "C" compara por código, igual que 'normalizarTasa'; sin él
+        # el orden dependería del locale de la base y podrían diferir.
+        - name: tasas_de_cambio__par_ordenado
+          type: check
+          check: moneda_from COLLATE "C" < moneda_to COLLATE "C"
+      columns:
+        - name: id
+          type: text
+          pk: true
+        - name: grupo__id
+          type: text
+          nullable: false
+          references:
+            table: grupos
+            column: id
+            name: fk_tasas_de_cambio_grupo__id
+            on_delete: CASCADE
+        - name: moneda_from
+          type: text
+          nullable: false
+        - name: moneda_to
+          type: text
+          nullable: false
+        - name: monto_from__lugares_despues_de_la_coma
+          type: int
+          nullable: false
+        - name: monto_from__valor
+          type: bigint
+          nullable: false
+        - name: monto_to__lugares_despues_de_la_coma
+          type: int
+          nullable: false
+        - name: monto_to__valor
+          type: bigint
+          nullable: false

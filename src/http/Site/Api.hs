@@ -64,6 +64,8 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Post '[JSON] ShallowGrupo
   , _routeGrupoUnfreeze ::
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] ShallowGrupo
+  , _routeGrupoTasasDeCambioPut ::
+      routes :- "grupo" :> Capture "id" ULID :> "tasas-de-cambio" :> Capture "moneda" Moneda :> ReqBody '[JSON] [TasaDeCambio] :> Put '[JSON] [TasaDeCambio]
   , _routeGrupoSaldarTransaccion ::
       routes :- "grupo" :> Capture "id" ULID :> "transacciones-congeladas" :> Capture "transaccionId" ULID :> "saldar" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
   , _routeReceiptImageParse ::
@@ -184,6 +186,8 @@ data ResumenGrupo = ResumenGrupo
   , cantidadPagosInvalidos :: Int
   , cantidadPagos :: Int
   , isFrozen :: Bool
+  , tasasDeCambio :: [TasaDeCambio]
+  , consolidado :: ConsolidadoNetos
   }
   deriving (Show, Eq, Generic)
 

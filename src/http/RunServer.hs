@@ -14,8 +14,8 @@ import Network.Wai (Request, rawPathInfo, requestMethod)
 import Network.Wai.Handler.Warp (Settings)
 import Network.Wai.Handler.Warp qualified as Warp
 import Protolude
-import System.Posix (Handler (..), installHandler, sigTERM)
 import System.IO
+import System.Posix (Handler (..), installHandler, sigTERM)
 
 import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.Receipts (ReceiptsReaderConfig (..))

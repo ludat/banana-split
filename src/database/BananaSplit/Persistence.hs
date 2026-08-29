@@ -33,8 +33,10 @@ module BananaSplit.Persistence (
   fetchPago,
   fetchRepartija,
   fetchShallowPagos,
+  fetchTasasDeCambio,
   fetchTransaccionesCongeladas,
   freezeGrupo,
+  guardarTasasDeCambio,
   savePago,
   saveRepartija,
   saveRepartijaClaim,
@@ -1120,6 +1122,56 @@ fetchTransaccionesCongeladas grupoId = do
             `M.enMoneda` tc.moneda
       )
     & mconcat
+
+fetchTasasDeCambio :: ULID -> Pg [M.TasaDeCambio]
+fetchTasasDeCambio grupoId = do
+  rows <- runSelectReturningList $ select $ do
+    tasa <-
+      all_ db.tasas_de_cambio
+        & orderBy_ (asc_ . (.id))
+    guard_ (tasa.grupo ==. GrupoId (val_ grupoId))
+    pure tasa
+  pure
+    $ rows
+    & fmap
+      ( \tasa ->
+          M.TasaDeCambio
+            { M.id = tasa.id
+            , M.monedaFrom = tasa.moneda_from
+            , M.monedaTo = tasa.moneda_to
+            , M.montoFrom = constructMonto tasa.monto_from
+            , M.montoTo = constructMonto tasa.monto_to
+            }
+      )
+
+guardarTasasDeCambio :: ULID -> M.Moneda -> [M.TasaDeCambio] -> Pg [M.TasaDeCambio]
+guardarTasasDeCambio grupoId moneda tasas = do
+  runDelete
+    $ delete
+      db.tasas_de_cambio
+      ( \tasa ->
+          (tasa.grupo ==. GrupoId (val_ grupoId))
+            &&. (tasa.moneda_from ==. val_ moneda ||. tasa.moneda_to ==. val_ moneda)
+      )
+
+  unless (null tasas) $ do
+    liftIO
+      ( forM tasas $ \tasa -> do
+          tasaId <- ULID.getULID
+          let normalizada = M.normalizarTasa tasa
+          pure
+            $ TasaDeCambio
+              { id = tasaId
+              , grupo = GrupoId grupoId
+              , moneda_from = normalizada.monedaFrom
+              , moneda_to = normalizada.monedaTo
+              , monto_from = deconstructMonto normalizada.montoFrom
+              , monto_to = deconstructMonto normalizada.montoTo
+              }
+      )
+      >>= (runInsert . insert db.tasas_de_cambio . insertValues)
+
+  fetchTasasDeCambio grupoId
 
 deleteTransaccionCongelada :: ULID -> Pg ()
 deleteTransaccionCongelada transaccionId = do

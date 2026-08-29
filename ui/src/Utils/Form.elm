@@ -57,8 +57,8 @@ errorTextForField field =
                     FormError.SmallerFloatThan _ ->
                         "Mas chico que"
 
-                    FormError.GreaterFloatThan _ ->
-                        "Mas grande que"
+                    FormError.GreaterFloatThan n ->
+                        "Tiene que ser mayor que " ++ String.fromFloat n
 
                     FormError.ShorterStringThan _ ->
                         "Mas corto que"

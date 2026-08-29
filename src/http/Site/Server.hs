@@ -57,6 +57,7 @@ serverT =
         , _routeRepartijaClaimDelete = handleRepartijaClaimDelete
         , _routeGrupoFreeze = handleFreezeGrupo
         , _routeGrupoUnfreeze = handleUnfreezeGrupo
+        , _routeGrupoTasasDeCambioPut = handleGuardarTasasDeCambio
         , _routeGrupoSaldarTransaccion = handleSaldarTransaccion
         , _routeReceiptImageParse = handleReceiptImageParse
         , _routeAuthRequestCode = handleRequestCode
