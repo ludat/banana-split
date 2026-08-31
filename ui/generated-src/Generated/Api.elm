@@ -346,29 +346,29 @@ jsonEncPorMoneda localEncoder_a val = (Json.Encode.list (\(t1,t2) -> Json.Encode
 
 type alias TasaDeCambio  =
    { id: ULID
-   , monedaFrom: Moneda
-   , monedaTo: Moneda
-   , montoFrom: Monto
-   , montoTo: Monto
+   , unaMoneda: Moneda
+   , otraMoneda: Moneda
+   , unMonto: Monto
+   , otroMonto: Monto
    }
 
 jsonDecTasaDeCambio : Json.Decode.Decoder ( TasaDeCambio )
 jsonDecTasaDeCambio =
-   Json.Decode.succeed (\pid pmonedaFrom pmonedaTo pmontoFrom pmontoTo -> {id = pid, monedaFrom = pmonedaFrom, monedaTo = pmonedaTo, montoFrom = pmontoFrom, montoTo = pmontoTo})
+   Json.Decode.succeed (\pid punaMoneda potraMoneda punMonto potroMonto -> {id = pid, unaMoneda = punaMoneda, otraMoneda = potraMoneda, unMonto = punMonto, otroMonto = potroMonto})
    |> required "id" (jsonDecULID)
-   |> required "monedaFrom" (jsonDecMoneda)
-   |> required "monedaTo" (jsonDecMoneda)
-   |> required "montoFrom" (jsonDecMonto)
-   |> required "montoTo" (jsonDecMonto)
+   |> required "unaMoneda" (jsonDecMoneda)
+   |> required "otraMoneda" (jsonDecMoneda)
+   |> required "unMonto" (jsonDecMonto)
+   |> required "otroMonto" (jsonDecMonto)
 
 jsonEncTasaDeCambio : TasaDeCambio -> Value
 jsonEncTasaDeCambio  val =
    Json.Encode.object
    [ ("id", jsonEncULID val.id)
-   , ("monedaFrom", jsonEncMoneda val.monedaFrom)
-   , ("monedaTo", jsonEncMoneda val.monedaTo)
-   , ("montoFrom", jsonEncMonto val.montoFrom)
-   , ("montoTo", jsonEncMonto val.montoTo)
+   , ("unaMoneda", jsonEncMoneda val.unaMoneda)
+   , ("otraMoneda", jsonEncMoneda val.otraMoneda)
+   , ("unMonto", jsonEncMonto val.unMonto)
+   , ("otroMonto", jsonEncMonto val.otroMonto)
    ]
 
 

@@ -462,10 +462,10 @@ instance Table TransaccionCongeladaT where
 data TasaDeCambioT f = TasaDeCambio
   { id :: Columnar f ULID
   , grupo :: PrimaryKey GrupoT f
-  , moneda_from :: Columnar f M.Moneda
-  , moneda_to :: Columnar f M.Moneda
-  , monto_from :: MontoT f
-  , monto_to :: MontoT f
+  , una_moneda :: Columnar f M.Moneda
+  , otra_moneda :: Columnar f M.Moneda
+  , un_monto :: MontoT f
+  , otro_monto :: MontoT f
   }
   deriving (Generic, Beamable)
 

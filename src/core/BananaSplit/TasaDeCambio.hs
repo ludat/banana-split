@@ -35,15 +35,19 @@ import BananaSplit.Monto (Monto (..), inMonto)
 import BananaSplit.ULID (ULID)
 import Preludat
 
--- | Una tasa como llega del formulario o como está guardada en la base: cinco
--- campos sueltos, sin ninguna garantía. Es el único formato que viaja en JSON,
--- porque es el que entiende el front.
+-- | Una tasa como llega del formulario o como está guardada en la base: dos
+-- monedas y cuánto de cada una, sin ninguna garantía. Es el único formato que
+-- viaja en JSON, porque es el que entiende el front.
+--
+-- Las monedas son "una" y "la otra" y no "desde" y "hasta" porque una tasa no
+-- tiene sentido: decir que 1 USD son 1000 ARS es exactamente lo mismo que decir
+-- que 1000 ARS son 1 USD. El sentido lo pone quien convierte, en 'factorEntre'.
 data TasaDeCambio = TasaDeCambio
   { id :: ULID
-  , monedaFrom :: Moneda
-  , monedaTo :: Moneda
-  , montoFrom :: Monto
-  , montoTo :: Monto
+  , unaMoneda :: Moneda
+  , otraMoneda :: Moneda
+  , unMonto :: Monto
+  , otroMonto :: Monto
   }
   deriving (Show, Eq, Generic)
 
@@ -99,13 +103,13 @@ cantidadDeTasas tabla = Map.size tabla.equivalencias
 
 equivalenciaCon :: Moneda -> TasaDeCambio -> Maybe (Moneda, Equivalencia)
 equivalenciaCon base tasa = do
-  guard $ tasa.monedaFrom /= tasa.monedaTo
-  guard $ tasa.montoFrom > 0 && tasa.montoTo > 0
-  case (tasa.monedaFrom == base, tasa.monedaTo == base) of
+  guard $ tasa.unaMoneda /= tasa.otraMoneda
+  guard $ tasa.unMonto > 0 && tasa.otroMonto > 0
+  case (tasa.unaMoneda == base, tasa.otraMoneda == base) of
     (True, _) ->
-      Just (tasa.monedaTo, Equivalencia{deLaOtra = tasa.montoTo, deLaBase = tasa.montoFrom})
+      Just (tasa.otraMoneda, Equivalencia{deLaOtra = tasa.otroMonto, deLaBase = tasa.unMonto})
     (_, True) ->
-      Just (tasa.monedaFrom, Equivalencia{deLaOtra = tasa.montoFrom, deLaBase = tasa.montoTo})
+      Just (tasa.unaMoneda, Equivalencia{deLaOtra = tasa.unMonto, deLaBase = tasa.otroMonto})
     _ -> Nothing
 
 -- | Por cuánto multiplicar un monto de esa moneda para expresarlo en la base de

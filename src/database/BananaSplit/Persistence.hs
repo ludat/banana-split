@@ -1138,26 +1138,30 @@ fetchTasasDeCambio grupoId = do
       ( \tasa ->
           M.TasaDeCambio
             { M.id = tasa.id
-            , M.monedaFrom = tasa.moneda_from
-            , M.monedaTo = tasa.moneda_to
-            , M.montoFrom = constructMonto tasa.monto_from
-            , M.montoTo = constructMonto tasa.monto_to
+            , M.unaMoneda = tasa.una_moneda
+            , M.otraMoneda = tasa.otra_moneda
+            , M.unMonto = constructMonto tasa.un_monto
+            , M.otroMonto = constructMonto tasa.otro_monto
             }
       )
 
--- | El par se guarda siempre en el orden del código de la moneda, que es lo que
--- pide el CHECK de la tabla. Comparamos por código y no por 'Ord' 'M.Moneda',
--- que se movería al agregar una moneda al medio del @data Moneda@ y
--- desordenaría en silencio lo que ya está guardado.
+-- | Deja primero la moneda que va antes por código, que es el orden en que se
+-- guarda el par y lo que pide el CHECK de la tabla. El @from@ y el @to@ existen
+-- únicamente en las columnas, para poder guardar en dos lugares un par que en
+-- el modelo no tiene sentido.
+--
+-- Comparamos por código y no por 'Ord' 'M.Moneda', que se movería al agregar
+-- una moneda al medio del @data Moneda@ y desordenaría en silencio lo que ya
+-- está guardado.
 normalizarTasa :: M.TasaDeCambio -> M.TasaDeCambio
 normalizarTasa tasa
-  | (show tasa.monedaFrom :: Text) <= show tasa.monedaTo = tasa
+  | (show tasa.unaMoneda :: Text) <= show tasa.otraMoneda = tasa
   | otherwise =
       tasa
-        { M.monedaFrom = tasa.monedaTo
-        , M.monedaTo = tasa.monedaFrom
-        , M.montoFrom = tasa.montoTo
-        , M.montoTo = tasa.montoFrom
+        { M.unaMoneda = tasa.otraMoneda
+        , M.otraMoneda = tasa.unaMoneda
+        , M.unMonto = tasa.otroMonto
+        , M.otroMonto = tasa.unMonto
         }
 
 -- | Reemplaza todas las tasas que involucran a esa moneda. Que las tasas tengan
@@ -1170,7 +1174,7 @@ guardarTasasDeCambio grupoId moneda tasas = do
       db.tasas_de_cambio
       ( \tasa ->
           (tasa.grupo ==. GrupoId (val_ grupoId))
-            &&. (tasa.moneda_from ==. val_ moneda ||. tasa.moneda_to ==. val_ moneda)
+            &&. (tasa.una_moneda ==. val_ moneda ||. tasa.otra_moneda ==. val_ moneda)
       )
 
   unless (null tasas) $ do
@@ -1182,10 +1186,10 @@ guardarTasasDeCambio grupoId moneda tasas = do
             $ TasaDeCambio
               { id = tasaId
               , grupo = GrupoId grupoId
-              , moneda_from = normalizada.monedaFrom
-              , moneda_to = normalizada.monedaTo
-              , monto_from = deconstructMonto normalizada.montoFrom
-              , monto_to = deconstructMonto normalizada.montoTo
+              , una_moneda = normalizada.unaMoneda
+              , otra_moneda = normalizada.otraMoneda
+              , un_monto = deconstructMonto normalizada.unMonto
+              , otro_monto = deconstructMonto normalizada.otroMonto
               }
       )
       >>= (runInsert . insert db.tasas_de_cambio . insertValues)

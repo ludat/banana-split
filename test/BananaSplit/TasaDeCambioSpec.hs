@@ -14,20 +14,11 @@ spec = do
     u1 = participante 1
     u2 = participante 2
 
-    usdArs =
-      TasaDeCambio
-        { id = nullUlid
-        , monedaFrom = USD
-        , monedaTo = ARS
-        , montoFrom = 1
-        , montoTo = 1000
-        }
+    usdArs = tasaEntre USD 1 ARS 1000
 
     -- La tabla se arma para la moneda a la que se convierte, así que el destino
-    -- es también su base. Las tasas de estos casos son sanas para esa base.
-    tabla moneda tasas = tablaDeTasas moneda tasas
-
-    factor tasas desde hasta = factorEntre (tabla hasta tasas) desde & fmap unFactor
+    -- es también su base.
+    factor tasas desde hasta = factorEntre (tablaDeTasas hasta tasas) desde & fmap unFactor
 
   describe "factorEntre" $ do
     it "es 1 entre una moneda y sí misma, aunque no haya ninguna tasa" $
@@ -43,31 +34,30 @@ spec = do
       factor [usdArs] EUR USD `shouldBe` Nothing
 
     it "sirve una tasa que no arranca en 1" $ do
-      let clpEur = TasaDeCambio{id = nullUlid, monedaFrom = CLP, monedaTo = EUR, montoFrom = 1000, montoTo = 1}
+      let clpEur = tasaEntre CLP 1000 EUR 1
       factor [clpEur] CLP EUR `shouldBe` Just (1 / 1000)
 
   -- Guardar acepta las tasas si entraron todas, así que lo que la tabla
   -- descarta es lo que el PUT rechaza.
   describe "cantidadDeTasas" $ do
     it "usa una tasa por cada moneda que no es la base" $ do
-      let eurArs = TasaDeCambio{id = nullUlid, monedaFrom = EUR, monedaTo = ARS, montoFrom = 1, montoTo = 2000}
-      cantidadDeTasas (tabla ARS [usdArs, eurArs]) `shouldBe` 2
+      let eurArs = tasaEntre EUR 1 ARS 2000
+      cantidadDeTasas (tablaDeTasas ARS [usdArs, eurArs]) `shouldBe` 2
 
     it "descarta la tasa que no involucra a la base" $ do
-      let usdEur = TasaDeCambio{id = nullUlid, monedaFrom = USD, monedaTo = EUR, montoFrom = 1, montoTo = 1}
-      cantidadDeTasas (tabla ARS [usdEur]) `shouldBe` 0
+      let usdEur = tasaEntre USD 1 EUR 1
+      cantidadDeTasas (tablaDeTasas ARS [usdEur]) `shouldBe` 0
 
     it "descarta la tasa entre una moneda y sí misma" $ do
-      let arsArs = TasaDeCambio{id = nullUlid, monedaFrom = ARS, monedaTo = ARS, montoFrom = 1, montoTo = 1}
-      cantidadDeTasas (tabla ARS [arsArs]) `shouldBe` 0
+      let arsArs = tasaEntre ARS 1 ARS 1
+      cantidadDeTasas (tablaDeTasas ARS [arsArs]) `shouldBe` 0
 
     it "descarta la tasa con un lado en cero" $ do
-      let rota = usdArs{montoFrom = 0}
-      cantidadDeTasas (tabla ARS [rota]) `shouldBe` 0
+      let rota = tasaEntre USD 0 ARS 1000
+      cantidadDeTasas (tablaDeTasas ARS [rota]) `shouldBe` 0
 
-    it "se queda con una sola cuando el par viene repetido al revés" $ do
-      let arsUsd = usdArs{monedaFrom = ARS, monedaTo = USD, montoFrom = 1000, montoTo = 1}
-      cantidadDeTasas (tabla ARS [usdArs, arsUsd]) `shouldBe` 1
+    it "se queda con una sola cuando el par viene repetido al revés" $
+      cantidadDeTasas (tablaDeTasas ARS [usdArs, tasaEntre ARS 1000 USD 1]) `shouldBe` 1
 
   describe "consolidarNetos" $ do
     it "suma las otras monedas convertidas a la moneda destino" $ do
@@ -76,7 +66,7 @@ spec = do
               `enMoneda` ARS
               <> netos [(u1, -1), (u2, 1)]
               `enMoneda` USD
-          consolidado = consolidarNetos (tabla ARS [usdArs]) porMoneda
+          consolidado = consolidarNetos (tablaDeTasas ARS [usdArs]) porMoneda
 
       consolidado.netos `shouldBe` netos [(u1, -900), (u2, 900)]
       consolidado.monedasConvertidas `shouldMatchList` [ARS, USD]
@@ -88,17 +78,17 @@ spec = do
               `enMoneda` ARS
               <> netos [(u1, -1), (u2, 1)]
               `enMoneda` EUR
-          consolidado = consolidarNetos (tabla ARS [usdArs]) porMoneda
+          consolidado = consolidarNetos (tablaDeTasas ARS [usdArs]) porMoneda
 
       consolidado.netos `shouldBe` netos [(u1, 100), (u2, -100)]
       consolidado.monedasConvertidas `shouldBe` [ARS]
       consolidado.monedasSinTasa `shouldBe` [EUR]
 
     it "reparte el redondeo entre los acreedores en vez de amontonarlo en uno" $ do
-      let tasa = TasaDeCambio{id = nullUlid, monedaFrom = USD, monedaTo = ARS, montoFrom = 3, montoTo = 10}
+      let tasa = tasaEntre USD 3 ARS 10
           u3 = participante 3
           porMoneda = netos [(u1, 1), (u2, 1), (u3, -2)] `enMoneda` USD
-          consolidado = consolidarNetos (tabla ARS [tasa]) porMoneda
+          consolidado = consolidarNetos (tablaDeTasas ARS [tasa]) porMoneda
 
       -- Los 2 USD que se deben son 6.67 ARS: el deudor se queda con el total
       -- convertido exacto y el centavo que sobra cae en un solo acreedor.
@@ -108,15 +98,15 @@ spec = do
     it "deja afuera a los participantes que no deben ni les deben" $ do
       let u3 = participante 3
           porMoneda = netos [(u1, 1), (u2, -1), (u3, 0)] `enMoneda` USD
-          consolidado = consolidarNetos (tabla ARS [usdArs]) porMoneda
+          consolidado = consolidarNetos (tablaDeTasas ARS [usdArs]) porMoneda
 
       consolidado.netos `shouldBe` netos [(u1, 1000), (u2, -1000)]
 
     it "los netos convertidos siguen sumando cero aunque el redondeo no cierre" $ do
-      let tasa = TasaDeCambio{id = nullUlid, monedaFrom = USD, monedaTo = ARS, montoFrom = 3, montoTo = 10}
+      let tasa = tasaEntre USD 3 ARS 10
           u3 = participante 3
           porMoneda = netos [(u1, 1), (u2, 1), (u3, -2)] `enMoneda` USD
-          consolidado = consolidarNetos (tabla ARS [tasa]) porMoneda
+          consolidado = consolidarNetos (tablaDeTasas ARS [tasa]) porMoneda
 
       totalNetos consolidado.netos `shouldBe` 0
 
@@ -127,9 +117,9 @@ spec = do
               <> netos [(u1, -3), (u2, 3)]
               `enMoneda` USD
 
-      (consolidarNetos (tabla ARS [usdArs]) porMoneda).netos
+      (consolidarNetos (tablaDeTasas ARS [usdArs]) porMoneda).netos
         `shouldBe` netos [(u1, -2000), (u2, 2000)]
-      (consolidarNetos (tabla USD [usdArs]) porMoneda).netos
+      (consolidarNetos (tablaDeTasas USD [usdArs]) porMoneda).netos
         `shouldBe` netos [(u1, -2), (u2, 2)]
 
-      (consolidarNetos (tabla USD [usdArs]) porMoneda).monedasSinTasa `shouldBe` []
+      (consolidarNetos (tablaDeTasas USD [usdArs]) porMoneda).monedasSinTasa `shouldBe` []

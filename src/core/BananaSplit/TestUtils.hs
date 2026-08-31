@@ -8,6 +8,7 @@ module BananaSplit.TestUtils (
   participante,
   getNetos,
   fatalError,
+  tasaEntre,
 ) where
 
 import Data.Maybe (fromJust)
@@ -20,6 +21,18 @@ fatalError msg e = fatalErrorMessage e == msg
 
 participante :: Integer -> ParticipanteId
 participante = ParticipanteId . fakeUlid
+
+-- | Una tasa sin id: @tasaEntre USD 1 ARS 1000@ es "1 USD son 1000 ARS", que
+-- es lo mismo que @tasaEntre ARS 1000 USD 1@.
+tasaEntre :: Moneda -> Monto -> Moneda -> Monto -> TasaDeCambio
+tasaEntre una monto otra otroDeLosMontos =
+  TasaDeCambio
+    { id = nullUlid
+    , unaMoneda = una
+    , otraMoneda = otra
+    , unMonto = monto
+    , otroMonto = otroDeLosMontos
+    }
 
 fakeUlid :: Integer -> ULID
 fakeUlid integer =

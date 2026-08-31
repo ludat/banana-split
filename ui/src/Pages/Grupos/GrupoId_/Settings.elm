@@ -325,7 +325,7 @@ update store msg model =
                     "tasas." ++ String.fromInt indice
 
                 vaciarFila form =
-                    [ ( ".montoFrom", "1" ), ( ".montoTo", "" ) ]
+                    [ ( ".unMonto", "1" ), ( ".otroMonto", "" ) ]
                         |> List.foldl
                             (\( campo, valor ) acc ->
                                 Form.update validateTasas
@@ -469,7 +469,7 @@ monedasDelGrupo : ContextoDeTasas -> List Moneda
 monedasDelGrupo contexto =
     contexto.monedaPorDefecto
         :: contexto.conPagos
-        ++ (contexto.guardadas |> List.concatMap (\tasa -> [ tasa.monedaFrom, tasa.monedaTo ]))
+        ++ (contexto.guardadas |> List.concatMap (\tasa -> [ tasa.unaMoneda, tasa.otraMoneda ]))
         |> List.foldl
             (\moneda acc ->
                 if List.member moneda acc then
@@ -489,8 +489,8 @@ monedasAConvertir contexto =
 
 mismoPar : Moneda -> Moneda -> TasaDeCambio -> Bool
 mismoPar una otra tasa =
-    (tasa.monedaFrom == una && tasa.monedaTo == otra)
-        || (tasa.monedaFrom == otra && tasa.monedaTo == una)
+    (tasa.unaMoneda == una && tasa.otraMoneda == otra)
+        || (tasa.unaMoneda == otra && tasa.otraMoneda == una)
 
 
 tasaDeMoneda : ContextoDeTasas -> Moneda -> Maybe TasaDeCambio
@@ -500,15 +500,15 @@ tasaDeMoneda contexto moneda =
         |> List.head
         |> Maybe.map
             (\tasa ->
-                if tasa.monedaFrom == moneda then
+                if tasa.unaMoneda == moneda then
                     tasa
 
                 else
                     { tasa
-                        | monedaFrom = tasa.monedaTo
-                        , monedaTo = tasa.monedaFrom
-                        , montoFrom = tasa.montoTo
-                        , montoTo = tasa.montoFrom
+                        | unaMoneda = tasa.otraMoneda
+                        , otraMoneda = tasa.unaMoneda
+                        , unMonto = tasa.otroMonto
+                        , otroMonto = tasa.unMonto
                     }
             )
 
@@ -532,24 +532,24 @@ validateTasas =
 validateTasa : Validation CustomFormError (Maybe TasaDeCambio)
 validateTasa =
     V.succeed
-        (\tasaId monedaFrom monedaTo montoFrom montoTo ->
+        (\tasaId unaMoneda otraMoneda unMonto otroMonto ->
             Maybe.map2
                 (\desde hasta ->
                     { id = tasaId
-                    , monedaFrom = monedaFrom
-                    , monedaTo = monedaTo
-                    , montoFrom = desde
-                    , montoTo = hasta
+                    , unaMoneda = unaMoneda
+                    , otraMoneda = otraMoneda
+                    , unMonto = desde
+                    , otroMonto = hasta
                     }
                 )
-                montoFrom
-                montoTo
+                unMonto
+                otroMonto
         )
         |> V.andMap (V.field "id" V.string)
-        |> V.andMap (V.field "monedaFrom" Moneda.validate)
-        |> V.andMap (V.field "monedaTo" Moneda.validate)
-        |> V.andMap (V.field "montoFrom" validateMontoDeTasa)
-        |> V.andMap (V.field "montoTo" validateMontoDeTasa)
+        |> V.andMap (V.field "unaMoneda" Moneda.validate)
+        |> V.andMap (V.field "otraMoneda" Moneda.validate)
+        |> V.andMap (V.field "unMonto" validateMontoDeTasa)
+        |> V.andMap (V.field "otroMonto" validateMontoDeTasa)
 
 
 validateMontoDeTasa : Validation CustomFormError (Maybe Monto)
@@ -570,10 +570,10 @@ validateMontoDeTasa =
 
 type alias FilaDeTasa =
     { id : ULID
-    , monedaFrom : Moneda
-    , monedaTo : Moneda
-    , montoFrom : String
-    , montoTo : String
+    , unaMoneda : Moneda
+    , otraMoneda : Moneda
+    , unMonto : String
+    , otroMonto : String
     }
 
 
@@ -598,18 +598,18 @@ filaDeMoneda contexto moneda =
     case tasaDeMoneda contexto moneda of
         Just tasa ->
             { id = tasa.id
-            , monedaFrom = tasa.monedaFrom
-            , monedaTo = tasa.monedaTo
-            , montoFrom = Monto.toRawString tasa.montoFrom
-            , montoTo = Monto.toRawString tasa.montoTo
+            , unaMoneda = tasa.unaMoneda
+            , otraMoneda = tasa.otraMoneda
+            , unMonto = Monto.toRawString tasa.unMonto
+            , otroMonto = Monto.toRawString tasa.otroMonto
             }
 
         Nothing ->
             { id = Utils.Ulid.emptyUlid
-            , monedaFrom = moneda
-            , monedaTo = contexto.monedaPorDefecto
-            , montoFrom = "1"
-            , montoTo = ""
+            , unaMoneda = moneda
+            , otraMoneda = contexto.monedaPorDefecto
+            , unMonto = "1"
+            , otroMonto = ""
             }
 
 
@@ -617,10 +617,10 @@ filaAFormGroup : FilaDeTasa -> Form.Field.Field
 filaAFormGroup fila =
     Form.Field.group
         [ Form.setString "id" fila.id
-        , Form.setString "monedaFrom" (Moneda.toString fila.monedaFrom)
-        , Form.setString "monedaTo" (Moneda.toString fila.monedaTo)
-        , Form.setString "montoFrom" fila.montoFrom
-        , Form.setString "montoTo" fila.montoTo
+        , Form.setString "unaMoneda" (Moneda.toString fila.unaMoneda)
+        , Form.setString "otraMoneda" (Moneda.toString fila.otraMoneda)
+        , Form.setString "unMonto" fila.unMonto
+        , Form.setString "otroMonto" fila.otroMonto
         ]
 
 
@@ -775,13 +775,13 @@ viewTasaGuardada contexto moneda =
 
 tasaEnTexto : TasaDeCambio -> String
 tasaEnTexto tasa =
-    Monto.toString tasa.montoFrom
+    Monto.toString tasa.unMonto
         ++ " "
-        ++ Moneda.simboloUnico tasa.monedaFrom
+        ++ Moneda.simboloUnico tasa.unaMoneda
         ++ " = "
-        ++ Monto.toString tasa.montoTo
+        ++ Monto.toString tasa.otroMonto
         ++ " "
-        ++ Moneda.simboloUnico tasa.monedaTo
+        ++ Moneda.simboloUnico tasa.otraMoneda
 
 
 viewTasasEditando : Form CustomFormError (List (Maybe TasaDeCambio)) -> Html Msg
@@ -819,10 +819,10 @@ viewTasaRow form indice =
     in
     div [ class "row g-2 align-items-start mb-2" ]
         [ div [ class "col" ]
-            [ Html.map TasasForm <| viewLadoDeTasa form prefix "montoFrom" (monedaDe "monedaFrom") ]
+            [ Html.map TasasForm <| viewLadoDeTasa form prefix "unMonto" (monedaDe "unaMoneda") ]
         , div [ class "col-auto fw-bold pt-2" ] [ text "=" ]
         , div [ class "col" ]
-            [ Html.map TasasForm <| viewLadoDeTasa form prefix "montoTo" (monedaDe "monedaTo") ]
+            [ Html.map TasasForm <| viewLadoDeTasa form prefix "otroMonto" (monedaDe "otraMoneda") ]
         , div [ class "col-auto" ]
             [ button
                 [ type_ "button"
