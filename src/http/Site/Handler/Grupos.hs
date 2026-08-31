@@ -71,7 +71,7 @@ handleGetNetos grupoId = do
   let netos = calcularNetosTotales grupo
 
   tasasDeCambio <- runBeam $ fetchTasasDeCambio grupoId
-  let consolidado = consolidarNetos shallowGrupo.monedaPorDefecto tasasDeCambio netos
+  let consolidado = consolidarNetos (tablaDeTasas shallowGrupo.monedaPorDefecto tasasDeCambio) netos
 
   if shallowGrupo.isFrozen
     then do
@@ -181,8 +181,11 @@ handleGuardarTasasDeCambio grupoId moneda tasas = do
     runBeam (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
-  tasasValidas <-
-    validarTasas moneda tasas
-      & either (throwJsonError err400) pure
+  -- La tabla usa una tasa por moneda y descarta la que no le sirve a 'moneda':
+  -- la ajena, la de una moneda consigo misma, la que tiene un lado en cero y la
+  -- repetida. Si sobró alguna es que algo de eso pasó; cuál no lo decimos
+  -- porque el front no llega a ver el cuerpo del 400.
+  unless (cantidadDeTasas (tablaDeTasas moneda tasas) == length tasas) $
+    throwJsonError err400 "Alguna de las tasas de cambio no es válida"
 
-  runBeam $ guardarTasasDeCambio grupoId moneda tasasValidas
+  runBeam $ guardarTasasDeCambio grupoId moneda tasas

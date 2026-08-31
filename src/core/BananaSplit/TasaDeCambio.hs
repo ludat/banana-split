@@ -3,25 +3,41 @@
 {-# LANGUAGE NoFieldSelectors #-}
 
 module BananaSplit.TasaDeCambio (
-  ConsolidadoNetos (..),
+  -- * Lo que cruza el borde (JSON, Elm, base de datos)
   TasaDeCambio (..),
-  consolidarNetos,
-  convertirMonto,
+
+  -- * Llevar todo a una sola moneda
+  TablaDeTasas,
+  tablaDeTasas,
+  cantidadDeTasas,
+  Factor,
+  unFactor,
   factorEntre,
-  normalizarTasa,
-  validarTasas,
+  convertirMonto,
+
+  -- * Los netos del grupo en la moneda de la tabla
+  ConsolidadoNetos (..),
+  consolidarNetos,
 ) where
 
 import Data.Decimal qualified as Decimal
 import Data.Map.Strict qualified as Map
 import Elm.Derive qualified as Elm
 
-import BananaSplit.Deudas (Netos (..), totalNetos)
+import BananaSplit.Deudas (
+  Netos,
+  distribuirEntrePonderados,
+  filterNetos,
+  totalNetos,
+ )
 import BananaSplit.Moneda (Moneda, PorMoneda (..))
 import BananaSplit.Monto (Monto (..), inMonto)
 import BananaSplit.ULID (ULID)
 import Preludat
 
+-- | Una tasa como llega del formulario o como está guardada en la base: cinco
+-- campos sueltos, sin ninguna garantía. Es el único formato que viaja en JSON,
+-- porque es el que entiende el front.
 data TasaDeCambio = TasaDeCambio
   { id :: ULID
   , monedaFrom :: Moneda
@@ -39,87 +55,115 @@ data ConsolidadoNetos = ConsolidadoNetos
   }
   deriving (Show, Eq, Generic)
 
-factorEntre :: [TasaDeCambio] -> Moneda -> Moneda -> Maybe Rational
-factorEntre tasas desde hasta
-  | desde == hasta = Just 1
-  | otherwise =
-      tasas
-        & mapMaybe (factorDeTasa desde hasta)
-        & head
+newtype Factor = Factor Rational
+  deriving (Show, Eq, Ord)
 
-factorDeTasa :: Moneda -> Moneda -> TasaDeCambio -> Maybe Rational
-factorDeTasa desde hasta tasa
-  | desdeUno == 0 || hastaUno == 0 = Nothing
-  | tasa.monedaFrom == desde && tasa.monedaTo == hasta = Just $ hastaUno / desdeUno
-  | tasa.monedaFrom == hasta && tasa.monedaTo == desde = Just $ desdeUno / hastaUno
-  | otherwise = Nothing
-  where
-    desdeUno = toRational $ inMonto tasa.montoFrom
-    hastaUno = toRational $ inMonto tasa.montoTo
+instance Semigroup Factor where
+  (<>) :: Factor -> Factor -> Factor
+  Factor uno <> Factor otro = Factor $ uno * otro
 
-validarTasas :: Moneda -> [TasaDeCambio] -> Either Text [TasaDeCambio]
-validarTasas moneda tasas
-  | any (\tasa -> tasa.monedaFrom /= moneda && tasa.monedaTo /= moneda) tasas =
-      Left "Todas las tasas tienen que involucrar a la moneda que se está guardando"
-  | any (\tasa -> tasa.monedaFrom == tasa.monedaTo) tasas =
-      Left "Una tasa de cambio tiene que ser entre dos monedas distintas"
-  | any (\tasa -> inMonto tasa.montoFrom <= 0 || inMonto tasa.montoTo <= 0) tasas =
-      Left "Los montos de una tasa de cambio tienen que ser mayores a cero"
-  | length (ordNub pares) /= length pares =
-      Left "Hay más de una tasa de cambio para el mismo par de monedas"
-  | otherwise = Right tasas
-  where
-    pares = tasas & fmap (\tasa -> sort [tasa.monedaFrom, tasa.monedaTo])
+instance Monoid Factor where
+  mempty :: Factor
+  mempty = Factor 1
 
--- | El orden sale del código de la moneda y no de 'Ord' 'Moneda', que se
--- movería al agregar una moneda al medio del @data Moneda@ y desordenaría en
--- silencio lo que ya está guardado. La tabla tiene un CHECK con el mismo orden.
-normalizarTasa :: TasaDeCambio -> TasaDeCambio
-normalizarTasa tasa
-  | (show tasa.monedaFrom :: Text) <= show tasa.monedaTo = tasa
-  | otherwise =
-      tasa
-        { monedaFrom = tasa.monedaTo
-        , monedaTo = tasa.monedaFrom
-        , montoFrom = tasa.montoTo
-        , montoTo = tasa.montoFrom
-        }
+unFactor :: Factor -> Rational
+unFactor (Factor factor) = factor
 
-convertirMonto :: Rational -> Monto -> Monto
+data TablaDeTasas = TablaDeTasas
+  { base :: Moneda
+  , equivalencias :: Map Moneda Equivalencia
+  }
+  deriving (Show, Eq)
+
+data Equivalencia = Equivalencia
+  { deLaOtra :: Monto
+  , deLaBase :: Monto
+  }
+  deriving (Show, Eq)
+
+tablaDeTasas :: Moneda -> [TasaDeCambio] -> TablaDeTasas
+tablaDeTasas base tasas =
+  TablaDeTasas
+    { base = base
+    , equivalencias =
+        tasas
+          & mapMaybe (equivalenciaCon base)
+          & Map.fromList
+    }
+
+-- | Cuántas tasas terminó usando la tabla: una por cada moneda que no es la
+-- base. Como la que no le sirve no deja rastro, comparar contra el largo de la
+-- lista es lo que dice si entraron todas.
+cantidadDeTasas :: TablaDeTasas -> Int
+cantidadDeTasas tabla = Map.size tabla.equivalencias
+
+equivalenciaCon :: Moneda -> TasaDeCambio -> Maybe (Moneda, Equivalencia)
+equivalenciaCon base tasa = do
+  guard $ tasa.monedaFrom /= tasa.monedaTo
+  guard $ tasa.montoFrom > 0 && tasa.montoTo > 0
+  case (tasa.monedaFrom == base, tasa.monedaTo == base) of
+    (True, _) ->
+      Just (tasa.monedaTo, Equivalencia{deLaOtra = tasa.montoTo, deLaBase = tasa.montoFrom})
+    (_, True) ->
+      Just (tasa.monedaFrom, Equivalencia{deLaOtra = tasa.montoFrom, deLaBase = tasa.montoTo})
+    _ -> Nothing
+
+-- | Por cuánto multiplicar un monto de esa moneda para expresarlo en la base de
+-- la tabla.
+factorEntre :: TablaDeTasas -> Moneda -> Maybe Factor
+factorEntre tabla desde
+  | desde == tabla.base = Just mempty
+  | otherwise = do
+      equivalencia <- Map.lookup desde tabla.equivalencias
+      pure
+        $ Factor
+        $ toRational (inMonto equivalencia.deLaBase)
+        / toRational (inMonto equivalencia.deLaOtra)
+
+convertirMonto :: Factor -> Monto -> Monto
 convertirMonto factor monto =
-  Monto $ Decimal.realFracToDecimal 2 (toRational (inMonto monto) * factor)
+  Monto $ Decimal.realFracToDecimal 2 (toRational (inMonto monto) * unFactor factor)
 
-consolidarNetos :: Moneda -> [TasaDeCambio] -> PorMoneda (Netos Monto) -> ConsolidadoNetos
-consolidarNetos monedaDestino tasas (PorMoneda netosPorMoneda) =
-  let convertidos =
+-- | Qué pasó con los netos de una moneda al llevarlos a la moneda destino.
+data ConversionDeMoneda
+  = Convertida Moneda (Netos Monto)
+  | SinTasa Moneda
+
+consolidarNetos :: TablaDeTasas -> PorMoneda (Netos Monto) -> ConsolidadoNetos
+consolidarNetos tabla (PorMoneda netosPorMoneda) =
+  let conversiones =
         netosPorMoneda
           & Map.toList
           & fmap
             ( \(moneda, netos) ->
-                ( moneda
-                , factorEntre tasas moneda monedaDestino
-                    & fmap (\factor -> balancear $ fmap (convertirMonto factor) netos)
-                )
+                case factorEntre tabla moneda of
+                  Nothing -> SinTasa moneda
+                  Just factor -> Convertida moneda $ convertirNetos factor netos
             )
   in ConsolidadoNetos
-       { moneda = monedaDestino
-       , netos = convertidos & mapMaybe snd & mconcat
-       , monedasConvertidas = convertidos & filter (isJust . snd) & fmap fst
-       , monedasSinTasa = convertidos & filter (isNothing . snd) & fmap fst
+       { moneda = tabla.base
+       , netos = foldMap (\case Convertida _ netos -> netos; SinTasa _ -> mempty) conversiones
+       , monedasConvertidas = [moneda | Convertida moneda _ <- conversiones]
+       , monedasSinTasa = [moneda | SinTasa moneda <- conversiones]
        }
 
--- | Redondear cada neto por separado los deja de sumar cero, y 'minimizeTransactions'
--- explota con netos que no cierran.
-balancear :: Netos Monto -> Netos Monto
-balancear netos@(Netos netosMap)
-  | residuo == 0 = netos
-  | otherwise =
-      case netosMap & Map.toList & sortOn (Down . abs . snd) & head of
-        Nothing -> netos
-        Just (participanteId, _) ->
-          Netos $ Map.adjust (subtract residuo) participanteId netosMap
+convertirNetos :: Factor -> Netos Monto -> Netos Monto
+convertirNetos factor netos =
+  let
+    acreedores = filterNetos (> 0) netos
+    deudores = fmap negate $ filterNetos (< 0) netos
+
+    totalConvertido = convertirMonto factor (totalNetos acreedores)
+  in
+    repartirEntre totalConvertido acreedores
+      <> (negate <$> repartirEntre totalConvertido deudores)
   where
-    residuo = totalNetos netos
+    repartirEntre total lado
+      | totalNetos lado == 0 = mempty
+      | otherwise =
+          lado
+            & fmap inMonto
+            & distribuirEntrePonderados total
 
 Elm.deriveBoth Elm.defaultOptions ''TasaDeCambio
 Elm.deriveBoth Elm.defaultOptions ''ConsolidadoNetos

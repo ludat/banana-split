@@ -6,8 +6,10 @@
 module BananaSplit.Deudas (
   calcularNetosRepartija,
   Distribucion (..),
+  distribuirEntrePonderados,
   DistribucionPartes (..),
   ErrorResumen (..),
+  filterNetos,
   getNetosResumen,
   HasResumen (..),
   minimizeTransactions,

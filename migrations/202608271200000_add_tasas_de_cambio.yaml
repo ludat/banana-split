@@ -8,11 +8,14 @@ operations:
             - grupo__id
             - moneda_from
             - moneda_to
-        # El COLLATE "C" compara por código, igual que 'normalizarTasa'; sin él
-        # el orden dependería del locale de la base y podrían diferir.
+        # El COLLATE "C" compara por código sin él orden dependería del
+        # locale de la base y podrían diferir.
         - name: tasas_de_cambio__par_ordenado
           type: check
           check: moneda_from COLLATE "C" < moneda_to COLLATE "C"
+        - name: tasas_de_cambio__montos_positivos
+          type: check
+          check: monto_from__valor > 0 AND monto_to__valor > 0
       columns:
         - name: id
           type: text

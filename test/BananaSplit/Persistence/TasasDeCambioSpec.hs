@@ -21,13 +21,34 @@ spec = do
     usdEur = TasaDeCambio{id = nullUlid, monedaFrom = USD, monedaTo = EUR, montoFrom = 1, montoTo = 1}
 
     sinId tasa = (tasa.monedaFrom, tasa.monedaTo, tasa.montoFrom, tasa.montoTo)
+
+    guardar = guardarTasasDeCambio
     comoSeGuarda = sinId . normalizarTasa
+
+  describe "normalizarTasa" $ do
+    it "escribe el par en el orden del código, venga como venga" $ \_ -> do
+      let arsUsd = TasaDeCambio{id = nullUlid, monedaFrom = ARS, monedaTo = USD, montoFrom = 1350, montoTo = 1}
+      normalizarTasa usdArs `shouldBe` arsUsd
+      normalizarTasa arsUsd `shouldBe` arsUsd
+
+    it "manda cada par a una sola forma, se escriba como se escriba" $ \_ ->
+      forM_ [(una, otra) | una <- todasLasMonedas, otra <- todasLasMonedas, una /= otra] $ \(una, otra) -> do
+        let ida = usdArs{monedaFrom = una, monedaTo = otra, montoFrom = 2, montoTo = 3}
+            vuelta = usdArs{monedaFrom = otra, monedaTo = una, montoFrom = 3, montoTo = 2}
+        normalizarTasa ida `shouldBe` normalizarTasa vuelta
+
+    it "no le cambia el sentido a la tasa" $ \_ -> do
+      let factorDe base desde tasas =
+            factorEntre (tablaDeTasas base tasas) desde
+              & fmap unFactor
+      factorDe ARS USD [normalizarTasa usdArs] `shouldBe` factorDe ARS USD [usdArs]
+      factorDe USD ARS [normalizarTasa usdArs] `shouldBe` factorDe USD ARS [usdArs]
 
   describe "guardarTasasDeCambio" $ do
     it "guarda las tasas y les asigna un id" $ \(RunDb runDb) -> do
       grupo <- runDb $ createGrupo "Viaje" "alguien"
 
-      guardadas <- runDb $ guardarTasasDeCambio grupo.id ARS [usdArs, eurArs]
+      guardadas <- runDb $ guardar grupo.id ARS [usdArs, eurArs]
       (guardadas & fmap sinId) `shouldMatchList` ([usdArs, eurArs] & fmap comoSeGuarda)
       (guardadas & fmap (.id)) `shouldSatisfy` all (/= nullUlid)
 
@@ -39,8 +60,8 @@ spec = do
       otroGrupo <- runDb $ createGrupo "Otro viaje" "otre"
       let arsUsd = TasaDeCambio{id = nullUlid, monedaFrom = ARS, monedaTo = USD, montoFrom = 1350, montoTo = 1}
 
-      unas <- runDb $ guardarTasasDeCambio unGrupo.id ARS [usdArs]
-      otras <- runDb $ guardarTasasDeCambio otroGrupo.id ARS [arsUsd]
+      unas <- runDb $ guardar unGrupo.id ARS [usdArs]
+      otras <- runDb $ guardar otroGrupo.id ARS [arsUsd]
 
       (unas & fmap sinId) `shouldBe` (otras & fmap sinId)
 
@@ -64,8 +85,8 @@ spec = do
     it "borra las tasas de la moneda que no van en la lista" $ \(RunDb runDb) -> do
       grupo <- runDb $ createGrupo "Viaje" "alguien"
 
-      _ <- runDb $ guardarTasasDeCambio grupo.id ARS [usdArs, eurArs]
-      _ <- runDb $ guardarTasasDeCambio grupo.id ARS [eurArs]
+      _ <- runDb $ guardar grupo.id ARS [usdArs, eurArs]
+      _ <- runDb $ guardar grupo.id ARS [eurArs]
 
       leidas <- runDb $ fetchTasasDeCambio grupo.id
       (leidas & fmap sinId) `shouldBe` [comoSeGuarda eurArs]
@@ -73,26 +94,26 @@ spec = do
     it "borra todas las tasas de la moneda si la lista viene vacía" $ \(RunDb runDb) -> do
       grupo <- runDb $ createGrupo "Viaje" "alguien"
 
-      _ <- runDb $ guardarTasasDeCambio grupo.id ARS [usdArs, eurArs]
-      _ <- runDb $ guardarTasasDeCambio grupo.id ARS []
+      _ <- runDb $ guardar grupo.id ARS [usdArs, eurArs]
+      _ <- runDb $ guardar grupo.id ARS []
 
       runDb (fetchTasasDeCambio grupo.id) `shouldReturn` []
 
     it "no toca las tasas que no involucran a la moneda" $ \(RunDb runDb) -> do
       grupo <- runDb $ createGrupo "Viaje" "alguien"
 
-      _ <- runDb $ guardarTasasDeCambio grupo.id ARS [usdArs, eurArs]
-      _ <- runDb $ guardarTasasDeCambio grupo.id EUR [eurArs, usdEur]
+      _ <- runDb $ guardar grupo.id ARS [usdArs, eurArs]
+      _ <- runDb $ guardar grupo.id EUR [eurArs, usdEur]
 
       leidas <- runDb $ fetchTasasDeCambio grupo.id
       (leidas & fmap sinId)
-        `shouldMatchList` ([usdArs, eurArs, usdEur] & fmap comoSeGuarda)
+        `shouldMatchList` [comoSeGuarda usdArs, comoSeGuarda eurArs, comoSeGuarda usdEur]
 
     it "pisa la tasa del par" $ \(RunDb runDb) -> do
       grupo <- runDb $ createGrupo "Viaje" "alguien"
 
-      _ <- runDb $ guardarTasasDeCambio grupo.id ARS [usdArs]
-      [corregida] <- runDb $ guardarTasasDeCambio grupo.id ARS [usdArs{montoTo = 1400}]
+      _ <- runDb $ guardar grupo.id ARS [usdArs]
+      [corregida] <- runDb $ guardar grupo.id ARS [usdArs{montoTo = 1400}]
 
       sinId corregida `shouldBe` comoSeGuarda usdArs{montoTo = 1400}
 
@@ -103,8 +124,8 @@ spec = do
       grupo <- runDb $ createGrupo "Viaje" "alguien"
       let arsUsd = TasaDeCambio{id = nullUlid, monedaFrom = ARS, monedaTo = USD, montoFrom = 1400, montoTo = 1}
 
-      _ <- runDb $ guardarTasasDeCambio grupo.id ARS [usdArs]
-      leidas <- runDb $ guardarTasasDeCambio grupo.id ARS [arsUsd]
+      _ <- runDb $ guardar grupo.id ARS [usdArs]
+      leidas <- runDb $ guardar grupo.id ARS [arsUsd]
 
       (leidas & fmap sinId) `shouldBe` [comoSeGuarda arsUsd]
 
@@ -112,8 +133,8 @@ spec = do
       unGrupo <- runDb $ createGrupo "Viaje" "alguien"
       otroGrupo <- runDb $ createGrupo "Otro viaje" "otre"
 
-      _ <- runDb $ guardarTasasDeCambio otroGrupo.id ARS [usdArs, eurArs]
-      _ <- runDb $ guardarTasasDeCambio unGrupo.id ARS []
+      _ <- runDb $ guardar otroGrupo.id ARS [usdArs, eurArs]
+      _ <- runDb $ guardar unGrupo.id ARS []
 
       otras <- runDb $ fetchTasasDeCambio otroGrupo.id
       (otras & fmap sinId) `shouldMatchList` ([usdArs, eurArs] & fmap comoSeGuarda)

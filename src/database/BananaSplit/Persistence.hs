@@ -37,6 +37,7 @@ module BananaSplit.Persistence (
   fetchTransaccionesCongeladas,
   freezeGrupo,
   guardarTasasDeCambio,
+  normalizarTasa,
   savePago,
   saveRepartija,
   saveRepartijaClaim,
@@ -1144,6 +1145,24 @@ fetchTasasDeCambio grupoId = do
             }
       )
 
+-- | El par se guarda siempre en el orden del código de la moneda, que es lo que
+-- pide el CHECK de la tabla. Comparamos por código y no por 'Ord' 'M.Moneda',
+-- que se movería al agregar una moneda al medio del @data Moneda@ y
+-- desordenaría en silencio lo que ya está guardado.
+normalizarTasa :: M.TasaDeCambio -> M.TasaDeCambio
+normalizarTasa tasa
+  | (show tasa.monedaFrom :: Text) <= show tasa.monedaTo = tasa
+  | otherwise =
+      tasa
+        { M.monedaFrom = tasa.monedaTo
+        , M.monedaTo = tasa.monedaFrom
+        , M.montoFrom = tasa.montoTo
+        , M.montoTo = tasa.montoFrom
+        }
+
+-- | Reemplaza todas las tasas que involucran a esa moneda. Que las tasas tengan
+-- sentido lo decide 'M.validarTablaDeTasas' antes de llegar acá; lo único que
+-- agrega esta capa es el orden del par.
 guardarTasasDeCambio :: ULID -> M.Moneda -> [M.TasaDeCambio] -> Pg [M.TasaDeCambio]
 guardarTasasDeCambio grupoId moneda tasas = do
   runDelete
@@ -1158,7 +1177,7 @@ guardarTasasDeCambio grupoId moneda tasas = do
     liftIO
       ( forM tasas $ \tasa -> do
           tasaId <- ULID.getULID
-          let normalizada = M.normalizarTasa tasa
+          let normalizada = normalizarTasa tasa
           pure
             $ TasaDeCambio
               { id = tasaId
