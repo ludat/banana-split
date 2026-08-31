@@ -293,16 +293,20 @@ type alias ResumenGrupo  =
    , cantidadPagosInvalidos: Int
    , cantidadPagos: Int
    , isFrozen: Bool
+   , tasasDeCambio: (List TasaDeCambio)
+   , consolidado: ConsolidadoNetos
    }
 
 jsonDecResumenGrupo : Json.Decode.Decoder ( ResumenGrupo )
 jsonDecResumenGrupo =
-   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos pcantidadPagos pisFrozen -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos, cantidadPagos = pcantidadPagos, isFrozen = pisFrozen})
+   Json.Decode.succeed (\ptransaccionesParaSaldar pnetos pcantidadPagosInvalidos pcantidadPagos pisFrozen ptasasDeCambio pconsolidado -> {transaccionesParaSaldar = ptransaccionesParaSaldar, netos = pnetos, cantidadPagosInvalidos = pcantidadPagosInvalidos, cantidadPagos = pcantidadPagos, isFrozen = pisFrozen, tasasDeCambio = ptasasDeCambio, consolidado = pconsolidado})
    |> required "transaccionesParaSaldar" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransaccion)))
    |> required "netos" (jsonDecPorMoneda (jsonDecNetos (jsonDecMonto)))
    |> required "cantidadPagosInvalidos" (Json.Decode.int)
    |> required "cantidadPagos" (Json.Decode.int)
    |> required "isFrozen" (Json.Decode.bool)
+   |> required "tasasDeCambio" (Json.Decode.list (jsonDecTasaDeCambio))
+   |> required "consolidado" (jsonDecConsolidadoNetos)
 
 jsonEncResumenGrupo : ResumenGrupo -> Value
 jsonEncResumenGrupo  val =
@@ -312,6 +316,8 @@ jsonEncResumenGrupo  val =
    , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
    , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
    , ("isFrozen", Json.Encode.bool val.isFrozen)
+   , ("tasasDeCambio", (Json.Encode.list jsonEncTasaDeCambio) val.tasasDeCambio)
+   , ("consolidado", jsonEncConsolidadoNetos val.consolidado)
    ]
 
 
@@ -335,6 +341,61 @@ jsonDecPorMoneda localDecoder_a =
 
 jsonEncPorMoneda : (a -> Value) -> PorMoneda a -> Value
 jsonEncPorMoneda localEncoder_a val = (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(jsonEncMoneda) t1,(localEncoder_a) t2])) val
+
+
+
+type alias TasaDeCambio  =
+   { id: ULID
+   , unaMoneda: Moneda
+   , otraMoneda: Moneda
+   , unMonto: Monto
+   , otroMonto: Monto
+   }
+
+jsonDecTasaDeCambio : Json.Decode.Decoder ( TasaDeCambio )
+jsonDecTasaDeCambio =
+   Json.Decode.succeed (\pid punaMoneda potraMoneda punMonto potroMonto -> {id = pid, unaMoneda = punaMoneda, otraMoneda = potraMoneda, unMonto = punMonto, otroMonto = potroMonto})
+   |> required "id" (jsonDecULID)
+   |> required "unaMoneda" (jsonDecMoneda)
+   |> required "otraMoneda" (jsonDecMoneda)
+   |> required "unMonto" (jsonDecMonto)
+   |> required "otroMonto" (jsonDecMonto)
+
+jsonEncTasaDeCambio : TasaDeCambio -> Value
+jsonEncTasaDeCambio  val =
+   Json.Encode.object
+   [ ("id", jsonEncULID val.id)
+   , ("unaMoneda", jsonEncMoneda val.unaMoneda)
+   , ("otraMoneda", jsonEncMoneda val.otraMoneda)
+   , ("unMonto", jsonEncMonto val.unMonto)
+   , ("otroMonto", jsonEncMonto val.otroMonto)
+   ]
+
+
+
+type alias ConsolidadoNetos  =
+   { moneda: Moneda
+   , netos: (Netos Monto)
+   , monedasConvertidas: (List Moneda)
+   , monedasSinTasa: (List Moneda)
+   }
+
+jsonDecConsolidadoNetos : Json.Decode.Decoder ( ConsolidadoNetos )
+jsonDecConsolidadoNetos =
+   Json.Decode.succeed (\pmoneda pnetos pmonedasConvertidas pmonedasSinTasa -> {moneda = pmoneda, netos = pnetos, monedasConvertidas = pmonedasConvertidas, monedasSinTasa = pmonedasSinTasa})
+   |> required "moneda" (jsonDecMoneda)
+   |> required "netos" (jsonDecNetos (jsonDecMonto))
+   |> required "monedasConvertidas" (Json.Decode.list (jsonDecMoneda))
+   |> required "monedasSinTasa" (Json.Decode.list (jsonDecMoneda))
+
+jsonEncConsolidadoNetos : ConsolidadoNetos -> Value
+jsonEncConsolidadoNetos  val =
+   Json.Encode.object
+   [ ("moneda", jsonEncMoneda val.moneda)
+   , ("netos", (jsonEncNetos (jsonEncMonto)) val.netos)
+   , ("monedasConvertidas", (Json.Encode.list jsonEncMoneda) val.monedasConvertidas)
+   , ("monedasSinTasa", (Json.Encode.list jsonEncMoneda) val.monedasSinTasa)
+   ]
 
 
 
@@ -1415,6 +1476,38 @@ deleteGrupoByIdFreeze capture_id toMsg =
                 Http.emptyBody
             , expect =
                 Http.expectJson toMsg jsonDecShallowGrupo
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+putGrupoByIdTasasdecambioByMoneda : ULID -> Moneda -> (List TasaDeCambio) -> (Result Http.Error  ((List TasaDeCambio))  -> msg) -> Cmd msg
+putGrupoByIdTasasdecambioByMoneda capture_id capture_moneda body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "tasas-de-cambio"
+                    , (capture_moneda
+                       |> (\moneda -> Json.Decode.decodeValue Json.Decode.string (jsonEncMoneda moneda) |> Result.withDefault ""))
+                    ]
+                    params
+            , body =
+                Http.jsonBody ((Json.Encode.list jsonEncTasaDeCambio) body)
+            , expect =
+                Http.expectJson toMsg (Json.Decode.list (jsonDecTasaDeCambio))
             , timeout =
                 Nothing
             , tracker =

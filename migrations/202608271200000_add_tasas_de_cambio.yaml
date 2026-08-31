@@ -1,0 +1,50 @@
+operations:
+  - create_table:
+      name: tasas_de_cambio
+      constraints:
+        - name: tasas_de_cambio__grupo__monedas__unique
+          type: unique
+          columns:
+            - grupo__id
+            - una_moneda
+            - otra_moneda
+        # Las dos monedas son intercambiables, pero para guardarlas hay que
+        # poner una en cada columna: va primero la del código menor, igual que
+        # 'normalizarTasa'. El COLLATE "C" compara por código sin él orden
+        # dependería del locale de la base y podrían diferir.
+        - name: tasas_de_cambio__par_ordenado
+          type: check
+          check: una_moneda COLLATE "C" < otra_moneda COLLATE "C"
+        - name: tasas_de_cambio__montos_positivos
+          type: check
+          check: un_monto__valor > 0 AND otro_monto__valor > 0
+      columns:
+        - name: id
+          type: text
+          pk: true
+        - name: grupo__id
+          type: text
+          nullable: false
+          references:
+            table: grupos
+            column: id
+            name: fk_tasas_de_cambio_grupo__id
+            on_delete: CASCADE
+        - name: una_moneda
+          type: text
+          nullable: false
+        - name: otra_moneda
+          type: text
+          nullable: false
+        - name: un_monto__lugares_despues_de_la_coma
+          type: int
+          nullable: false
+        - name: un_monto__valor
+          type: bigint
+          nullable: false
+        - name: otro_monto__lugares_despues_de_la_coma
+          type: int
+          nullable: false
+        - name: otro_monto__valor
+          type: bigint
+          nullable: false

@@ -8,6 +8,7 @@ module Site.Handler.Grupos (
   handleFreezeGrupo,
   handleGetMisGrupos,
   handleGetNetos,
+  handleGuardarTasasDeCambio,
   handleShowGrupo,
   handleUnclaimParticipante,
   handleUnfreezeGrupo,
@@ -28,8 +29,10 @@ import BananaSplit.Persistence (
   fetchGruposForUser,
   fetchPago,
   fetchShallowPagos,
+  fetchTasasDeCambio,
   fetchTransaccionesCongeladas,
   freezeGrupo,
+  guardarTasasDeCambio,
   unclaimParticipante,
   unfreezeGrupo,
   updateGrupo,
@@ -67,6 +70,9 @@ handleGetNetos grupoId = do
           }
   let netos = calcularNetosTotales grupo
 
+  tasasDeCambio <- runBeam $ fetchTasasDeCambio grupoId
+  let consolidado = consolidarNetos (tablaDeTasas shallowGrupo.monedaPorDefecto tasasDeCambio) netos
+
   if shallowGrupo.isFrozen
     then do
       transacciones <- runBeam $ fetchTransaccionesCongeladas grupoId
@@ -77,6 +83,8 @@ handleGetNetos grupoId = do
           , cantidadPagos = length grupo.pagos
           , transaccionesParaSaldar = transacciones
           , isFrozen = True
+          , tasasDeCambio = tasasDeCambio
+          , consolidado = consolidado
           }
     else
       pure $
@@ -86,6 +94,8 @@ handleGetNetos grupoId = do
           , cantidadPagos = length grupo.pagos
           , transaccionesParaSaldar = fmap minimizeTransactions netos
           , isFrozen = False
+          , tasasDeCambio = tasasDeCambio
+          , consolidado = consolidado
           }
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
@@ -164,3 +174,18 @@ handleUpdateGrupo grupoId params = do
         fetchGrupo grupoId
     )
     `orElseMay` throwJsonError err404 "Grupo no encontrado"
+
+handleGuardarTasasDeCambio :: ULID -> Moneda -> [TasaDeCambio] -> AppHandler [TasaDeCambio]
+handleGuardarTasasDeCambio grupoId moneda tasas = do
+  _ <-
+    runBeam (fetchGrupo grupoId)
+      `orElseMay` throwJsonError err404 "Grupo no encontrado"
+
+  -- La tabla usa una tasa por moneda y descarta la que no le sirve a 'moneda':
+  -- la ajena, la de una moneda consigo misma, la que tiene un lado en cero y la
+  -- repetida. Si sobró alguna es que algo de eso pasó; cuál no lo decimos
+  -- porque el front no llega a ver el cuerpo del 400.
+  unless (cantidadDeTasas (tablaDeTasas moneda tasas) == length tasas) $
+    throwJsonError err400 "Alguna de las tasas de cambio no es válida"
+
+  runBeam $ guardarTasasDeCambio grupoId moneda tasas

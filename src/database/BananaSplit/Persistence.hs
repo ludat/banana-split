@@ -33,8 +33,11 @@ module BananaSplit.Persistence (
   fetchPago,
   fetchRepartija,
   fetchShallowPagos,
+  fetchTasasDeCambio,
   fetchTransaccionesCongeladas,
   freezeGrupo,
+  guardarTasasDeCambio,
+  normalizarTasa,
   savePago,
   saveRepartija,
   saveRepartijaClaim,
@@ -1120,6 +1123,78 @@ fetchTransaccionesCongeladas grupoId = do
             `M.enMoneda` tc.moneda
       )
     & mconcat
+
+fetchTasasDeCambio :: ULID -> Pg [M.TasaDeCambio]
+fetchTasasDeCambio grupoId = do
+  rows <- runSelectReturningList $ select $ do
+    tasa <-
+      all_ db.tasas_de_cambio
+        & orderBy_ (asc_ . (.id))
+    guard_ (tasa.grupo ==. GrupoId (val_ grupoId))
+    pure tasa
+  pure
+    $ rows
+    & fmap
+      ( \tasa ->
+          M.TasaDeCambio
+            { M.id = tasa.id
+            , M.unaMoneda = tasa.una_moneda
+            , M.otraMoneda = tasa.otra_moneda
+            , M.unMonto = constructMonto tasa.un_monto
+            , M.otroMonto = constructMonto tasa.otro_monto
+            }
+      )
+
+-- | Deja primero la moneda que va antes por código, que es el orden en que se
+-- guarda el par y lo que pide el CHECK de la tabla. El @from@ y el @to@ existen
+-- únicamente en las columnas, para poder guardar en dos lugares un par que en
+-- el modelo no tiene sentido.
+--
+-- Comparamos por código y no por 'Ord' 'M.Moneda', que se movería al agregar
+-- una moneda al medio del @data Moneda@ y desordenaría en silencio lo que ya
+-- está guardado.
+normalizarTasa :: M.TasaDeCambio -> M.TasaDeCambio
+normalizarTasa tasa
+  | (show tasa.unaMoneda :: Text) <= show tasa.otraMoneda = tasa
+  | otherwise =
+      tasa
+        { M.unaMoneda = tasa.otraMoneda
+        , M.otraMoneda = tasa.unaMoneda
+        , M.unMonto = tasa.otroMonto
+        , M.otroMonto = tasa.unMonto
+        }
+
+-- | Reemplaza todas las tasas que involucran a esa moneda. Que las tasas tengan
+-- sentido lo decide 'M.validarTablaDeTasas' antes de llegar acá; lo único que
+-- agrega esta capa es el orden del par.
+guardarTasasDeCambio :: ULID -> M.Moneda -> [M.TasaDeCambio] -> Pg [M.TasaDeCambio]
+guardarTasasDeCambio grupoId moneda tasas = do
+  runDelete
+    $ delete
+      db.tasas_de_cambio
+      ( \tasa ->
+          (tasa.grupo ==. GrupoId (val_ grupoId))
+            &&. (tasa.una_moneda ==. val_ moneda ||. tasa.otra_moneda ==. val_ moneda)
+      )
+
+  unless (null tasas) $ do
+    liftIO
+      ( forM tasas $ \tasa -> do
+          tasaId <- ULID.getULID
+          let normalizada = normalizarTasa tasa
+          pure
+            $ TasaDeCambio
+              { id = tasaId
+              , grupo = GrupoId grupoId
+              , una_moneda = normalizada.unaMoneda
+              , otra_moneda = normalizada.otraMoneda
+              , un_monto = deconstructMonto normalizada.unMonto
+              , otro_monto = deconstructMonto normalizada.otroMonto
+              }
+      )
+      >>= (runInsert . insert db.tasas_de_cambio . insertValues)
+
+  fetchTasasDeCambio grupoId
 
 deleteTransaccionCongelada :: ULID -> Pg ()
 deleteTransaccionCongelada transaccionId = do

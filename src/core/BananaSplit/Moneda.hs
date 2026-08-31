@@ -15,6 +15,7 @@ import Data.Aeson
 import Data.Map.Strict qualified as Map
 import Elm.Derive qualified as Elm
 import GHC.Generics (Generically (..))
+import Web.HttpApiData (FromHttpApiData (..), ToHttpApiData (..))
 
 import Preludat
 
@@ -29,6 +30,17 @@ data Moneda
   deriving stock (Show, Read, Eq, Ord, Generic, Enum, Bounded)
   deriving anyclass (ToJSONKey, FromJSONKey)
   deriving (ToJSON, FromJSON) via (Generically Moneda)
+
+instance ToHttpApiData Moneda where
+  toUrlPiece :: Moneda -> Text
+  toUrlPiece = show
+
+instance FromHttpApiData Moneda where
+  parseUrlPiece :: Text -> Either Text Moneda
+  parseUrlPiece t =
+    case readMaybe t of
+      Just moneda -> Right moneda
+      Nothing -> Left $ "no existe la moneda " <> t
 
 newtype PorMoneda a
   = PorMoneda (Map Moneda a)

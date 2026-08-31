@@ -319,8 +319,14 @@ montoInput state attrs =
          , attribute "input-id" state.path
          , classList [ ( "is-invalid", hasErrorField state ) ]
          , on "autoNumeric:rawValueModified"
-            (Decode.at [ "detail", "newRawValue" ] Decode.string
-                |> Decode.map (\v -> Input state.path Form.Text (FormField.String v))
+            -- Con emptyInputBehavior "null" el rawValue de un input vacío es null,
+            -- y un decoder que sólo acepta String descarta el evento: el form se
+            -- queda con el valor viejo mientras la pantalla muestra vacío.
+            (Decode.at [ "detail", "newRawValue" ] (Decode.nullable Decode.string)
+                |> Decode.map
+                    (\v ->
+                        Input state.path Form.Text (FormField.String (Maybe.withDefault "" v))
+                    )
             )
          , on "focusin" (Decode.succeed (Focus state.path))
          , on "focusout" (Decode.succeed (Blur state.path))
