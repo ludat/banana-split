@@ -3,7 +3,6 @@ import AutoNumeric from "autonumeric";
 const AUTONUMERIC_OPTIONS = {
     decimalCharacter: ",",
     digitGroupSeparator: ".",
-    decimalPlaces: 2,
     allowDecimalPadding: true,
     unformatOnFocus: false,
     unformatOnHover: false,
@@ -15,8 +14,10 @@ const AUTONUMERIC_OPTIONS = {
     formulaMode: true
 };
 
+const DECIMAL_PLACES_POR_DEFECTO = 2;
+
 class MontoInputElement extends HTMLElement {
-    static observedAttributes = ["raw-value", "placeholder", "required", "input-id", "class"];
+    static observedAttributes = ["raw-value", "placeholder", "required", "input-id", "class", "decimal-places"];
 
     constructor() {
         super();
@@ -32,10 +33,10 @@ class MontoInputElement extends HTMLElement {
         this._input.inputMode = "decimal";
         this._input.className = this._computeInputClass();
         this._syncNonValueAttrs();
-        this._input.value = AutoNumeric.format(this.getAttribute("raw-value"), AUTONUMERIC_OPTIONS);
+        this._input.value = AutoNumeric.format(this.getAttribute("raw-value"), this._options());
         this.appendChild(this._input);
 
-        this._autoNumeric = new AutoNumeric(this._input, AUTONUMERIC_OPTIONS);
+        this._autoNumeric = new AutoNumeric(this._input, this._options());
 
         this._input.addEventListener("autoNumeric:rawValueModified", (e) => {
             if (Number(this._autoNumeric.getNumericString()) === Number(this.getAttribute("raw-value"))) return;
@@ -48,9 +49,22 @@ class MontoInputElement extends HTMLElement {
             this._setFromDisplay(newVal);
         } else if (name === "class") {
             if (this._input) this._input.className = this._computeInputClass();
+        } else if (name === "decimal-places") {
+            if (this._autoNumeric) this._autoNumeric.update(this._options());
         } else {
             this._syncNonValueAttrs();
         }
+    }
+
+    _options() {
+        const attr = this.getAttribute("decimal-places");
+        const decimales = attr === null ? NaN : Number(attr);
+        return {
+            ...AUTONUMERIC_OPTIONS,
+            decimalPlaces: Number.isInteger(decimales) && decimales >= 0
+                ? decimales
+                : DECIMAL_PLACES_POR_DEFECTO
+        };
     }
 
     focus(options) {

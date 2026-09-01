@@ -16,6 +16,7 @@ import Form.Field as FormField
 import Form.Init as Form
 import Form.Validate as V exposing (Validation, nonEmpty)
 import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), Moneda, Monto, Pago, Participante, ParticipanteId, Repartija, RepartijaItem, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
+import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, a, button, details, div, i, li, p, span, summary, text)
 import Html.Attributes as Attr exposing (accept, class, classList, disabled, placeholder, style, target, type_)
 import Html.Events exposing (on, onClick, onSubmit)
@@ -1430,7 +1431,7 @@ viewBasicSection model =
                                 [ style "max-width" "6.5rem" ]
                         , div [ class "flex-grow-1" ]
                             [ Html.map PagoForm <|
-                                Bs.montoInput montoField [ placeholder "33.000,00" ]
+                                Bs.montoInput (decimalesDelForm form) montoField [ placeholder "33.000,00" ]
                             ]
                         ]
                     ]
@@ -1868,6 +1869,19 @@ viewParticipantePill participante prefix form =
         ]
 
 
+{-| Con cuántos decimales dejan tipear los inputs de monto de este form, según
+la moneda elegida. El campo siempre tiene una moneda válida (es un select con
+valor inicial), así que el caso `Nothing` no se da en la práctica; los 2 son
+para no propagar un `Maybe` por todas las vistas, no una moneda supuesta.
+-}
+decimalesDelForm : Form CustomFormError Pago -> Int
+decimalesDelForm form =
+    (Form.getFieldAsString "moneda" form).value
+        |> Maybe.andThen Moneda.fromString
+        |> Maybe.map escalaDe
+        |> Maybe.withDefault 2
+
+
 {-| Indica si la columna "División" debe mostrarse. Sólo se oculta cuando el
 único modo activo es el de monto fijo (no hay nada que repartir por partes).
 -}
@@ -2014,7 +2028,7 @@ viewParteRow participantesDelGrupo prefix mode participante form =
                     [ Html.td [ class "text-end" ]
                         [ div [ class "ms-auto", style "width" "11rem" ]
                             [ Html.map PagoForm <|
-                                Bs.montoInput montoField [ placeholder "13.000,00", style "text-align" "right" ]
+                                Bs.montoInput (decimalesDelForm form) montoField [ placeholder "13.000,00", style "text-align" "right" ]
                             ]
                         ]
                     ]
@@ -2163,7 +2177,7 @@ viewRepartijaForm prefix form =
         , div [ class "mb-4" ]
             [ Html.h6 [ class "mb-2" ] [ text "Propina" ]
             , Html.map PagoForm <|
-                Bs.montoInput montoField [ placeholder "1000" ]
+                Bs.montoInput (decimalesDelForm form) montoField [ placeholder "1000" ]
             ]
         , Html.hr [ class "my-3" ] []
         , div [ class "mb-4" ]
@@ -2218,7 +2232,7 @@ viewRepartijaItemForm i prefix form =
             ]
         , Html.td []
             [ Html.map PagoForm <|
-                Bs.montoInput montoField [ placeholder "20.000", style "text-align" "right" ]
+                Bs.montoInput (decimalesDelForm form) montoField [ placeholder "20.000", style "text-align" "right" ]
             ]
         , Html.td [ style "width" "1%" ]
             [ Bs.btn Bs.Danger

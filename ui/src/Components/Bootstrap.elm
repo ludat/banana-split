@@ -312,10 +312,11 @@ textInput state attrs =
         []
 
 
-montoInput : Form.FieldState CustomFormError String -> List (Attribute Form.Msg) -> Html Form.Msg
-montoInput state attrs =
+montoInput : Int -> Form.FieldState CustomFormError String -> List (Attribute Form.Msg) -> Html Form.Msg
+montoInput decimales state attrs =
     Html.node "monto-input"
         ([ attribute "raw-value" (Maybe.withDefault "" state.value)
+         , attribute "decimal-places" (String.fromInt decimales)
          , attribute "input-id" state.path
          , classList [ ( "is-invalid", hasErrorField state ) ]
          , on "autoNumeric:rawValueModified"

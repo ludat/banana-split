@@ -8,6 +8,7 @@ import Form.Field
 import Form.Init as Form
 import Form.Validate as V exposing (Validation)
 import Generated.Api as Api exposing (Moneda, Monto, ResumenGrupo, ShallowGrupo, TasaDeCambio, ULID, UpdateGrupoParams, User)
+import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, a, button, div, i, input, label, option, select, span, text)
 import Html.Attributes as Attr exposing (class, classList, disabled, for, id, selected, type_, value)
 import Html.Events exposing (on, onClick, onInput, onSubmit)
@@ -849,7 +850,9 @@ viewLadoDeTasa form prefix campoMonto codigoMoneda =
     in
     div []
         [ div [ class "d-flex align-items-center gap-2" ]
-            [ div [ class "flex-grow-1" ] [ Bs.montoInput field [] ]
+            [ div [ class "flex-grow-1" ]
+                -- Cada lado del par lleva los decimales de su propia moneda.
+                [ Bs.montoInput (decimalesDe codigoMoneda) field [] ]
             , span [ class "text-muted text-nowrap" ] [ text codigoMoneda ]
             ]
         , if hasErrorField field then
@@ -858,6 +861,17 @@ viewLadoDeTasa form prefix campoMonto codigoMoneda =
           else
             text ""
         ]
+
+
+{-| El form guarda la moneda como código, así que la volvemos a `Moneda` para
+sacarle la escala. Los códigos salen de `Moneda.toString`, nunca de tipeo, así
+que el fallback no se da en la práctica.
+-}
+decimalesDe : String -> Int
+decimalesDe codigoMoneda =
+    Moneda.fromString codigoMoneda
+        |> Maybe.map escalaDe
+        |> Maybe.withDefault 2
 
 
 tasasDelForm : Form CustomFormError (List (Maybe TasaDeCambio)) -> Maybe (List TasaDeCambio)
