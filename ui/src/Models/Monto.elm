@@ -1,8 +1,11 @@
 module Models.Monto exposing
     ( abs
     , add
+    , agregarUnaUnidad
     , asDeltaHtml
     , diffText
+    , fromRawString
+    , quitarUnaUnidad
     , sub
     , toFloat
     , toRawString
@@ -62,6 +65,63 @@ fromDecimal d =
 toFloat : Monto -> Float
 toFloat monto =
     monto |> toDecimal |> Decimal.toFloat
+
+
+{-| Parse a "raw" (period-decimal, e.g. "1000.50") string into a Monto, as
+produced by `toRawString`/the monto-input's rawValue. Returns `Nothing` if the
+string isn't a valid decimal.
+-}
+fromRawString : String -> Maybe Monto
+fromRawString s =
+    Decimal.fromString Decimal.HalfUp (Nat.fromIntOrZero 2) s
+        |> Result.toMaybe
+        |> Maybe.map fromDecimal
+
+
+{-| Reduce an item's `cantidad` by one unit and scale its `monto` down
+proportionally, e.g. 3 unidades a $15 pasan a 2 unidades a $10. `cantidad`
+never goes below 0.
+-}
+quitarUnaUnidad : Int -> Monto -> ( Int, Monto )
+quitarUnaUnidad cantidad monto =
+    let
+        nuevaCantidad =
+            Basics.max 0 (cantidad - 1)
+    in
+    ( nuevaCantidad
+    , if cantidad <= 0 then
+        monto
+
+      else
+        { monto
+            | valor =
+                Basics.round
+                    (Basics.toFloat monto.valor * Basics.toFloat nuevaCantidad / Basics.toFloat cantidad)
+        }
+    )
+
+
+{-| Increase an item's `cantidad` by one unit and scale its `monto` up
+proportionally, e.g. 2 unidades a $10 pasan a 3 unidades a $15. If `cantidad`
+starts at 0 or below, the per-unit price is unknown, so `monto` is left as-is.
+-}
+agregarUnaUnidad : Int -> Monto -> ( Int, Monto )
+agregarUnaUnidad cantidad monto =
+    let
+        nuevaCantidad =
+            cantidad + 1
+    in
+    ( nuevaCantidad
+    , if cantidad <= 0 then
+        monto
+
+      else
+        { monto
+            | valor =
+                Basics.round
+                    (Basics.toFloat monto.valor * Basics.toFloat nuevaCantidad / Basics.toFloat cantidad)
+        }
+    )
 
 
 zero : Monto

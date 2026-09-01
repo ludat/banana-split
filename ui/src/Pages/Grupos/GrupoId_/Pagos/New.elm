@@ -77,6 +77,9 @@ type Msg
     | ReceiptParseResponse (Result Http.Error Api.ReceiptImageResponse)
     | ClearReceiptError
     | Cancel
+    | QuitarUnaUnidadDeItem String Int
+    | AgregarUnaUnidadDeItem String Int
+    | DividirUnaUnidadDeItem String Int
 
 
 type Section
@@ -475,6 +478,39 @@ update shared msg model =
                 |> andThenUpdateResumenesFromForms model
                 |> andThenSendWarningOnExit
 
+        QuitarUnaUnidadDeItem prefix i ->
+            let
+                newModel =
+                    updateAllForms participantes
+                        (quitarUnaUnidadFormMsgs prefix i model.pagoForm)
+                        { model | hasUnsavedChanges = True }
+            in
+            ( newModel, Effect.none )
+                |> andThenUpdateResumenesFromForms model
+                |> andThenSendWarningOnExit
+
+        AgregarUnaUnidadDeItem prefix i ->
+            let
+                newModel =
+                    updateAllForms participantes
+                        (agregarUnaUnidadFormMsgs prefix i model.pagoForm)
+                        { model | hasUnsavedChanges = True }
+            in
+            ( newModel, Effect.none )
+                |> andThenUpdateResumenesFromForms model
+                |> andThenSendWarningOnExit
+
+        DividirUnaUnidadDeItem prefix i ->
+            let
+                newModel =
+                    updateAllForms participantes
+                        (dividirUnaUnidadFormMsgs prefix i model.pagoForm)
+                        { model | hasUnsavedChanges = True }
+            in
+            ( newModel, Effect.none )
+                |> andThenUpdateResumenesFromForms model
+                |> andThenSendWarningOnExit
+
         ResumenPagoUpdated resumen ->
             ( { model | resumenPago = resumen }
             , Effect.none
@@ -754,6 +790,126 @@ receiptItemsFormMsgs prefix items form =
                 ]
             )
         |> List.concat
+
+
+{-| Resta una unidad a la cantidad de un item de la repartija y reescala su
+monto proporcionalmente (3 unidades a $15 pasan a 2 unidades a $10). Es una
+operación puramente de UI: sólo toca los campos del form, nunca pega al
+backend.
+-}
+quitarUnaUnidadFormMsgs : String -> Int -> Form CustomFormError Pago -> List Form.Msg
+quitarUnaUnidadFormMsgs prefix i form =
+    cambiarUnidadFormMsgs Monto.quitarUnaUnidad prefix i form
+
+
+{-| Suma una unidad a la cantidad de un item de la repartija y reescala su
+monto proporcionalmente (2 unidades a $10 pasan a 3 unidades a $15). Es una
+operación puramente de UI: sólo toca los campos del form, nunca pega al
+backend.
+-}
+agregarUnaUnidadFormMsgs : String -> Int -> Form CustomFormError Pago -> List Form.Msg
+agregarUnaUnidadFormMsgs prefix i form =
+    cambiarUnidadFormMsgs Monto.agregarUnaUnidad prefix i form
+
+
+cambiarUnidadFormMsgs : (Int -> Monto -> ( Int, Monto )) -> String -> Int -> Form CustomFormError Pago -> List Form.Msg
+cambiarUnidadFormMsgs cambiarCantidad prefix i form =
+    let
+        cantidadPath =
+            prefix ++ ".items." ++ String.fromInt i ++ ".cantidad"
+
+        montoPath =
+            prefix ++ ".items." ++ String.fromInt i ++ ".monto"
+
+        cantidadActual =
+            Form.getFieldAsString cantidadPath form
+                |> .value
+                |> Maybe.andThen String.toInt
+                |> Maybe.withDefault 0
+
+        montoActual =
+            Form.getFieldAsString montoPath form
+                |> .value
+                |> Maybe.andThen Monto.fromRawString
+    in
+    case montoActual of
+        Just monto ->
+            let
+                ( nuevaCantidad, nuevoMonto ) =
+                    cambiarCantidad cantidadActual monto
+            in
+            [ Form.Input cantidadPath Form.Text (FormField.String (String.fromInt nuevaCantidad))
+            , Form.Input montoPath Form.Text (FormField.String (Monto.toRawString nuevoMonto))
+            ]
+
+        Nothing ->
+            []
+
+
+{-| Separa una unidad de un item en un item nuevo, propio, conservando el
+precio unitario: 3 unidades a $15 quedan como 2 unidades a $10 más un item
+nuevo de 1 unidad a $5. Es una operación puramente de UI: sólo toca los
+campos del form, nunca pega al backend. No hace nada si el item sólo tiene
+una unidad (no hay nada para separar).
+-}
+dividirUnaUnidadFormMsgs : String -> Int -> Form CustomFormError Pago -> List Form.Msg
+dividirUnaUnidadFormMsgs prefix i form =
+    let
+        itemsPath =
+            prefix ++ ".items"
+
+        cantidadPath =
+            itemsPath ++ "." ++ String.fromInt i ++ ".cantidad"
+
+        montoPath =
+            itemsPath ++ "." ++ String.fromInt i ++ ".monto"
+
+        nombrePath =
+            itemsPath ++ "." ++ String.fromInt i ++ ".nombre"
+
+        cantidadActual =
+            Form.getFieldAsString cantidadPath form
+                |> .value
+                |> Maybe.andThen String.toInt
+                |> Maybe.withDefault 0
+
+        nombreActual =
+            Form.getFieldAsString nombrePath form
+                |> .value
+                |> Maybe.withDefault ""
+
+        montoActual =
+            Form.getFieldAsString montoPath form
+                |> .value
+                |> Maybe.andThen Monto.fromRawString
+
+        nuevoItemPrefix =
+            itemsPath ++ "." ++ String.fromInt (List.length (Form.getListIndexes itemsPath form))
+    in
+    if cantidadActual <= 1 then
+        []
+
+    else
+        case montoActual of
+            Just monto ->
+                let
+                    ( cantidadRestante, montoRestante ) =
+                        Monto.quitarUnaUnidad cantidadActual monto
+
+                    montoUnidadSeparada =
+                        Monto.sub monto montoRestante
+                in
+                [ Form.Input cantidadPath Form.Text (FormField.String (String.fromInt cantidadRestante))
+                , Form.Input montoPath Form.Text (FormField.String (Monto.toRawString montoRestante))
+                , Form.Append itemsPath
+                , Form.Input (nuevoItemPrefix ++ ".id") Form.Text (FormField.String emptyUlid)
+                , Form.Input (nuevoItemPrefix ++ ".nombre") Form.Text (FormField.String nombreActual)
+                , Form.Input (nuevoItemPrefix ++ ".monto") Form.Text (FormField.String (Monto.toRawString montoUnidadSeparada))
+                , Form.Input (nuevoItemPrefix ++ ".cantidad") Form.Text (FormField.String "1")
+                ]
+
+            Nothing ->
+                []
 
 
 extractClaimsFromDistribucion : Distribucion -> List Api.RepartijaClaim
@@ -2196,6 +2352,11 @@ viewRepartijaItemForm i prefix form =
 
         cantidadField =
             Form.getFieldAsString (prefix ++ ".items." ++ String.fromInt i ++ ".cantidad") form
+
+        cantidadActual =
+            cantidadField.value
+                |> Maybe.andThen String.toInt
+                |> Maybe.withDefault 0
     in
     Html.tr []
         [ Html.td []
@@ -2211,12 +2372,60 @@ viewRepartijaItemForm i prefix form =
                 Bs.montoInput montoField [ placeholder "20.000", style "text-align" "right" ]
             ]
         , Html.td [ style "width" "1%" ]
-            [ Bs.btn Bs.Danger
-                [ type_ "button"
-                , onClick <| PagoForm <| Form.RemoveItem (prefix ++ ".items") i
-                , Attr.attribute "aria-label" "Eliminar item"
+            [ div [ class "dropdown" ]
+                [ button
+                    [ type_ "button"
+                    , class "btn btn-light"
+                    , Attr.attribute "data-bs-toggle" "dropdown"
+                    , Attr.attribute "aria-expanded" "false"
+                    , Attr.attribute "aria-label" "Más acciones para este item"
+                    ]
+                    [ Html.i [ class "bi bi-three-dots-vertical" ] [] ]
+                , Html.ul [ class "dropdown-menu dropdown-menu-end shadow" ]
+                    [ Html.li []
+                        [ button
+                            [ type_ "button"
+                            , class "dropdown-item"
+                            , onClick <| AgregarUnaUnidadDeItem prefix i
+                            ]
+                            [ Html.i [ class "bi bi-plus-lg me-2" ] []
+                            , text "Agregar una unidad"
+                            ]
+                        ]
+                    , Html.li []
+                        [ button
+                            [ type_ "button"
+                            , class "dropdown-item"
+                            , disabled (cantidadActual <= 1)
+                            , onClick <| QuitarUnaUnidadDeItem prefix i
+                            ]
+                            [ Html.i [ class "bi bi-dash-lg me-2" ] []
+                            , text "Quitar una unidad"
+                            ]
+                        ]
+                    , Html.li []
+                        [ button
+                            [ type_ "button"
+                            , class "dropdown-item"
+                            , disabled (cantidadActual <= 1)
+                            , onClick <| DividirUnaUnidadDeItem prefix i
+                            ]
+                            [ Html.i [ class "bi bi-arrows-collapse me-2" ] []
+                            , text "Separar una unidad en item nuevo"
+                            ]
+                        ]
+                    , Html.li []
+                        [ button
+                            [ type_ "button"
+                            , class "dropdown-item text-danger"
+                            , onClick <| PagoForm <| Form.RemoveItem (prefix ++ ".items") i
+                            ]
+                            [ Html.i [ class "bi bi-trash me-2" ] []
+                            , text "Eliminar item"
+                            ]
+                        ]
+                    ]
                 ]
-                [ Html.i [ class "bi bi-trash" ] [] ]
             ]
         ]
 
