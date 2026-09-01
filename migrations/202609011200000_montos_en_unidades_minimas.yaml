@@ -1,0 +1,73 @@
+operations:
+  - rename_column:
+      table: pagos
+      from: monto__valor
+      to: monto
+  - drop_column:
+      table: pagos
+      column: monto__lugares_despues_de_la_coma
+      down: "2"
+
+  - rename_column:
+      table: repartijas
+      from: extra__valor
+      to: extra
+  - drop_column:
+      table: repartijas
+      column: extra__lugares_despues_de_la_coma
+      down: "2"
+
+  - rename_column:
+      table: repartija_items
+      from: monto__valor
+      to: monto
+  - drop_column:
+      table: repartija_items
+      column: monto__lugares_despues_de_la_coma
+      down: "2"
+
+  # El monto es nullable acá: las partes por cuota no lo usan, y la escala
+  # guardada también era NULL en esas filas.
+  - rename_column:
+      table: distribuciones_partes_items
+      from: monto__valor
+      to: monto
+  - drop_column:
+      table: distribuciones_partes_items
+      column: monto__lugares_despues_de_la_coma
+      down: "CASE WHEN monto IS NULL THEN NULL ELSE 2 END"
+
+  - rename_column:
+      table: distribuciones_montos_especificos_items
+      from: monto__valor
+      to: monto
+  - drop_column:
+      table: distribuciones_montos_especificos_items
+      column: monto__lugares_despues_de_la_coma
+      down: "2"
+
+  - rename_column:
+      table: transacciones_congeladas
+      from: monto__valor
+      to: monto
+  - drop_column:
+      table: transacciones_congeladas
+      column: monto__lugares_despues_de_la_coma
+      down: "2"
+
+  - rename_column:
+      table: tasas_de_cambio
+      from: un_monto__valor
+      to: un_monto
+  - drop_column:
+      table: tasas_de_cambio
+      column: un_monto__lugares_despues_de_la_coma
+      down: "2"
+  - rename_column:
+      table: tasas_de_cambio
+      from: otro_monto__valor
+      to: otro_monto
+  - drop_column:
+      table: tasas_de_cambio
+      column: otro_monto__lugares_despues_de_la_coma
+      down: "2"

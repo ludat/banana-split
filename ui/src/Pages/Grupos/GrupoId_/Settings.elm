@@ -531,32 +531,38 @@ validateTasas =
 
 validateTasa : Validation CustomFormError (Maybe TasaDeCambio)
 validateTasa =
-    V.succeed
-        (\tasaId unaMoneda otraMoneda unMonto otroMonto ->
-            Maybe.map2
-                (\desde hasta ->
-                    { id = tasaId
-                    , unaMoneda = unaMoneda
-                    , otraMoneda = otraMoneda
-                    , unMonto = desde
-                    , otroMonto = hasta
-                    }
-                )
-                unMonto
-                otroMonto
-        )
-        |> V.andMap (V.field "id" V.string)
-        |> V.andMap (V.field "unaMoneda" Moneda.validate)
-        |> V.andMap (V.field "otraMoneda" Moneda.validate)
-        |> V.andMap (V.field "unMonto" validateMontoDeTasa)
-        |> V.andMap (V.field "otroMonto" validateMontoDeTasa)
+    -- Cada lado del par se parsea con la escala de su propia moneda, que no
+    -- tienen por qué ser la misma, así que las dos se leen antes que los montos.
+    V.map2 Tuple.pair
+        (V.field "unaMoneda" Moneda.validate)
+        (V.field "otraMoneda" Moneda.validate)
+        |> V.andThen
+            (\( unaMoneda, otraMoneda ) ->
+                V.succeed
+                    (\tasaId unMonto otroMonto ->
+                        Maybe.map2
+                            (\desde hasta ->
+                                { id = tasaId
+                                , unaMoneda = unaMoneda
+                                , otraMoneda = otraMoneda
+                                , unMonto = desde
+                                , otroMonto = hasta
+                                }
+                            )
+                            unMonto
+                            otroMonto
+                    )
+                    |> V.andMap (V.field "id" V.string)
+                    |> V.andMap (V.field "unMonto" (validateMontoDeTasa unaMoneda))
+                    |> V.andMap (V.field "otroMonto" (validateMontoDeTasa otraMoneda))
+            )
 
 
-validateMontoDeTasa : Validation CustomFormError (Maybe Monto)
-validateMontoDeTasa =
+validateMontoDeTasa : Moneda -> Validation CustomFormError (Maybe Monto)
+validateMontoDeTasa moneda =
     V.oneOf
         [ V.emptyString |> V.map (always Nothing)
-        , Monto.validateMonto
+        , Monto.validateMonto moneda
             |> V.andThen
                 (\monto ->
                     if monto.valor > 0 then

@@ -150,7 +150,7 @@ data PagoT f = Pago
   , pagoIsValid :: Columnar f Bool
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
-  , pagoMonto :: MontoT f
+  , pagoMonto :: Columnar f Monto
   , pagoMoneda :: Columnar f M.Moneda
   , distribucion_pagadores :: PrimaryKey DistribucionT f
   , distribucion_deudores :: PrimaryKey DistribucionT f
@@ -177,21 +177,11 @@ instance Table PagoT where
 
   primaryKey = PagoId . (.pagoId)
 
-data MontoT f = Monto
-  { montoLugaresDespuesDeLaComa :: Columnar f Int32
-  , montoValor :: Columnar f Int32
-  }
-  deriving (Generic, Beamable)
-
-type Monto = MontoT Identity
-
-deriving instance Show Monto
-
-deriving instance Show (MontoT (Nullable Identity))
-
-deriving instance Eq (MontoT (Nullable Identity))
-
-deriving instance Eq Monto
+-- | Un monto guardado como un entero de unidades mínimas (centavos, para las
+-- monedas de dos decimales). La cantidad de decimales no se guarda: sale de
+-- 'M.escalaDe' aplicado a la moneda de la fila, así que para reconstruir un
+-- 'M.Monto' hace falta tener esa moneda a mano.
+type Monto = Int64
 
 data DistribucionT f = Distribucion
   { id :: Columnar f ULID
@@ -245,7 +235,7 @@ data DistribucionMontosEspecificosItemT f = DistribucionMontosEspecificosItem
   { id :: Columnar f ULID
   , distribucion :: PrimaryKey DistribucionMontosEspecificosT f
   , participante :: PrimaryKey ParticipanteT f
-  , monto :: MontoT f
+  , monto :: Columnar f Monto
   }
   deriving (Generic, Beamable)
 
@@ -298,7 +288,7 @@ data DistribucionPartesItemT f = DistribucionPartesItem
   { id :: Columnar f ULID
   , distribucion :: PrimaryKey DistribucionPartesT f
   , participante :: PrimaryKey ParticipanteT f
-  , monto :: MontoT (Nullable f)
+  , monto :: C (Nullable f) Monto
   , cuota :: C (Nullable f) Int32
   }
   deriving (Generic, Beamable)
@@ -377,7 +367,7 @@ instance Table DistribucionMontoEquitativoItemT where
 data DistribucionRepartijaT f = Repartija
   { id :: Columnar f ULID
   , distribucion :: PrimaryKey DistribucionT f
-  , extra :: MontoT f
+  , extra :: Columnar f Monto
   , distribucion_de_sobras :: Columnar f Text
   }
   deriving (Generic, Beamable)
@@ -399,7 +389,7 @@ data RepartijaItemT f = RepartijaItem
   { repartijaitemId :: Columnar f ULID
   , repartijaitemRepartija :: PrimaryKey DistribucionRepartijaT f
   , repartijaitemNombre :: C f Text
-  , repartijaitemMonto :: MontoT f
+  , repartijaitemMonto :: Columnar f Monto
   , repartijaitemCantidad :: C f Int32
   }
   deriving (Generic, Beamable)
@@ -441,7 +431,7 @@ data TransaccionCongeladaT f = TransaccionCongelada
   , grupo :: PrimaryKey GrupoT f
   , participante_from :: PrimaryKey ParticipanteT f
   , participante_to :: PrimaryKey ParticipanteT f
-  , monto :: MontoT f
+  , monto :: Columnar f Monto
   , moneda :: Columnar f M.Moneda
   }
   deriving (Generic, Beamable)
@@ -464,8 +454,8 @@ data TasaDeCambioT f = TasaDeCambio
   , grupo :: PrimaryKey GrupoT f
   , una_moneda :: Columnar f M.Moneda
   , otra_moneda :: Columnar f M.Moneda
-  , un_monto :: MontoT f
-  , otro_monto :: MontoT f
+  , un_monto :: Columnar f Monto
+  , otro_monto :: Columnar f Monto
   }
   deriving (Generic, Beamable)
 

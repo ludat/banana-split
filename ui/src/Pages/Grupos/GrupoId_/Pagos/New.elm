@@ -146,52 +146,62 @@ validatePagoInSection section participantes =
         emptyDistribucion =
             { id = emptyUlid, tipo = Api.TipoDistribucionPartes { id = emptyUlid, partes = [] } }
     in
-    V.succeed Pago
-        |> V.andMap (V.field "id" validateId)
-        |> V.andMap
-            (if section == BasicPagoData then
-                V.field "monto" Monto.validateMonto
+    -- La moneda se lee primero porque es la que define con cuántos decimales se
+    -- parsea cada monto del form (ver 'Monto.validateMonto').
+    V.field "moneda" Moneda.validate
+        |> V.andThen
+            (\moneda ->
+                V.succeed Pago
+                    |> V.andMap (V.field "id" validateId)
+                    |> V.andMap
+                        (if section == BasicPagoData then
+                            V.field "monto" (Monto.validateMonto moneda)
 
-             else
-                V.maybe (V.field "monto" Monto.validateMonto) |> V.map (Maybe.withDefault Monto.zero)
-            )
-        |> V.andMap (V.field "moneda" Moneda.validate)
-        |> V.andMap (V.succeed False)
-        |> V.andMap
-            (if section == BasicPagoData then
-                V.field "nombre" (V.string |> V.andThen nonEmpty)
+                         else
+                            V.maybe (V.field "monto" (Monto.validateMonto moneda)) |> V.map (Maybe.withDefault Monto.zero)
+                        )
+                    |> V.andMap (V.succeed moneda)
+                    |> V.andMap (V.succeed False)
+                    |> V.andMap
+                        (if section == BasicPagoData then
+                            V.field "nombre" (V.string |> V.andThen nonEmpty)
 
-             else
-                V.succeed ""
-            )
-        |> V.andMap (V.field "fecha" validateDay)
-        |> V.andMap
-            (if section == PagadoresSection then
-                V.field "distribucion_pagadores" <| validateDistribucion participantes
+                         else
+                            V.succeed ""
+                        )
+                    |> V.andMap (V.field "fecha" validateDay)
+                    |> V.andMap
+                        (if section == PagadoresSection then
+                            V.field "distribucion_pagadores" <| validateDistribucion moneda participantes
 
-             else
-                V.succeed emptyDistribucion
-            )
-        |> V.andMap
-            (if section == DeudoresSection then
-                V.field "distribucion_deudores" <| validateDistribucion participantes
+                         else
+                            V.succeed emptyDistribucion
+                        )
+                    |> V.andMap
+                        (if section == DeudoresSection then
+                            V.field "distribucion_deudores" <| validateDistribucion moneda participantes
 
-             else
-                V.succeed emptyDistribucion
+                         else
+                            V.succeed emptyDistribucion
+                        )
             )
 
 
 validatePago : List Participante -> Validation CustomFormError Pago
 validatePago participantes =
-    V.succeed Pago
-        |> V.andMap (V.field "id" validateId)
-        |> V.andMap (V.field "monto" Monto.validateMonto)
-        |> V.andMap (V.field "moneda" Moneda.validate)
-        |> V.andMap (V.succeed False)
-        |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
-        |> V.andMap (V.field "fecha" validateDay)
-        |> V.andMap (V.field "distribucion_pagadores" <| validateDistribucion participantes)
-        |> V.andMap (V.field "distribucion_deudores" <| validateDistribucion participantes)
+    V.field "moneda" Moneda.validate
+        |> V.andThen
+            (\moneda ->
+                V.succeed Pago
+                    |> V.andMap (V.field "id" validateId)
+                    |> V.andMap (V.field "monto" (Monto.validateMonto moneda))
+                    |> V.andMap (V.succeed moneda)
+                    |> V.andMap (V.succeed False)
+                    |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
+                    |> V.andMap (V.field "fecha" validateDay)
+                    |> V.andMap (V.field "distribucion_pagadores" <| validateDistribucion moneda participantes)
+                    |> V.andMap (V.field "distribucion_deudores" <| validateDistribucion moneda participantes)
+            )
 
 
 validateId : Validation CustomFormError ULID
@@ -209,12 +219,12 @@ distribucionDeSobrasToString distribucionDeSobras =
             "SobrasProporcional"
 
 
-validateRepartija : V.Validation CustomFormError Repartija
-validateRepartija =
+validateRepartija : Moneda -> V.Validation CustomFormError Repartija
+validateRepartija moneda =
     V.succeed Repartija
         |> V.andMap (V.field "repartija_id" validateId)
         |> V.andMap (V.succeed "GENERATED")
-        |> V.andMap (V.field "extra" Monto.validateMonto)
+        |> V.andMap (V.field "extra" (Monto.validateMonto moneda))
         |> V.andMap
             (V.field "distribucionDeSobras"
                 (V.customValidation V.string
@@ -231,21 +241,21 @@ validateRepartija =
                     )
                 )
             )
-        |> V.andMap (V.field "items" (V.list validateRepartijaItem))
+        |> V.andMap (V.field "items" (V.list (validateRepartijaItem moneda)))
         |> V.andMap (V.field "claims" (V.succeed []))
 
 
-validateRepartijaItem : V.Validation CustomFormError RepartijaItem
-validateRepartijaItem =
+validateRepartijaItem : Moneda -> V.Validation CustomFormError RepartijaItem
+validateRepartijaItem moneda =
     V.succeed RepartijaItem
         |> V.andMap (V.field "id" validateId)
         |> V.andMap (V.field "nombre" V.string)
-        |> V.andMap (V.field "monto" Monto.validateMonto)
+        |> V.andMap (V.field "monto" (Monto.validateMonto moneda))
         |> V.andMap (V.field "cantidad" V.int)
 
 
-validateDistribucion : List Participante -> Validation CustomFormError Distribucion
-validateDistribucion participantes =
+validateDistribucion : Moneda -> List Participante -> Validation CustomFormError Distribucion
+validateDistribucion moneda participantes =
     V.succeed Distribucion
         |> V.andMap (V.field "id" validateId)
         |> V.andMap
@@ -254,7 +264,7 @@ validateDistribucion participantes =
                     (\t ->
                         case t of
                             "repartija" ->
-                                validateRepartija
+                                validateRepartija moneda
                                     |> V.map Api.TipoDistribucionRepartija
 
                             "partes" ->
@@ -267,7 +277,7 @@ validateDistribucion participantes =
                                                     (V.field "partes"
                                                         (V.sequence
                                                             (participantes
-                                                                |> List.map (\participante -> V.field participante.id (validateParte mode participante.id))
+                                                                |> List.map (\participante -> V.field participante.id (validateParte moneda mode participante.id))
                                                             )
                                                             |> V.map (List.filterMap identity)
                                                         )
@@ -310,11 +320,11 @@ readModoPartes =
         |> V.andMap (V.field mostrarMontoFijoField (V.defaultValue False V.bool))
 
 
-validateParte : ModoPartes -> ParticipanteId -> Validation CustomFormError (Maybe Api.Parte)
-validateParte mode participanteId =
+validateParte : Moneda -> ModoPartes -> ParticipanteId -> Validation CustomFormError (Maybe Api.Parte)
+validateParte moneda mode participanteId =
     let
         validateMonto =
-            V.field "monto" (V.defaultValue Monto.zero Monto.validateMonto)
+            V.field "monto" (V.defaultValue Monto.zero (Monto.validateMonto moneda))
 
         validateCuota =
             V.field "cuota" (V.defaultValue 0 V.int)

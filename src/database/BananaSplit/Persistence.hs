@@ -48,7 +48,6 @@ module BananaSplit.Persistence (
 ) where
 
 import Conferer qualified
-import Data.Decimal qualified as Decimal
 import Data.List.NonEmpty qualified as NE
 import Data.Pool qualified as Pool
 import Data.String (String)
@@ -315,13 +314,13 @@ fetchPago pagoId = do
             pure pago
         )
 
-  (pagadores :: M.Distribucion) <- fromMaybe (panic "Pagadores not found") <$> fetchDistribucion (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
-  (deudores :: M.Distribucion) <- fromMaybe (panic "deudores not found") <$> fetchDistribucion (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
+  (pagadores :: M.Distribucion) <- fromMaybe (panic "Pagadores not found") <$> fetchDistribucion dbPago.pagoMoneda (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
+  (deudores :: M.Distribucion) <- fromMaybe (panic "deudores not found") <$> fetchDistribucion dbPago.pagoMoneda (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
   dbPago
     & ( \p ->
           M.Pago
             { M.pagoId = p.pagoId
-            , M.monto = constructMonto p.pagoMonto
+            , M.monto = constructMonto dbPago.pagoMoneda p.pagoMonto
             , M.moneda = dbPago.pagoMoneda
             , M.nombre = p.pagoNombre
             , M.isValid = p.pagoIsValid
@@ -342,27 +341,19 @@ updateIsValidPago pago = do
       (\p -> p.pagoId ==. val_ pago.pagoId)
   pure pago
 
-deconstructMonto :: M.Monto -> Monto
-deconstructMonto (M.Monto (Decimal.Decimal l v)) =
-  Monto (fromIntegral l) (fromIntegral v)
+deconstructMonto :: M.Moneda -> M.Monto -> Monto
+deconstructMonto moneda monto =
+  fromIntegral $ M.mantisaEn (M.escalaDe moneda) monto
 
-deconstructMontoMaybe :: Maybe M.Monto -> MontoT (Nullable Identity)
-deconstructMontoMaybe Nothing = Monto Nothing Nothing
-deconstructMontoMaybe (Just (M.Monto (Decimal.Decimal l v))) =
-  Monto (Just $ fromIntegral l) (Just $ fromIntegral v)
+deconstructMontoMaybe :: M.Moneda -> Maybe M.Monto -> Maybe Monto
+deconstructMontoMaybe moneda = fmap (deconstructMonto moneda)
 
-constructMonto :: Monto -> M.Monto
-constructMonto (Monto l v) =
-  M.Monto (Decimal.Decimal (fromIntegral l) (fromIntegral v))
+constructMonto :: M.Moneda -> Monto -> M.Monto
+constructMonto moneda valor =
+  M.mkMonto (M.escalaDe moneda) (fromIntegral valor)
 
-constructMontoMaybe :: MontoT (Nullable Identity) -> Maybe M.Monto
-constructMontoMaybe (Monto Nothing Nothing) = Nothing
-constructMontoMaybe (Monto (Just l) (Just v)) =
-  Just (M.Monto (Decimal.Decimal (fromIntegral l) (fromIntegral v)))
-constructMontoMaybe (Monto Nothing (Just _)) =
-  Nothing
-constructMontoMaybe (Monto (Just _) Nothing) =
-  Nothing
+constructMontoMaybe :: M.Moneda -> Maybe Monto -> Maybe M.Monto
+constructMontoMaybe moneda = fmap (constructMonto moneda)
 
 fetchDistribucionMontoEquitativoItems :: ULID -> Pg [M.ParticipanteId]
 fetchDistribucionMontoEquitativoItems distribucionMontoEquitativoId = do
@@ -374,8 +365,8 @@ fetchDistribucionMontoEquitativoItems distribucionMontoEquitativoId = do
 
 -- | Las distribuciones de montos específicos viejas se leen como partes con
 -- montos fijos.
-fetchDistribucionMontosEspecificosItems :: ULID -> Pg [M.Parte]
-fetchDistribucionMontosEspecificosItems distribucionMontosEspecificosId = do
+fetchDistribucionMontosEspecificosItems :: M.Moneda -> ULID -> Pg [M.Parte]
+fetchDistribucionMontosEspecificosItems moneda distribucionMontosEspecificosId = do
   items <- runSelectReturningList $ select $ do
     item <- all_ db.distribuciones_montos_especificos_items
     guard_ (item.distribucion ==. DistribucionMontosEspecificosId (val_ distribucionMontosEspecificosId))
@@ -385,12 +376,12 @@ fetchDistribucionMontosEspecificosItems distribucionMontosEspecificosId = do
     & fmap
       ( \item ->
           M.MontoFijo
-            (constructMonto item.monto)
+            (constructMonto moneda item.monto)
             (M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid)
       )
 
-fetchDistribucionPartesItems :: ULID -> Pg [M.Parte]
-fetchDistribucionPartesItems distribucionPartesId = do
+fetchDistribucionPartesItems :: M.Moneda -> ULID -> Pg [M.Parte]
+fetchDistribucionPartesItems moneda distribucionPartesId = do
   items <- runSelectReturningList $ select $ do
     item <- all_ db.distribuciones_partes_items
     guard_ (item.distribucion ==. DistribucionPartesId (val_ distribucionPartesId))
@@ -400,15 +391,15 @@ fetchDistribucionPartesItems distribucionPartesId = do
     & fmap
       ( \item ->
           let participante = M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid
-          in case (constructMontoMaybe item.monto, item.cuota) of
+          in case (constructMontoMaybe moneda item.monto, item.cuota) of
                (Just monto, Just cuota) -> M.PonderadoYMontoFijo monto (fromIntegral cuota) participante
                (Just monto, Nothing) -> M.MontoFijo monto participante
                (Nothing, Just cuota) -> M.Ponderado (fromIntegral cuota) participante
                (Nothing, Nothing) -> panic $ "DistribucionPartesItem sin monto ni cuota: " <> show item.id
       )
 
-fetchDistribucion :: ULID -> Pg (Maybe M.Distribucion)
-fetchDistribucion distribucionId = do
+fetchDistribucion :: M.Moneda -> ULID -> Pg (Maybe M.Distribucion)
+fetchDistribucion moneda distribucionId = do
   dbDistribucion :: Distribucion <- fmap (fromMaybe (panic "Pago not found")) $ runSelectReturningOne $ select $ do
     distribucion <- all_ db.distribuciones
     guard_ (distribucion.id ==. val_ distribucionId)
@@ -443,7 +434,7 @@ fetchDistribucion distribucionId = do
       case dbDistribucionMontosEspecificos of
         Nothing -> pure Nothing
         Just dbDistrib -> do
-          partes <- fetchDistribucionMontosEspecificosItems dbDistrib.id
+          partes <- fetchDistribucionMontosEspecificosItems moneda dbDistrib.id
           pure
             $ Just
             $ M.TipoDistribucionPartes
@@ -467,7 +458,7 @@ fetchDistribucion distribucionId = do
       case dbDistribucionPartes of
         Nothing -> pure Nothing
         Just dbDistrib -> do
-          partes <- fetchDistribucionPartesItems dbDistrib.id
+          partes <- fetchDistribucionPartesItems moneda dbDistrib.id
           pure
             $ Just
             $ M.TipoDistribucionPartes
@@ -502,7 +493,7 @@ fetchShallowPagos grupoId = do
         { M.pagoId = pago.pagoId
         , M.isValid = pago.pagoIsValid
         , M.nombre = pago.pagoNombre
-        , M.monto = constructMonto pago.pagoMonto
+        , M.monto = constructMonto pago.pagoMoneda pago.pagoMonto
         , M.moneda = pago.pagoMoneda
         , M.fecha = pago.fecha
         }
@@ -632,8 +623,8 @@ savePago grupoId pagoWithoutId = do
     guard_ (p.pagoId ==. val_ pagoId)
     pure (p.distribucion_pagadores, p.distribucion_deudores)
 
-  distribucionPagadores <- saveDistribucion pago.pagadores
-  distribucionDeudores <- saveDistribucion pago.deudores
+  distribucionPagadores <- saveDistribucion pago.moneda pago.pagadores
+  distribucionDeudores <- saveDistribucion pago.moneda pago.deudores
   runInsert
     $ insertOnConflict
       db.pagos
@@ -643,7 +634,7 @@ savePago grupoId pagoWithoutId = do
               , pagoIsValid = pago.isValid
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
-              , pagoMonto = deconstructMonto pago.monto
+              , pagoMonto = deconstructMonto pago.moneda pago.monto
               , pagoMoneda = pago.moneda
               , distribucion_pagadores = DistribucionId distribucionPagadores.id
               , distribucion_deudores = DistribucionId distribucionDeudores.id
@@ -688,8 +679,8 @@ recomputePagos conn = go 0 nullUlid
           putText $ "recompute-pagos: lote de " <> show procesados <> " procesado (" <> show total' <> " en total)"
           go total' siguienteId
 
-saveDistribucion :: M.Distribucion -> Pg M.Distribucion
-saveDistribucion distribucionWithoutId = do
+saveDistribucion :: M.Moneda -> M.Distribucion -> Pg M.Distribucion
+saveDistribucion moneda distribucionWithoutId = do
   distribucionId <-
     if distribucionWithoutId.id == nullUlid
       then liftIO ULID.getULID
@@ -717,7 +708,7 @@ saveDistribucion distribucionWithoutId = do
       onConflictUpdateAll
   case distribucionWithoutId.tipo of
     M.TipoDistribucionRepartija repartijaWithoutId -> do
-      repartija <- saveRepartija distribucion.id repartijaWithoutId
+      repartija <- saveRepartija moneda distribucion.id repartijaWithoutId
       pure $ distribucion{M.tipo = M.TipoDistribucionRepartija repartija}
     M.TipoDistribucionPartes tipoWithoutId -> do
       tipoId <-
@@ -754,7 +745,7 @@ saveDistribucion distribucionWithoutId = do
                 itemId
                 (DistribucionPartesId tipo.id)
                 (participanteId2Persistent participante)
-                (deconstructMontoMaybe monto)
+                (deconstructMontoMaybe moneda monto)
                 (fromIntegral <$> cuota)
         pure $ case parte of
           M.MontoFijo monto participante ->
@@ -835,8 +826,8 @@ updatePago :: ULID -> ULID -> M.Pago -> Pg M.Pago
 updatePago grupoId pagoId pago = do
   savePago grupoId pago
 
-saveRepartija :: ULID -> M.Repartija -> Pg M.Repartija
-saveRepartija distribucionId repartijaSinId = do
+saveRepartija :: M.Moneda -> ULID -> M.Repartija -> Pg M.Repartija
+saveRepartija moneda distribucionId repartijaSinId = do
   repartijaId <-
     if repartijaSinId.id == nullUlid
       then liftIO ULID.getULID
@@ -854,21 +845,21 @@ saveRepartija distribucionId repartijaSinId = do
           [ Repartija
               { id = repartija.id
               , distribucion = DistribucionId distribucionId
-              , extra = deconstructMonto repartija.extra
+              , extra = deconstructMonto moneda repartija.extra
               , distribucion_de_sobras = distribucionDeSobrasToText repartija.distribucionDeSobras
               }
           ]
       )
       (conflictingFields (\r -> r.id))
       onConflictUpdateAll
-  items <- saveRepartijaItems repartijaId repartija.items
+  items <- saveRepartijaItems moneda repartijaId repartija.items
   pure
     repartija
       { M.items = items
       }
 
-saveRepartijaItems :: ULID -> [M.RepartijaItem] -> Pg [M.RepartijaItem]
-saveRepartijaItems repartijaId repartijaItemsWithoutId = do
+saveRepartijaItems :: M.Moneda -> ULID -> [M.RepartijaItem] -> Pg [M.RepartijaItem]
+saveRepartijaItems moneda repartijaId repartijaItemsWithoutId = do
   repartijaItems <- forM repartijaItemsWithoutId $ \repartijaItem -> do
     itemId <-
       if repartijaItem.id == nullUlid
@@ -894,7 +885,7 @@ saveRepartijaItems repartijaId repartijaItemsWithoutId = do
                   { repartijaitemId = item.id
                   , repartijaitemRepartija = DistribucionRepartijaId repartijaId
                   , repartijaitemNombre = item.nombre
-                  , repartijaitemMonto = deconstructMonto item.monto
+                  , repartijaitemMonto = deconstructMonto moneda item.monto
                   , repartijaitemCantidad = fromIntegral item.cantidad
                   }
             )
@@ -906,11 +897,11 @@ saveRepartijaItems repartijaId repartijaItemsWithoutId = do
 
 fetchRepartija :: ULID -> Pg M.RepartijaForFrontend
 fetchRepartija unRepartijaId = do
-  (repartija, pagoNombre, pagoId) :: (DistribucionRepartija, Text, ULID) <- fmap (fromMaybe (panic "Repartija not found")) $ runSelectReturningOne $ select $ do
+  (repartija, pagoNombre, pagoId, moneda) :: (DistribucionRepartija, Text, ULID, M.Moneda) <- fmap (fromMaybe (panic "Repartija not found")) $ runSelectReturningOne $ select $ do
     repartija <- all_ db.repartijas
     guard_ (repartija.id ==. val_ unRepartijaId)
     pago <- pagoDeRepartija repartija
-    pure (repartija, pago.pagoNombre, pago.pagoId)
+    pure (repartija, pago.pagoNombre, pago.pagoId, pago.pagoMoneda)
   items :: [RepartijaItem] <- runSelectReturningList $ select $ do
     item <- all_ db.repartija_items
     guard_ $ item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartija.id)
@@ -926,7 +917,7 @@ fetchRepartija unRepartijaId = do
           M.Repartija
             { id = repartija.id
             , nombre = pagoNombre
-            , extra = constructMonto repartija.extra
+            , extra = constructMonto moneda repartija.extra
             , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
             , claims =
                 claims
@@ -946,7 +937,7 @@ fetchRepartija unRepartijaId = do
                         M.RepartijaItem
                           { M.id = dbItem.repartijaitemId
                           , M.nombre = dbItem.repartijaitemNombre
-                          , M.monto = constructMonto dbItem.repartijaitemMonto
+                          , M.monto = constructMonto moneda dbItem.repartijaitemMonto
                           , M.cantidad = fromIntegral dbItem.repartijaitemCantidad
                           }
                     )
@@ -1070,7 +1061,7 @@ freezeGrupo grupoId transaccionesPorMoneda = do
           , grupo = GrupoId grupoId
           , participante_from = ParticipanteId $ M.participanteId2ULID t.from
           , participante_to = ParticipanteId $ M.participanteId2ULID t.to
-          , monto = deconstructMonto t.monto
+          , monto = deconstructMonto moneda t.monto
           , moneda = moneda
           }
   runInsert
@@ -1117,7 +1108,7 @@ fetchTransaccionesCongeladas grupoId = do
               { M.id = Just tc.id
               , M.from = M.ParticipanteId $ case tc.participante_from of ParticipanteId ulid -> ulid
               , M.to = M.ParticipanteId $ case tc.participante_to of ParticipanteId ulid -> ulid
-              , M.monto = constructMonto tc.monto
+              , M.monto = constructMonto tc.moneda tc.monto
               }
           ]
             `M.enMoneda` tc.moneda
@@ -1140,8 +1131,8 @@ fetchTasasDeCambio grupoId = do
             { M.id = tasa.id
             , M.unaMoneda = tasa.una_moneda
             , M.otraMoneda = tasa.otra_moneda
-            , M.unMonto = constructMonto tasa.un_monto
-            , M.otroMonto = constructMonto tasa.otro_monto
+            , M.unMonto = constructMonto tasa.una_moneda tasa.un_monto
+            , M.otroMonto = constructMonto tasa.otra_moneda tasa.otro_monto
             }
       )
 
@@ -1188,8 +1179,8 @@ guardarTasasDeCambio grupoId moneda tasas = do
               , grupo = GrupoId grupoId
               , una_moneda = normalizada.unaMoneda
               , otra_moneda = normalizada.otraMoneda
-              , un_monto = deconstructMonto normalizada.unMonto
-              , otro_monto = deconstructMonto normalizada.otroMonto
+              , un_monto = deconstructMonto normalizada.unaMoneda normalizada.unMonto
+              , otro_monto = deconstructMonto normalizada.otraMoneda normalizada.otroMonto
               }
       )
       >>= (runInsert . insert db.tasas_de_cambio . insertValues)

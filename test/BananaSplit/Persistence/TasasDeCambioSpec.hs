@@ -74,8 +74,8 @@ spec = do
               , Schema.grupo = Schema.GrupoId grupo.id
               , Schema.una_moneda = USD
               , Schema.otra_moneda = ARS
-              , Schema.un_monto = Schema.Monto 2 100
-              , Schema.otro_monto = Schema.Monto 2 135000
+              , Schema.un_monto = 100
+              , Schema.otro_monto = 135000
               }
 
       runDb (runInsert $ insert db.tasas_de_cambio $ insertValues [alReves])
@@ -90,8 +90,8 @@ spec = do
               , Schema.grupo = Schema.GrupoId grupo.id
               , Schema.una_moneda = ARS
               , Schema.otra_moneda = USD
-              , Schema.un_monto = Schema.Monto 2 0
-              , Schema.otro_monto = Schema.Monto 2 100
+              , Schema.un_monto = 0
+              , Schema.otro_monto = 100
               }
 
       runDb (runInsert $ insert db.tasas_de_cambio $ insertValues [enCero])

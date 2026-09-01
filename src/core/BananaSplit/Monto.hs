@@ -8,6 +8,7 @@ module BananaSplit.Monto (
   Monto (..),
   getLugaresDespuesDeLaComa,
   inMonto,
+  mantisaEn,
   mkMonto,
   monto2Text,
   montoDiffText,
@@ -43,6 +44,10 @@ mkMonto lugaresDespuesDeLaComa n =
 getLugaresDespuesDeLaComa :: Monto -> Word8
 getLugaresDespuesDeLaComa (Monto (Decimal.Decimal lugaresDespuesDeLaComa _)) =
   lugaresDespuesDeLaComa
+
+mantisaEn :: Word8 -> Monto -> Integer
+mantisaEn escala (Monto m) =
+  Decimal.decimalMantissa $ Decimal.roundTo escala m
 
 times :: (Integral n) => Monto -> n -> Monto
 (Monto (Decimal.Decimal lugaresDespuesDeLaComa decimal)) `times` n =
