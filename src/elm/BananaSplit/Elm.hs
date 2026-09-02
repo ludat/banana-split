@@ -13,6 +13,7 @@ module BananaSplit.Elm (
 ) where
 
 import Data.Data
+import Data.Text qualified as Text
 import Elm.TyRep
 import Protolude
 import Servant
@@ -38,6 +39,7 @@ instance
 generateElmFiles :: IO ()
 generateElmFiles = do
   putText "Generating elm files..."
+  generateElmMoneda
   generateElmModuleWith
     ( defElmOptions
         { elmToString = \case
@@ -110,3 +112,32 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy RepartijaForFrontend)
     ]
     (Proxy :: Proxy (ToServantApi Api))
+
+-- | El front necesita la escala de cada moneda para parsear un monto con la
+-- precisión que corresponde, y esa tabla vive en 'escalaDe'. En vez de
+-- copiarla a mano en Elm la emitimos desde acá, así agregar una moneda o
+-- cambiarle la escala no puede dejar los dos lados desincronizados.
+generateElmMoneda :: IO ()
+generateElmMoneda =
+  writeFile "ui/generated-src/Generated/Moneda.elm"
+    $ Text.unlines
+    $ [ "module Generated.Moneda exposing (escalaDe)"
+      , ""
+      , "import Generated.Api exposing (Moneda(..))"
+      , ""
+      , ""
+      , "{-| Cuántos decimales tiene un monto de esta moneda."
+      , ""
+      , "Generado desde `BananaSplit.Moneda.escalaDe`. No editar a mano."
+      , ""
+      , "-}"
+      , "escalaDe : Moneda -> Int"
+      , "escalaDe moneda ="
+      , "    case moneda of"
+      ]
+    <> (todasLasMonedas & fmap ramaDe & intersperse [""] & mconcat)
+  where
+    ramaDe moneda =
+      [ "        " <> show moneda <> " ->"
+      , "            " <> show (escalaDe moneda)
+      ]

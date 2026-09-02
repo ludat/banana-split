@@ -6,6 +6,7 @@
 module BananaSplit.Moneda (
   Moneda (..),
   PorMoneda (..),
+  escalaDe,
   todasLasMonedas,
   enMoneda,
   forMonedaM,
@@ -41,6 +42,16 @@ instance FromHttpApiData Moneda where
     case readMaybe t of
       Just moneda -> Right moneda
       Nothing -> Left $ "no existe la moneda " <> t
+
+escalaDe :: Moneda -> Word8
+escalaDe = \case
+  ARS -> 2
+  USD -> 2
+  EUR -> 2
+  BRL -> 2
+  UYU -> 2
+  CLP -> 2
+  GBP -> 2
 
 newtype PorMoneda a
   = PorMoneda (Map Moneda a)

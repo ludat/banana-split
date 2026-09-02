@@ -13,7 +13,8 @@ module Models.Monto exposing
 
 import Form.Error as FormError
 import Form.Validate as V exposing (Validation)
-import Generated.Api exposing (Monto)
+import Generated.Api exposing (Moneda, Monto)
+import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, span, text)
 import Html.Attributes exposing (class)
 import Numeric.Decimal as Decimal
@@ -23,13 +24,19 @@ import Utils.Form exposing (CustomFormError(..))
 
 
 {-| Form validation that accepts display-format input ("1.000,50") and produces a Monto.
+
+La precisión sale de la moneda y no de lo que haya tipeado el usuario: el backend
+guarda los montos como enteros de unidades mínimas de esa moneda, así que
+cualquier decimal de más se redondearía al guardar. Parseando con la escala de la
+moneda el redondeo pasa acá, a la vista del usuario, en vez de en silencio.
+
 -}
-validateMonto : Validation CustomFormError Monto
-validateMonto =
+validateMonto : Moneda -> Validation CustomFormError Monto
+validateMonto moneda =
     V.string
         |> V.andThen
             (\t ->
-                case Decimal.fromString Decimal.HalfUp (Nat.fromIntOrZero 2) t of
+                case Decimal.fromString Decimal.HalfUp (Nat.fromIntOrZero (escalaDe moneda)) t of
                     Ok n ->
                         let
                             numerator =

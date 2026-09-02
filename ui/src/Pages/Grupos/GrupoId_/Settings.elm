@@ -8,6 +8,7 @@ import Form.Field
 import Form.Init as Form
 import Form.Validate as V exposing (Validation)
 import Generated.Api as Api exposing (Moneda, Monto, ResumenGrupo, ShallowGrupo, TasaDeCambio, ULID, UpdateGrupoParams, User)
+import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, a, button, div, i, input, label, option, select, span, text)
 import Html.Attributes as Attr exposing (class, classList, disabled, for, id, selected, type_, value)
 import Html.Events exposing (on, onClick, onInput, onSubmit)
@@ -531,32 +532,38 @@ validateTasas =
 
 validateTasa : Validation CustomFormError (Maybe TasaDeCambio)
 validateTasa =
-    V.succeed
-        (\tasaId unaMoneda otraMoneda unMonto otroMonto ->
-            Maybe.map2
-                (\desde hasta ->
-                    { id = tasaId
-                    , unaMoneda = unaMoneda
-                    , otraMoneda = otraMoneda
-                    , unMonto = desde
-                    , otroMonto = hasta
-                    }
-                )
-                unMonto
-                otroMonto
-        )
-        |> V.andMap (V.field "id" V.string)
-        |> V.andMap (V.field "unaMoneda" Moneda.validate)
-        |> V.andMap (V.field "otraMoneda" Moneda.validate)
-        |> V.andMap (V.field "unMonto" validateMontoDeTasa)
-        |> V.andMap (V.field "otroMonto" validateMontoDeTasa)
+    -- Cada lado del par se parsea con la escala de su propia moneda, que no
+    -- tienen por qué ser la misma, así que las dos se leen antes que los montos.
+    V.map2 Tuple.pair
+        (V.field "unaMoneda" Moneda.validate)
+        (V.field "otraMoneda" Moneda.validate)
+        |> V.andThen
+            (\( unaMoneda, otraMoneda ) ->
+                V.succeed
+                    (\tasaId unMonto otroMonto ->
+                        Maybe.map2
+                            (\desde hasta ->
+                                { id = tasaId
+                                , unaMoneda = unaMoneda
+                                , otraMoneda = otraMoneda
+                                , unMonto = desde
+                                , otroMonto = hasta
+                                }
+                            )
+                            unMonto
+                            otroMonto
+                    )
+                    |> V.andMap (V.field "id" V.string)
+                    |> V.andMap (V.field "unMonto" (validateMontoDeTasa unaMoneda))
+                    |> V.andMap (V.field "otroMonto" (validateMontoDeTasa otraMoneda))
+            )
 
 
-validateMontoDeTasa : Validation CustomFormError (Maybe Monto)
-validateMontoDeTasa =
+validateMontoDeTasa : Moneda -> Validation CustomFormError (Maybe Monto)
+validateMontoDeTasa moneda =
     V.oneOf
         [ V.emptyString |> V.map (always Nothing)
-        , Monto.validateMonto
+        , Monto.validateMonto moneda
             |> V.andThen
                 (\monto ->
                     if monto.valor > 0 then
@@ -843,7 +850,9 @@ viewLadoDeTasa form prefix campoMonto codigoMoneda =
     in
     div []
         [ div [ class "d-flex align-items-center gap-2" ]
-            [ div [ class "flex-grow-1" ] [ Bs.montoInput field [] ]
+            [ div [ class "flex-grow-1" ]
+                -- Cada lado del par lleva los decimales de su propia moneda.
+                [ Bs.montoInput (decimalesDe codigoMoneda) field [] ]
             , span [ class "text-muted text-nowrap" ] [ text codigoMoneda ]
             ]
         , if hasErrorField field then
@@ -852,6 +861,17 @@ viewLadoDeTasa form prefix campoMonto codigoMoneda =
           else
             text ""
         ]
+
+
+{-| El form guarda la moneda como código, así que la volvemos a `Moneda` para
+sacarle la escala. Los códigos salen de `Moneda.toString`, nunca de tipeo, así
+que el fallback no se da en la práctica.
+-}
+decimalesDe : String -> Int
+decimalesDe codigoMoneda =
+    Moneda.fromString codigoMoneda
+        |> Maybe.map escalaDe
+        |> Maybe.withDefault 2
 
 
 tasasDelForm : Form CustomFormError (List (Maybe TasaDeCambio)) -> Maybe (List TasaDeCambio)
