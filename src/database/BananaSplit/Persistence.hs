@@ -320,7 +320,7 @@ fetchPago pagoId = do
     & ( \p ->
           M.Pago
             { M.pagoId = p.pagoId
-            , M.monto = constructMonto dbPago.pagoMoneda p.pagoMonto
+            , M.monto = desdeUnidadesMinimas dbPago.pagoMoneda p.pagoMontoEnUnidadesMinimas
             , M.moneda = dbPago.pagoMoneda
             , M.nombre = p.pagoNombre
             , M.isValid = p.pagoIsValid
@@ -341,19 +341,19 @@ updateIsValidPago pago = do
       (\p -> p.pagoId ==. val_ pago.pagoId)
   pure pago
 
-deconstructMonto :: M.Moneda -> M.Monto -> Monto
-deconstructMonto moneda monto =
+aUnidadesMinimas :: M.Moneda -> M.Monto -> UnidadesMinimas
+aUnidadesMinimas moneda monto =
   fromIntegral $ M.mantisaEn (M.escalaDe moneda) monto
 
-deconstructMontoMaybe :: M.Moneda -> Maybe M.Monto -> Maybe Monto
-deconstructMontoMaybe moneda = fmap (deconstructMonto moneda)
+aUnidadesMinimasMaybe :: M.Moneda -> Maybe M.Monto -> Maybe UnidadesMinimas
+aUnidadesMinimasMaybe moneda = fmap (aUnidadesMinimas moneda)
 
-constructMonto :: M.Moneda -> Monto -> M.Monto
-constructMonto moneda valor =
-  M.mkMonto (M.escalaDe moneda) (fromIntegral valor)
+desdeUnidadesMinimas :: M.Moneda -> UnidadesMinimas -> M.Monto
+desdeUnidadesMinimas moneda unidades =
+  M.mkMonto (M.escalaDe moneda) (fromIntegral unidades)
 
-constructMontoMaybe :: M.Moneda -> Maybe Monto -> Maybe M.Monto
-constructMontoMaybe moneda = fmap (constructMonto moneda)
+desdeUnidadesMinimasMaybe :: M.Moneda -> Maybe UnidadesMinimas -> Maybe M.Monto
+desdeUnidadesMinimasMaybe moneda = fmap (desdeUnidadesMinimas moneda)
 
 fetchDistribucionMontoEquitativoItems :: ULID -> Pg [M.ParticipanteId]
 fetchDistribucionMontoEquitativoItems distribucionMontoEquitativoId = do
@@ -376,7 +376,7 @@ fetchDistribucionMontosEspecificosItems moneda distribucionMontosEspecificosId =
     & fmap
       ( \item ->
           M.MontoFijo
-            (constructMonto moneda item.monto)
+            (desdeUnidadesMinimas moneda item.monto_en_unidades_minimas)
             (M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid)
       )
 
@@ -391,7 +391,7 @@ fetchDistribucionPartesItems moneda distribucionPartesId = do
     & fmap
       ( \item ->
           let participante = M.ParticipanteId $ case item.participante of ParticipanteId ulid -> ulid
-          in case (constructMontoMaybe moneda item.monto, item.cuota) of
+          in case (desdeUnidadesMinimasMaybe moneda item.monto_en_unidades_minimas, item.cuota) of
                (Just monto, Just cuota) -> M.PonderadoYMontoFijo monto (fromIntegral cuota) participante
                (Just monto, Nothing) -> M.MontoFijo monto participante
                (Nothing, Just cuota) -> M.Ponderado (fromIntegral cuota) participante
@@ -493,7 +493,7 @@ fetchShallowPagos grupoId = do
         { M.pagoId = pago.pagoId
         , M.isValid = pago.pagoIsValid
         , M.nombre = pago.pagoNombre
-        , M.monto = constructMonto pago.pagoMoneda pago.pagoMonto
+        , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
         , M.moneda = pago.pagoMoneda
         , M.fecha = pago.fecha
         }
@@ -634,7 +634,7 @@ savePago grupoId pagoWithoutId = do
               , pagoIsValid = pago.isValid
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
-              , pagoMonto = deconstructMonto pago.moneda pago.monto
+              , pagoMontoEnUnidadesMinimas = aUnidadesMinimas pago.moneda pago.monto
               , pagoMoneda = pago.moneda
               , distribucion_pagadores = DistribucionId distribucionPagadores.id
               , distribucion_deudores = DistribucionId distribucionDeudores.id
@@ -745,7 +745,7 @@ saveDistribucion moneda distribucionWithoutId = do
                 itemId
                 (DistribucionPartesId tipo.id)
                 (participanteId2Persistent participante)
-                (deconstructMontoMaybe moneda monto)
+                (aUnidadesMinimasMaybe moneda monto)
                 (fromIntegral <$> cuota)
         pure $ case parte of
           M.MontoFijo monto participante ->
@@ -845,7 +845,7 @@ saveRepartija moneda distribucionId repartijaSinId = do
           [ Repartija
               { id = repartija.id
               , distribucion = DistribucionId distribucionId
-              , extra = deconstructMonto moneda repartija.extra
+              , extra_en_unidades_minimas = aUnidadesMinimas moneda repartija.extra
               , distribucion_de_sobras = distribucionDeSobrasToText repartija.distribucionDeSobras
               }
           ]
@@ -885,7 +885,7 @@ saveRepartijaItems moneda repartijaId repartijaItemsWithoutId = do
                   { repartijaitemId = item.id
                   , repartijaitemRepartija = DistribucionRepartijaId repartijaId
                   , repartijaitemNombre = item.nombre
-                  , repartijaitemMonto = deconstructMonto moneda item.monto
+                  , repartijaitemMontoEnUnidadesMinimas = aUnidadesMinimas moneda item.monto
                   , repartijaitemCantidad = fromIntegral item.cantidad
                   }
             )
@@ -917,7 +917,7 @@ fetchRepartija unRepartijaId = do
           M.Repartija
             { id = repartija.id
             , nombre = pagoNombre
-            , extra = constructMonto moneda repartija.extra
+            , extra = desdeUnidadesMinimas moneda repartija.extra_en_unidades_minimas
             , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
             , claims =
                 claims
@@ -937,7 +937,7 @@ fetchRepartija unRepartijaId = do
                         M.RepartijaItem
                           { M.id = dbItem.repartijaitemId
                           , M.nombre = dbItem.repartijaitemNombre
-                          , M.monto = constructMonto moneda dbItem.repartijaitemMonto
+                          , M.monto = desdeUnidadesMinimas moneda dbItem.repartijaitemMontoEnUnidadesMinimas
                           , M.cantidad = fromIntegral dbItem.repartijaitemCantidad
                           }
                     )
@@ -1061,7 +1061,7 @@ freezeGrupo grupoId transaccionesPorMoneda = do
           , grupo = GrupoId grupoId
           , participante_from = ParticipanteId $ M.participanteId2ULID t.from
           , participante_to = ParticipanteId $ M.participanteId2ULID t.to
-          , monto = deconstructMonto moneda t.monto
+          , monto_en_unidades_minimas = aUnidadesMinimas moneda t.monto
           , moneda = moneda
           }
   runInsert
@@ -1108,7 +1108,7 @@ fetchTransaccionesCongeladas grupoId = do
               { M.id = Just tc.id
               , M.from = M.ParticipanteId $ case tc.participante_from of ParticipanteId ulid -> ulid
               , M.to = M.ParticipanteId $ case tc.participante_to of ParticipanteId ulid -> ulid
-              , M.monto = constructMonto tc.moneda tc.monto
+              , M.monto = desdeUnidadesMinimas tc.moneda tc.monto_en_unidades_minimas
               }
           ]
             `M.enMoneda` tc.moneda
@@ -1131,8 +1131,8 @@ fetchTasasDeCambio grupoId = do
             { M.id = tasa.id
             , M.unaMoneda = tasa.una_moneda
             , M.otraMoneda = tasa.otra_moneda
-            , M.unMonto = constructMonto tasa.una_moneda tasa.un_monto
-            , M.otroMonto = constructMonto tasa.otra_moneda tasa.otro_monto
+            , M.unMonto = desdeUnidadesMinimas tasa.una_moneda tasa.un_monto_en_unidades_minimas
+            , M.otroMonto = desdeUnidadesMinimas tasa.otra_moneda tasa.otro_monto_en_unidades_minimas
             }
       )
 
@@ -1179,8 +1179,8 @@ guardarTasasDeCambio grupoId moneda tasas = do
               , grupo = GrupoId grupoId
               , una_moneda = normalizada.unaMoneda
               , otra_moneda = normalizada.otraMoneda
-              , un_monto = deconstructMonto normalizada.unaMoneda normalizada.unMonto
-              , otro_monto = deconstructMonto normalizada.otraMoneda normalizada.otroMonto
+              , un_monto_en_unidades_minimas = aUnidadesMinimas normalizada.unaMoneda normalizada.unMonto
+              , otro_monto_en_unidades_minimas = aUnidadesMinimas normalizada.otraMoneda normalizada.otroMonto
               }
       )
       >>= (runInsert . insert db.tasas_de_cambio . insertValues)

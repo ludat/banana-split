@@ -2,7 +2,7 @@ operations:
   - rename_column:
       table: pagos
       from: monto__valor
-      to: monto
+      to: monto_en_unidades_minimas
   - drop_column:
       table: pagos
       column: monto__lugares_despues_de_la_coma
@@ -11,7 +11,7 @@ operations:
   - rename_column:
       table: repartijas
       from: extra__valor
-      to: extra
+      to: extra_en_unidades_minimas
   - drop_column:
       table: repartijas
       column: extra__lugares_despues_de_la_coma
@@ -20,7 +20,7 @@ operations:
   - rename_column:
       table: repartija_items
       from: monto__valor
-      to: monto
+      to: monto_en_unidades_minimas
   - drop_column:
       table: repartija_items
       column: monto__lugares_despues_de_la_coma
@@ -31,16 +31,16 @@ operations:
   - rename_column:
       table: distribuciones_partes_items
       from: monto__valor
-      to: monto
+      to: monto_en_unidades_minimas
   - drop_column:
       table: distribuciones_partes_items
       column: monto__lugares_despues_de_la_coma
-      down: "CASE WHEN monto IS NULL THEN NULL ELSE 2 END"
+      down: "CASE WHEN monto_en_unidades_minimas IS NULL THEN NULL ELSE 2 END"
 
   - rename_column:
       table: distribuciones_montos_especificos_items
       from: monto__valor
-      to: monto
+      to: monto_en_unidades_minimas
   - drop_column:
       table: distribuciones_montos_especificos_items
       column: monto__lugares_despues_de_la_coma
@@ -49,7 +49,7 @@ operations:
   - rename_column:
       table: transacciones_congeladas
       from: monto__valor
-      to: monto
+      to: monto_en_unidades_minimas
   - drop_column:
       table: transacciones_congeladas
       column: monto__lugares_despues_de_la_coma
@@ -58,7 +58,7 @@ operations:
   - rename_column:
       table: tasas_de_cambio
       from: un_monto__valor
-      to: un_monto
+      to: un_monto_en_unidades_minimas
   - drop_column:
       table: tasas_de_cambio
       column: un_monto__lugares_despues_de_la_coma
@@ -66,7 +66,7 @@ operations:
   - rename_column:
       table: tasas_de_cambio
       from: otro_monto__valor
-      to: otro_monto
+      to: otro_monto_en_unidades_minimas
   - drop_column:
       table: tasas_de_cambio
       column: otro_monto__lugares_despues_de_la_coma
