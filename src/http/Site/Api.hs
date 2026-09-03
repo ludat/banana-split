@@ -66,17 +66,11 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] ShallowGrupo
   , _routeGrupoTasasDeCambioPut ::
       routes :- "grupo" :> Capture "id" ULID :> "tasas-de-cambio" :> Capture "moneda" Moneda :> ReqBody '[JSON] [TasaDeCambio] :> Put '[JSON] [TasaDeCambio]
-  , -- Marca como hecha una de las transferencias que dejó el congelamiento. No
-    -- crea un pago: la transferencia hecha ya cuenta en los netos por sí sola.
-    _routeTransferenciaSaldar ::
+  , _routeTransferenciaSaldar ::
       routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Post '[JSON] ULID
-  , -- La vuelve a dejar pendiente. Solo aplica a las transferencias de este
-    -- congelamiento: una pendiente no tiene dónde vivir fuera de uno.
-    _routeTransferenciaDesmarcar ::
+  , _routeTransferenciaDesmarcar ::
       routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Delete '[JSON] ULID
-  , -- Una transferencia registrada a mano, en un grupo que no está congelado y
-    -- por lo tanto no tiene transferencias que marcar. Nace hecha.
-    _routeTransferenciaPost ::
+  , _routeTransferenciaPost ::
       routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> ReqBody '[JSON] NuevaTransferenciaParams :> Post '[JSON] Transferencia
   , _routeTransferenciaDelete ::
       routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> Delete '[JSON] ULID
@@ -192,21 +186,13 @@ data UpdateGrupoParams = UpdateGrupoParams
   }
   deriving (Show, Eq, Generic)
 
--- | Congelar parte el grupo en dos momentos bien distintos, y el resumen mira
--- cosas distintas en cada uno: mientras está abierto lo que importa es cómo van
--- los gastos, y una vez congelado las deudas ya están decididas y lo único que
--- queda es qué transferencias faltan. Nada de lo que trae un momento le sirve
--- al otro, así que ninguno paga por lo del otro: el congelado ni siquiera toca
--- los pagos.
 data ResumenGrupo
   = GrupoAbierto ResumenAbierto
   | GrupoCongelado ResumenCongelado
   deriving (Show, Eq, Generic)
 
--- | Mientras el grupo está abierto lo que importa es cómo van los gastos.
 data ResumenAbierto = ResumenAbierto
   { netos :: PorMoneda (Netos Monto)
-  -- ^ Solo de los gastos: quién puso cuánto.
   , consolidado :: ConsolidadoNetos
   , cantidadPagos :: Int
   , cantidadPagosInvalidos :: Int
@@ -214,8 +200,6 @@ data ResumenAbierto = ResumenAbierto
   }
   deriving (Show, Eq, Generic)
 
--- | Una vez congelado las deudas ya están decididas y lo único que queda es qué
--- transferencias faltan.
 data ResumenCongelado = ResumenCongelado
   { transferenciasParaSaldar :: PorMoneda [Transferencia]
   , transferenciasHechas :: PorMoneda [TransferenciaHecha]
