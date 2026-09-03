@@ -37,13 +37,13 @@ module BananaSplit.Persistence (
   fetchTransacciones,
   freezeGrupo,
   guardarTasasDeCambio,
+  borrarTransaccion,
   crearTransaccionSaldada,
   desmarcarTransaccionSaldada,
   marcarTransaccionSaldada,
   normalizarTasa,
   TransaccionGuardada (..),
   transaccionesHechas,
-  transaccionesHechasDesde,
   transaccionesPendientes,
   savePago,
   saveRepartija,
@@ -1137,6 +1137,15 @@ desmarcarTransaccionSaldada grupoId transaccionId =
       (\t -> t.saldada_at <-. val_ Nothing)
       (\t -> t.id ==. val_ transaccionId &&. t.grupo ==. GrupoId (val_ grupoId))
 
+-- | La borra del todo, para cuando esa transferencia nunca pasó. Distinto de
+-- desmarcarla, que la deja pendiente porque todavía hay que hacerla.
+borrarTransaccion :: ULID -> ULID -> Pg ()
+borrarTransaccion grupoId transaccionId =
+  runDelete
+    $ delete
+      db.transacciones
+      (\t -> t.id ==. val_ transaccionId &&. t.grupo ==. GrupoId (val_ grupoId))
+
 updateGrupo :: ULID -> Text -> M.Moneda -> Pg ()
 updateGrupo grupoId nombre monedaPorDefecto = do
   runUpdate
@@ -1189,16 +1198,20 @@ transaccionesPendientes :: [TransaccionGuardada] -> M.PorMoneda [M.Transaccion]
 transaccionesPendientes =
   agruparPorMoneda . filter (isNothing . (.saldadaAt))
 
--- | Lo que ya se transfirió, de este congelamiento y de todos los anteriores.
-transaccionesHechas :: [TransaccionGuardada] -> M.PorMoneda [M.Transaccion]
-transaccionesHechas =
-  agruparPorMoneda . filter (isJust . (.saldadaAt))
-
--- | Solo lo que se transfirió después de un momento dado, que es cómo se
--- separan las transacciones de este congelamiento de las que el grupo arrastra.
-transaccionesHechasDesde :: UTCTime -> [TransaccionGuardada] -> M.PorMoneda [M.Transaccion]
-transaccionesHechasDesde desde =
-  agruparPorMoneda . filter (\t -> maybe False (>= desde) t.saldadaAt)
+transaccionesHechas :: [TransaccionGuardada] -> M.PorMoneda [M.TransaccionHecha]
+transaccionesHechas guardadas =
+  guardadas
+    & mapMaybe
+      ( \t ->
+          t.saldadaAt
+            & fmap
+              ( \saldadaAt ->
+                  ( t.moneda
+                  , M.TransaccionHecha{M.transaccion = t.transaccion, M.saldadaAt = saldadaAt}
+                  )
+              )
+      )
+    & foldMap (\(moneda, hecha) -> [hecha] `M.enMoneda` moneda)
 
 agruparPorMoneda :: [TransaccionGuardada] -> M.PorMoneda [M.Transaccion]
 agruparPorMoneda =

@@ -62,6 +62,7 @@ serverT =
         , _routeTransaccionSaldar = handleSaldarTransaccion
         , _routeTransaccionDesmarcar = handleDesmarcarTransaccion
         , _routeTransaccionPost = handleCrearTransaccion
+        , _routeTransaccionDelete = handleBorrarTransaccion
         , _routeReceiptImageParse = handleReceiptImageParse
         , _routeAuthRequestCode = handleRequestCode
         , _routeAuthVerify = handleVerify

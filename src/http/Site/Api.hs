@@ -78,6 +78,8 @@ data Api routes
     -- por lo tanto no tiene transacciones que marcar. Nace hecha.
     _routeTransaccionPost ::
       routes :- "grupo" :> Capture "id" ULID :> "transacciones" :> ReqBody '[JSON] NuevaTransaccionParams :> Post '[JSON] Transaccion
+  , _routeTransaccionDelete ::
+      routes :- "grupo" :> Capture "id" ULID :> "transacciones" :> Capture "transaccionId" ULID :> Delete '[JSON] ULID
   , _routeReceiptImageParse ::
       routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
   , -- Auth. A single email-first flow: request a code, prove ownership by
@@ -208,6 +210,7 @@ data ResumenAbierto = ResumenAbierto
   , consolidado :: ConsolidadoNetos
   , cantidadPagos :: Int
   , cantidadPagosInvalidos :: Int
+  , transaccionesHechas :: PorMoneda [TransaccionHecha]
   }
   deriving (Show, Eq, Generic)
 
@@ -215,8 +218,7 @@ data ResumenAbierto = ResumenAbierto
 -- transferencias faltan.
 data ResumenCongelado = ResumenCongelado
   { transaccionesParaSaldar :: PorMoneda [Transaccion]
-  , transaccionesHechas :: PorMoneda [Transaccion]
-  -- ^ Lo que ya se transfirió en este congelamiento.
+  , transaccionesHechas :: PorMoneda [TransaccionHecha]
   }
   deriving (Show, Eq, Generic)
 

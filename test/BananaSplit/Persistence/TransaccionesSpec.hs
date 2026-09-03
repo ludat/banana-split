@@ -24,6 +24,8 @@ spec = do
 
     montosDe = fmap (fmap sinId)
 
+    montosDeHechas = fmap (fmap (sinId . (.transaccion)))
+
   describe "freezeGrupo" $ do
     it "deja las transacciones pendientes en la moneda que se le pasa" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
@@ -63,7 +65,7 @@ spec = do
 
       guardadas <- runDb $ fetchTransacciones grupo.id
       transaccionesPendientes guardadas `shouldBe` mempty
-      montosDe (transaccionesHechas guardadas)
+      montosDeHechas (transaccionesHechas guardadas)
         `shouldBe` [transaccionEntre otra una 100 & sinId] `enMoneda` ARS
 
     it "no toca las transacciones de otro grupo" $ \(RunDb runDb) -> do
@@ -116,7 +118,7 @@ spec = do
 
       guardadas <- runDb $ fetchTransacciones grupo.id
       transaccionesPendientes guardadas `shouldBe` mempty
-      montosDe (transaccionesHechas guardadas)
+      montosDeHechas (transaccionesHechas guardadas)
         `shouldBe` [transaccionEntre otra una 100 & sinId] `enMoneda` ARS
 
     it "deja el grupo descongelado y sin fecha de congelamiento" $ \(RunDb runDb) -> do
@@ -137,7 +139,7 @@ spec = do
 
       guardadas <- runDb $ fetchTransacciones grupo.id
       transaccionesPendientes guardadas `shouldBe` mempty
-      montosDe (transaccionesHechas guardadas)
+      montosDeHechas (transaccionesHechas guardadas)
         `shouldBe` [transaccionEntre otra una 20 & sinId] `enMoneda` USD
 
 -- | Un grupo con dos participantes, que es todo lo que hace falta para mirar el

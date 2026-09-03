@@ -22,7 +22,9 @@ import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
+import Time exposing (Zone)
 import Utils.Day
+import Utils.Posix as Posix exposing (Posix)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import View exposing (View)
@@ -34,7 +36,7 @@ page shared route =
         { init = \() -> init route shared.store
         , update = update shared.store (PagoDetalleModal.context shared route)
         , subscriptions = subscriptions
-        , view = view shared.store (Shared.currentParticipante shared route.params.id)
+        , view = view shared.store shared.timezone shared.now (Shared.currentParticipante shared route.params.id)
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
         |> Page.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
@@ -44,9 +46,7 @@ type alias Model =
     { grupoId : String
     , tabSeleccionado : Maybe Tab
     , pagoModal : PagoDetalleModal.Model
-    , -- La transferencia que el usuario dijo que hizo y todavía no confirmó.
-      -- Marcarla dice que la plata ya se movió, así que no va de un solo click.
-      confirmando : Maybe ( Moneda, Api.Transaccion )
+    , confirmando : Maybe ( Moneda, Api.Transaccion )
     }
 
 
@@ -92,7 +92,6 @@ type Msg
     | PedirConfirmacion ( Moneda, Api.Transaccion )
     | CancelarConfirmacion
     | SaldarTransaccion ULID
-    | DesmarcarTransaccion ULID
     | TransaccionResponse String (Result Http.Error ULID)
 
 
@@ -104,8 +103,8 @@ update store ctx msg model =
             , Effect.none
             )
 
-        PedirConfirmacion transferencia ->
-            ( { model | confirmando = Just transferencia }
+        PedirConfirmacion confirmacion ->
+            ( { model | confirmando = Just confirmacion }
             , Effect.none
             )
 
@@ -121,15 +120,6 @@ update store ctx msg model =
                     model.grupoId
                     transaccionId
                     (TransaccionResponse "Se registró la transferencia")
-            )
-
-        DesmarcarTransaccion transaccionId ->
-            ( model
-            , Effect.sendCmd <|
-                Api.deleteGrupoByIdTransaccionesByTransaccionIdSaldar
-                    model.grupoId
-                    transaccionId
-                    (TransaccionResponse "La transferencia volvió a quedar pendiente")
             )
 
         TransaccionResponse mensaje (Ok _) ->
@@ -168,8 +158,8 @@ subscriptions _ =
     Sub.none
 
 
-view : Store -> Maybe String -> Model -> View Msg
-view store userId model =
+view : Store -> Zone -> Posix -> Maybe String -> Model -> View Msg
+view store zone ahora userId model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Loading...", body = [] }
@@ -199,7 +189,7 @@ view store userId model =
                     div [ class "container-fluid py-3" ]
                         [ div [ class "row g-4" ]
                             [ div [ class "col-lg-8" ]
-                                [ viewLeftColumn store userId model grupo ]
+                                [ viewLeftColumn store zone ahora userId model grupo ]
                             , div [ class "col-lg-4" ]
                                 [ viewUltimosPagosCard store model grupo ]
                             ]
@@ -210,8 +200,8 @@ view store userId model =
             }
 
 
-viewLeftColumn : Store -> Maybe String -> Model -> ShallowGrupo -> Html Msg
-viewLeftColumn store userId model grupo =
+viewLeftColumn : Store -> Zone -> Posix -> Maybe String -> Model -> ShallowGrupo -> Html Msg
+viewLeftColumn store zone ahora userId model grupo =
     case store |> Store.getResumen model.grupoId of
         NotAsked ->
             div [ class "text-muted" ] [ text "Cargando..." ]
@@ -223,7 +213,7 @@ viewLeftColumn store userId model grupo =
             Bs.alert Bs.AlertDanger [] [ text "Error cargando los datos del grupo." ]
 
         Success (Api.GrupoCongelado resumen) ->
-            viewGrupoCongelado userId grupo resumen
+            viewGrupoCongelado zone ahora userId grupo resumen
 
         Success (Api.GrupoAbierto resumen) ->
             if resumen.cantidadPagos == 0 then
@@ -333,8 +323,8 @@ viewLeftColumn store userId model grupo =
 netos no se mueven más, así que lo único que importa es qué transferencias
 faltan: primero las tuyas, después las del resto.
 -}
-viewGrupoCongelado : Maybe String -> ShallowGrupo -> Api.ResumenCongelado -> Html Msg
-viewGrupoCongelado userId grupo resumen =
+viewGrupoCongelado : Zone -> Posix -> Maybe String -> ShallowGrupo -> Api.ResumenCongelado -> Html Msg
+viewGrupoCongelado zone ahora userId grupo resumen =
     let
         pendientes : List ( Moneda, Api.Transaccion )
         pendientes =
@@ -343,6 +333,7 @@ viewGrupoCongelado userId grupo resumen =
         hechas : List ( Moneda, Api.Transaccion )
         hechas =
             aplanarTransacciones resumen.transaccionesHechas
+                |> List.map (\( moneda, h ) -> ( moneda, h.transaccion ))
 
         esMia : ( Moneda, Api.Transaccion ) -> Bool
         esMia ( _, t ) =
@@ -351,36 +342,42 @@ viewGrupoCongelado userId grupo resumen =
         ( misPendientes, ajenas ) =
             List.partition esMia pendientes
 
+        misHechas : List ( Posix, ( Moneda, Api.Transaccion ) )
         misHechas =
-            List.filter esMia hechas
+            aplanarTransacciones resumen.transaccionesHechas
+                |> List.filterMap
+                    (\( moneda, h ) ->
+                        if esMia ( moneda, h.transaccion ) then
+                            Just ( h.saldadaAt, ( moneda, h.transaccion ) )
+
+                        else
+                            Nothing
+                    )
     in
     div []
         [ Bs.alert Bs.AlertWarning
             [ class "mb-4" ]
             [ text "Este grupo está congelado: las deudas quedaron fijas y no se pueden agregar, editar ni eliminar pagos." ]
         , div [ class "fw-bold mb-3" ] [ text "Lo que te toca" ]
-        , case ( userId, misPendientes ++ misHechas ) of
+        , case ( userId, List.length misPendientes + List.length misHechas ) of
             ( Nothing, _ ) ->
                 Bs.alert Bs.AlertInfo
                     [ class "mb-4" ]
                     [ text "Seleccioná tu usuario para ver qué transferencias te tocan." ]
 
-            ( Just _, [] ) ->
+            ( Just _, 0 ) ->
                 Bs.alert Bs.AlertSuccess
                     [ class "mb-4" ]
                     [ text "Estás al día: no tenés transferencias pendientes." ]
 
             ( Just uid, _ ) ->
                 let
-                    -- Van todas juntas y ordenadas por id, que es el orden en
-                    -- que se crearon: si las pendientes fueran primero,
-                    -- confirmar una la haría saltar al final y el resto se
-                    -- correría de lugar.
-                    misTransferencias : List ( EstadoTransferencia, ( Moneda, Api.Transaccion ) )
+                    misTransferencias : List ( Transaccion.Estado, ( Moneda, Api.Transaccion ) )
                     misTransferencias =
-                        (misPendientes |> List.map (Tuple.pair Pendiente))
-                            ++ (misHechas |> List.map (Tuple.pair Hecha))
+                        (misPendientes |> List.map (Tuple.pair Transaccion.Pendiente))
+                            ++ (misHechas |> List.map (\( saldadaAt, tr ) -> ( Transaccion.Hecha saldadaAt, tr )))
                             |> List.sortBy (\( _, ( _, t ) ) -> t.id |> Maybe.withDefault "")
+                            |> List.reverse
                 in
                 div []
                     [ if List.isEmpty misPendientes then
@@ -390,12 +387,9 @@ viewGrupoCongelado userId grupo resumen =
 
                       else
                         text ""
-
-                    -- Las hechas se quedan en pantalla en vez de desaparecer al
-                    -- confirmarlas: sirven de comprobante de lo que ya hiciste.
                     , div [ class "row g-3 mb-4" ]
                         (misTransferencias
-                            |> List.map (\( estado, transferencia ) -> viewTransferenciaCard estado uid grupo transferencia)
+                            |> List.map (\( estado, transferencia ) -> viewTransferenciaCard zone ahora estado uid grupo transferencia)
                         )
                     ]
         , viewProgresoCongelado grupo (List.length pendientes) (List.length hechas)
@@ -409,14 +403,6 @@ viewGrupoCongelado userId grupo resumen =
                     (ajenas |> List.map (viewTransferenciaAjena grupo))
                 ]
         ]
-
-
-{-| En qué estado está una transferencia tuya. Las hechas se quedan en pantalla
-como comprobante en vez de desaparecer al confirmarlas.
--}
-type EstadoTransferencia
-    = Pendiente
-    | Hecha
 
 
 {-| Marcar una transferencia dice que la plata ya se movió, y el resto del grupo
@@ -460,53 +446,51 @@ viewConfirmacionModal userId grupo confirmando =
             [ Bs.btn Bs.Secondary
                 [ onClick CancelarConfirmacion ]
                 [ text "Todavía no" ]
-            , Bs.btn Bs.Primary
-                (case accion of
-                    Just msg ->
-                        [ onClick msg ]
+            , case accion of
+                Just msg ->
+                    Bs.btn Bs.Primary [ onClick msg ] [ text "Sí, ya está" ]
 
-                    Nothing ->
-                        [ Attr.disabled True ]
-                )
-                [ text "Sí, ya está" ]
+                Nothing ->
+                    text ""
             ]
         }
 
 
-{-| Una transferencia tuya: dice si la tenés que hacer o recibir, y se confirma
-o se deshace acá mismo. Marcarla pasa por un modal porque dice que la plata ya
-se movió; deshacerla no, que es justo el arrepentimiento.
+{-| Una transferencia tuya: dice si la tenés que hacer o recibir, y si está
+pendiente se confirma acá mismo, pasando por un modal porque dice que la plata
+ya se movió. Deshacerla vive en la pantalla de transferencias, así el resumen no
+se convierte en un editor.
 -}
-viewTransferenciaCard : EstadoTransferencia -> String -> ShallowGrupo -> ( Moneda, Api.Transaccion ) -> Html Msg
-viewTransferenciaCard estado userId grupo ( moneda, t ) =
+viewTransferenciaCard : Zone -> Posix -> Transaccion.Estado -> String -> ShallowGrupo -> ( Moneda, Api.Transaccion ) -> Html Msg
+viewTransferenciaCard zone ahora estado userId grupo ( moneda, t ) =
     let
         salgoYo =
             userId == t.from
 
         { etiqueta, otro, colorMonto, textoBoton } =
             case ( salgoYo, estado ) of
-                ( True, Pendiente ) ->
+                ( True, Transaccion.Pendiente ) ->
                     { etiqueta = "Tenés que transferirle a"
                     , otro = t.to
                     , colorMonto = "text-danger"
                     , textoBoton = "Ya la transferí"
                     }
 
-                ( True, Hecha ) ->
+                ( True, Transaccion.Hecha _ ) ->
                     { etiqueta = "Le transferiste a"
                     , otro = t.to
                     , colorMonto = "text-muted"
                     , textoBoton = ""
                     }
 
-                ( False, Pendiente ) ->
+                ( False, Transaccion.Pendiente ) ->
                     { etiqueta = "Vas a recibir de"
                     , otro = t.from
                     , colorMonto = "text-success"
                     , textoBoton = "Ya la recibí"
                     }
 
-                ( False, Hecha ) ->
+                ( False, Transaccion.Hecha _ ) ->
                     { etiqueta = "Recibiste de"
                     , otro = t.from
                     , colorMonto = "text-muted"
@@ -517,10 +501,10 @@ viewTransferenciaCard estado userId grupo ( moneda, t ) =
         [ div
             [ class "card h-100"
             , case estado of
-                Pendiente ->
+                Transaccion.Pendiente ->
                     style "border-color" "var(--bs-primary)"
 
-                Hecha ->
+                Transaccion.Hecha _ ->
                     style "opacity" "0.65"
             ]
             [ div [ class "card-body d-flex flex-column gap-2 p-3" ]
@@ -540,33 +524,23 @@ viewTransferenciaCard estado userId grupo ( moneda, t ) =
                         ]
                     ]
                 , case ( estado, t.id ) of
-                    ( Pendiente, Just _ ) ->
+                    ( Transaccion.Pendiente, Just _ ) ->
                         Bs.btn Bs.Primary
                             [ class "btn-sm align-self-start mt-auto"
                             , onClick (PedirConfirmacion ( moneda, t ))
                             ]
                             [ text textoBoton ]
 
-                    ( Pendiente, Nothing ) ->
+                    ( Transaccion.Pendiente, Nothing ) ->
                         text ""
 
-                    ( Hecha, Just transaccionId ) ->
-                        div [ class "d-flex justify-content-between align-items-center mt-auto" ]
-                            [ span [ class "text-success small" ]
-                                [ i [ class "bi bi-check2 me-1" ] []
-                                , text "Hecha"
-                                ]
-                            , Bs.btn Bs.Transparent
-                                [ class "btn-sm text-nowrap"
-                                , onClick (DesmarcarTransaccion transaccionId)
-                                ]
-                                [ text "Volver a pendiente" ]
+                    ( Transaccion.Hecha saldadaAt, _ ) ->
+                        div
+                            [ class "text-success small mt-auto"
+                            , Attr.title (Posix.toString zone saldadaAt)
                             ]
-
-                    ( Hecha, Nothing ) ->
-                        div [ class "text-success small mt-auto" ]
                             [ i [ class "bi bi-check2 me-1" ] []
-                            , text "Hecha"
+                            , text (Posix.relativo ahora saldadaAt)
                             ]
                 ]
             ]
@@ -612,7 +586,7 @@ viewProgresoCongelado grupo pendientes hechas =
 {-| 'PorMoneda' agrupa por moneda, pero un grupo congelado tiene una sola, así
 que para mostrar conviene la lista plana con la moneda pegada a cada una.
 -}
-aplanarTransacciones : Api.PorMoneda (List Api.Transaccion) -> List ( Moneda, Api.Transaccion )
+aplanarTransacciones : Api.PorMoneda (List a) -> List ( Moneda, a )
 aplanarTransacciones =
     List.concatMap (\( moneda, ts ) -> ts |> List.map (\t -> ( moneda, t )))
 

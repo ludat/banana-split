@@ -35,7 +35,6 @@ import BananaSplit.Persistence (
   freezeGrupo,
   guardarTasasDeCambio,
   transaccionesHechas,
-  transaccionesHechasDesde,
   transaccionesPendientes,
   unclaimParticipante,
   unfreezeGrupo,
@@ -53,17 +52,10 @@ handleCreateGrupoAsUser :: User -> CreateGrupoAsUserParams -> AppHandler Grupo
 handleCreateGrupoAsUser user CreateGrupoAsUserParams{grupoName} = do
   runBeam $ createGrupoForUser grupoName user
 
--- | Lo que falta mover de verdad: los netos de los gastos menos lo que ya se
--- transfirió. No es lo que se muestra —los netos que ve el usuario son solo de
--- los gastos— sino lo que se usa para decidir qué transacciones quedan. Sin
--- descontar lo transferido, un grupo que se congeló, se saldó y se descongeló
--- volvería a pedir las transferencias que ya se hicieron.
 netosPendientes :: Grupo -> PorMoneda [Transaccion] -> PorMoneda (Netos Monto)
 netosPendientes grupo hechas =
   calcularNetosTotales grupo <> netosDeTransacciones hechas
 
--- | Las monedas donde nadie quedó debiendo nada no necesitan tasa: no aportan
--- al consolidado, así que ni avisamos por ellas ni trabamos el congelamiento.
 netosConSaldo :: PorMoneda (Netos Monto) -> PorMoneda (Netos Monto)
 netosConSaldo = filterPorMoneda ((> 0) . deudoresNoNulos)
 
@@ -74,17 +66,16 @@ handleGetNetos grupoId = do
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   case shallowGrupo.congeladoAt of
-    -- Las deudas ya están decididas y guardadas como transacciones, así que
-    -- este camino no mira los pagos: no hay nada que recalcular con ellos.
-    Just congeladoAt -> do
+    Just _ -> do
       guardadas <- runBeam $ fetchTransacciones grupoId
       pure $
         GrupoCongelado
           ResumenCongelado
             { transaccionesParaSaldar = transaccionesPendientes guardadas
-            , transaccionesHechas = transaccionesHechasDesde congeladoAt guardadas
+            , transaccionesHechas = transaccionesHechas guardadas
             }
     Nothing -> do
+      guardadas <- runBeam $ fetchTransacciones grupoId
       pagos <- runBeam $ do
         shallowPagos <- fetchShallowPagos grupoId
         forM shallowPagos $ \shallowPago ->
@@ -99,10 +90,8 @@ handleGetNetos grupoId = do
               , monedaPorDefecto = shallowGrupo.monedaPorDefecto
               }
 
-      -- Los netos que se muestran son solo de los gastos: quién puso cuánto.
-      -- Las transferencias no los mueven, para que sigan diciendo lo mismo
-      -- mientras se salda.
-      let netos = calcularNetosTotales grupo
+      let netos =
+            netosPendientes grupo (transaccionesHechas guardadas & fmap (fmap (.transaccion)))
       let tabla = tablaDeTasas shallowGrupo.monedaPorDefecto shallowGrupo.tasasDeCambio
 
       pure $
@@ -112,6 +101,7 @@ handleGetNetos grupoId = do
             , consolidado = consolidarNetos tabla (netosConSaldo netos)
             , cantidadPagos = length grupo.pagos
             , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
+            , transaccionesHechas = transaccionesHechas guardadas
             }
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
@@ -166,7 +156,7 @@ handleFreezeGrupo grupoId = do
   guardadas <- runBeam $ fetchTransacciones grupoId
   tasasDeCambio <- runBeam $ fetchTasasDeCambio grupoId
 
-  let netos = netosPendientes grupo (transaccionesHechas guardadas)
+  let netos = netosPendientes grupo (transaccionesHechas guardadas <&> fmap (.transaccion))
   let consolidado =
         consolidarNetos
           (tablaDeTasas shallowGrupo.monedaPorDefecto tasasDeCambio)

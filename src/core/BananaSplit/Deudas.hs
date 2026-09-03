@@ -25,9 +25,11 @@ module BananaSplit.Deudas (
   TipoErrorResumen (..),
   totalNetos,
   Transaccion (..),
+  TransaccionHecha (..),
 ) where
 
 import Data.Decimal (Decimal)
+import Data.Time (UTCTime)
 import Data.Decimal qualified as Decimal
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
@@ -256,6 +258,12 @@ data Transaccion = Transaccion
   , from :: ParticipanteId
   , to :: ParticipanteId
   , monto :: Monto
+  }
+  deriving (Show, Eq, Generic)
+
+data TransaccionHecha = TransaccionHecha
+  { transaccion :: Transaccion
+  , saldadaAt :: UTCTime
   }
   deriving (Show, Eq, Generic)
 
@@ -570,6 +578,8 @@ calcularNetosRepartija repartija =
        & (<> deudasDelExtraPonderado)
 
 Elm.deriveBoth Elm.defaultOptions ''Transaccion
+
+Elm.deriveBoth Elm.defaultOptions ''TransaccionHecha
 Elm.deriveBoth Elm.defaultOptions ''Netos
 Elm.deriveBoth Elm.defaultOptions ''Parte
 Elm.deriveBoth Elm.defaultOptions ''DistribucionPartes

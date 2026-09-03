@@ -31,6 +31,7 @@
             "pablen/toasty": "1.2.0",
             "pablohirafuji/elm-qrcode": "4.0.3",
             "rtfeldman/elm-iso8601-date-strings": "1.1.4",
+            "ryan-haskell/date-format": "1.0.0",
             "scrive/elm-form": "1.0.0"
         },
         "indirect": {
@@ -55,8 +56,7 @@
             "ianmackenzie/elm-units-prefixed": "2.8.0",
             "justgook/elm-image": "5.0.0",
             "justinmimbs/time-extra": "1.2.0",
-            "rtfeldman/elm-hex": "1.0.0",
-            "ryan-haskell/date-format": "1.0.0"
+            "rtfeldman/elm-hex": "1.0.0"
         }
     },
     "test-dependencies": {
