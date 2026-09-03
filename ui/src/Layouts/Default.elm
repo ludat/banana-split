@@ -353,6 +353,7 @@ viewChangelogModal isOpen entries =
         { isOpen = isOpen
         , onClose = CloseChangelog
         , title = "Novedades"
+        , centered = False
         , body = [ Bs.listGroup [] (List.map viewChangelogEntry entries) ]
         , footer =
             [ Bs.btn Bs.Transparent [ onClick CloseChangelog ] [ text "Cerrar" ]

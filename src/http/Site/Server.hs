@@ -24,6 +24,7 @@ import Site.Handler.InboundEmail (WebhookApi, handleInboundEmail)
 import Site.Handler.Pagos
 import Site.Handler.Receipt
 import Site.Handler.Repartijas
+import Site.Handler.Transferencias
 import Site.Types
 
 -- | The full HTTP surface: the Elm-facing 'Api' plus the provider-facing
@@ -58,7 +59,10 @@ serverT =
         , _routeGrupoFreeze = handleFreezeGrupo
         , _routeGrupoUnfreeze = handleUnfreezeGrupo
         , _routeGrupoTasasDeCambioPut = handleGuardarTasasDeCambio
-        , _routeGrupoSaldarTransaccion = handleSaldarTransaccion
+        , _routeTransferenciaSaldar = handleSaldarTransferencia
+        , _routeTransferenciaDesmarcar = handleDesmarcarTransferencia
+        , _routeTransferenciaPost = handleCrearTransferencia
+        , _routeTransferenciaDelete = handleBorrarTransferencia
         , _routeReceiptImageParse = handleReceiptImageParse
         , _routeAuthRequestCode = handleRequestCode
         , _routeAuthVerify = handleVerify

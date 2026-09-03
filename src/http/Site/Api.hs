@@ -66,8 +66,14 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] ShallowGrupo
   , _routeGrupoTasasDeCambioPut ::
       routes :- "grupo" :> Capture "id" ULID :> "tasas-de-cambio" :> Capture "moneda" Moneda :> ReqBody '[JSON] [TasaDeCambio] :> Put '[JSON] [TasaDeCambio]
-  , _routeGrupoSaldarTransaccion ::
-      routes :- "grupo" :> Capture "id" ULID :> "transacciones-congeladas" :> Capture "transaccionId" ULID :> "saldar" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
+  , _routeTransferenciaSaldar ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Post '[JSON] ULID
+  , _routeTransferenciaDesmarcar ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Delete '[JSON] ULID
+  , _routeTransferenciaPost ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> ReqBody '[JSON] NuevaTransferenciaParams :> Post '[JSON] Transferencia
+  , _routeTransferenciaDelete ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> Delete '[JSON] ULID
   , _routeReceiptImageParse ::
       routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
   , -- Auth. A single email-first flow: request a code, prove ownership by
@@ -95,7 +101,7 @@ data Api routes
   , -- The grupos where the signed-in user has claimed a participante, i.e.
     -- "my groups" for the home screen.
     _routeMeGruposGet ::
-      routes :- AuthProtect User :> "me" :> "grupos" :> Get '[JSON] [ShallowGrupo]
+      routes :- AuthProtect User :> "me" :> "grupos" :> Get '[JSON] [GrupoParaUsuario]
   , _routeParticipanteClaim ::
       routes :- AuthProtect User :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Put '[JSON] ClaimParticipanteResult
   , _routeParticipanteUnclaim ::
@@ -180,14 +186,31 @@ data UpdateGrupoParams = UpdateGrupoParams
   }
   deriving (Show, Eq, Generic)
 
-data ResumenGrupo = ResumenGrupo
-  { transaccionesParaSaldar :: PorMoneda [Transaccion]
-  , netos :: PorMoneda (Netos Monto)
-  , cantidadPagosInvalidos :: Int
-  , cantidadPagos :: Int
-  , isFrozen :: Bool
-  , tasasDeCambio :: [TasaDeCambio]
+data ResumenGrupo
+  = GrupoAbierto ResumenAbierto
+  | GrupoCongelado ResumenCongelado
+  deriving (Show, Eq, Generic)
+
+data ResumenAbierto = ResumenAbierto
+  { netos :: PorMoneda (Netos Monto)
   , consolidado :: ConsolidadoNetos
+  , cantidadPagos :: Int
+  , cantidadPagosInvalidos :: Int
+  , transferenciasHechas :: PorMoneda [TransferenciaHecha]
+  }
+  deriving (Show, Eq, Generic)
+
+data ResumenCongelado = ResumenCongelado
+  { transferenciasParaSaldar :: PorMoneda [Transferencia]
+  , transferenciasHechas :: PorMoneda [TransferenciaHecha]
+  }
+  deriving (Show, Eq, Generic)
+
+data NuevaTransferenciaParams = NuevaTransferenciaParams
+  { from :: ParticipanteId
+  , to :: ParticipanteId
+  , monto :: Monto
+  , moneda :: Moneda
   }
   deriving (Show, Eq, Generic)
 
@@ -230,7 +253,12 @@ Elm.deriveBoth Elm.defaultOptions ''UpdateMeParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoAsUserParams
 Elm.deriveBoth Elm.defaultOptions ''UpdateGrupoParams
+Elm.deriveBoth Elm.defaultOptions ''ResumenAbierto
+
+Elm.deriveBoth Elm.defaultOptions ''ResumenCongelado
+
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
+Elm.deriveBoth Elm.defaultOptions ''NuevaTransferenciaParams
 Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageResponse

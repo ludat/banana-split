@@ -244,8 +244,10 @@ testGrupo =
         [ Participante{id = p1, nombre = "Ana", user = Nothing}
         , Participante{id = p2, nombre = "Beto", user = Nothing}
         ]
-    , isFrozen = False
+    , congeladoAt = Nothing
     , monedaPorDefecto = ARS
+    , tasasDeCambio = []
+    , monedasConPagos = []
     }
 
 baseParsed :: ParsedEmailPago

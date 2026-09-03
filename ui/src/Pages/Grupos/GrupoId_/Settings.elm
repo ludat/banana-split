@@ -15,7 +15,7 @@ import Html.Events exposing (on, onClick, onInput, onSubmit)
 import Http
 import Json.Decode
 import Layouts
-import Models.Grupo exposing (ownedParticipante)
+import Models.Grupo exposing (estaCongelado, ownedParticipante)
 import Models.Moneda as Moneda
 import Models.Monto as Monto
 import Models.Store as Store
@@ -143,7 +143,10 @@ update store msg model =
 
         FreezeGrupoResponse (Err _) ->
             ( model
-            , Toasts.pushToast Toasts.ToastDanger "No se pudo congelar el grupo"
+            , Effect.batch
+                [ Store.refreshResumen model.grupoId
+                , Toasts.pushToast Toasts.ToastDanger "No se pudo congelar el grupo. Revisá que estén cargadas las tasas de cambio de todas las monedas con deuda."
+                ]
             )
 
         UnfreezeGrupo ->
@@ -374,9 +377,9 @@ view origin currentUser store model =
                     [ div [ class "row justify-content-center" ]
                         [ div [ class "col-lg-8" ]
                             [ viewAjustesSection grupo model.ajustesForm
-                            , viewTasasSection grupo (Store.getResumen model.grupoId store) model
+                            , viewTasasSection grupo model
                             , viewEmailSection origin currentUser grupo
-                            , viewFreezeSection grupo
+                            , viewFreezeSection grupo (Store.getResumen model.grupoId store)
                             ]
                         ]
                     ]
@@ -448,21 +451,25 @@ type alias ContextoDeTasas =
     { monedaPorDefecto : Moneda
     , conPagos : List Moneda
     , guardadas : List TasaDeCambio
+    , -- Con el grupo congelado la tasa es la que fijó las deudas: tocarla
+      -- dejaría las transferencias guardadas hablando de otro tipo de cambio.
+      congelado : Bool
     }
 
 
 contextoDeTasas : Store -> Model -> Maybe ContextoDeTasas
 contextoDeTasas store model =
-    Maybe.map2 armarContexto
-        (Store.getGrupo model.grupoId store |> RemoteData.toMaybe)
-        (Store.getResumen model.grupoId store |> RemoteData.toMaybe)
+    Store.getGrupo model.grupoId store
+        |> RemoteData.toMaybe
+        |> Maybe.map armarContexto
 
 
-armarContexto : ShallowGrupo -> ResumenGrupo -> ContextoDeTasas
-armarContexto grupo resumen =
+armarContexto : ShallowGrupo -> ContextoDeTasas
+armarContexto grupo =
     { monedaPorDefecto = grupo.monedaPorDefecto
-    , conPagos = resumen.netos |> List.map Tuple.first
-    , guardadas = resumen.tasasDeCambio
+    , conPagos = grupo.monedasConPagos
+    , guardadas = grupo.tasasDeCambio
+    , congelado = estaCongelado grupo
     }
 
 
@@ -631,24 +638,19 @@ filaAFormGroup fila =
         ]
 
 
-viewTasasSection : ShallowGrupo -> WebData ResumenGrupo -> Model -> Html Msg
-viewTasasSection grupo resumen model =
-    case resumen of
-        Success resumenGrupo ->
-            let
-                contexto =
-                    armarContexto grupo resumenGrupo
-            in
-            div [ class "card mb-4" ]
-                [ div [ class "card-header" ] [ text "Monedas" ]
-                , div [ class "card-body" ]
-                    [ viewMonedaPorDefecto contexto model
-                    , viewTasas contexto model
-                    ]
-                ]
-
-        _ ->
-            text ""
+viewTasasSection : ShallowGrupo -> Model -> Html Msg
+viewTasasSection grupo model =
+    let
+        contexto =
+            armarContexto grupo
+    in
+    div [ class "card mb-4" ]
+        [ div [ class "card-header" ] [ text "Monedas" ]
+        , div [ class "card-body" ]
+            [ viewMonedaPorDefecto contexto model
+            , viewTasas contexto model
+            ]
+        ]
 
 
 viewMonedaPorDefecto : ContextoDeTasas -> Model -> Html Msg
@@ -672,7 +674,7 @@ viewMonedaPorDefecto contexto model =
             [ select
                 [ id "moneda-por-defecto"
                 , class "form-select"
-                , disabled (editandoTasas || esperandoConfirmacion model.moneda)
+                , disabled (editandoTasas || esperandoConfirmacion model.moneda || contexto.congelado)
                 , on "change"
                     (Json.Decode.at [ "target", "value" ] Api.jsonDecMoneda
                         |> Json.Decode.map SeleccionarMoneda
@@ -703,15 +705,19 @@ viewMonedaPorDefecto contexto model =
             ]
         , div [ class "text-muted small mt-1" ]
             [ text <|
-                case ( model.moneda, editandoTasas ) of
-                    ( EsperandoConfirmacion _, _ ) ->
-                        "Guardando la moneda por defecto..."
+                if contexto.congelado then
+                    "El grupo está congelado: las deudas ya están fijas en esta moneda."
 
-                    ( MonedaDelGrupo, True ) ->
-                        "Guardá o cancelá las tasas antes de cambiar la moneda."
+                else
+                    case ( model.moneda, editandoTasas ) of
+                        ( EsperandoConfirmacion _, _ ) ->
+                            "Guardando la moneda por defecto..."
 
-                    ( MonedaDelGrupo, False ) ->
-                        "Las deudas de todo el grupo se juntan en esta moneda. Cambiarla se guarda al toque."
+                        ( MonedaDelGrupo, True ) ->
+                            "Guardá o cancelá las tasas antes de cambiar la moneda."
+
+                        ( MonedaDelGrupo, False ) ->
+                            "Las deudas de todo el grupo se juntan en esta moneda. Cambiarla se guarda al toque."
             ]
         ]
 
@@ -727,11 +733,14 @@ viewTasas contexto model =
             , div [ class "form-label mb-0" ] [ text "Tasas de cambio" ]
             , div [ class "text-muted small mb-3" ]
                 [ text <|
-                    case model.tasasForm of
-                        Just _ ->
+                    case ( model.tasasForm, contexto.congelado ) of
+                        ( Just _, _ ) ->
                             "Las tasas que dejes vacías se borran al guardar."
 
-                        Nothing ->
+                        ( Nothing, True ) ->
+                            "Con estas se fijaron las deudas al congelar. Descongelá el grupo para cambiarlas."
+
+                        ( Nothing, False ) ->
                             "Con estas convertimos las demás monedas del grupo."
                 ]
             , case model.tasasForm of
@@ -751,7 +760,7 @@ viewTasasGuardadas contexto guardandoMoneda =
         , button
             [ type_ "button"
             , class "btn btn-sm btn-outline-secondary"
-            , disabled guardandoMoneda
+            , disabled (guardandoMoneda || contexto.congelado)
             , onClick EditarTasas
             ]
             [ i [ class "bi bi-pencil me-1" ] []
@@ -976,27 +985,62 @@ viewEmailSection origin currentUser grupo =
         ]
 
 
-viewFreezeSection : ShallowGrupo -> Html Msg
-viewFreezeSection grupo =
+viewFreezeSection : ShallowGrupo -> WebData ResumenGrupo -> Html Msg
+viewFreezeSection grupo resumen =
+    let
+        -- Congelar consolida todo a la moneda del grupo, así que sin la tasa de
+        -- alguna de las monedas con deuda no hay nada que congelar. Es la misma
+        -- condición que chequea el backend.
+        -- Con el grupo ya congelado el resumen no trae netos ni consolidado, y
+        -- tampoco hacen falta: lo único que se puede hacer es descongelar.
+        monedasSinTasa : List Moneda
+        monedasSinTasa =
+            case RemoteData.toMaybe resumen of
+                Just (Api.GrupoAbierto r) ->
+                    r.consolidado.monedasSinTasa
+
+                _ ->
+                    []
+    in
     div [ class "card" ]
         [ div [ class "card-header" ] [ text "Congelar grupo" ]
         , div [ class "card-body" ]
             [ div [ class "mb-3" ]
                 [ text <|
-                    if grupo.isFrozen then
-                        "Este grupo está congelado. Las deudas están fijas y no se pueden agregar, editar ni eliminar pagos."
+                    if estaCongelado grupo then
+                        "Este grupo está congelado. Las deudas están fijas en "
+                            ++ Moneda.nombre grupo.monedaPorDefecto
+                            ++ " y no se pueden agregar, editar ni eliminar pagos ni cambiar las tasas de cambio."
 
                     else
-                        "Congelar el grupo fija las deudas actuales. No se podrán agregar, editar ni eliminar pagos mientras esté congelado."
+                        "Congelar el grupo fija las deudas actuales, convertidas a "
+                            ++ Moneda.nombre grupo.monedaPorDefecto
+                            ++ " con las tasas de cambio cargadas. No se podrán agregar, editar ni eliminar pagos mientras esté congelado."
                 ]
-            , viewFreezeButton grupo
+            , if estaCongelado grupo || List.isEmpty monedasSinTasa then
+                text ""
+
+              else
+                Bs.alert Bs.AlertWarning
+                    [ class "mb-3" ]
+                    [ text <|
+                        (if List.length monedasSinTasa == 1 then
+                            "Para congelar falta la tasa de cambio de "
+
+                         else
+                            "Para congelar faltan las tasas de cambio de "
+                        )
+                            ++ (monedasSinTasa |> List.map Moneda.nombre |> String.join ", ")
+                            ++ ". Cargalas más arriba."
+                    ]
+            , viewFreezeButton grupo (List.isEmpty monedasSinTasa)
             ]
         ]
 
 
-viewFreezeButton : ShallowGrupo -> Html Msg
-viewFreezeButton grupo =
-    if grupo.isFrozen then
+viewFreezeButton : ShallowGrupo -> Bool -> Html Msg
+viewFreezeButton grupo sePuedeCongelar =
+    if estaCongelado grupo then
         button
             [ type_ "button"
             , class "btn btn-outline-secondary"
@@ -1006,7 +1050,9 @@ viewFreezeButton grupo =
 
     else
         Bs.btn Bs.Primary
-            [ onClick FreezeGrupo ]
+            [ onClick FreezeGrupo
+            , disabled (not sePuedeCongelar)
+            ]
             [ text "Congelar" ]
 
 

@@ -584,6 +584,7 @@ viewRepartirModal maybeItem =
         { isOpen = maybeItem /= Nothing
         , onClose = CloseRepartirModal
         , title = "Elegí cómo repartir"
+        , centered = False
         , body =
             case maybeItem of
                 Just item ->

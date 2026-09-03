@@ -9,6 +9,8 @@ module BananaSplit.Moneda (
   escalaDe,
   todasLasMonedas,
   enMoneda,
+  filterConMoneda,
+  filterPorMoneda,
   forMonedaM,
 ) where
 
@@ -55,7 +57,7 @@ escalaDe = \case
 
 newtype PorMoneda a
   = PorMoneda (Map Moneda a)
-  deriving (Show, Eq, Generic, Functor)
+  deriving (Show, Eq, Generic, Functor, Foldable)
 
 instance (Semigroup a) => Semigroup (PorMoneda a) where
   PorMoneda map1 <> PorMoneda map2 = PorMoneda $ Map.unionWith (<>) map1 map2
@@ -66,6 +68,15 @@ instance (Semigroup a) => Monoid (PorMoneda a) where
 forMonedaM :: (Monad m) => PorMoneda a -> (Moneda -> a -> m [b]) -> m [b]
 forMonedaM (PorMoneda m) f =
   fmap concat $ traverse (uncurry f) $ Map.toList m
+
+filterPorMoneda :: (a -> Bool) -> PorMoneda a -> PorMoneda a
+filterPorMoneda f (PorMoneda m) =
+  PorMoneda $ Map.filter f m
+
+-- | Como 'filterPorMoneda' pero mirando también de qué moneda se trata.
+filterConMoneda :: (Moneda -> a -> Bool) -> PorMoneda a -> PorMoneda a
+filterConMoneda f (PorMoneda m) =
+  PorMoneda $ Map.filterWithKey f m
 
 enMoneda :: a -> Moneda -> PorMoneda a
 enMoneda a moneda =

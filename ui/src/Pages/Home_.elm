@@ -5,7 +5,7 @@ import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form, Msg(..))
 import Form.Field
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
-import Generated.Api as Api exposing (ShallowGrupo)
+import Generated.Api as Api exposing (GrupoParaUsuario)
 import Html exposing (Html, a, div, input, label, text)
 import Html.Attributes as Attr exposing (class, classList, for, id, placeholder, required, type_)
 import Html.Events exposing (onClick)
@@ -43,7 +43,7 @@ type alias CrearGrupoForm =
 
 type alias Model =
     { form : Form CustomFormError CrearGrupoForm
-    , misGrupos : WebData (List ShallowGrupo)
+    , misGrupos : WebData (List GrupoParaUsuario)
     }
 
 
@@ -72,7 +72,7 @@ type Msg
     = NoOp
     | UpdateForm Form.Msg
     | GrupoCreated Api.Grupo
-    | GotMisGrupos (WebData (List ShallowGrupo))
+    | GotMisGrupos (WebData (List GrupoParaUsuario))
 
 
 validate : Bool -> Validation CustomFormError CrearGrupoForm
@@ -166,8 +166,8 @@ view shared model =
         [ div [ class "container py-4" ]
             [ div [ class "row justify-content-center g-4" ] <|
                 case shared.currentUser of
-                    Success user ->
-                        [ div [ class "col-12 col-md-8 col-lg-6" ] [ viewMisGrupos user model.misGrupos ]
+                    Success _ ->
+                        [ div [ class "col-12 col-md-8 col-lg-6" ] [ viewMisGrupos model.misGrupos ]
                         , div [ class "col-12 col-md-8 col-lg-6" ] [ viewCrearGrupo shared model ]
                         ]
 
@@ -181,8 +181,8 @@ view shared model =
 {-| The grupos where the signed-in user claimed a participante, each linking to
 its grupo page and showing which participante they are there.
 -}
-viewMisGrupos : Api.User -> WebData (List ShallowGrupo) -> Html Msg
-viewMisGrupos user misGrupos =
+viewMisGrupos : WebData (List GrupoParaUsuario) -> Html Msg
+viewMisGrupos misGrupos =
     Bs.card []
         [ Bs.cardHeader [] [ text "Mis grupos" ]
         , case misGrupos of
@@ -195,7 +195,7 @@ viewMisGrupos user misGrupos =
 
             Success grupos ->
                 div [ class "list-group list-group-flush" ]
-                    (List.map (viewMisGruposItem user) grupos)
+                    (List.map viewMisGruposItem grupos)
 
             Failure _ ->
                 Bs.cardBody []
@@ -207,26 +207,14 @@ viewMisGrupos user misGrupos =
         ]
 
 
-viewMisGruposItem : Api.User -> ShallowGrupo -> Html Msg
-viewMisGruposItem user grupo =
-    let
-        claimedNombre =
-            grupo.participantes
-                |> List.filter (\p -> p.user |> Maybe.map (\owner -> owner.id == user.id) |> Maybe.withDefault False)
-                |> List.head
-                |> Maybe.map .nombre
-    in
+viewMisGruposItem : GrupoParaUsuario -> Html Msg
+viewMisGruposItem grupo =
     a
         [ class "list-group-item list-group-item-action d-flex justify-content-between align-items-center"
         , Path.href <| Path.Grupos_Id_ { id = grupo.id }
         ]
         [ text grupo.nombre
-        , case claimedNombre of
-            Just nombre ->
-                Html.small [ class "text-muted" ] [ text ("como " ++ nombre) ]
-
-            Nothing ->
-                text ""
+        , Html.small [ class "text-muted" ] [ text ("como " ++ grupo.participanteNombre) ]
         ]
 
 

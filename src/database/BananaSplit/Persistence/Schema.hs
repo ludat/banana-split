@@ -37,7 +37,7 @@ data BananaSplitDb f = BananaSplitDb
   , repartijas :: f (TableEntity DistribucionRepartijaT)
   , repartija_items :: f (TableEntity RepartijaItemT)
   , repartija_claims :: f (TableEntity RepartijaClaimT)
-  , transacciones_congeladas :: f (TableEntity TransaccionCongeladaT)
+  , transferencias :: f (TableEntity TransferenciaT)
   , tasas_de_cambio :: f (TableEntity TasaDeCambioT)
   }
   deriving (Generic, Database be)
@@ -48,8 +48,11 @@ db = defaultDbSettings
 data GrupoT f = Grupo
   { id :: Columnar f ULID
   , nombre :: Columnar f Text
-  , is_frozen :: Columnar f Bool
   , moneda_por_defecto :: Columnar f M.Moneda
+  , congelado_at :: Columnar f (Maybe UTCTime)
+  -- ^ Cuándo se congeló el grupo, o NULL si está descongelado. La fecha
+  -- también distingue las transferencias hechas durante este congelamiento de
+  -- las que arrastra de los anteriores.
   }
   deriving (Generic, Beamable)
 
@@ -426,28 +429,34 @@ instance Table RepartijaClaimT where
   data PrimaryKey RepartijaClaimT f = RepartijaClaimId (C f ULID) deriving (Generic, Beamable)
   primaryKey = RepartijaClaimId . (.repartijaclaimId)
 
-data TransaccionCongeladaT f = TransaccionCongelada
+-- | Una transferencia entre dos participantes. Nace pendiente al congelar el
+-- grupo y, cuando alguien la marca como hecha, deja de ser una sugerencia y
+-- pasa a ser un movimiento del grupo que cuenta en los netos para siempre.
+data TransferenciaT f = Transferencia
   { id :: Columnar f ULID
   , grupo :: PrimaryKey GrupoT f
   , participante_from :: PrimaryKey ParticipanteT f
   , participante_to :: PrimaryKey ParticipanteT f
   , monto_en_unidades_minimas :: Columnar f UnidadesMinimas
   , moneda :: Columnar f M.Moneda
+  , saldada_at :: Columnar f (Maybe UTCTime)
+  -- ^ 'Nothing' es pendiente. Las pendientes solo viven mientras el grupo
+  -- está congelado; las hechas sobreviven al descongelar.
   }
   deriving (Generic, Beamable)
 
-type TransaccionCongelada = TransaccionCongeladaT Identity
+type Transferencia = TransferenciaT Identity
 
-type TransaccionCongeladaId = PrimaryKey TransaccionCongeladaT Identity
+type TransferenciaId = PrimaryKey TransferenciaT Identity
 
-deriving instance Show TransaccionCongelada
+deriving instance Show Transferencia
 
-deriving instance Show TransaccionCongeladaId
+deriving instance Show TransferenciaId
 
-instance Table TransaccionCongeladaT where
-  data PrimaryKey TransaccionCongeladaT f = TransaccionCongeladaId (Columnar f ULID)
+instance Table TransferenciaT where
+  data PrimaryKey TransferenciaT f = TransferenciaId (Columnar f ULID)
     deriving (Generic, Beamable)
-  primaryKey = TransaccionCongeladaId . (.id)
+  primaryKey = TransferenciaId . (.id)
 
 data TasaDeCambioT f = TasaDeCambio
   { id :: Columnar f ULID

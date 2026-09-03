@@ -274,14 +274,35 @@ spec = do
         (distribucionMontoEquitativo [u1, u2, u3])
         `shouldBe` netos []
 
+  describe "netosDeTransferencia" $ do
+    it "deja en cero al que transfirió lo que debía" $ do
+      let deuda = netos [(u1, 10), (u2, -10)]
+      let transferencia = Transferencia Nothing u2 u1 10
+
+      (deuda <> netosDeTransferencia transferencia)
+        `shouldBe` netos [(u1, 0), (u2, 0)]
+
+    it "le suma al que mandó y le resta al que recibió" $ do
+      netosDeTransferencia (Transferencia Nothing u1 u2 7)
+        `shouldBe` netos [(u1, 7), (u2, -7)]
+
+    it "mueve los netos igual que el pago que reemplaza" $ do
+      netosDeTransferencia (Transferencia Nothing u1 u2 30)
+        `shouldBe` calcularNetosPago
+          pagoValido
+            { monto = 30
+            , pagadores = distribucionMontoEquitativo [u1]
+            , deudores = distribucionMontoEquitativo [u2]
+            }
+
   describe "simplify transactions" $ do
-    it "simplifica ningun transaccion trivialmente" $ do
+    it "simplifica ningun transferencia trivialmente" $ do
       minimizeTransactions mempty `shouldBe` []
 
-    it "simplifica una sola transaccion trivialmente" $ do
-      let transacciones = netos [(participante 1, 10), (participante 2, -10)]
+    it "simplifica una sola transferencia trivialmente" $ do
+      let transferencias = netos [(participante 1, 10), (participante 2, -10)]
 
-      minimizeTransactions transacciones `shouldBe` [Transaccion Nothing (participante 2) (participante 1) 10]
+      minimizeTransactions transferencias `shouldBe` [Transferencia Nothing (participante 2) (participante 1) 10]
     it "simplifica un caso en el que el algoritmo greedy falla" $ do
       minimizeTransactions
         ( netos
@@ -386,7 +407,7 @@ spec = do
               , (u2, mkMonto 10 -5)
               ]
           )
-          `shouldBe` [ Transaccion Nothing u2 u1 $ mkMonto 10 5
+          `shouldBe` [ Transferencia Nothing u2 u1 $ mkMonto 10 5
                      ]
 
       it "una deuda simple con montos heterogeneos" $ do
@@ -398,6 +419,6 @@ spec = do
               , (u4, mkMonto 0 -5)
               ]
           )
-          `shouldBe` [ Transaccion Nothing u2 u1 $ mkMonto 10 5
-                     , Transaccion Nothing u4 u3 5
+          `shouldBe` [ Transferencia Nothing u2 u1 $ mkMonto 10 5
+                     , Transferencia Nothing u4 u3 5
                      ]

@@ -9,7 +9,6 @@ module Site.Handler.Pagos (
   handlePagoResumenPost,
   handlePagoUpdate,
   handlePagosGet,
-  handleSaldarTransaccion,
 ) where
 
 import Protolude
@@ -18,7 +17,6 @@ import Servant (err404)
 import BananaSplit
 import BananaSplit.Persistence (
   deletePago,
-  deleteTransaccionCongelada,
   fetchGrupo,
   fetchPago,
   fetchShallowPagos,
@@ -42,7 +40,7 @@ handlePagoPost grupoId pago = do
   shallowGrupo <-
     runBeam (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when shallowGrupo.isFrozen $ throwJsonError err423 "El grupo está congelado"
+  when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
   runBeam (savePago grupoId pago)
 
 handlePagoResumenPost :: Pago -> AppHandler ResumenPago
@@ -59,7 +57,7 @@ handleDeletePago grupoId pagoId = do
   shallowGrupo <-
     runBeam (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when shallowGrupo.isFrozen $ throwJsonError err423 "El grupo está congelado"
+  when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
   runBeam (deletePago pagoId)
   pure pagoId
 
@@ -68,12 +66,5 @@ handlePagoUpdate grupoId pagoId pago = do
   shallowGrupo <-
     runBeam (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when shallowGrupo.isFrozen $ throwJsonError err423 "El grupo está congelado"
+  when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
   runBeam $ updatePago grupoId pagoId pago
-
-handleSaldarTransaccion :: ULID -> ULID -> Pago -> AppHandler Pago
-handleSaldarTransaccion grupoId transaccionId pago = do
-  runBeam $ do
-    savedPago <- savePago grupoId pago
-    deleteTransaccionCongelada transaccionId
-    pure savedPago

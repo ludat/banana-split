@@ -11,6 +11,8 @@
 module BananaSplit.Core (
   Grupo (..),
   ShallowGrupo (..),
+  GrupoParaUsuario (..),
+  estaCongelado,
   nullUlid,
   -- Pago
   Distribucion (..),
@@ -22,6 +24,7 @@ module BananaSplit.Core (
   calcularNetosTotales,
   getResumenPago,
   isValid,
+  netosDeTransferencias,
 ) where
 
 import Data.Time (Day, UTCTime)
@@ -39,6 +42,7 @@ import BananaSplit.Deudas
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
 import BananaSplit.Monto (Monto)
 import BananaSplit.Participante (Participante)
+import BananaSplit.TasaDeCambio (TasaDeCambio)
 import BananaSplit.ULID
 import Preludat
 
@@ -55,8 +59,27 @@ data ShallowGrupo = ShallowGrupo
   { id :: ULID
   , nombre :: Text
   , participantes :: [Participante]
-  , isFrozen :: Bool
+  , congeladoAt :: Maybe UTCTime
+  -- ^ Cuándo se congeló el grupo, o 'Nothing' si está descongelado. La fecha
+  -- también distingue las transferencias hechas durante este congelamiento de
+  -- las que arrastra de los anteriores.
   , monedaPorDefecto :: Moneda
+  , tasasDeCambio :: [TasaDeCambio]
+  , monedasConPagos :: [Moneda]
+  -- ^ Las monedas en las que hay pagos cargados. Junto con las tasas dice qué
+  -- monedas tiene que cubrir el grupo, sin depender del resumen.
+  }
+  deriving (Show, Eq, Generic)
+
+estaCongelado :: ShallowGrupo -> Bool
+estaCongelado grupo = isJust grupo.congeladoAt
+
+-- | Un grupo en la lista de "mis grupos". Alcanza con el nombre del grupo y con
+-- cómo figura ahí el usuario; el resto del grupo se pide al entrar.
+data GrupoParaUsuario = GrupoParaUsuario
+  { id :: ULID
+  , nombre :: Text
+  , participanteNombre :: Text
   }
   deriving (Show, Eq, Generic)
 
@@ -88,6 +111,14 @@ calcularNetosTotales grupo =
     & filter isValid
     & fmap (\pago -> (calcularNetosPago pago) `enMoneda` pago.moneda)
     & mconcat
+
+-- | Los netos que dejan las transferencias ya hechas. Se suman a los de los
+-- pagos porque una transferencia hecha es plata que ya se movió, y por eso
+-- sobreviven al descongelar: sin ellas un grupo que se congeló, se saldó y se
+-- descongeló volvería a mostrar las deudas que ya se pagaron.
+netosDeTransferencias :: PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
+netosDeTransferencias =
+  fmap (foldMap netosDeTransferencia)
 
 calcularNetosPago :: Pago -> Netos Monto
 calcularNetosPago pago =
@@ -129,3 +160,5 @@ Elm.deriveBoth Elm.defaultOptions ''Pago
 Elm.deriveBoth Elm.defaultOptions ''ShallowPago
 Elm.deriveBoth Elm.defaultOptions ''Grupo
 Elm.deriveBoth Elm.defaultOptions ''ShallowGrupo
+
+Elm.deriveBoth Elm.defaultOptions ''GrupoParaUsuario

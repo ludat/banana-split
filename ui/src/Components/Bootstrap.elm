@@ -128,9 +128,10 @@ modal :
     , title : String
     , body : List (Html msg)
     , footer : List (Html msg)
+    , centered : Bool
     }
     -> Html msg
-modal { isOpen, onClose, title, body, footer } =
+modal { isOpen, onClose, title, body, footer, centered } =
     if isOpen then
         div []
             [ div
@@ -139,7 +140,7 @@ modal { isOpen, onClose, title, body, footer } =
                 , attribute "aria-modal" "true"
                 , attribute "role" "dialog"
                 ]
-                [ div [ class "modal-dialog" ]
+                [ div [ classList [ ( "modal-dialog", True ), ( "modal-dialog-centered", centered ) ] ]
                     [ div [ class "modal-content" ]
                         [ div [ class "modal-header" ]
                             [ h5 [ class "modal-title" ] [ Html.text title ]
