@@ -20,7 +20,7 @@ changelog =
       }
     , { date = Date.fromCalendarDate 2026 Mar 7
       , title = "Congelar grupos"
-      , description = "Ahora podés congelar un grupo para fijar las deudas. Una vez congelado, no se pueden agregar, editar ni eliminar pagos."
+      , description = "Ahora podés congelar un grupo para fijar las deudas. Una vez congelado, no se pueden agregar, editar ni eliminar gastos."
       }
     , { date = Date.fromCalendarDate 2026 Apr 2
       , title = "Repartir sobras de una repartija"
@@ -35,11 +35,11 @@ changelog =
       , description = "Ahora podés cambiar el nombre de un grupo desde la configuración del grupo."
       }
     , { date = Date.fromCalendarDate 2026 May 20
-      , title = "Identificá mejor los pagos usando fechas"
-      , description = "Ahora podés agregar a tus pagos la fecha en la que ocurrieron para poder identificar mejor entre ellos."
+      , title = "Identificá mejor los gastos usando fechas"
+      , description = "Ahora podés agregar a tus gastos la fecha en la que ocurrieron para poder identificar mejor entre ellos."
       }
     , { date = Date.fromCalendarDate 2026 Jun 2
-      , title = "Usá `=` para hacer cuentas mientras cargas un pago"
+      , title = "Usá `=` para hacer cuentas mientras cargas un gasto"
       , description = "Ahora mientras escribís un monto podés escribir = seguido de una cuenta matemática y se va a reemplazar por el resultado."
       }
     , { date = Date.fromCalendarDate 2026 Jul 22

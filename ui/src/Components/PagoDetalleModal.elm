@@ -67,7 +67,7 @@ context shared route =
 
 init : Route routeParams -> ( Model, Effect Msg )
 init route =
-    case Dict.get "pago" route.query of
+    case Dict.get "gasto" route.query of
         Just pagoId ->
             ( forPago True pagoId
             , loadPago pagoId
@@ -92,14 +92,14 @@ open ctx pagoId =
 onUrlChanged : { from : Route (), to : Route () } -> Msg
 onUrlChanged { from, to } =
     let
-        pagoParam route =
-            Dict.get "pago" route.query
+        gastoParam route =
+            Dict.get "gasto" route.query
     in
-    if pagoParam from == pagoParam to then
+    if gastoParam from == gastoParam to then
         NoOp
 
     else
-        QueryChanged (pagoParam to)
+        QueryChanged (gastoParam to)
 
 
 forPago : Bool -> ULID -> Model
@@ -133,7 +133,7 @@ syncUrl path maybePagoId =
         { path = path
         , query =
             maybePagoId
-                |> Maybe.map (Dict.singleton "pago")
+                |> Maybe.map (Dict.singleton "gasto")
                 |> Maybe.withDefault Dict.empty
         , hash = Nothing
         }
@@ -239,14 +239,14 @@ update ctx store msg model =
                 [ Store.refreshGrupo ctx.grupoId
                 , Store.refreshResumen ctx.grupoId
                 , Store.refreshPagos ctx.grupoId
-                , Toasts.pushToast Toasts.ToastSuccess "Pago borrado"
+                , Toasts.pushToast Toasts.ToastSuccess "Gasto borrado"
                 , syncUrl ctx.path Nothing
                 ]
             )
 
         DeleteResponse (Err _) ->
             ( { model | deleting = False, confirmingDelete = False }
-            , Toasts.pushToast Toasts.ToastDanger "Falló al borrar el pago"
+            , Toasts.pushToast Toasts.ToastDanger "Falló al borrar el gasto"
             )
 
 
@@ -272,7 +272,7 @@ view store grupo model =
                     ( Failure _, _ ) ->
                         viewEstado
                             "bi bi-receipt-cutoff"
-                            "No encontramos este pago"
+                            "No encontramos este gasto"
                             "Puede que lo hayan eliminado o que el enlace ya no sea válido."
 
                     ( _, Failure _ ) ->
@@ -446,7 +446,7 @@ viewActions : ShallowGrupo -> Pago -> Model -> Html Msg
 viewActions grupo pago model =
     div [ class "d-flex align-items-center gap-2 mt-3" ]
         [ a
-            [ Path.href <| Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = grupo.id, pagoId = pago.pagoId }
+            [ Path.href <| Path.Grupos_GrupoId__Gastos_GastoId_ { grupoId = grupo.id, gastoId = pago.pagoId }
             , class "btn btn-secondary rounded-pill px-4"
             ]
             [ text "Editar" ]
@@ -471,7 +471,7 @@ viewActionsMenu model =
         , div [ class "dropdown-menu dropdown-menu-end" ]
             (if model.confirmingDelete then
                 [ div [ class "px-3 py-2" ]
-                    [ div [ class "small text-danger mb-2" ] [ text "¿Eliminar este pago? No se puede deshacer." ]
+                    [ div [ class "small text-danger mb-2" ] [ text "¿Eliminar este gasto? No se puede deshacer." ]
                     , div [ class "d-flex gap-2" ]
                         [ Bs.btn Bs.Transparent
                             [ onClick CancelDelete, disabled model.deleting ]

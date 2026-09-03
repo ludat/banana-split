@@ -193,11 +193,11 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                             , onClick
                                 (ForwardSharedMessage <|
                                     Shared.NavigateTo <|
-                                        Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id }
+                                        Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id }
                                 )
                             ]
                             [ i [ class "bi bi-plus-lg me-1" ] []
-                            , text "Agregar pago"
+                            , text "Agregar gasto"
                             ]
                         ]
                     ]
@@ -293,7 +293,7 @@ headerInfo currentPath store grupo =
 
         pagosCrumb : Crumb
         pagosCrumb =
-            { label = "Pagos", path = Just (Path.Grupos_GrupoId__Pagos { grupoId = grupo.id }) }
+            { label = "Gastos", path = Just (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }) }
 
         gruposCrumb : Crumb
         gruposCrumb =
@@ -303,9 +303,9 @@ headerInfo currentPath store grupo =
             { title = grupo.nombre, path = Path.Grupos_Id_ { id = grupo.id } }
     in
     case currentPath of
-        Path.Grupos_GrupoId__Pagos _ ->
+        Path.Grupos_GrupoId__Gastos _ ->
             { crumbs = [ gruposCrumb, grupoCrumb ]
-            , title = "Pagos"
+            , title = "Gastos"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
@@ -338,21 +338,21 @@ headerInfo currentPath store grupo =
             , share = { path = currentPath, title = grupo.nombre }
             }
 
-        Path.Grupos_GrupoId__Pagos_New params ->
+        Path.Grupos_GrupoId__Gastos_New params ->
             { crumbs =
                 [ gruposCrumb
                 , grupoCrumb
                 , pagosCrumb
                 ]
-            , title = "Nuevo pago"
+            , title = "Nuevo gasto"
             , showTabs = False
-            , share = { title = "Nuevo pago", path = Path.Grupos_GrupoId__Pagos_New params }
+            , share = { title = "Nuevo gasto", path = Path.Grupos_GrupoId__Gastos_New params }
             }
 
-        Path.Grupos_GrupoId__Pagos_PagoId_ params ->
+        Path.Grupos_GrupoId__Gastos_GastoId_ params ->
             let
                 pagoNombre =
-                    Store.getPago params.pagoId store
+                    Store.getPago params.gastoId store
                         |> RemoteData.toMaybe
                         |> Maybe.map .nombre
                         |> Maybe.withDefault "Cargando..."
@@ -364,7 +364,7 @@ headerInfo currentPath store grupo =
                 ]
             , title = pagoNombre
             , showTabs = False
-            , share = { title = pagoNombre, path = Path.Grupos_GrupoId__Pagos_PagoId_ params }
+            , share = { title = pagoNombre, path = Path.Grupos_GrupoId__Gastos_GastoId_ params }
             }
 
         Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
@@ -380,7 +380,7 @@ headerInfo currentPath store grupo =
 
                 pagoCrumbPath =
                     maybeRepartija
-                        |> Maybe.map (\r -> Path.Grupos_GrupoId__Pagos_PagoId_ { grupoId = grupo.id, pagoId = r.pagoId })
+                        |> Maybe.map (\r -> Path.Grupos_GrupoId__Gastos_GastoId_ { grupoId = grupo.id, gastoId = r.pagoId })
             in
             { crumbs =
                 [ gruposCrumb
@@ -391,6 +391,29 @@ headerInfo currentPath store grupo =
             , title = "Deudores de '" ++ pagoNombre ++ "'"
             , showTabs = False
             , share = { title = "Deudores de " ++ pagoNombre, path = Path.Grupos_GrupoId__Repartijas_RepartijaId_ params }
+            }
+
+        -- Rutas viejas: redirigen apenas se montan, así que nunca llegan a
+        -- pintar chrome. Están acá solo para que el case sea exhaustivo.
+        Path.Grupos_GrupoId__Pagos _ ->
+            { crumbs = [ gruposCrumb, grupoCrumb ]
+            , title = "Gastos"
+            , showTabs = True
+            , share = { path = currentPath, title = grupo.nombre }
+            }
+
+        Path.Grupos_GrupoId__Pagos_New _ ->
+            { crumbs = [ gruposCrumb, grupoCrumb, pagosCrumb ]
+            , title = "Nuevo gasto"
+            , showTabs = False
+            , share = { path = currentPath, title = grupo.nombre }
+            }
+
+        Path.Grupos_GrupoId__Pagos_PagoId_ _ ->
+            { crumbs = [ gruposCrumb, grupoCrumb, pagosCrumb ]
+            , title = "Cargando..."
+            , showTabs = False
+            , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_Id_ _ ->
@@ -457,10 +480,10 @@ viewTabNav currentPath grupo =
             }
             [ text "Resumen" ]
         , Bs.navTab
-            { active = currentPath == Path.Grupos_GrupoId__Pagos { grupoId = grupo.id }
-            , attrs = [ Path.href <| Path.Grupos_GrupoId__Pagos { grupoId = grupo.id } ]
+            { active = currentPath == Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }
+            , attrs = [ Path.href <| Path.Grupos_GrupoId__Gastos { grupoId = grupo.id } ]
             }
-            [ text "Pagos" ]
+            [ text "Gastos" ]
         , Bs.navTab
             { active = currentPath == Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id }
             , attrs = [ Path.href <| Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id } ]
@@ -505,14 +528,14 @@ viewBottomNav currentPath grupo =
     in
     Html.nav [ Css.navbar_bottom, Css.barra_inferior_fija ]
         [ item "bi-house-door" "Resumen" (Path.Grupos_Id_ { id = grupo.id })
-        , item "bi-card-list" "Pagos" (Path.Grupos_GrupoId__Pagos { grupoId = grupo.id })
+        , item "bi-card-list" "Gastos" (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
         , a
             [ Css.navbar_item
-            , Path.href (Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id })
+            , Path.href (Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id })
             ]
             [ Html.span [ Css.navbar_big_button ]
                 [ i [ class "bi bi-plus-lg" ] [] ]
-            , Html.span [] [ text "Ingresar pago" ]
+            , Html.span [] [ text "Ingresar gasto" ]
             ]
         , item "bi-wallet2" "Transferencias" (Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id })
         , div [ Css.navbar_more, class "dropup" ]

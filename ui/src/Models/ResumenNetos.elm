@@ -12,22 +12,22 @@ errorMensaje tipo =
             "No hay items para repartir."
 
         ErrorRepartijaTotalItemsNoCoincide totalItems totalPago ->
-            "El total de items (" ++ Monto.toString totalItems ++ ") debería ser igual al monto del pago (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalItems totalPago
+            "El total de items (" ++ Monto.toString totalItems ++ ") debería ser igual al monto del gasto (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalItems totalPago
 
         ErrorRepartijaSinClaims ->
             "Nadie reclamo ningun item."
 
         ErrorRepartijaTotalReclamadoNoCoincide totalReclamado totalPago ->
-            "El total reclamado (" ++ Monto.toString totalReclamado ++ ") no coincide con el monto del pago (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalReclamado totalPago
+            "El total reclamado (" ++ Monto.toString totalReclamado ++ ") no coincide con el monto del gasto (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalReclamado totalPago
 
         ErrorPartesVacias ->
             "No hay participantes en el reparto"
 
         ErrorPartesMontoFijoSuperaTotal totalFijos totalPago ->
-            "Los montos fijos (" ++ Monto.toString totalFijos ++ ") superan el monto del pago (" ++ Monto.toString totalPago ++ ")"
+            "Los montos fijos (" ++ Monto.toString totalFijos ++ ") superan el monto del gasto (" ++ Monto.toString totalPago ++ ")"
 
         ErrorPartesTotalNoCoincide totalFijos totalPago ->
-            "El total de los montos fijos (" ++ Monto.toString totalFijos ++ ") debería ser igual al monto del pago (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalFijos totalPago
+            "El total de los montos fijos (" ++ Monto.toString totalFijos ++ ") debería ser igual al monto del gasto (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalFijos totalPago
 
 
 errorAccionableEn : TipoErrorResumen -> List LugarParaAccionar

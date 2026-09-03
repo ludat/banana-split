@@ -32,6 +32,15 @@ grupoIdFromPath path =
         Path.Grupos_Id_ params ->
             Just params.id
 
+        Path.Grupos_GrupoId__Gastos params ->
+            Just params.grupoId
+
+        Path.Grupos_GrupoId__Gastos_New params ->
+            Just params.grupoId
+
+        Path.Grupos_GrupoId__Gastos_GastoId_ params ->
+            Just params.grupoId
+
         Path.Grupos_GrupoId__Pagos params ->
             Just params.grupoId
 
