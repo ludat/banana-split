@@ -1,16 +1,11 @@
-module Models.Moneda exposing (fromString, nombre, perEach, simbolo, simboloUnico, toString, todas, validate)
+module Models.Moneda exposing (fromString, nombre, simbolo, simboloUnico, toString, todas, validate)
 
 import Form.Error as FormError
 import Form.Validate as V exposing (Validation)
-import Generated.Api exposing (Moneda(..), PorMoneda, jsonDecMoneda, jsonEncMoneda)
+import Generated.Api exposing (Moneda(..), jsonDecMoneda, jsonEncMoneda)
 import Json.Decode
 import Json.Encode
 import Utils.Form exposing (CustomFormError)
-
-
-perEach : (Moneda -> a -> b) -> PorMoneda a -> List b
-perEach f monedas =
-    monedas |> List.map (\( moneda, a ) -> f moneda a)
 
 
 toString : Moneda -> String

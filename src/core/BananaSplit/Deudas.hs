@@ -5,6 +5,7 @@
 
 module BananaSplit.Deudas (
   calcularNetosRepartija,
+  deudoresNoNulos,
   Distribucion (..),
   distribuirEntrePonderados,
   DistribucionPartes (..),
@@ -14,6 +15,7 @@ module BananaSplit.Deudas (
   HasResumen (..),
   minimizeTransactions,
   mkDeuda,
+  netosDeTransaccion,
   Netos (..),
   Parte (..),
   relabelError,
@@ -256,6 +258,15 @@ data Transaccion = Transaccion
   , monto :: Monto
   }
   deriving (Show, Eq, Generic)
+
+-- | Lo que una transferencia ya hecha le hace a los netos: el que la mandó
+-- salda lo que debía y el que la recibió cobra lo suyo. Los signos son los
+-- mismos que los de un pago donde 'from' es el único pagador y 'to' el único
+-- deudor, que es lo que esta transferencia reemplaza.
+netosDeTransaccion :: Transaccion -> Netos Monto
+netosDeTransaccion transaccion =
+  mkDeuda transaccion.from transaccion.monto
+    <> mkDeuda transaccion.to (negate transaccion.monto)
 
 deudoresNoNulos :: Netos Monto -> Int
 deudoresNoNulos (Netos deudasMap) =

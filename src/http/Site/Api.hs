@@ -66,8 +66,18 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] ShallowGrupo
   , _routeGrupoTasasDeCambioPut ::
       routes :- "grupo" :> Capture "id" ULID :> "tasas-de-cambio" :> Capture "moneda" Moneda :> ReqBody '[JSON] [TasaDeCambio] :> Put '[JSON] [TasaDeCambio]
-  , _routeGrupoSaldarTransaccion ::
-      routes :- "grupo" :> Capture "id" ULID :> "transacciones-congeladas" :> Capture "transaccionId" ULID :> "saldar" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
+  , -- Marca como hecha una de las transacciones que dejó el congelamiento. No
+    -- crea un pago: la transacción hecha ya cuenta en los netos por sí sola.
+    _routeTransaccionSaldar ::
+      routes :- "grupo" :> Capture "id" ULID :> "transacciones" :> Capture "transaccionId" ULID :> "saldar" :> Post '[JSON] ULID
+  , -- La vuelve a dejar pendiente. Solo aplica a las transacciones de este
+    -- congelamiento: una pendiente no tiene dónde vivir fuera de uno.
+    _routeTransaccionDesmarcar ::
+      routes :- "grupo" :> Capture "id" ULID :> "transacciones" :> Capture "transaccionId" ULID :> "saldar" :> Delete '[JSON] ULID
+  , -- Una transferencia registrada a mano, en un grupo que no está congelado y
+    -- por lo tanto no tiene transacciones que marcar. Nace hecha.
+    _routeTransaccionPost ::
+      routes :- "grupo" :> Capture "id" ULID :> "transacciones" :> ReqBody '[JSON] NuevaTransaccionParams :> Post '[JSON] Transaccion
   , _routeReceiptImageParse ::
       routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
   , -- Auth. A single email-first flow: request a code, prove ownership by
@@ -95,7 +105,7 @@ data Api routes
   , -- The grupos where the signed-in user has claimed a participante, i.e.
     -- "my groups" for the home screen.
     _routeMeGruposGet ::
-      routes :- AuthProtect User :> "me" :> "grupos" :> Get '[JSON] [ShallowGrupo]
+      routes :- AuthProtect User :> "me" :> "grupos" :> Get '[JSON] [GrupoParaUsuario]
   , _routeParticipanteClaim ::
       routes :- AuthProtect User :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Put '[JSON] ClaimParticipanteResult
   , _routeParticipanteUnclaim ::
@@ -180,14 +190,41 @@ data UpdateGrupoParams = UpdateGrupoParams
   }
   deriving (Show, Eq, Generic)
 
-data ResumenGrupo = ResumenGrupo
-  { transaccionesParaSaldar :: PorMoneda [Transaccion]
-  , netos :: PorMoneda (Netos Monto)
-  , cantidadPagosInvalidos :: Int
-  , cantidadPagos :: Int
-  , isFrozen :: Bool
-  , tasasDeCambio :: [TasaDeCambio]
+-- | Congelar parte el grupo en dos momentos bien distintos, y el resumen mira
+-- cosas distintas en cada uno: mientras está abierto lo que importa es cómo van
+-- los gastos, y una vez congelado las deudas ya están decididas y lo único que
+-- queda es qué transferencias faltan. Nada de lo que trae un momento le sirve
+-- al otro, así que ninguno paga por lo del otro: el congelado ni siquiera toca
+-- los pagos.
+data ResumenGrupo
+  = GrupoAbierto ResumenAbierto
+  | GrupoCongelado ResumenCongelado
+  deriving (Show, Eq, Generic)
+
+-- | Mientras el grupo está abierto lo que importa es cómo van los gastos.
+data ResumenAbierto = ResumenAbierto
+  { netos :: PorMoneda (Netos Monto)
+  -- ^ Solo de los gastos: quién puso cuánto.
   , consolidado :: ConsolidadoNetos
+  , cantidadPagos :: Int
+  , cantidadPagosInvalidos :: Int
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Una vez congelado las deudas ya están decididas y lo único que queda es qué
+-- transferencias faltan.
+data ResumenCongelado = ResumenCongelado
+  { transaccionesParaSaldar :: PorMoneda [Transaccion]
+  , transaccionesHechas :: PorMoneda [Transaccion]
+  -- ^ Lo que ya se transfirió en este congelamiento.
+  }
+  deriving (Show, Eq, Generic)
+
+data NuevaTransaccionParams = NuevaTransaccionParams
+  { from :: ParticipanteId
+  , to :: ParticipanteId
+  , monto :: Monto
+  , moneda :: Moneda
   }
   deriving (Show, Eq, Generic)
 
@@ -230,7 +267,12 @@ Elm.deriveBoth Elm.defaultOptions ''UpdateMeParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoAsUserParams
 Elm.deriveBoth Elm.defaultOptions ''UpdateGrupoParams
+Elm.deriveBoth Elm.defaultOptions ''ResumenAbierto
+
+Elm.deriveBoth Elm.defaultOptions ''ResumenCongelado
+
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
+Elm.deriveBoth Elm.defaultOptions ''NuevaTransaccionParams
 Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageResponse

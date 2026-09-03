@@ -11,7 +11,7 @@ module Site.Handler.Repartijas (
 import Protolude
 import Servant (err404)
 
-import BananaSplit (RepartijaClaim (..), RepartijaForFrontend (..), ShallowGrupo (..))
+import BananaSplit (RepartijaClaim (..), RepartijaForFrontend (..), ShallowGrupo (..), estaCongelado)
 import BananaSplit.Persistence
 import BananaSplit.ULID (ULID)
 import Site.Handler.Utils
@@ -30,7 +30,7 @@ handleRepartijaClaimPut repartijaId repartijaClaim = do
       shallowGrupo <-
         runBeam (fetchGrupo grupoId)
           `orElseMay` throwJsonError err404 "Grupo no encontrado"
-      when shallowGrupo.isFrozen $ throwJsonError err423 "El grupo está congelado"
+      when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
   runBeam (saveRepartijaClaim repartijaId repartijaClaim)
 
 handleRepartijaClaimDelete :: ULID -> AppHandler Text
@@ -42,6 +42,6 @@ handleRepartijaClaimDelete claimId = do
       shallowGrupo <-
         runBeam (fetchGrupo grupoId)
           `orElseMay` throwJsonError err404 "Grupo no encontrado"
-      when shallowGrupo.isFrozen $ throwJsonError err423 "El grupo está congelado"
+      when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
   void $ runBeam (deleteRepartijaClaim claimId)
   pure "ok"

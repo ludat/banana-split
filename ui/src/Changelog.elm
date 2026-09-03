@@ -50,6 +50,18 @@ changelog =
       , title = "Cargá gastos reenviando emails"
       , description = "Ahora podés reenviar a un grupo los mails de tus compras (tickets, pedidos, confirmaciones de pago) y los cargamos como gasto automáticamente, sin abrir la app. Copiá la dirección del grupo desde sus ajustes."
       }
+    , { date = Date.fromCalendarDate 2026 Sep 2
+      , title = "Congelar con varias monedas"
+      , description = "Congelar un grupo ahora junta todas las deudas en la moneda del grupo usando las tasas de cambio, así se salda en una sola moneda. Por eso hace falta tener cargadas las tasas de todas las monedas con deuda, y mientras el grupo esté congelado no se pueden cambiar."
+      }
+    , { date = Date.fromCalendarDate 2026 Sep 2
+      , title = "Marcá las transferencias como hechas"
+      , description = "Saldar una deuda ya no crea un pago: marcás la transferencia como hecha, y si te equivocaste la volvés a dejar pendiente. Lo que transferiste sigue contando aunque después descongeles el grupo."
+      }
+    , { date = Date.fromCalendarDate 2026 Sep 2
+      , title = "El resumen de un grupo congelado"
+      , description = "Cuando el grupo está congelado el resumen deja de mostrar netos y gráficos: arriba de todo ves qué transferencias tenés que hacer y cuáles vas a recibir, y las confirmás ahí mismo. Las que confirmás se quedan en pantalla marcadas como hechas. Abajo, cuánto falta para que estén todas y las del resto del grupo. Sin congelar queda igual que siempre."
+      }
     ]
 
 

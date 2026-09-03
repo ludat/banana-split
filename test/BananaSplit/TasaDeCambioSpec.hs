@@ -72,6 +72,19 @@ spec = do
       consolidado.monedasConvertidas `shouldMatchList` [ARS, USD]
       consolidado.monedasSinTasa `shouldBe` []
 
+    it "cancela una deuda con una transferencia hecha en otra moneda" $ do
+      -- u2 le debe 1 USD a u1 por los gastos y se lo paga con 1000 ARS. La
+      -- transferencia entra en el bucket de ARS, así que solo queda en cero si
+      -- las tasas se aplican antes de sumar las monedas entre sí.
+      let deudaEnUsd = netos [(u1, 1), (u2, -1)] `enMoneda` USD
+          transferenciaEnArs =
+            netosDeTransaccion (Transaccion Nothing u2 u1 1000) `enMoneda` ARS
+          consolidado =
+            consolidarNetos (tablaDeTasas ARS [usdArs]) (deudaEnUsd <> transferenciaEnArs)
+
+      consolidado.netos `shouldBe` netos [(u1, 0), (u2, 0)]
+      consolidado.monedasSinTasa `shouldBe` []
+
     it "deja afuera las monedas sin tasa y las reporta" $ do
       let porMoneda =
             netos [(u1, 100), (u2, -100)]

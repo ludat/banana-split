@@ -1,8 +1,18 @@
-module Models.Grupo exposing (GrupoLike, currentParticipante, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
+module Models.Grupo exposing (GrupoLike, currentParticipante, estaCongelado, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
 
 import Generated.Api exposing (Participante, ParticipanteId, ULID, User)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route.Path as Path
+import Time
+
+
+{-| Un grupo está congelado mientras tenga fecha de congelamiento: la fecha es
+lo único que se guarda, y sirve además para separar las transferencias hechas
+durante este congelamiento de las de los anteriores.
+-}
+estaCongelado : { r | congeladoAt : Maybe Time.Posix } -> Bool
+estaCongelado grupo =
+    grupo.congeladoAt /= Nothing
 
 
 type alias GrupoLike r =

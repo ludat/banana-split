@@ -274,6 +274,27 @@ spec = do
         (distribucionMontoEquitativo [u1, u2, u3])
         `shouldBe` netos []
 
+  describe "netosDeTransaccion" $ do
+    it "deja en cero al que transfirió lo que debía" $ do
+      let deuda = netos [(u1, 10), (u2, -10)]
+      let transferencia = Transaccion Nothing u2 u1 10
+
+      (deuda <> netosDeTransaccion transferencia)
+        `shouldBe` netos [(u1, 0), (u2, 0)]
+
+    it "le suma al que mandó y le resta al que recibió" $ do
+      netosDeTransaccion (Transaccion Nothing u1 u2 7)
+        `shouldBe` netos [(u1, 7), (u2, -7)]
+
+    it "mueve los netos igual que el pago que reemplaza" $ do
+      netosDeTransaccion (Transaccion Nothing u1 u2 30)
+        `shouldBe` calcularNetosPago
+          pagoValido
+            { monto = 30
+            , pagadores = distribucionMontoEquitativo [u1]
+            , deudores = distribucionMontoEquitativo [u2]
+            }
+
   describe "simplify transactions" $ do
     it "simplifica ningun transaccion trivialmente" $ do
       minimizeTransactions mempty `shouldBe` []

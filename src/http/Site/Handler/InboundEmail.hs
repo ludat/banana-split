@@ -43,7 +43,7 @@ import Network.HTTP.Client (Manager, httpLbs, parseRequest, responseBody)
 import Servant
 
 import BananaSplit
-import BananaSplit.Persistence (fetchGruposForUser, fetchUserByEmail, savePago)
+import BananaSplit.Persistence (fetchGrupo, fetchGruposForUser, fetchUserByEmail, savePago)
 import BananaSplit.Receipts (
   EmailPagoContext (..),
   EmailPagoParticipante (..),
@@ -224,8 +224,10 @@ processPago payload fromEmail = do
       pure
       (extractGrupoId payload)
   grupos <- lift $ runBeam $ fetchGruposForUser user.id
+  unless (any (\g -> g.id == grupoId) grupos) $
+    throwError "No perteneces a ese grupo, o el grupo no existe."
   grupo <-
-    pure (find (\g -> g.id == grupoId) grupos)
+    lift (runBeam $ fetchGrupo grupoId)
       `orElseMay` throwError "No perteneces a ese grupo, o el grupo no existe."
 
   -- 5. Ask the AI to parse exactly one pago within this grupo (text only for

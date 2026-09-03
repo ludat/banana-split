@@ -606,6 +606,7 @@ viewQrModal qrShare =
     Bs.modal
         { isOpen = qrShare /= Nothing
         , onClose = CloseQrShare
+        , centered = False
         , title =
             qrShare
                 |> Maybe.map .title
