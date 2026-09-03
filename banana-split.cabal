@@ -151,7 +151,7 @@ library http
     Site.Handler.Pagos
     Site.Handler.Receipt
     Site.Handler.Repartijas
-    Site.Handler.Transacciones
+    Site.Handler.Transferencias
     Site.Handler.Utils
     Site.Mailer
     Site.Server
@@ -190,7 +190,7 @@ test-suite spec
     BananaSplit.Persistence.PagosSpec
     BananaSplit.Persistence.SpecHook
     BananaSplit.Persistence.TasasDeCambioSpec
-    BananaSplit.Persistence.TransaccionesSpec
+    BananaSplit.Persistence.TransferenciasSpec
     BananaSplit.RepartijaSpec
     BananaSplit.TasaDeCambioSpec
     BananaSplitSpec

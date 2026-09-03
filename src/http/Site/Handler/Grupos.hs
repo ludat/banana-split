@@ -31,11 +31,11 @@ import BananaSplit.Persistence (
   fetchPago,
   fetchShallowPagos,
   fetchTasasDeCambio,
-  fetchTransacciones,
+  fetchTransferencias,
   freezeGrupo,
   guardarTasasDeCambio,
-  transaccionesHechas,
-  transaccionesPendientes,
+  transferenciasHechas,
+  transferenciasPendientes,
   unclaimParticipante,
   unfreezeGrupo,
   updateGrupo,
@@ -52,9 +52,9 @@ handleCreateGrupoAsUser :: User -> CreateGrupoAsUserParams -> AppHandler Grupo
 handleCreateGrupoAsUser user CreateGrupoAsUserParams{grupoName} = do
   runBeam $ createGrupoForUser grupoName user
 
-netosPendientes :: Grupo -> PorMoneda [Transaccion] -> PorMoneda (Netos Monto)
+netosPendientes :: Grupo -> PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
 netosPendientes grupo hechas =
-  calcularNetosTotales grupo <> netosDeTransacciones hechas
+  calcularNetosTotales grupo <> netosDeTransferencias hechas
 
 netosConSaldo :: PorMoneda (Netos Monto) -> PorMoneda (Netos Monto)
 netosConSaldo = filterPorMoneda ((> 0) . deudoresNoNulos)
@@ -67,15 +67,15 @@ handleGetNetos grupoId = do
 
   case shallowGrupo.congeladoAt of
     Just _ -> do
-      guardadas <- runBeam $ fetchTransacciones grupoId
+      guardadas <- runBeam $ fetchTransferencias grupoId
       pure $
         GrupoCongelado
           ResumenCongelado
-            { transaccionesParaSaldar = transaccionesPendientes guardadas
-            , transaccionesHechas = transaccionesHechas guardadas
+            { transferenciasParaSaldar = transferenciasPendientes guardadas
+            , transferenciasHechas = transferenciasHechas guardadas
             }
     Nothing -> do
-      guardadas <- runBeam $ fetchTransacciones grupoId
+      guardadas <- runBeam $ fetchTransferencias grupoId
       pagos <- runBeam $ do
         shallowPagos <- fetchShallowPagos grupoId
         forM shallowPagos $ \shallowPago ->
@@ -91,7 +91,7 @@ handleGetNetos grupoId = do
               }
 
       let netos =
-            netosPendientes grupo (transaccionesHechas guardadas & fmap (fmap (.transaccion)))
+            netosPendientes grupo (transferenciasHechas guardadas & fmap (fmap (.transferencia)))
       let tabla = tablaDeTasas shallowGrupo.monedaPorDefecto shallowGrupo.tasasDeCambio
 
       pure $
@@ -101,7 +101,7 @@ handleGetNetos grupoId = do
             , consolidado = consolidarNetos tabla (netosConSaldo netos)
             , cantidadPagos = length grupo.pagos
             , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
-            , transaccionesHechas = transaccionesHechas guardadas
+            , transferenciasHechas = transferenciasHechas guardadas
             }
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
@@ -153,16 +153,16 @@ handleFreezeGrupo grupoId = do
           , pagos = pagos
           , monedaPorDefecto = shallowGrupo.monedaPorDefecto
           }
-  guardadas <- runBeam $ fetchTransacciones grupoId
+  guardadas <- runBeam $ fetchTransferencias grupoId
   tasasDeCambio <- runBeam $ fetchTasasDeCambio grupoId
 
-  let netos = netosPendientes grupo (transaccionesHechas guardadas <&> fmap (.transaccion))
+  let netos = netosPendientes grupo (transferenciasHechas guardadas <&> fmap (.transferencia))
   let consolidado =
         consolidarNetos
           (tablaDeTasas shallowGrupo.monedaPorDefecto tasasDeCambio)
           (netosConSaldo netos)
 
-  -- Congelar deja una sola tanda de transacciones en la moneda por defecto, así
+  -- Congelar deja una sola tanda de transferencias en la moneda por defecto, así
   -- que sin la tasa de alguna de las monedas del grupo no hay nada que congelar.
   -- El error dice cuáles faltan porque el front puede mandar a cargarlas.
   unless (null consolidado.monedasSinTasa) $
@@ -192,7 +192,7 @@ handleUpdateGrupo grupoId params = do
     runBeam (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
-  -- Las transacciones congeladas están en la moneda por defecto de cuando se
+  -- Las transferencias congeladas están en la moneda por defecto de cuando se
   -- congeló: cambiarla ahora las dejaría hablando de otra moneda. El nombre sí
   -- se puede cambiar.
   when (estaCongelado shallowGrupo && params.monedaPorDefecto /= shallowGrupo.monedaPorDefecto) $
@@ -212,7 +212,7 @@ handleGuardarTasasDeCambio grupoId moneda tasas = do
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   -- La tasa es lo que fija las deudas al congelar, así que cambiarla después
-  -- dejaría las transacciones guardadas hablando de otro tipo de cambio.
+  -- dejaría las transferencias guardadas hablando de otro tipo de cambio.
   when (estaCongelado shallowGrupo) $
     throwJsonError err423 "El grupo está congelado"
 

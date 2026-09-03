@@ -313,17 +313,17 @@ type alias ResumenAbierto  =
    , consolidado: ConsolidadoNetos
    , cantidadPagos: Int
    , cantidadPagosInvalidos: Int
-   , transaccionesHechas: (PorMoneda (List TransaccionHecha))
+   , transferenciasHechas: (PorMoneda (List TransferenciaHecha))
    }
 
 jsonDecResumenAbierto : Json.Decode.Decoder ( ResumenAbierto )
 jsonDecResumenAbierto =
-   Json.Decode.succeed (\pnetos pconsolidado pcantidadPagos pcantidadPagosInvalidos ptransaccionesHechas -> {netos = pnetos, consolidado = pconsolidado, cantidadPagos = pcantidadPagos, cantidadPagosInvalidos = pcantidadPagosInvalidos, transaccionesHechas = ptransaccionesHechas})
+   Json.Decode.succeed (\pnetos pconsolidado pcantidadPagos pcantidadPagosInvalidos ptransferenciasHechas -> {netos = pnetos, consolidado = pconsolidado, cantidadPagos = pcantidadPagos, cantidadPagosInvalidos = pcantidadPagosInvalidos, transferenciasHechas = ptransferenciasHechas})
    |> required "netos" (jsonDecPorMoneda (jsonDecNetos (jsonDecMonto)))
    |> required "consolidado" (jsonDecConsolidadoNetos)
    |> required "cantidadPagos" (Json.Decode.int)
    |> required "cantidadPagosInvalidos" (Json.Decode.int)
-   |> required "transaccionesHechas" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransaccionHecha)))
+   |> required "transferenciasHechas" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransferenciaHecha)))
 
 jsonEncResumenAbierto : ResumenAbierto -> Value
 jsonEncResumenAbierto  val =
@@ -332,27 +332,27 @@ jsonEncResumenAbierto  val =
    , ("consolidado", jsonEncConsolidadoNetos val.consolidado)
    , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
    , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
-   , ("transaccionesHechas", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransaccionHecha))) val.transaccionesHechas)
+   , ("transferenciasHechas", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransferenciaHecha))) val.transferenciasHechas)
    ]
 
 
 
 type alias ResumenCongelado  =
-   { transaccionesParaSaldar: (PorMoneda (List Transaccion))
-   , transaccionesHechas: (PorMoneda (List TransaccionHecha))
+   { transferenciasParaSaldar: (PorMoneda (List Transferencia))
+   , transferenciasHechas: (PorMoneda (List TransferenciaHecha))
    }
 
 jsonDecResumenCongelado : Json.Decode.Decoder ( ResumenCongelado )
 jsonDecResumenCongelado =
-   Json.Decode.succeed (\ptransaccionesParaSaldar ptransaccionesHechas -> {transaccionesParaSaldar = ptransaccionesParaSaldar, transaccionesHechas = ptransaccionesHechas})
-   |> required "transaccionesParaSaldar" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransaccion)))
-   |> required "transaccionesHechas" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransaccionHecha)))
+   Json.Decode.succeed (\ptransferenciasParaSaldar ptransferenciasHechas -> {transferenciasParaSaldar = ptransferenciasParaSaldar, transferenciasHechas = ptransferenciasHechas})
+   |> required "transferenciasParaSaldar" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransferencia)))
+   |> required "transferenciasHechas" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransferenciaHecha)))
 
 jsonEncResumenCongelado : ResumenCongelado -> Value
 jsonEncResumenCongelado  val =
    Json.Encode.object
-   [ ("transaccionesParaSaldar", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransaccion))) val.transaccionesParaSaldar)
-   , ("transaccionesHechas", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransaccionHecha))) val.transaccionesHechas)
+   [ ("transferenciasParaSaldar", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransferencia))) val.transferenciasParaSaldar)
+   , ("transferenciasHechas", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransferenciaHecha))) val.transferenciasHechas)
    ]
 
 
@@ -673,23 +673,23 @@ jsonEncParticipante  val =
 
 
 
-type alias Transaccion  =
+type alias Transferencia  =
    { id: (Maybe ULID)
    , from: ParticipanteId
    , to: ParticipanteId
    , monto: Monto
    }
 
-jsonDecTransaccion : Json.Decode.Decoder ( Transaccion )
-jsonDecTransaccion =
+jsonDecTransferencia : Json.Decode.Decoder ( Transferencia )
+jsonDecTransferencia =
    Json.Decode.succeed (\pid pfrom pto pmonto -> {id = pid, from = pfrom, to = pto, monto = pmonto})
    |> fnullable "id" (jsonDecULID)
    |> required "from" (jsonDecParticipanteId)
    |> required "to" (jsonDecParticipanteId)
    |> required "monto" (jsonDecMonto)
 
-jsonEncTransaccion : Transaccion -> Value
-jsonEncTransaccion  val =
+jsonEncTransferencia : Transferencia -> Value
+jsonEncTransferencia  val =
    Json.Encode.object
    [ ("id", (maybeEncode (jsonEncULID)) val.id)
    , ("from", jsonEncParticipanteId val.from)
@@ -699,43 +699,43 @@ jsonEncTransaccion  val =
 
 
 
-type alias TransaccionHecha  =
-   { transaccion: Transaccion
+type alias TransferenciaHecha  =
+   { transferencia: Transferencia
    , saldadaAt: Posix
    }
 
-jsonDecTransaccionHecha : Json.Decode.Decoder ( TransaccionHecha )
-jsonDecTransaccionHecha =
-   Json.Decode.succeed (\ptransaccion psaldadaAt -> {transaccion = ptransaccion, saldadaAt = psaldadaAt})
-   |> required "transaccion" (jsonDecTransaccion)
+jsonDecTransferenciaHecha : Json.Decode.Decoder ( TransferenciaHecha )
+jsonDecTransferenciaHecha =
+   Json.Decode.succeed (\ptransferencia psaldadaAt -> {transferencia = ptransferencia, saldadaAt = psaldadaAt})
+   |> required "transferencia" (jsonDecTransferencia)
    |> required "saldadaAt" (jsonDecPosix)
 
-jsonEncTransaccionHecha : TransaccionHecha -> Value
-jsonEncTransaccionHecha  val =
+jsonEncTransferenciaHecha : TransferenciaHecha -> Value
+jsonEncTransferenciaHecha  val =
    Json.Encode.object
-   [ ("transaccion", jsonEncTransaccion val.transaccion)
+   [ ("transferencia", jsonEncTransferencia val.transferencia)
    , ("saldadaAt", jsonEncPosix val.saldadaAt)
    ]
 
 
 
-type alias NuevaTransaccionParams  =
+type alias NuevaTransferenciaParams  =
    { from: ParticipanteId
    , to: ParticipanteId
    , monto: Monto
    , moneda: Moneda
    }
 
-jsonDecNuevaTransaccionParams : Json.Decode.Decoder ( NuevaTransaccionParams )
-jsonDecNuevaTransaccionParams =
+jsonDecNuevaTransferenciaParams : Json.Decode.Decoder ( NuevaTransferenciaParams )
+jsonDecNuevaTransferenciaParams =
    Json.Decode.succeed (\pfrom pto pmonto pmoneda -> {from = pfrom, to = pto, monto = pmonto, moneda = pmoneda})
    |> required "from" (jsonDecParticipanteId)
    |> required "to" (jsonDecParticipanteId)
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
 
-jsonEncNuevaTransaccionParams : NuevaTransaccionParams -> Value
-jsonEncNuevaTransaccionParams  val =
+jsonEncNuevaTransferenciaParams : NuevaTransferenciaParams -> Value
+jsonEncNuevaTransferenciaParams  val =
    Json.Encode.object
    [ ("from", jsonEncParticipanteId val.from)
    , ("to", jsonEncParticipanteId val.to)
@@ -1624,8 +1624,8 @@ putGrupoByIdTasasdecambioByMoneda capture_id capture_moneda body toMsg =
                 Nothing
             }
 
-postGrupoByIdTransaccionesByTransaccionIdSaldar : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
-postGrupoByIdTransaccionesByTransaccionIdSaldar capture_id capture_transaccionId toMsg =
+postGrupoByIdTransferenciasByTransferenciaIdSaldar : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
+postGrupoByIdTransferenciasByTransferenciaIdSaldar capture_id capture_transferenciaId toMsg =
     let
         params =
             List.filterMap identity
@@ -1641,8 +1641,8 @@ postGrupoByIdTransaccionesByTransaccionIdSaldar capture_id capture_transaccionId
                 Url.Builder.crossOrigin "/api"
                     [ "grupo"
                     , (capture_id)
-                    , "transacciones"
-                    , (capture_transaccionId)
+                    , "transferencias"
+                    , (capture_transferenciaId)
                     , "saldar"
                     ]
                     params
@@ -1656,8 +1656,8 @@ postGrupoByIdTransaccionesByTransaccionIdSaldar capture_id capture_transaccionId
                 Nothing
             }
 
-deleteGrupoByIdTransaccionesByTransaccionIdSaldar : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
-deleteGrupoByIdTransaccionesByTransaccionIdSaldar capture_id capture_transaccionId toMsg =
+deleteGrupoByIdTransferenciasByTransferenciaIdSaldar : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
+deleteGrupoByIdTransferenciasByTransferenciaIdSaldar capture_id capture_transferenciaId toMsg =
     let
         params =
             List.filterMap identity
@@ -1673,8 +1673,8 @@ deleteGrupoByIdTransaccionesByTransaccionIdSaldar capture_id capture_transaccion
                 Url.Builder.crossOrigin "/api"
                     [ "grupo"
                     , (capture_id)
-                    , "transacciones"
-                    , (capture_transaccionId)
+                    , "transferencias"
+                    , (capture_transferenciaId)
                     , "saldar"
                     ]
                     params
@@ -1688,8 +1688,8 @@ deleteGrupoByIdTransaccionesByTransaccionIdSaldar capture_id capture_transaccion
                 Nothing
             }
 
-postGrupoByIdTransacciones : ULID -> NuevaTransaccionParams -> (Result Http.Error  (Transaccion)  -> msg) -> Cmd msg
-postGrupoByIdTransacciones capture_id body toMsg =
+postGrupoByIdTransferencias : ULID -> NuevaTransferenciaParams -> (Result Http.Error  (Transferencia)  -> msg) -> Cmd msg
+postGrupoByIdTransferencias capture_id body toMsg =
     let
         params =
             List.filterMap identity
@@ -1705,21 +1705,21 @@ postGrupoByIdTransacciones capture_id body toMsg =
                 Url.Builder.crossOrigin "/api"
                     [ "grupo"
                     , (capture_id)
-                    , "transacciones"
+                    , "transferencias"
                     ]
                     params
             , body =
-                Http.jsonBody (jsonEncNuevaTransaccionParams body)
+                Http.jsonBody (jsonEncNuevaTransferenciaParams body)
             , expect =
-                Http.expectJson toMsg jsonDecTransaccion
+                Http.expectJson toMsg jsonDecTransferencia
             , timeout =
                 Nothing
             , tracker =
                 Nothing
             }
 
-deleteGrupoByIdTransaccionesByTransaccionId : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
-deleteGrupoByIdTransaccionesByTransaccionId capture_id capture_transaccionId toMsg =
+deleteGrupoByIdTransferenciasByTransferenciaId : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
+deleteGrupoByIdTransferenciasByTransferenciaId capture_id capture_transferenciaId toMsg =
     let
         params =
             List.filterMap identity
@@ -1735,8 +1735,8 @@ deleteGrupoByIdTransaccionesByTransaccionId capture_id capture_transaccionId toM
                 Url.Builder.crossOrigin "/api"
                     [ "grupo"
                     , (capture_id)
-                    , "transacciones"
-                    , (capture_transaccionId)
+                    , "transferencias"
+                    , (capture_transferenciaId)
                     ]
                     params
             , body =

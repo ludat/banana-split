@@ -66,20 +66,20 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] ShallowGrupo
   , _routeGrupoTasasDeCambioPut ::
       routes :- "grupo" :> Capture "id" ULID :> "tasas-de-cambio" :> Capture "moneda" Moneda :> ReqBody '[JSON] [TasaDeCambio] :> Put '[JSON] [TasaDeCambio]
-  , -- Marca como hecha una de las transacciones que dejó el congelamiento. No
-    -- crea un pago: la transacción hecha ya cuenta en los netos por sí sola.
-    _routeTransaccionSaldar ::
-      routes :- "grupo" :> Capture "id" ULID :> "transacciones" :> Capture "transaccionId" ULID :> "saldar" :> Post '[JSON] ULID
-  , -- La vuelve a dejar pendiente. Solo aplica a las transacciones de este
+  , -- Marca como hecha una de las transferencias que dejó el congelamiento. No
+    -- crea un pago: la transferencia hecha ya cuenta en los netos por sí sola.
+    _routeTransferenciaSaldar ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Post '[JSON] ULID
+  , -- La vuelve a dejar pendiente. Solo aplica a las transferencias de este
     -- congelamiento: una pendiente no tiene dónde vivir fuera de uno.
-    _routeTransaccionDesmarcar ::
-      routes :- "grupo" :> Capture "id" ULID :> "transacciones" :> Capture "transaccionId" ULID :> "saldar" :> Delete '[JSON] ULID
+    _routeTransferenciaDesmarcar ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Delete '[JSON] ULID
   , -- Una transferencia registrada a mano, en un grupo que no está congelado y
-    -- por lo tanto no tiene transacciones que marcar. Nace hecha.
-    _routeTransaccionPost ::
-      routes :- "grupo" :> Capture "id" ULID :> "transacciones" :> ReqBody '[JSON] NuevaTransaccionParams :> Post '[JSON] Transaccion
-  , _routeTransaccionDelete ::
-      routes :- "grupo" :> Capture "id" ULID :> "transacciones" :> Capture "transaccionId" ULID :> Delete '[JSON] ULID
+    -- por lo tanto no tiene transferencias que marcar. Nace hecha.
+    _routeTransferenciaPost ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> ReqBody '[JSON] NuevaTransferenciaParams :> Post '[JSON] Transferencia
+  , _routeTransferenciaDelete ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> Delete '[JSON] ULID
   , _routeReceiptImageParse ::
       routes :- "receipt" :> "parse-image" :> ReqBody '[JSON] ReceiptImageRequest :> Post '[JSON] ReceiptImageResponse
   , -- Auth. A single email-first flow: request a code, prove ownership by
@@ -210,19 +210,19 @@ data ResumenAbierto = ResumenAbierto
   , consolidado :: ConsolidadoNetos
   , cantidadPagos :: Int
   , cantidadPagosInvalidos :: Int
-  , transaccionesHechas :: PorMoneda [TransaccionHecha]
+  , transferenciasHechas :: PorMoneda [TransferenciaHecha]
   }
   deriving (Show, Eq, Generic)
 
 -- | Una vez congelado las deudas ya están decididas y lo único que queda es qué
 -- transferencias faltan.
 data ResumenCongelado = ResumenCongelado
-  { transaccionesParaSaldar :: PorMoneda [Transaccion]
-  , transaccionesHechas :: PorMoneda [TransaccionHecha]
+  { transferenciasParaSaldar :: PorMoneda [Transferencia]
+  , transferenciasHechas :: PorMoneda [TransferenciaHecha]
   }
   deriving (Show, Eq, Generic)
 
-data NuevaTransaccionParams = NuevaTransaccionParams
+data NuevaTransferenciaParams = NuevaTransferenciaParams
   { from :: ParticipanteId
   , to :: ParticipanteId
   , monto :: Monto
@@ -274,7 +274,7 @@ Elm.deriveBoth Elm.defaultOptions ''ResumenAbierto
 Elm.deriveBoth Elm.defaultOptions ''ResumenCongelado
 
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
-Elm.deriveBoth Elm.defaultOptions ''NuevaTransaccionParams
+Elm.deriveBoth Elm.defaultOptions ''NuevaTransferenciaParams
 Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageResponse

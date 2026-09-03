@@ -310,9 +310,16 @@ headerInfo currentPath store grupo =
             , share = { path = currentPath, title = grupo.nombre }
             }
 
+        Path.Grupos_GrupoId__Transferencias _ ->
+            { crumbs = [ gruposCrumb, grupoCrumb ]
+            , title = "Transferencias"
+            , showTabs = True
+            , share = { path = currentPath, title = grupo.nombre }
+            }
+
         Path.Grupos_GrupoId__Liquidaciones _ ->
             { crumbs = [ gruposCrumb, grupoCrumb ]
-            , title = "Liquidaciones"
+            , title = "Transferencias"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
@@ -455,10 +462,10 @@ viewTabNav currentPath grupo =
             }
             [ text "Pagos" ]
         , Bs.navTab
-            { active = currentPath == Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id }
-            , attrs = [ Path.href <| Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id } ]
+            { active = currentPath == Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id }
+            , attrs = [ Path.href <| Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id } ]
             }
-            [ text "Liquidaciones" ]
+            [ text "Transferencias" ]
         , Bs.navTab
             { active = currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id }
             , attrs = [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.id } ]
@@ -489,7 +496,7 @@ viewBottomNav currentPath grupo =
                 , Path.href path
                 ]
                 [ i [ class ("bi " ++ icon) ] []
-                , Html.span [] [ text label ]
+                , Html.span [ class "text-truncate" ] [ text label ]
                 ]
 
         masActive =
@@ -507,7 +514,7 @@ viewBottomNav currentPath grupo =
                 [ i [ class "bi bi-plus-lg" ] [] ]
             , Html.span [] [ text "Ingresar pago" ]
             ]
-        , item "bi-wallet2" "Saldos" (Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id })
+        , item "bi-wallet2" "Transferencias" (Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id })
         , div [ Css.navbar_more, class "dropup" ]
             [ a
                 [ classList [ ( "navbar-item", True ), ( "active", masActive ) ]

@@ -78,7 +78,7 @@ spec = do
       -- las tasas se aplican antes de sumar las monedas entre sí.
       let deudaEnUsd = netos [(u1, 1), (u2, -1)] `enMoneda` USD
           transferenciaEnArs =
-            netosDeTransaccion (Transaccion Nothing u2 u1 1000) `enMoneda` ARS
+            netosDeTransferencia (Transferencia Nothing u2 u1 1000) `enMoneda` ARS
           consolidado =
             consolidarNetos (tablaDeTasas ARS [usdArs]) (deudaEnUsd <> transferenciaEnArs)
 

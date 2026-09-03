@@ -452,7 +452,7 @@ type alias ContextoDeTasas =
     , conPagos : List Moneda
     , guardadas : List TasaDeCambio
     , -- Con el grupo congelado la tasa es la que fijó las deudas: tocarla
-      -- dejaría las transacciones guardadas hablando de otro tipo de cambio.
+      -- dejaría las transferencias guardadas hablando de otro tipo de cambio.
       congelado : Bool
     }
 

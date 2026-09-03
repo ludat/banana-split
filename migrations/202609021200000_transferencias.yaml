@@ -1,0 +1,24 @@
+operations:
+  - rename_table:
+      from: transacciones_congeladas
+      to: transferencias
+
+  - add_column:
+      table: transferencias
+      column:
+        name: saldada_at
+        type: timestamptz
+        nullable: true
+
+  - add_column:
+      table: grupos
+      up: "CASE WHEN is_frozen THEN now() ELSE NULL END"
+      column:
+        name: congelado_at
+        type: timestamptz
+        nullable: true
+
+  - drop_column:
+      table: grupos
+      column: is_frozen
+      down: "congelado_at IS NOT NULL"

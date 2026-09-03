@@ -16,7 +16,7 @@ import Models.Moneda as Moneda
 import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
-import Models.Transaccion as Transaccion
+import Models.Transferencia as Transferencia
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
@@ -46,7 +46,7 @@ type alias Model =
     { grupoId : String
     , tabSeleccionado : Maybe Tab
     , pagoModal : PagoDetalleModal.Model
-    , confirmando : Maybe ( Moneda, Api.Transaccion )
+    , confirmando : Maybe ( Moneda, Api.Transferencia )
     }
 
 
@@ -89,10 +89,10 @@ type Msg
     = SelectTab Tab
     | OpenPago ULID
     | PagoModalMsg PagoDetalleModal.Msg
-    | PedirConfirmacion ( Moneda, Api.Transaccion )
+    | PedirConfirmacion ( Moneda, Api.Transferencia )
     | CancelarConfirmacion
-    | SaldarTransaccion ULID
-    | TransaccionResponse String (Result Http.Error ULID)
+    | SaldarTransferencia ULID
+    | TransferenciaResponse String (Result Http.Error ULID)
 
 
 update : Store -> PagoDetalleModal.Context -> Msg -> Model -> ( Model, Effect Msg )
@@ -113,16 +113,16 @@ update store ctx msg model =
             , Effect.none
             )
 
-        SaldarTransaccion transaccionId ->
+        SaldarTransferencia transferenciaId ->
             ( { model | confirmando = Nothing }
             , Effect.sendCmd <|
-                Api.postGrupoByIdTransaccionesByTransaccionIdSaldar
+                Api.postGrupoByIdTransferenciasByTransferenciaIdSaldar
                     model.grupoId
-                    transaccionId
-                    (TransaccionResponse "Se registró la transferencia")
+                    transferenciaId
+                    (TransferenciaResponse "Se registró la transferencia")
             )
 
-        TransaccionResponse mensaje (Ok _) ->
+        TransferenciaResponse mensaje (Ok _) ->
             ( model
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
@@ -130,7 +130,7 @@ update store ctx msg model =
                 ]
             )
 
-        TransaccionResponse _ (Err _) ->
+        TransferenciaResponse _ (Err _) ->
             ( model
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
@@ -326,29 +326,29 @@ faltan: primero las tuyas, después las del resto.
 viewGrupoCongelado : Zone -> Posix -> Maybe String -> ShallowGrupo -> Api.ResumenCongelado -> Html Msg
 viewGrupoCongelado zone ahora userId grupo resumen =
     let
-        pendientes : List ( Moneda, Api.Transaccion )
+        pendientes : List ( Moneda, Api.Transferencia )
         pendientes =
-            aplanarTransacciones resumen.transaccionesParaSaldar
+            aplanarTransferencias resumen.transferenciasParaSaldar
 
-        hechas : List ( Moneda, Api.Transaccion )
+        hechas : List ( Moneda, Api.Transferencia )
         hechas =
-            aplanarTransacciones resumen.transaccionesHechas
-                |> List.map (\( moneda, h ) -> ( moneda, h.transaccion ))
+            aplanarTransferencias resumen.transferenciasHechas
+                |> List.map (\( moneda, h ) -> ( moneda, h.transferencia ))
 
-        esMia : ( Moneda, Api.Transaccion ) -> Bool
+        esMia : ( Moneda, Api.Transferencia ) -> Bool
         esMia ( _, t ) =
             userId == Just t.from || userId == Just t.to
 
         ( misPendientes, ajenas ) =
             List.partition esMia pendientes
 
-        misHechas : List ( Posix, ( Moneda, Api.Transaccion ) )
+        misHechas : List ( Posix, ( Moneda, Api.Transferencia ) )
         misHechas =
-            aplanarTransacciones resumen.transaccionesHechas
+            aplanarTransferencias resumen.transferenciasHechas
                 |> List.filterMap
                     (\( moneda, h ) ->
-                        if esMia ( moneda, h.transaccion ) then
-                            Just ( h.saldadaAt, ( moneda, h.transaccion ) )
+                        if esMia ( moneda, h.transferencia ) then
+                            Just ( h.saldadaAt, ( moneda, h.transferencia ) )
 
                         else
                             Nothing
@@ -372,10 +372,10 @@ viewGrupoCongelado zone ahora userId grupo resumen =
 
             ( Just uid, _ ) ->
                 let
-                    misTransferencias : List ( Transaccion.Estado, ( Moneda, Api.Transaccion ) )
+                    misTransferencias : List ( Transferencia.Estado, ( Moneda, Api.Transferencia ) )
                     misTransferencias =
-                        (misPendientes |> List.map (Tuple.pair Transaccion.Pendiente))
-                            ++ (misHechas |> List.map (\( saldadaAt, tr ) -> ( Transaccion.Hecha saldadaAt, tr )))
+                        (misPendientes |> List.map (Tuple.pair Transferencia.Pendiente))
+                            ++ (misHechas |> List.map (\( saldadaAt, tr ) -> ( Transferencia.Hecha saldadaAt, tr )))
                             |> List.sortBy (\( _, ( _, t ) ) -> t.id |> Maybe.withDefault "")
                             |> List.reverse
                 in
@@ -409,7 +409,7 @@ viewGrupoCongelado zone ahora userId grupo resumen =
 lo ve como hecho, así que primero se relee en voz alta quién le transfirió qué a
 quién.
 -}
-viewConfirmacionModal : Maybe String -> ShallowGrupo -> Maybe ( Moneda, Api.Transaccion ) -> Html Msg
+viewConfirmacionModal : Maybe String -> ShallowGrupo -> Maybe ( Moneda, Api.Transferencia ) -> Html Msg
 viewConfirmacionModal userId grupo confirmando =
     let
         ( pregunta, accion ) =
@@ -417,20 +417,20 @@ viewConfirmacionModal userId grupo confirmando =
                 Just ( moneda, t ) ->
                     ( if userId == Just t.from then
                         [ text "¿Le transferiste "
-                        , Transaccion.monto grupo.monedaPorDefecto moneda t
+                        , Transferencia.monto grupo.monedaPorDefecto moneda t
                         , text " a "
-                        , Transaccion.participante grupo t.to
+                        , Transferencia.participante grupo t.to
                         , text "?"
                         ]
 
                       else
                         [ text "¿Recibiste "
-                        , Transaccion.monto grupo.monedaPorDefecto moneda t
+                        , Transferencia.monto grupo.monedaPorDefecto moneda t
                         , text " de "
-                        , Transaccion.participante grupo t.from
+                        , Transferencia.participante grupo t.from
                         , text "?"
                         ]
-                    , t.id |> Maybe.map SaldarTransaccion
+                    , t.id |> Maybe.map SaldarTransferencia
                     )
 
                 Nothing ->
@@ -461,7 +461,7 @@ pendiente se confirma acá mismo, pasando por un modal porque dice que la plata
 ya se movió. Deshacerla vive en la pantalla de transferencias, así el resumen no
 se convierte en un editor.
 -}
-viewTransferenciaCard : Zone -> Posix -> Transaccion.Estado -> String -> ShallowGrupo -> ( Moneda, Api.Transaccion ) -> Html Msg
+viewTransferenciaCard : Zone -> Posix -> Transferencia.Estado -> String -> ShallowGrupo -> ( Moneda, Api.Transferencia ) -> Html Msg
 viewTransferenciaCard zone ahora estado userId grupo ( moneda, t ) =
     let
         salgoYo =
@@ -469,28 +469,28 @@ viewTransferenciaCard zone ahora estado userId grupo ( moneda, t ) =
 
         { etiqueta, otro, colorMonto, textoBoton } =
             case ( salgoYo, estado ) of
-                ( True, Transaccion.Pendiente ) ->
+                ( True, Transferencia.Pendiente ) ->
                     { etiqueta = "Tenés que transferirle a"
                     , otro = t.to
                     , colorMonto = "text-danger"
                     , textoBoton = "Ya la transferí"
                     }
 
-                ( True, Transaccion.Hecha _ ) ->
+                ( True, Transferencia.Hecha _ ) ->
                     { etiqueta = "Le transferiste a"
                     , otro = t.to
                     , colorMonto = "text-muted"
                     , textoBoton = ""
                     }
 
-                ( False, Transaccion.Pendiente ) ->
+                ( False, Transferencia.Pendiente ) ->
                     { etiqueta = "Vas a recibir de"
                     , otro = t.from
                     , colorMonto = "text-success"
                     , textoBoton = "Ya la recibí"
                     }
 
-                ( False, Transaccion.Hecha _ ) ->
+                ( False, Transferencia.Hecha _ ) ->
                     { etiqueta = "Recibiste de"
                     , otro = t.from
                     , colorMonto = "text-muted"
@@ -501,10 +501,10 @@ viewTransferenciaCard zone ahora estado userId grupo ( moneda, t ) =
         [ div
             [ class "card h-100"
             , case estado of
-                Transaccion.Pendiente ->
+                Transferencia.Pendiente ->
                     style "border-color" "var(--bs-primary)"
 
-                Transaccion.Hecha _ ->
+                Transferencia.Hecha _ ->
                     style "opacity" "0.65"
             ]
             [ div [ class "card-body d-flex flex-column gap-2 p-3" ]
@@ -524,17 +524,17 @@ viewTransferenciaCard zone ahora estado userId grupo ( moneda, t ) =
                         ]
                     ]
                 , case ( estado, t.id ) of
-                    ( Transaccion.Pendiente, Just _ ) ->
+                    ( Transferencia.Pendiente, Just _ ) ->
                         Bs.btn Bs.Primary
                             [ class "btn-sm align-self-start mt-auto"
                             , onClick (PedirConfirmacion ( moneda, t ))
                             ]
                             [ text textoBoton ]
 
-                    ( Transaccion.Pendiente, Nothing ) ->
+                    ( Transferencia.Pendiente, Nothing ) ->
                         text ""
 
-                    ( Transaccion.Hecha saldadaAt, _ ) ->
+                    ( Transferencia.Hecha saldadaAt, _ ) ->
                         div
                             [ class "text-success small mt-auto"
                             , Attr.title (Posix.toString zone saldadaAt)
@@ -547,11 +547,11 @@ viewTransferenciaCard zone ahora estado userId grupo ( moneda, t ) =
         ]
 
 
-viewTransferenciaAjena : ShallowGrupo -> ( Moneda, Api.Transaccion ) -> Html Msg
+viewTransferenciaAjena : ShallowGrupo -> ( Moneda, Api.Transferencia ) -> Html Msg
 viewTransferenciaAjena grupo ( moneda, t ) =
     div [ class "list-group-item" ]
         [ span [ class "text-muted small" ]
-            (Transaccion.frase grupo moneda t)
+            (Transferencia.frase grupo moneda t)
         ]
 
 
@@ -578,7 +578,7 @@ viewProgresoCongelado grupo pendientes hechas =
                         " transferencias hechas"
                     )
                 ]
-            , a [ Path.href <| Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id } ]
+            , a [ Path.href <| Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id } ]
                 [ text "Ver todas" ]
             ]
 
@@ -586,8 +586,8 @@ viewProgresoCongelado grupo pendientes hechas =
 {-| 'PorMoneda' agrupa por moneda, pero un grupo congelado tiene una sola, así
 que para mostrar conviene la lista plana con la moneda pegada a cada una.
 -}
-aplanarTransacciones : Api.PorMoneda (List a) -> List ( Moneda, a )
-aplanarTransacciones =
+aplanarTransferencias : Api.PorMoneda (List a) -> List ( Moneda, a )
+aplanarTransferencias =
     List.concatMap (\( moneda, ts ) -> ts |> List.map (\t -> ( moneda, t )))
 
 
@@ -779,7 +779,7 @@ viewTuEstadoCard userId netos grupo monedaPorDefecto monedaSeleccionada =
                         [ viewMontoDelta (Moneda.simbolo monedaPorDefecto monedaSeleccionada) monto
                         , if monto.valor < 0 then
                             a
-                                [ Path.href <| Path.Grupos_GrupoId__Liquidaciones { grupoId = grupo.id }
+                                [ Path.href <| Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id }
                                 , class "small text-muted"
                                 ]
                                 [ text "Saldar deudas" ]

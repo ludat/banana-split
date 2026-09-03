@@ -41,6 +41,9 @@ grupoIdFromPath path =
         Path.Grupos_GrupoId__Pagos_PagoId_ params ->
             Just params.grupoId
 
+        Path.Grupos_GrupoId__Transferencias params ->
+            Just params.grupoId
+
         Path.Grupos_GrupoId__Liquidaciones params ->
             Just params.grupoId
 

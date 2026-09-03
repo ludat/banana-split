@@ -15,7 +15,7 @@ module BananaSplit.Deudas (
   HasResumen (..),
   minimizeTransactions,
   mkDeuda,
-  netosDeTransaccion,
+  netosDeTransferencia,
   Netos (..),
   Parte (..),
   relabelError,
@@ -24,8 +24,8 @@ module BananaSplit.Deudas (
   TipoDistribucion (..),
   TipoErrorResumen (..),
   totalNetos,
-  Transaccion (..),
-  TransaccionHecha (..),
+  Transferencia (..),
+  TransferenciaHecha (..),
 ) where
 
 import Data.Decimal (Decimal)
@@ -197,19 +197,19 @@ instance HasResumen Repartija where
       netosReclamados = calcularNetosRepartija repartija
       totalReclamado = totalNetos netosReclamados
 
-minimizeTransactions :: Netos Monto -> [Transaccion]
+minimizeTransactions :: Netos Monto -> [Transferencia]
 minimizeTransactions deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
     Left _err -> resolverNetosNaif deudas
 
-solveOptimalTransactions :: Netos Monto -> [Transaccion]
+solveOptimalTransactions :: Netos Monto -> [Transferencia]
 solveOptimalTransactions deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
     Left err -> panic err
 
-resolverNetosRecursivo :: Netos Monto -> [Transaccion]
+resolverNetosRecursivo :: Netos Monto -> [Transferencia]
 resolverNetosRecursivo netBalances =
   let allValidSettlements = settleDebts $ deudasToPairs netBalances
   in allValidSettlements
@@ -217,7 +217,7 @@ resolverNetosRecursivo netBalances =
          [] -> []
          _ -> minimumBy (comparing length) allValidSettlements
   where
-    settleDebts :: [(ParticipanteId, Monto)] -> [[Transaccion]]
+    settleDebts :: [(ParticipanteId, Monto)] -> [[Transferencia]]
     settleDebts [] = [[]]
     settleDebts [_] = [[]]
     settleDebts ((personOwing, balance) : others)
@@ -226,7 +226,7 @@ resolverNetosRecursivo netBalances =
       where
         possiblePartners = [(partner, partnerBalance) | (partner, partnerBalance) <- others, balance * partnerBalance < 0]
 
-        attemptSettlement :: (ParticipanteId, Monto) -> [[Transaccion]]
+        attemptSettlement :: (ParticipanteId, Monto) -> [[Transferencia]]
         attemptSettlement (partner, partnerBalance) =
           let paymentAmount = min (abs balance) (abs partnerBalance)
               newBalanceOwing = balance + signum partnerBalance * paymentAmount
@@ -242,8 +242,8 @@ resolverNetosRecursivo netBalances =
 
               transaction =
                 if balance > 0
-                  then Transaccion Nothing partner personOwing paymentAmount
-                  else Transaccion Nothing personOwing partner paymentAmount
+                  then Transferencia Nothing partner personOwing paymentAmount
+                  else Transferencia Nothing personOwing partner paymentAmount
           in fmap (transaction :) (settleDebts nextBalances)
     -- Helper to insert updated balances (or remove if settled)
     insertOrRemove :: (ParticipanteId, Monto) -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
@@ -253,7 +253,7 @@ resolverNetosRecursivo netBalances =
     deleteByPerson :: ParticipanteId -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
     deleteByPerson name = filter ((/= name) . fst)
 
-data Transaccion = Transaccion
+data Transferencia = Transferencia
   { id :: Maybe ULID
   , from :: ParticipanteId
   , to :: ParticipanteId
@@ -261,8 +261,8 @@ data Transaccion = Transaccion
   }
   deriving (Show, Eq, Generic)
 
-data TransaccionHecha = TransaccionHecha
-  { transaccion :: Transaccion
+data TransferenciaHecha = TransferenciaHecha
+  { transferencia :: Transferencia
   , saldadaAt :: UTCTime
   }
   deriving (Show, Eq, Generic)
@@ -271,10 +271,10 @@ data TransaccionHecha = TransaccionHecha
 -- salda lo que debía y el que la recibió cobra lo suyo. Los signos son los
 -- mismos que los de un pago donde 'from' es el único pagador y 'to' el único
 -- deudor, que es lo que esta transferencia reemplaza.
-netosDeTransaccion :: Transaccion -> Netos Monto
-netosDeTransaccion transaccion =
-  mkDeuda transaccion.from transaccion.monto
-    <> mkDeuda transaccion.to (negate transaccion.monto)
+netosDeTransferencia :: Transferencia -> Netos Monto
+netosDeTransferencia transferencia =
+  mkDeuda transferencia.from transferencia.monto
+    <> mkDeuda transferencia.to (negate transferencia.monto)
 
 deudoresNoNulos :: Netos Monto -> Int
 deudoresNoNulos (Netos deudasMap) =
@@ -355,7 +355,7 @@ removerDeudor :: ParticipanteId -> Netos m -> Netos m
 removerDeudor participanteId (Netos deudasMap) =
   Netos $ Map.delete participanteId deudasMap
 
-resolverNetosNaif :: Netos Monto -> [Transaccion]
+resolverNetosNaif :: Netos Monto -> [Transferencia]
 resolverNetosNaif deudas
   | deudoresNoNulos deudas == 0 = []
   | deudoresNoNulos deudas == 1 = panic $ show deudas
@@ -366,16 +366,16 @@ resolverNetosNaif deudas
           deudas'' = removerDeudor mayorPagador deudas'
       in case compare mayorDeuda mayorPagado of
            LT ->
-             Transaccion Nothing mayorDeudor mayorPagador mayorDeuda
+             Transferencia Nothing mayorDeudor mayorPagador mayorDeuda
                : resolverNetosNaif (deudas'' <> mkDeuda mayorPagador (mayorPagado - mayorDeuda))
            GT ->
-             Transaccion Nothing mayorDeudor mayorPagador mayorPagado
+             Transferencia Nothing mayorDeudor mayorPagador mayorPagado
                : resolverNetosNaif (deudas'' <> mkDeuda mayorDeudor (-mayorDeuda + mayorPagado))
            EQ ->
-             Transaccion Nothing mayorDeudor mayorPagador mayorPagado
+             Transferencia Nothing mayorDeudor mayorPagador mayorPagado
                : resolverNetosNaif deudas''
 
-solveOptimalTransactions' :: Netos Monto -> Either Text [Transaccion]
+solveOptimalTransactions' :: Netos Monto -> Either Text [Transferencia]
 solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
   let maxPrecision =
         oldBalances
@@ -485,7 +485,7 @@ solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
                               & mfilter (/= 0)
                               & fmap
                                 ( \v ->
-                                    Transaccion
+                                    Transferencia
                                       { id = Nothing
                                       , from = d
                                       , to = c
@@ -577,9 +577,9 @@ calcularNetosRepartija repartija =
        & mconcat
        & (<> deudasDelExtraPonderado)
 
-Elm.deriveBoth Elm.defaultOptions ''Transaccion
+Elm.deriveBoth Elm.defaultOptions ''Transferencia
 
-Elm.deriveBoth Elm.defaultOptions ''TransaccionHecha
+Elm.deriveBoth Elm.defaultOptions ''TransferenciaHecha
 Elm.deriveBoth Elm.defaultOptions ''Netos
 Elm.deriveBoth Elm.defaultOptions ''Parte
 Elm.deriveBoth Elm.defaultOptions ''DistribucionPartes

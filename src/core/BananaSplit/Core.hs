@@ -24,7 +24,7 @@ module BananaSplit.Core (
   calcularNetosTotales,
   getResumenPago,
   isValid,
-  netosDeTransacciones,
+  netosDeTransferencias,
 ) where
 
 import Data.Time (Day, UTCTime)
@@ -61,7 +61,7 @@ data ShallowGrupo = ShallowGrupo
   , participantes :: [Participante]
   , congeladoAt :: Maybe UTCTime
   -- ^ Cuándo se congeló el grupo, o 'Nothing' si está descongelado. La fecha
-  -- también distingue las transacciones hechas durante este congelamiento de
+  -- también distingue las transferencias hechas durante este congelamiento de
   -- las que arrastra de los anteriores.
   , monedaPorDefecto :: Moneda
   , tasasDeCambio :: [TasaDeCambio]
@@ -112,13 +112,13 @@ calcularNetosTotales grupo =
     & fmap (\pago -> (calcularNetosPago pago) `enMoneda` pago.moneda)
     & mconcat
 
--- | Los netos que dejan las transacciones ya hechas. Se suman a los de los
+-- | Los netos que dejan las transferencias ya hechas. Se suman a los de los
 -- pagos porque una transferencia hecha es plata que ya se movió, y por eso
 -- sobreviven al descongelar: sin ellas un grupo que se congeló, se saldó y se
 -- descongeló volvería a mostrar las deudas que ya se pagaron.
-netosDeTransacciones :: PorMoneda [Transaccion] -> PorMoneda (Netos Monto)
-netosDeTransacciones =
-  fmap (foldMap netosDeTransaccion)
+netosDeTransferencias :: PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
+netosDeTransferencias =
+  fmap (foldMap netosDeTransferencia)
 
 calcularNetosPago :: Pago -> Netos Monto
 calcularNetosPago pago =

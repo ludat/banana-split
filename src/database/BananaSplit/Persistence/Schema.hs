@@ -37,7 +37,7 @@ data BananaSplitDb f = BananaSplitDb
   , repartijas :: f (TableEntity DistribucionRepartijaT)
   , repartija_items :: f (TableEntity RepartijaItemT)
   , repartija_claims :: f (TableEntity RepartijaClaimT)
-  , transacciones :: f (TableEntity TransaccionT)
+  , transferencias :: f (TableEntity TransferenciaT)
   , tasas_de_cambio :: f (TableEntity TasaDeCambioT)
   }
   deriving (Generic, Database be)
@@ -51,7 +51,7 @@ data GrupoT f = Grupo
   , moneda_por_defecto :: Columnar f M.Moneda
   , congelado_at :: Columnar f (Maybe UTCTime)
   -- ^ Cuándo se congeló el grupo, o NULL si está descongelado. La fecha
-  -- también distingue las transacciones hechas durante este congelamiento de
+  -- también distingue las transferencias hechas durante este congelamiento de
   -- las que arrastra de los anteriores.
   }
   deriving (Generic, Beamable)
@@ -432,7 +432,7 @@ instance Table RepartijaClaimT where
 -- | Una transferencia entre dos participantes. Nace pendiente al congelar el
 -- grupo y, cuando alguien la marca como hecha, deja de ser una sugerencia y
 -- pasa a ser un movimiento del grupo que cuenta en los netos para siempre.
-data TransaccionT f = Transaccion
+data TransferenciaT f = Transferencia
   { id :: Columnar f ULID
   , grupo :: PrimaryKey GrupoT f
   , participante_from :: PrimaryKey ParticipanteT f
@@ -445,18 +445,18 @@ data TransaccionT f = Transaccion
   }
   deriving (Generic, Beamable)
 
-type Transaccion = TransaccionT Identity
+type Transferencia = TransferenciaT Identity
 
-type TransaccionId = PrimaryKey TransaccionT Identity
+type TransferenciaId = PrimaryKey TransferenciaT Identity
 
-deriving instance Show Transaccion
+deriving instance Show Transferencia
 
-deriving instance Show TransaccionId
+deriving instance Show TransferenciaId
 
-instance Table TransaccionT where
-  data PrimaryKey TransaccionT f = TransaccionId (Columnar f ULID)
+instance Table TransferenciaT where
+  data PrimaryKey TransferenciaT f = TransferenciaId (Columnar f ULID)
     deriving (Generic, Beamable)
-  primaryKey = TransaccionId . (.id)
+  primaryKey = TransferenciaId . (.id)
 
 data TasaDeCambioT f = TasaDeCambio
   { id :: Columnar f ULID
