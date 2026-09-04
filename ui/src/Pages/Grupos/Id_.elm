@@ -219,9 +219,9 @@ viewLeftColumn store zone ahora userId model grupo =
             if resumen.cantidadPagos == 0 then
                 Bs.alert Bs.AlertInfo
                     []
-                    [ text "Todavía no hay pagos registrados. "
-                    , a [ Path.href <| Path.Grupos_GrupoId__Pagos_New { grupoId = grupo.id } ]
-                        [ text "¡Agregá el primer pago para empezar a dividir gastos!" ]
+                    [ text "Todavía no hay gastos registrados. "
+                    , a [ Path.href <| Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id } ]
+                        [ text "¡Agregá el primer gasto para empezar a dividir!" ]
                     ]
 
             else
@@ -258,12 +258,12 @@ viewLeftColumn store zone ahora userId model grupo =
                             [ class "mb-3" ]
                             [ text <|
                                 if resumen.cantidadPagosInvalidos == 1 then
-                                    "Tenés 1 pago inválido, ese no se cuenta para las deudas."
+                                    "Tenés 1 gasto inválido, ese no se cuenta para las deudas."
 
                                 else
                                     "Tenés "
                                         ++ String.fromInt resumen.cantidadPagosInvalidos
-                                        ++ " pagos inválidos, esos no se cuentan para las deudas."
+                                        ++ " gastos inválidos, esos no se cuentan para las deudas."
                             ]
 
                       else
@@ -357,7 +357,7 @@ viewGrupoCongelado zone ahora userId grupo resumen =
     div []
         [ Bs.alert Bs.AlertWarning
             [ class "mb-4" ]
-            [ text "Este grupo está congelado: las deudas quedaron fijas y no se pueden agregar, editar ni eliminar pagos." ]
+            [ text "Este grupo está congelado: las deudas quedaron fijas y no se pueden agregar, editar ni eliminar gastos." ]
         , div [ class "fw-bold mb-3" ] [ text "Lo que te toca" ]
         , case ( userId, List.length misPendientes + List.length misHechas ) of
             ( Nothing, _ ) ->
@@ -696,7 +696,7 @@ viewUltimosPagosCard store model grupo =
                         |> List.take 5
             in
             Bs.card []
-                [ Bs.cardHeader [] [ text "Ultimos pagos" ]
+                [ Bs.cardHeader [] [ text "Ultimos gastos" ]
                 , Bs.listGroup [ class "list-group-flush" ]
                     (ultimosPagos |> List.map (viewUltimoPago grupo.monedaPorDefecto))
                 ]

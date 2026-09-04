@@ -1010,12 +1010,12 @@ viewFreezeSection grupo resumen =
                     if estaCongelado grupo then
                         "Este grupo está congelado. Las deudas están fijas en "
                             ++ Moneda.nombre grupo.monedaPorDefecto
-                            ++ " y no se pueden agregar, editar ni eliminar pagos ni cambiar las tasas de cambio."
+                            ++ " y no se pueden agregar, editar ni eliminar gastos ni cambiar las tasas de cambio."
 
                     else
                         "Congelar el grupo fija las deudas actuales, convertidas a "
                             ++ Moneda.nombre grupo.monedaPorDefecto
-                            ++ " con las tasas de cambio cargadas. No se podrán agregar, editar ni eliminar pagos mientras esté congelado."
+                            ++ " con las tasas de cambio cargadas. No se podrán agregar, editar ni eliminar gastos mientras esté congelado."
                 ]
             , if estaCongelado grupo || List.isEmpty monedasSinTasa then
                 text ""

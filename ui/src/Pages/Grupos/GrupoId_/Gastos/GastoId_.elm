@@ -1,0 +1,80 @@
+module Pages.Grupos.GrupoId_.Gastos.GastoId_ exposing (Model, Msg, page)
+
+import Effect exposing (Effect)
+import Form
+import Generated.Api exposing (ULID)
+import Layouts
+import Models.Store as Store
+import Models.Store.Types exposing (Store)
+import Page exposing (Page)
+import Pages.Grupos.GrupoId_.Gastos.New as P exposing (Model, Section(..), andThenSendWarningOnExit, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
+import RemoteData exposing (RemoteData(..))
+import Route exposing (Route)
+import Shared
+
+
+type alias Model =
+    P.Model
+
+
+type alias Msg =
+    P.Msg
+
+
+page : Shared.Model -> Route { grupoId : String, gastoId : String } -> Page Model Msg
+page shared route =
+    Page.new
+        { init = \() -> init route.params.grupoId route.params.gastoId shared.store
+        , update = update shared
+        , subscriptions = subscriptions
+        , view =
+            \m ->
+                let
+                    result =
+                        view shared.store m
+                in
+                { result
+                    | title =
+                        case
+                            ( Store.getGrupo m.grupoId shared.store |> RemoteData.toMaybe
+                            , m.currentPagoId |> Maybe.andThen (\pagoId -> Store.getPago pagoId shared.store |> RemoteData.toMaybe)
+                            )
+                        of
+                            ( Just grupo, Just pago ) ->
+                                grupo.nombre ++ ": " ++ pago.nombre
+
+                            _ ->
+                                "Cargando"
+                }
+        }
+        |> Page.withLayout (\_ -> Layouts.Minimal {})
+
+
+
+-- INIT
+
+
+init : ULID -> ULID -> Store -> ( Model, Effect Msg )
+init grupoId pagoId store =
+    ( { grupoId = grupoId
+      , currentPagoId = Just pagoId
+      , currentSection = BasicPagoData
+      , pagoBasicoForm = Form.initial [] (validatePagoInSection BasicPagoData [])
+      , deudoresForm = Form.initial [] (validatePagoInSection DeudoresSection [])
+      , resumenDeudores = NotAsked
+      , pagadoresForm = Form.initial [] (validatePagoInSection PagadoresSection [])
+      , resumenPagadores = NotAsked
+      , pagoForm = Form.initial [] (validatePago [])
+      , resumenPago = NotAsked
+      , receiptParseState = Nothing
+      , storedClaims = Nothing
+      , hasUnsavedChanges = False
+      }
+    , Effect.batch
+        [ Store.ensureGrupo grupoId store
+        , Store.ensurePago pagoId store
+        , Effect.getCurrentUser grupoId
+        , waitAndCheckNecessaryData
+        ]
+    )
+        |> andThenSendWarningOnExit

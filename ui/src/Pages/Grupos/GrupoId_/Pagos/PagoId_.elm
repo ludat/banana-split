@@ -1,80 +1,42 @@
 module Pages.Grupos.GrupoId_.Pagos.PagoId_ exposing (Model, Msg, page)
 
+{-| La sección pasó a llamarse "gastos". Esta página solo existe para que los
+links viejos —los que alguien compartió o tiene en favoritos— sigan llegando a
+algún lado, y redirige apenas se monta.
+
+Reemplaza la entrada en el historial en vez de agregar una, así el botón de
+volver no rebota entre la ruta vieja y la nueva.
+
+-}
+
 import Effect exposing (Effect)
-import Form
-import Generated.Api exposing (ULID)
-import Layouts
-import Models.Store as Store
-import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import Pages.Grupos.GrupoId_.Pagos.New as P exposing (Model, Section(..), andThenSendWarningOnExit, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
-import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
+import Route.Path as Path
 import Shared
-
-
-type alias Model =
-    P.Model
-
-
-type alias Msg =
-    P.Msg
+import View
 
 
 page : Shared.Model -> Route { grupoId : String, pagoId : String } -> Page Model Msg
-page shared route =
+page _ route =
     Page.new
-        { init = \() -> init route.params.grupoId route.params.pagoId shared.store
-        , update = update shared
-        , subscriptions = subscriptions
-        , view =
-            \m ->
-                let
-                    result =
-                        view shared.store m
-                in
-                { result
-                    | title =
-                        case
-                            ( Store.getGrupo m.grupoId shared.store |> RemoteData.toMaybe
-                            , m.currentPagoId |> Maybe.andThen (\pagoId -> Store.getPago pagoId shared.store |> RemoteData.toMaybe)
-                            )
-                        of
-                            ( Just grupo, Just pago ) ->
-                                grupo.nombre ++ ": " ++ pago.nombre
-
-                            _ ->
-                                "Cargando"
-                }
+        { init = \() -> init route.params.grupoId route.params.pagoId
+        , update = \_ model -> ( model, Effect.none )
+        , subscriptions = \_ -> Sub.none
+        , view = \_ -> View.none
         }
-        |> Page.withLayout (\_ -> Layouts.Minimal {})
 
 
+type alias Model =
+    {}
 
--- INIT
+
+type alias Msg =
+    ()
 
 
-init : ULID -> ULID -> Store -> ( Model, Effect Msg )
-init grupoId pagoId store =
-    ( { grupoId = grupoId
-      , currentPagoId = Just pagoId
-      , currentSection = BasicPagoData
-      , pagoBasicoForm = Form.initial [] (validatePagoInSection BasicPagoData [])
-      , deudoresForm = Form.initial [] (validatePagoInSection DeudoresSection [])
-      , resumenDeudores = NotAsked
-      , pagadoresForm = Form.initial [] (validatePagoInSection PagadoresSection [])
-      , resumenPagadores = NotAsked
-      , pagoForm = Form.initial [] (validatePago [])
-      , resumenPago = NotAsked
-      , receiptParseState = Nothing
-      , storedClaims = Nothing
-      , hasUnsavedChanges = False
-      }
-    , Effect.batch
-        [ Store.ensureGrupo grupoId store
-        , Store.ensurePago pagoId store
-        , Effect.getCurrentUser grupoId
-        , waitAndCheckNecessaryData
-        ]
+init : String -> String -> ( Model, Effect Msg )
+init grupoId pagoId =
+    ( {}
+    , Effect.replaceRoutePath (Path.Grupos_GrupoId__Gastos_GastoId_ { grupoId = grupoId, gastoId = pagoId })
     )
-        |> andThenSendWarningOnExit
