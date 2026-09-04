@@ -109,3 +109,52 @@ spec = describe "Pago" $ do
               ]
         }
         `shouldNotSatisfy` isValid
+
+  describe "#getResumenGasto" $ do
+    it "separa lo que puso cada uno de lo que consumio cada uno" $ do
+      let resumen = getResumenGasto pagoValido
+      resumen.pagado `shouldBe` netos [(participante 2, 200)]
+      resumen.consumido `shouldBe` netos [(participante 1, 200)]
+      resumen.errores `shouldBe` []
+
+    -- Este es el invariante que justifica guardar los dos lados por separado:
+    -- restarlos tiene que dar exactamente los netos que se calculaban antes.
+    it "el neto de cada participante es lo que puso menos lo que consumio" $
+      netosDeGasto (getResumenGasto pagoValido)
+        `shouldBe` calcularNetosPago pagoValido
+
+    it "vale tambien cuando alguien paga y consume lo mismo" $ do
+      let gastoPropio =
+            pagoValido
+              { pagadores = distribucionMontosEspecificos [(participante 1, 200)]
+              , deudores = distribucionMontosEspecificos [(participante 1, 200)]
+              }
+      netosDeGasto (getResumenGasto gastoPropio)
+        `shouldBe` calcularNetosPago gastoPropio
+      getResumenGasto gastoPropio `shouldSatisfy` gastoEsValido
+
+    it "un pago invalido dice por que lo es" $ do
+      let resumen = getResumenGasto pagoValido{deudores = distribucionMontosEspecificos []}
+      resumen `shouldNotSatisfy` gastoEsValido
+      fmap (.objeto) resumen.errores `shouldBe` [["deudores"]]
+
+  describe "#netosDeGastos" $ do
+    it "suma los gastos de cada moneda por separado" $
+      netosDeGastos
+        [ (ARS, getResumenGasto pagoValido)
+        , (ARS, getResumenGasto pagoValido)
+        , (USD, getResumenGasto pagoValido)
+        ]
+        `shouldBe` netos [(participante 2, 400), (participante 1, -400)]
+        `enMoneda` ARS
+        <> netos [(participante 2, 200), (participante 1, -200)]
+        `enMoneda` USD
+
+    -- Un gasto invalido no aporta netos: es lo que despues deja que el cache
+    -- lo saltee sin leerlo.
+    it "saltea los gastos invalidos" $
+      netosDeGastos
+        [ (ARS, getResumenGasto pagoValido)
+        , (ARS, getResumenGasto pagoValido{deudores = distribucionMontosEspecificos []})
+        ]
+        `shouldBe` netosDeGastos [(ARS, getResumenGasto pagoValido)]

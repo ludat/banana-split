@@ -22,9 +22,14 @@ module BananaSplit.Core (
   addIsValidPago,
   calcularNetosPago,
   calcularNetosTotales,
+  gastoEsValido,
+  getResumenGasto,
   getResumenPago,
   isValid,
+  netosDeGasto,
+  netosDeGastos,
   netosDeTransferencias,
+  ResumenGasto (..),
 ) where
 
 import Data.Time (Day, UTCTime)
@@ -124,18 +129,58 @@ calcularNetosPago :: Pago -> Netos Monto
 calcularNetosPago pago =
   fromMaybe mempty $ getNetosResumen $ getResumenPago pago
 
-getResumenPago :: Pago -> ResumenNetos
-getResumenPago pago =
+-- | Un gasto visto desde los dos lados: cuánto puso y cuánto consumió cada
+-- participante. El neto de cada uno es la resta, pero los dos lados se guardan
+-- por separado porque es lo que la lista de gastos quiere mostrar, y porque es
+-- lo que termina guardado en la base.
+--
+-- Son dos 'Netos' y no un mapa de pares porque el 'Semigroup' de 'Netos' pide
+-- 'Num' en el contenido, y un par pagado/consumido no es un número.
+data ResumenGasto = ResumenGasto
+  { pagado :: Netos Monto
+  , consumido :: Netos Monto
+  , errores :: [ErrorResumen]
+  }
+  deriving (Show, Eq, Generic)
+
+getResumenGasto :: Pago -> ResumenGasto
+getResumenGasto pago =
   let
     resumenPagadores = getResumen pago.monto pago.pagadores
     resumenDeudores = getResumen pago.monto pago.deudores
-    netos = resumenPagadores.netos <> fmap negate resumenDeudores.netos
-    extraErrors = []
   in
-    ResumenNetos pago.monto netos
-      $ fmap (relabelError "pagadores") resumenPagadores.errores
-      <> fmap (relabelError "deudores") resumenDeudores.errores
-      <> extraErrors
+    ResumenGasto
+      { pagado = resumenPagadores.netos
+      , consumido = resumenDeudores.netos
+      , errores =
+          fmap (relabelError "pagadores") resumenPagadores.errores
+            <> fmap (relabelError "deudores") resumenDeudores.errores
+      }
+
+netosDeGasto :: ResumenGasto -> Netos Monto
+netosDeGasto resumen =
+  resumen.pagado <> fmap negate resumen.consumido
+
+gastoEsValido :: ResumenGasto -> Bool
+gastoEsValido resumen =
+  null resumen.errores
+
+-- | Suma los netos de varios gastos, cada uno en su moneda, salteando los
+-- inválidos. Es lo que reemplaza al loop de 'fetchPago' cuando los resúmenes
+-- salen del cache en vez de recalcularse desde las distribuciones.
+netosDeGastos :: [(Moneda, ResumenGasto)] -> PorMoneda (Netos Monto)
+netosDeGastos =
+  foldMap
+    ( \(moneda, resumen) ->
+        if gastoEsValido resumen
+          then netosDeGasto resumen `enMoneda` moneda
+          else mempty
+    )
+
+getResumenPago :: Pago -> ResumenNetos
+getResumenPago pago =
+  let resumen = getResumenGasto pago
+  in ResumenNetos pago.monto (netosDeGasto resumen) resumen.errores
 
 isValid :: Pago -> Bool
 isValid pago =
@@ -157,6 +202,7 @@ instance IsElmDefinition Day where
     ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "Day", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
 
 Elm.deriveBoth Elm.defaultOptions ''Pago
+Elm.deriveBoth Elm.defaultOptions ''ResumenGasto
 Elm.deriveBoth Elm.defaultOptions ''ShallowPago
 Elm.deriveBoth Elm.defaultOptions ''Grupo
 Elm.deriveBoth Elm.defaultOptions ''ShallowGrupo
