@@ -138,23 +138,3 @@ spec = describe "Pago" $ do
       resumen `shouldNotSatisfy` gastoEsValido
       fmap (.objeto) resumen.errores `shouldBe` [["deudores"]]
 
-  describe "#netosDeGastos" $ do
-    it "suma los gastos de cada moneda por separado" $
-      netosDeGastos
-        [ (ARS, getResumenGasto pagoValido)
-        , (ARS, getResumenGasto pagoValido)
-        , (USD, getResumenGasto pagoValido)
-        ]
-        `shouldBe` netos [(participante 2, 400), (participante 1, -400)]
-        `enMoneda` ARS
-        <> netos [(participante 2, 200), (participante 1, -200)]
-        `enMoneda` USD
-
-    -- Un gasto invalido no aporta netos: es lo que despues deja que el cache
-    -- lo saltee sin leerlo.
-    it "saltea los gastos invalidos" $
-      netosDeGastos
-        [ (ARS, getResumenGasto pagoValido)
-        , (ARS, getResumenGasto pagoValido{deudores = distribucionMontosEspecificos []})
-        ]
-        `shouldBe` netosDeGastos [(ARS, getResumenGasto pagoValido)]

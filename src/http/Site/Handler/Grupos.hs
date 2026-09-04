@@ -16,6 +16,7 @@ module Site.Handler.Grupos (
 ) where
 
 import Data.Text qualified as Text
+import Database.Beam.Postgres (Pg)
 import Protolude
 import Servant
 
@@ -28,12 +29,13 @@ import BananaSplit.Persistence (
   deleteShallowParticipante,
   fetchGrupo,
   fetchGruposForUser,
-  fetchPago,
   fetchShallowPagos,
   fetchTasasDeCambio,
   fetchTransferencias,
   freezeGrupo,
   guardarTasasDeCambio,
+  netosDeGrupo,
+  repararCacheDeGastos,
   transferenciasHechas,
   transferenciasPendientes,
   unclaimParticipante,
@@ -52,9 +54,19 @@ handleCreateGrupoAsUser :: User -> CreateGrupoAsUserParams -> AppHandler Grupo
 handleCreateGrupoAsUser user CreateGrupoAsUserParams{grupoName} = do
   runBeam $ createGrupoForUser grupoName user
 
-netosPendientes :: Grupo -> PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
-netosPendientes grupo hechas =
-  calcularNetosTotales grupo <> netosDeTransferencias hechas
+-- | Los netos de los gastos del grupo, sumados en la base desde el cache.
+--
+-- La reparación va primero porque 'netosDeGrupo' es SQL puro: si algún gasto
+-- todavía no tiene el cache calculado, la suma lo saltearía en silencio. En
+-- régimen normal no recalcula nada.
+netosDeGastosDelGrupo :: ULID -> Pg (PorMoneda (Netos Monto))
+netosDeGastosDelGrupo grupoId = do
+  repararCacheDeGastos grupoId
+  netosDeGrupo grupoId
+
+netosPendientes :: PorMoneda (Netos Monto) -> PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
+netosPendientes netosDeGastos hechas =
+  netosDeGastos <> netosDeTransferencias hechas
 
 netosConSaldo :: PorMoneda (Netos Monto) -> PorMoneda (Netos Monto)
 netosConSaldo = filterPorMoneda ((> 0) . deudoresNoNulos)
@@ -76,22 +88,13 @@ handleGetNetos grupoId = do
             }
     Nothing -> do
       guardadas <- runBeam $ fetchTransferencias grupoId
-      pagos <- runBeam $ do
-        shallowPagos <- fetchShallowPagos grupoId
-        forM shallowPagos $ \shallowPago ->
-          fetchPago shallowPago.pagoId
-
-      let grupo =
-            Grupo
-              { id = shallowGrupo.id
-              , participantes = shallowGrupo.participantes
-              , nombre = shallowGrupo.nombre
-              , pagos = pagos
-              , monedaPorDefecto = shallowGrupo.monedaPorDefecto
-              }
+      (netosDeGastos, shallowPagos) <- runBeam $ do
+        netos <- netosDeGastosDelGrupo grupoId
+        pagos <- fetchShallowPagos grupoId
+        pure (netos, pagos)
 
       let netos =
-            netosPendientes grupo (transferenciasHechas guardadas & fmap (fmap (.transferencia)))
+            netosPendientes netosDeGastos (transferenciasHechas guardadas & fmap (fmap (.transferencia)))
       let tabla = tablaDeTasas shallowGrupo.monedaPorDefecto shallowGrupo.tasasDeCambio
 
       pure $
@@ -99,8 +102,8 @@ handleGetNetos grupoId = do
           ResumenAbierto
             { netos = netos
             , consolidado = consolidarNetos tabla (netosConSaldo netos)
-            , cantidadPagos = length grupo.pagos
-            , cantidadPagosInvalidos = length $ filter (not . (.isValid)) grupo.pagos
+            , cantidadPagos = length shallowPagos
+            , cantidadPagosInvalidos = length $ filter (not . (.isValid)) shallowPagos
             , transferenciasHechas = transferenciasHechas guardadas
             }
 
@@ -140,23 +143,11 @@ handleFreezeGrupo grupoId = do
     runBeam (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
-  pagos <- runBeam $ do
-    shallowPagos <- fetchShallowPagos grupoId
-    forM shallowPagos $ \shallowPago ->
-      fetchPago shallowPago.pagoId
-
-  let grupo =
-        Grupo
-          { id = shallowGrupo.id
-          , participantes = shallowGrupo.participantes
-          , nombre = shallowGrupo.nombre
-          , pagos = pagos
-          , monedaPorDefecto = shallowGrupo.monedaPorDefecto
-          }
+  netosDeGastos <- runBeam $ netosDeGastosDelGrupo grupoId
   guardadas <- runBeam $ fetchTransferencias grupoId
   tasasDeCambio <- runBeam $ fetchTasasDeCambio grupoId
 
-  let netos = netosPendientes grupo (transferenciasHechas guardadas <&> fmap (.transferencia))
+  let netos = netosPendientes netosDeGastos (transferenciasHechas guardadas <&> fmap (.transferencia))
   let consolidado =
         consolidarNetos
           (tablaDeTasas shallowGrupo.monedaPorDefecto tasasDeCambio)

@@ -180,25 +180,25 @@ todo el cache y tiene que quedar en el repo.
 Con la reparación en lectura el cache se cura solo, así que esto ya no es un paso
 obligatorio del deploy: sirve para no pagar la primera lectura de cada grupo.
 
-- [ ] **4.1** `recomputePagos` ya recorre todos los gastos y los re-guarda, así que después
+- [x] **4.1** `recomputePagos` ya recorre todos los gastos y los re-guarda, así que después
       de la fase 3 ya llena el cache sin tocarlo. Confirmar que sea así y, si no, ajustarlo.
 - [ ] **4.2** Correr `run-migration recompute-pagos` en dev y verificar que no queden
       `pagos` con `errores IS NULL`.
-- [ ] **4.3** Test: dejar un gasto con `errores` en NULL y otro con un JSON que no decodifica,
+- [x] **4.3** Test: dejar un gasto con `errores` en NULL y otro con un JSON que no decodifica,
       leer el grupo, y verificar que los dos quedaron reparados y que los netos dan bien.
       Es el test que cubre el cambio de formato futuro.
 
 ### Fase 5 — Handlers (acá muere el N+1)
 
-- [ ] **5.1** `handleGetNetos` (camino abierto): reemplazar el loop de `fetchPago` por
+- [x] **5.1** `handleGetNetos` (camino abierto): reemplazar el loop de `fetchPago` por
       `netosDeGrupo`. Ojo: los netos totales siguen siendo
       `netosDeGrupo <> netosDeTransferencias hechas` — el cache cubre gastos, las
       transferencias van aparte y ya son baratas.
-- [ ] **5.2** `cantidadPagos` / `cantidadPagosInvalidos` salen de `fetchShallowPagos`
+- [x] **5.2** `cantidadPagos` / `cantidadPagosInvalidos` salen de `fetchShallowPagos`
       (inválido = `errores` no vacío **o** `NULL`).
-- [ ] **5.3** `handleFreezeGrupo` (`Grupos.hs:144`): misma sustitución antes de
+- [x] **5.3** `handleFreezeGrupo` (`Grupos.hs:144`): misma sustitución antes de
       `minimizeTransactions`.
-- [ ] **5.4** Sacar `fetchPago` de los imports de `Grupos.hs` si ya no se usa.
+- [x] **5.4** Sacar `fetchPago` de los imports de `Grupos.hs` si ya no se usa.
 
 **Verificación:** con el server corriendo, `GET /api/grupo/{id}/resumen` da los mismos netos
 que antes y en los logs de query se ve **una** consulta de agregación, no N. Comparar contra

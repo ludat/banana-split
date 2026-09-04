@@ -27,7 +27,6 @@ module BananaSplit.Core (
   getResumenPago,
   isValid,
   netosDeGasto,
-  netosDeGastos,
   netosDeTransferencias,
   ResumenGasto (..),
 ) where
@@ -164,18 +163,6 @@ netosDeGasto resumen =
 gastoEsValido :: ResumenGasto -> Bool
 gastoEsValido resumen =
   null resumen.errores
-
--- | Suma los netos de varios gastos, cada uno en su moneda, salteando los
--- inválidos. Es lo que reemplaza al loop de 'fetchPago' cuando los resúmenes
--- salen del cache en vez de recalcularse desde las distribuciones.
-netosDeGastos :: [(Moneda, ResumenGasto)] -> PorMoneda (Netos Monto)
-netosDeGastos =
-  foldMap
-    ( \(moneda, resumen) ->
-        if gastoEsValido resumen
-          then netosDeGasto resumen `enMoneda` moneda
-          else mempty
-    )
 
 getResumenPago :: Pago -> ResumenNetos
 getResumenPago pago =
