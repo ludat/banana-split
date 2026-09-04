@@ -10,6 +10,7 @@ module BananaSplit.Persistence (
   clearAttempts,
   deleteOldLoginAttempts,
   makePool,
+  openConnection,
   runMigration,
   recomputePagos,
   addParticipante,
@@ -36,7 +37,7 @@ module BananaSplit.Persistence (
   fetchTasasDeCambio,
   fetchTransferencias,
   netosDeGrupo,
-  repararCacheDeGastos,
+  netosYGastosDelGrupo,
   freezeGrupo,
   guardarTasasDeCambio,
   borrarTransferencia,
@@ -77,12 +78,19 @@ import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
 import Preludat
 
-runMigration :: Conferer.Config -> [String] -> IO ()
-runMigration config args = do
+-- | Una conexión suelta, con el @search_path@ apuntando al esquema que pgroll
+-- tiene activo. Para los comandos de línea que no levantan el server.
+openConnection :: Conferer.Config -> IO Connection
+openConnection config = do
   connString <- Conferer.fetchFromConfig "database.url" config
   schema <- PgRoll.getLatestSchema
   conn <- connectPostgreSQL connString
   _ <- execute conn "SET search_path TO ?" (Only schema)
+  pure conn
+
+runMigration :: Conferer.Config -> [String] -> IO ()
+runMigration config args = do
+  conn <- openConnection config
   case args of
     ["fix-pagos-fecha"] -> do
       runBeamPostgres conn FixDates.run
@@ -341,17 +349,27 @@ fetchPago pagoId = do
       }
 
 
--- | Los errores guardados de un gasto, o 'Nothing' si el cache está frío: la
+-- | La parte del resumen de un gasto que no son números por participante, y
+-- que por eso no vive en 'pago_netos' sino en un jsonb: no se puede sumar en
+-- SQL. Todo lo derivado que la UI necesite y no sea sumable va acá.
+data ResumenGuardado = ResumenGuardado
+  { errores :: [M.ErrorResumen]
+  , participantesEnRepartija :: Maybe Int
+  }
+  deriving stock (Generic)
+  deriving anyclass (Aeson.ToJSON, Aeson.FromJSON)
+
+-- | El resumen guardado de un gasto, o 'Nothing' si el cache está frío: la
 -- columna está en NULL, o tiene un JSON que no se puede decodificar con el
--- formato de hoy. Ese segundo caso es el que deja cambiar la forma de
--- 'M.ErrorResumen' sin migrar nada: los blobs viejos se recalculan al leerlos.
-erroresDeGasto :: Pago -> Maybe [M.ErrorResumen]
-erroresDeGasto pago =
-  case pago.pagoErrores of
+-- formato de hoy. Ese segundo caso es el que deja cambiarle la forma sin migrar
+-- nada: los blobs viejos se recalculan al leerlos.
+resumenGuardadoDe :: Pago -> Maybe ResumenGuardado
+resumenGuardadoDe pago =
+  case pago.pagoResumen of
     Nothing -> Nothing
     Just (PgJSONB value) ->
       case Aeson.fromJSON value of
-        Aeson.Success errores -> Just errores
+        Aeson.Success guardado -> Just guardado
         Aeson.Error _ -> Nothing
 
 -- | Escribe el resumen de un gasto: los errores en la fila del pago y una fila
@@ -359,13 +377,18 @@ erroresDeGasto pago =
 --
 -- Es el único lugar que escribe el cache, así que todo lo que pueda cambiar el
 -- reparto de un gasto tiene que terminar acá.
-guardarResumenDeGasto :: M.Pago -> Pg ()
+guardarResumenDeGasto :: M.Pago -> Pg M.ResumenGasto
 guardarResumenDeGasto pago = do
   let resumen = M.getResumenGasto pago
+  let guardado =
+        ResumenGuardado
+          { errores = resumen.errores
+          , participantesEnRepartija = resumen.participantesEnRepartija
+          }
   runUpdate
     $ update
       db.pagos
-      (\p -> p.pagoErrores <-. val_ (Just (PgJSONB (Aeson.toJSON resumen.errores))))
+      (\p -> p.pagoResumen <-. val_ (Just (PgJSONB (Aeson.toJSON guardado))))
       (\p -> p.pagoId ==. val_ pago.pagoId)
   runDelete
     $ delete
@@ -393,6 +416,7 @@ guardarResumenDeGasto pago = do
       $ runInsert
       $ insert db.pago_netos
       $ insertValues filas
+  pure resumen
 
 aUnidadesMinimas :: M.Moneda -> M.Monto -> UnidadesMinimas
 aUnidadesMinimas moneda monto =
@@ -553,71 +577,71 @@ fetchShallowPagos grupoId = do
           & fmap (\fila -> (case fila.pago of PagoId p -> p, [fila]))
           & Map.fromListWith (<>)
 
-  pure $ dbPagos & fmap (\pago -> toShallowPago pago (Map.findWithDefault [] pago.pagoId netosPorPago))
+  -- El cache de un gasto está frío si no tiene resumen guardado, si el que
+  -- tiene no se puede decodificar con el formato de hoy, o si se declara válido
+  -- pero no dejó filas (un gasto válido siempre tiene al menos un pagador y un
+  -- deudor, así que eso sólo pasa si nunca se calculó).
+  --
+  -- Se decide con lo que las dos queries de arriba ya trajeron, y se recalcula
+  -- sólo lo que haga falta: en régimen normal no hay nada que recalcular.
+  forM dbPagos $ \pago ->
+    case resumenGuardadoDe pago of
+      Just guardado
+        | not (null guardado.errores) || not (null (Map.findWithDefault [] pago.pagoId netosPorPago)) ->
+            pure $ toShallowPago pago $ resumenDesde (Map.findWithDefault [] pago.pagoId netosPorPago) guardado
+      _ -> do
+        completo <- fetchPago pago.pagoId
+        resumen <- guardarResumenDeGasto completo
+        pure $ toShallowPago pago resumen
 
-toShallowPago :: Pago -> [PagoNeto] -> M.ShallowPago
-toShallowPago pago filas =
+toShallowPago :: Pago -> M.ResumenGasto -> M.ShallowPago
+toShallowPago pago resumen =
   M.ShallowPago
     { M.pagoId = pago.pagoId
-    , M.resumen = fmap (resumenDesde filas) (erroresDeGasto pago)
+    , M.resumen = Just resumen
     , M.nombre = pago.pagoNombre
     , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
     , M.moneda = pago.pagoMoneda
     , M.fecha = pago.fecha
     }
+
+-- | Rearma el resumen de un gasto juntando sus dos mitades guardadas: los
+-- números por participante salen de 'pago_netos' y el resto del jsonb.
+resumenDesde :: [PagoNeto] -> ResumenGuardado -> M.ResumenGasto
+resumenDesde netos guardado =
+  M.ResumenGasto
+    { M.pagado = lado (.pagado_en_unidades_minimas) netos
+    , M.consumido = lado (.consumido_en_unidades_minimas) netos
+    , M.errores = guardado.errores
+    , M.participantesEnRepartija = guardado.participantesEnRepartija
+    }
   where
-    resumenDesde netos errores =
-      M.ResumenGasto
-        { M.pagado = lado (.pagado_en_unidades_minimas) netos
-        , M.consumido = lado (.consumido_en_unidades_minimas) netos
-        , M.errores = errores
-        }
-    lado columna netos =
-      netos
-        & foldMap
-          ( \fila ->
-              M.mkDeuda
-                (M.ParticipanteId $ case fila.participante of ParticipanteId p -> p)
-                (desdeUnidadesMinimas fila.moneda (columna fila))
-          )
+    lado columna =
+      foldMap
+        ( \fila ->
+            M.mkDeuda
+              (M.ParticipanteId $ case fila.participante of ParticipanteId p -> p)
+              (desdeUnidadesMinimas fila.moneda (columna fila))
+        )
 
--- | Recalcula el cache de los gastos del grupo que lo tengan frío: sin
--- calcular, ilegible, o marcado como válido pero sin filas en 'pago_netos'
--- (que sólo puede pasar si nunca se calculó, porque un gasto válido siempre
--- tiene al menos un pagador y un deudor).
+-- | Los gastos del grupo y sus netos totales.
 --
--- Va antes de leer netos y no adentro de cada fetch porque 'netosDeGrupo' es
--- SQL puro y nunca trae las filas a Haskell, así que no se puede curar sola.
--- En régimen normal las dos queries no devuelven nada para recalcular.
-repararCacheDeGastos :: ULID -> Pg ()
-repararCacheDeGastos grupoId = do
-  pagos <- runSelectReturningList $ select $ do
-    pago <- all_ db.pagos
-    guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
-    pure pago
-
-  conFilas <- runSelectReturningList $ select $ nub_ $ do
-    pagoNeto <- all_ db.pago_netos
-    pago <- all_ db.pagos
-    guard_ (pagoNeto.pago `references_` pago)
-    guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
-    pure pagoNeto.pago
-
-  let tieneFilas pagoId = PagoId pagoId `elem` conFilas
-      estaFrio pago =
-        case erroresDeGasto pago of
-          Nothing -> True
-          Just [] -> not $ tieneFilas pago.pagoId
-          Just _ -> False
-
-  forM_ (filter estaFrio pagos) $ \pago ->
-    fetchPago pago.pagoId >>= guardarResumenDeGasto
+-- Las dos cosas juntas y no por separado porque 'netosDeGrupo' suma en SQL y
+-- nunca trae las filas a Haskell: no puede notar si a algún gasto le falta el
+-- cache. Quien sí lo nota es 'fetchShallowPagos', que ya lee todo lo necesario
+-- para decidirlo y lo recalcula en el momento. Pedirlas por separado sería leer
+-- dos veces lo mismo.
+netosYGastosDelGrupo :: ULID -> Pg (M.PorMoneda (M.Netos M.Monto), [M.ShallowPago])
+netosYGastosDelGrupo grupoId = do
+  gastos <- fetchShallowPagos grupoId
+  netos <- netosDeGrupo grupoId
+  pure (netos, gastos)
 
 -- | Los netos de un grupo sumados en la base, sin traer ningún gasto.
 --
--- No filtra por 'pagoErrores' porque un gasto inválido no tiene filas: el
--- filtro vive en la escritura. Corré 'repararCacheDeGastos' antes, que es lo
--- que garantiza que no haya gastos válidos todavía sin calcular.
+-- No filtra por el resumen guardado porque un gasto inválido no tiene filas: el
+-- filtro vive en la escritura. Asume que el cache está caliente, así que salvo
+-- que sepas que lo está, usá 'netosYGastosDelGrupo'.
 netosDeGrupo :: ULID -> Pg (M.PorMoneda (M.Netos M.Monto))
 netosDeGrupo grupoId = do
   filas <- runSelectReturningList $ select $ do
@@ -779,7 +803,7 @@ savePago grupoId pagoWithoutId = do
       ( insertValues
           [ Pago
               { pagoId = pago.pagoId
-              , pagoErrores = Nothing
+              , pagoResumen = Nothing
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
               , pagoMontoEnUnidadesMinimas = aUnidadesMinimas pago.moneda pago.monto
@@ -797,10 +821,13 @@ savePago grupoId pagoWithoutId = do
     when (viejaPagadores /= distribucionPagadores.id) $ deleteDistribucion viejaPagadores
     when (viejaDeudores /= distribucionDeudores.id) $ deleteDistribucion viejaDeudores
 
-  let guardado = pago{M.pagadores = distribucionPagadores, M.deudores = distribucionDeudores}
-  -- Va después del insert porque las filas de 'pago_netos' apuntan al gasto.
-  guardarResumenDeGasto guardado
-  pure guardado
+  -- Se recalcula releyendo de la base, no desde el pago que llegó: los claims
+  -- de una repartija no viajan con el gasto (el front no los manda y este
+  -- insert no los toca), así que calcularlo con lo recibido diría que nadie
+  -- reclamó nada. Va después del insert porque las filas de 'pago_netos'
+  -- apuntan al gasto.
+  recalcularResumenGasto pago.pagoId
+  pure pago{M.pagadores = distribucionPagadores, M.deudores = distribucionDeudores}
 
 recomputePagos :: Connection -> IO ()
 recomputePagos conn = go 0 nullUlid
@@ -1131,7 +1158,7 @@ deleteRepartijaClaim claimId = do
 recalcularResumenGasto :: ULID -> Pg ()
 recalcularResumenGasto pagoId = do
   pago <- fetchPago pagoId
-  guardarResumenDeGasto pago
+  void $ guardarResumenDeGasto pago
 
 -- | Query fragment: the pago that owns a given repartija row, following
 -- distribución → pago (one repartija belongs to one distribución, which is

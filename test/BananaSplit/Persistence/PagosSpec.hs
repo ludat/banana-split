@@ -152,9 +152,12 @@ spec =
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
       runDb $ enfriarCache pago.pagoId Nothing
+      -- La suma sola no lo puede ver: el gasto no tiene filas y queda afuera.
       runDb (netosDeGrupo grupo.id) `shouldReturn` mempty
 
-      runDb $ repararCacheDeGastos grupo.id
+      -- Leer los gastos lo detecta y lo recalcula en el momento.
+      reparado <- runDb $ fetchShallowPagos grupo.id
+      fmap esValido reparado `shouldBe` [True]
       runDb (netosDeGrupo grupo.id)
         `shouldReturn` (netos [(uno, 100), (otro, -100)] `enMoneda` ARS)
 
@@ -163,17 +166,27 @@ spec =
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
       runDb $ enfriarCache pago.pagoId $ Just $ Aeson.String "un formato viejo"
-      runDb $ repararCacheDeGastos grupo.id
+      _ <- runDb $ fetchShallowPagos grupo.id
       runDb (netosDeGrupo grupo.id)
         `shouldReturn` (netos [(uno, 100), (otro, -100)] `enMoneda` ARS)
 
-    it "reparar no toca los gastos que ya estan calculados" $ \(RunDb runDb) -> do
+    it "leer no toca los gastos que ya estan calculados" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
       _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
       antes <- runDb $ netosDeGrupo grupo.id
-      runDb $ repararCacheDeGastos grupo.id
+      _ <- runDb $ fetchShallowPagos grupo.id
       runDb (netosDeGrupo grupo.id) `shouldReturn` antes
+
+    it "un gasto invalido no se recalcula en cada lectura" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      -- Un gasto inválido no deja filas, así que "sin filas" por sí solo no
+      -- puede significar "frío": lo que lo distingue es el resumen guardado.
+      _ <- runDb $ savePago grupo.id $ (gastoEntre ARS 100 uno otro){deudores = distribucionVacia}
+
+      gastos <- runDb $ fetchShallowPagos grupo.id
+      fmap esValido gastos `shouldBe` [False]
+      fmap (fmap (.errores) . (.resumen)) gastos `shouldNotBe` [Just []]
 
 esValido :: ShallowPago -> Bool
 esValido = maybe False gastoEsValido . (.resumen)
@@ -222,13 +235,13 @@ contarNetosDe pagoId =
     pure pagoNeto.participante
 
 -- | Deja el cache de un gasto como si nunca se hubiera calculado (o como si lo
--- hubiera calculado una versión con otro formato de errores).
+-- hubiera calculado una versión con otro formato de resumen).
 enfriarCache :: ULID -> Maybe Aeson.Value -> Pg ()
-enfriarCache pagoId errores = do
+enfriarCache pagoId resumen = do
   runUpdate $
     update
       db.pagos
-      (\p -> p.pagoErrores <-. val_ (fmap PgJSONB errores))
+      (\p -> p.pagoResumen <-. val_ (fmap PgJSONB resumen))
       (\p -> p.pagoId ==. val_ pagoId)
   runDelete $
     delete

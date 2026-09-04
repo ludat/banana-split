@@ -6,12 +6,10 @@ import Components.ResumenGasto as ResumenGasto
 import Date
 import Effect exposing (Effect)
 import Generated.Api exposing (Moneda, ShallowGrupo, ShallowPago, ULID)
-import Html exposing (Html, a, div, i, text)
+import Html exposing (Html, a, div, text)
 import Html.Attributes exposing (class, style)
 import Html.Events exposing (onClick)
 import Layouts
-import Models.Moneda as Moneda
-import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
@@ -160,17 +158,8 @@ viewPago participanteId monedaPorDefecto pago =
                     [ text (Utils.Day.mesAbreviado pago.fecha) ]
                 , div [ class "fw-bold lh-1" ] [ text (String.fromInt (Date.day pago.fecha)) ]
                 ]
-            , if ResumenGasto.esValido pago then
-                text ""
-
-              else
-                i [ class "bi bi-exclamation-triangle-fill text-warning flex-shrink-0" ] []
-            , div [ class "flex-grow-1 text-truncate" ]
-                [ div [ class "text-truncate" ] [ text pago.nombre ]
-                , ResumenGasto.viewMiParte participanteId monedaPorDefecto pago
-                , ResumenGasto.viewErrores pago
-                ]
-            , div [ class "text-nowrap text-muted small" ]
-                [ text (Moneda.simbolo monedaPorDefecto pago.moneda ++ " " ++ Monto.toString pago.monto) ]
+            , ResumenGasto.viewFila participanteId monedaPorDefecto pago
+            , ResumenGasto.viewIconoInvalido pago
+            , ResumenGasto.viewBadgeRepartija pago
             ]
         ]

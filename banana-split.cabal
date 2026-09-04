@@ -109,6 +109,7 @@ library database
     BananaSplit.Persistence.Migration_2026_05_26_FixDates
     BananaSplit.Persistence.Schema
     BananaSplit.PgRoll
+    BananaSplit.Seed
 
   build-depends:
     banana-split

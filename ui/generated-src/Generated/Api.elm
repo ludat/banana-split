@@ -784,14 +784,16 @@ type alias ResumenGasto  =
    { pagado: (Netos Monto)
    , consumido: (Netos Monto)
    , errores: (List ErrorResumen)
+   , participantesEnRepartija: (Maybe Int)
    }
 
 jsonDecResumenGasto : Json.Decode.Decoder ( ResumenGasto )
 jsonDecResumenGasto =
-   Json.Decode.succeed (\ppagado pconsumido perrores -> {pagado = ppagado, consumido = pconsumido, errores = perrores})
+   Json.Decode.succeed (\ppagado pconsumido perrores pparticipantesEnRepartija -> {pagado = ppagado, consumido = pconsumido, errores = perrores, participantesEnRepartija = pparticipantesEnRepartija})
    |> required "pagado" (jsonDecNetos (jsonDecMonto))
    |> required "consumido" (jsonDecNetos (jsonDecMonto))
    |> required "errores" (Json.Decode.list (jsonDecErrorResumen))
+   |> fnullable "participantesEnRepartija" (Json.Decode.int)
 
 jsonEncResumenGasto : ResumenGasto -> Value
 jsonEncResumenGasto  val =
@@ -799,6 +801,7 @@ jsonEncResumenGasto  val =
    [ ("pagado", (jsonEncNetos (jsonEncMonto)) val.pagado)
    , ("consumido", (jsonEncNetos (jsonEncMonto)) val.consumido)
    , ("errores", (Json.Encode.list jsonEncErrorResumen) val.errores)
+   , ("participantesEnRepartija", (maybeEncode (Json.Encode.int)) val.participantesEnRepartija)
    ]
 
 

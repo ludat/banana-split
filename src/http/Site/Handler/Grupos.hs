@@ -34,8 +34,7 @@ import BananaSplit.Persistence (
   fetchTransferencias,
   freezeGrupo,
   guardarTasasDeCambio,
-  netosDeGrupo,
-  repararCacheDeGastos,
+  netosYGastosDelGrupo,
   transferenciasHechas,
   transferenciasPendientes,
   unclaimParticipante,
@@ -53,16 +52,6 @@ handleCreateGrupo CreateGrupoParams{grupoName, grupoParticipante} = do
 handleCreateGrupoAsUser :: User -> CreateGrupoAsUserParams -> AppHandler Grupo
 handleCreateGrupoAsUser user CreateGrupoAsUserParams{grupoName} = do
   runBeam $ createGrupoForUser grupoName user
-
--- | Los netos de los gastos del grupo, sumados en la base desde el cache.
---
--- La reparación va primero porque 'netosDeGrupo' es SQL puro: si algún gasto
--- todavía no tiene el cache calculado, la suma lo saltearía en silencio. En
--- régimen normal no recalcula nada.
-netosDeGastosDelGrupo :: ULID -> Pg (PorMoneda (Netos Monto))
-netosDeGastosDelGrupo grupoId = do
-  repararCacheDeGastos grupoId
-  netosDeGrupo grupoId
 
 netosPendientes :: PorMoneda (Netos Monto) -> PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
 netosPendientes netosDeGastos hechas =
@@ -88,10 +77,7 @@ handleGetNetos grupoId = do
             }
     Nothing -> do
       guardadas <- runBeam $ fetchTransferencias grupoId
-      (netosDeGastos, shallowPagos) <- runBeam $ do
-        netos <- netosDeGastosDelGrupo grupoId
-        pagos <- fetchShallowPagos grupoId
-        pure (netos, pagos)
+      (netosDeGastos, shallowPagos) <- runBeam $ netosYGastosDelGrupo grupoId
 
       let netos =
             netosPendientes netosDeGastos (transferenciasHechas guardadas & fmap (fmap (.transferencia)))
@@ -144,7 +130,7 @@ handleFreezeGrupo grupoId = do
     runBeam (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
-  netosDeGastos <- runBeam $ netosDeGastosDelGrupo grupoId
+  (netosDeGastos, _) <- runBeam $ netosYGastosDelGrupo grupoId
   guardadas <- runBeam $ fetchTransferencias grupoId
   tasasDeCambio <- runBeam $ fetchTasasDeCambio grupoId
 

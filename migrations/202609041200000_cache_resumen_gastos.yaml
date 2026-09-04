@@ -71,6 +71,9 @@ operations:
       columns:
         participante__id: {}
 
+  # La parte del resumen que no se puede sumar en SQL: los motivos de invalidez
+  # y lo que la UI necesite saber del gasto sin que sea un número por
+  # participante (cuánta gente reclamó en su repartija, por ejemplo).
   - add_column:
       table: pagos
       # Deriva de 'is_valid' lo único que un booleano puede decir. No es para el
@@ -78,13 +81,13 @@ operations:
       # abajo reconstruya 'is_valid' exacto: si dejáramos todo en NULL, un
       # rollback —o el binario viejo durante el expand/contract— vería todos los
       # gastos como inválidos.
-      up: "CASE WHEN is_valid THEN '[]'::jsonb ELSE NULL END"
+      up: "NULL"
       column:
-        name: errores
+        name: resumen
         type: jsonb
         nullable: true
 
   - drop_column:
       table: pagos
       column: is_valid
-      down: "errores IS NOT NULL AND jsonb_array_length(errores) = 0"
+      down: "resumen IS NOT NULL AND jsonb_array_length(resumen -> 'errores') = 0"

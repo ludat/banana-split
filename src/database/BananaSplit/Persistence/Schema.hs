@@ -151,12 +151,12 @@ instance Table ParticipanteT where
 
 data PagoT f = Pago
   { pagoId :: Columnar f ULID
-  , -- | Por qué el gasto es inválido: NULL = sin calcular, @[]@ = válido, no
-    -- vacío = inválido con motivos. Se guarda como 'Value' crudo y no como
-    -- @PgJSONB [M.ErrorResumen]@ a propósito: si el formato cambiara, un blob
-    -- viejo tipado reventaría la query entera en vez de poder detectarse y
-    -- recalcularse (ver 'erroresDeGasto').
-    pagoErrores :: Columnar f (Maybe (PgJSONB Value))
+  , -- | La parte no sumable del resumen del gasto (por qué es inválido, cuánta
+    -- gente reclamó en su repartija). NULL = todavía sin calcular. Se guarda
+    -- como 'Value' crudo y no tipado a propósito: si el formato cambiara, un
+    -- blob viejo tipado reventaría la query entera en vez de poder detectarse
+    -- y recalcularse (ver 'resumenGuardadoDe').
+    pagoResumen :: Columnar f (Maybe (PgJSONB Value))
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMontoEnUnidadesMinimas :: Columnar f UnidadesMinimas

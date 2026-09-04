@@ -44,7 +44,8 @@ import Elm.TyRep (
 import BananaSplit.Deudas
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
 import BananaSplit.Monto (Monto)
-import BananaSplit.Participante (Participante)
+import BananaSplit.Participante (Participante, ParticipanteId)
+import BananaSplit.Repartija (RepartijaClaim (..))
 import BananaSplit.TasaDeCambio (TasaDeCambio)
 import BananaSplit.ULID
 import Preludat
@@ -139,6 +140,10 @@ data ResumenGasto = ResumenGasto
   { pagado :: Netos Monto
   , consumido :: Netos Monto
   , errores :: [ErrorResumen]
+  , -- | Cuánta gente reclamó algo, si el gasto se reparte por repartija.
+    -- 'Nothing' cuando no lo es. Es de la misma familia que 'errores': algo
+    -- derivado del gasto que la UI quiere mostrar y que no se puede sumar.
+    participantesEnRepartija :: Maybe Int
   }
   deriving (Show, Eq, Generic)
 
@@ -154,6 +159,10 @@ getResumenGasto pago =
       , errores =
           fmap (relabelError "pagadores") resumenPagadores.errores
             <> fmap (relabelError "deudores") resumenDeudores.errores
+      , participantesEnRepartija = case pago.deudores.tipo of
+          TipoDistribucionRepartija repartija ->
+            Just $ length $ ordNub $ fmap (\claim -> claim.participante :: ParticipanteId) repartija.claims
+          _ -> Nothing
       }
 
 netosDeGasto :: ResumenGasto -> Netos Monto

@@ -20,7 +20,6 @@ import BananaSplit.Persistence (
   fetchGrupo,
   fetchPago,
   fetchShallowPagos,
-  repararCacheDeGastos,
   savePago,
   updatePago,
  )
@@ -30,9 +29,7 @@ import Site.Types
 
 handlePagosGet :: ULID -> AppHandler [ShallowPago]
 handlePagosGet grupoId = do
-  -- Repara antes de listar para que cada gasto venga con su resumen, aunque el
-  -- cache esté frío o guardado con un formato viejo.
-  runBeam (repararCacheDeGastos grupoId >> fetchShallowPagos grupoId)
+  runBeam (fetchShallowPagos grupoId)
 
 handlePagoGet :: ULID -> ULID -> AppHandler Pago
 handlePagoGet _grupoId pagoId = do
