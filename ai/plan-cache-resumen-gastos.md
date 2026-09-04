@@ -100,7 +100,7 @@ representación de `Monto`. Ese era el argumento más fuerte en contra de esta o
 
 ### Fase 1 — Dominio
 
-- [ ] **1.1** En `BananaSplit.Core`, agregar el tipo que devuelve el resumen por gasto:
+- [x] **1.1** En `BananaSplit.Core`, agregar el tipo que devuelve el resumen por gasto:
       ```haskell
       data NetoDeParticipante = NetoDeParticipante { pagado :: Monto, consumido :: Monto }
       data ResumenGasto = ResumenGasto
@@ -110,13 +110,13 @@ representación de `Monto`. Ese era el argumento más fuerte en contra de esta o
       ```
       `ErrorResumen` ya vive en `BananaSplit.Deudas`, así que la capa de persistencia lo
       puede importar sin ciclo (a diferencia de `ResumenPago`, que vive en `Site.Api`).
-- [ ] **1.2** `getResumenGasto :: Pago -> ResumenGasto`, armado con los `getResumen` de
+- [x] **1.2** `getResumenGasto :: Pago -> ResumenGasto`, armado con los `getResumen` de
       `pagadores` y `deudores` que `getResumenPago` ya usa. Una sola fuente de verdad para
       handler y persistencia.
-- [ ] **1.3** Helper de agregación: de `[(Moneda, ResumenGasto)]` a
+- [x] **1.3** Helper de agregación: de `[(Moneda, ResumenGasto)]` a
       `PorMoneda (Netos Monto)`, salteando los que tienen errores. Es lo que reemplaza al
       `fetchPago` en loop cuando no querramos ir a SQL.
-- [ ] **1.4** Test unitario: para un `Pago` cualquiera,
+- [x] **1.4** Test unitario: para un `Pago` cualquiera,
       `pagado <> fmap negate consumido == calcularNetosPago pago`, y que un pago inválido
       tenga `errores` no vacío. Esto ancla el invariante antes de guardarlo en ningún lado.
 
@@ -124,7 +124,7 @@ representación de `Monto`. Ese era el argumento más fuerte en contra de esta o
 
 ### Fase 2 — Migración
 
-- [ ] **2.1** Tabla `pago_netos`:
+- [x] **2.1** Tabla `pago_netos`:
       - `pago__id` text not null, FK → `pagos(id)` **`ON DELETE CASCADE`** (que borrar un
         gasto se lleve su cache solo, sin tocar `deletePago`).
       - `participante__id` text not null, FK → `participantes(id)`, sin cascade.
@@ -133,32 +133,32 @@ representación de `Monto`. Ese era el argumento más fuerte en contra de esta o
       - `consumido_en_unidades_minimas` bigint not null.
       - PK compuesta `(pago__id, participante__id)`.
       - Índice por `(participante__id)` para la consulta "cuánto debe X".
-- [ ] **2.2** Columna `pagos.errores` jsonb **nullable**, derivada de `is_valid`
+- [x] **2.2** Columna `pagos.errores` jsonb **nullable**, derivada de `is_valid`
       (`'[]'` si era válido, `NULL` si no).
-- [ ] **2.3** Dropear `pagos.is_valid`, con `down` que la reconstruye desde `errores`.
+- [x] **2.3** Dropear `pagos.is_valid`, con `down` que la reconstruye desde `errores`.
 
 **Verificación:** `cabal run banana-split -- migrations migrate ./migrations` en dev. Requiere
 que la migración anterior no esté `In progress`.
 
 ### Fase 3 — Schema y persistencia
 
-- [ ] **3.1** `Persistence/Schema.hs`: tabla `PagoNetoT` y `pago_netos` en `BananaSplitDb`;
+- [x] **3.1** `Persistence/Schema.hs`: tabla `PagoNetoT` y `pago_netos` en `BananaSplitDb`;
       campo `pagoErrores :: Columnar f (Maybe (PgJSONB [M.ErrorResumen]))` en `PagoT`.
-- [ ] **3.2** `savePago`: después de guardar las distribuciones, calcular
+- [x] **3.2** `savePago`: después de guardar las distribuciones, calcular
       `getResumenGasto`, borrar las filas del gasto e insertar las nuevas, y escribir
       `errores`. Un gasto con errores escribe `errores` y **cero filas**.
-- [ ] **3.3** Renombrar `recalcValidezPago` → `recalcularResumenGasto` y que haga lo mismo
+- [x] **3.3** Renombrar `recalcValidezPago` → `recalcularResumenGasto` y que haga lo mismo
       que 3.2 sin volver a guardar el pago. Los dos llamadores
       (`saveRepartijaClaim` / `deleteRepartijaClaim`) quedan igual.
-- [ ] **3.4** `fetchShallowPagos`: leer `errores` (como JSON crudo, decodificando en
+- [x] **3.4** `fetchShallowPagos`: leer `errores` (como JSON crudo, decodificando en
       Haskell) y las filas de `pago_netos` del grupo en **una** query aparte (no una por
       gasto), y armar el `ResumenGasto` de cada uno.
-- [ ] **3.4b** `repararCacheDeGastos :: ULID -> Pg ()`: busca los gastos del grupo con el
+- [x] **3.4b** `repararCacheDeGastos :: ULID -> Pg ()`: busca los gastos del grupo con el
       cache frío (ver "Decisiones") y los recalcula con la misma función de 3.2. En régimen
       normal el `SELECT` no devuelve nada. Va en función aparte y no adentro de cada fetch
       porque la agregación de 3.5 es SQL puro y no se puede curar sola: los caminos de
       lectura la llaman antes de agregar.
-- [ ] **3.5** `netosDeGrupo :: ULID -> Pg (PorMoneda (Netos Monto))`: la agregación en SQL.
+- [x] **3.5** `netosDeGrupo :: ULID -> Pg (PorMoneda (Netos Monto))`: la agregación en SQL.
       ```sql
       SELECT participante__id, moneda,
              SUM(pagado_en_unidades_minimas - consumido_en_unidades_minimas)

@@ -35,6 +35,8 @@ module BananaSplit.Persistence (
   fetchShallowPagos,
   fetchTasasDeCambio,
   fetchTransferencias,
+  netosDeGrupo,
+  repararCacheDeGastos,
   freezeGrupo,
   guardarTasasDeCambio,
   borrarTransferencia,
@@ -50,12 +52,13 @@ module BananaSplit.Persistence (
   saveRepartijaClaim,
   unfreezeGrupo,
   updateGrupo,
-  updateIsValidPago,
   updatePago,
 ) where
 
 import Conferer qualified
+import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty qualified as NE
+import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
 import Data.String (String)
 import Data.Text qualified as Text
@@ -333,7 +336,7 @@ fetchPago pagoId = do
             , M.monto = desdeUnidadesMinimas dbPago.pagoMoneda p.pagoMontoEnUnidadesMinimas
             , M.moneda = dbPago.pagoMoneda
             , M.nombre = p.pagoNombre
-            , M.isValid = p.pagoIsValid
+            , M.isValid = False
             , M.fecha = p.fecha
             , M.pagadores = pagadores
             , M.deudores = deudores
@@ -342,14 +345,59 @@ fetchPago pagoId = do
       )
     & pure
 
-updateIsValidPago :: M.Pago -> Pg M.Pago
-updateIsValidPago pago = do
+
+-- | Los errores guardados de un gasto, o 'Nothing' si el cache está frío: la
+-- columna está en NULL, o tiene un JSON que no se puede decodificar con el
+-- formato de hoy. Ese segundo caso es el que deja cambiar la forma de
+-- 'M.ErrorResumen' sin migrar nada: los blobs viejos se recalculan al leerlos.
+erroresDeGasto :: Pago -> Maybe [M.ErrorResumen]
+erroresDeGasto pago =
+  case pago.pagoErrores of
+    Nothing -> Nothing
+    Just (PgJSONB value) ->
+      case Aeson.fromJSON value of
+        Aeson.Success errores -> Just errores
+        Aeson.Error _ -> Nothing
+
+-- | Escribe el resumen de un gasto: los errores en la fila del pago y una fila
+-- por participante en 'pago_netos'. Un gasto inválido deja cero filas.
+--
+-- Es el único lugar que escribe el cache, así que todo lo que pueda cambiar el
+-- reparto de un gasto tiene que terminar acá.
+guardarResumenDeGasto :: M.Pago -> Pg ()
+guardarResumenDeGasto pago = do
+  let resumen = M.getResumenGasto pago
   runUpdate
     $ update
       db.pagos
-      (\p -> p.pagoIsValid <-. val_ pago.isValid)
+      (\p -> p.pagoErrores <-. val_ (Just (PgJSONB (Aeson.toJSON resumen.errores))))
       (\p -> p.pagoId ==. val_ pago.pagoId)
-  pure pago
+  runDelete
+    $ delete
+      db.pago_netos
+      (\pn -> pn.pago ==. val_ (PagoId pago.pagoId))
+  when (M.gastoEsValido resumen) $ do
+    let M.Netos pagado = resumen.pagado
+        M.Netos consumido = resumen.consumido
+        filas =
+          Map.union pagado consumido
+            & Map.keys
+            & fmap
+              ( \participante ->
+                  PagoNeto
+                    { pago = PagoId pago.pagoId
+                    , participante = participanteId2Persistent participante
+                    , moneda = pago.moneda
+                    , pagado_en_unidades_minimas =
+                        aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante pagado
+                    , consumido_en_unidades_minimas =
+                        aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante consumido
+                    }
+              )
+    unless (null filas)
+      $ runInsert
+      $ insert db.pago_netos
+      $ insertValues filas
 
 aUnidadesMinimas :: M.Moneda -> M.Monto -> UnidadesMinimas
 aUnidadesMinimas moneda monto =
@@ -501,12 +549,77 @@ fetchShallowPagos grupoId = do
     pure
       M.ShallowPago
         { M.pagoId = pago.pagoId
-        , M.isValid = pago.pagoIsValid
+        , M.isValid = maybe False null (erroresDeGasto pago)
         , M.nombre = pago.pagoNombre
         , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
         , M.moneda = pago.pagoMoneda
         , M.fecha = pago.fecha
         }
+
+-- | Recalcula el cache de los gastos del grupo que lo tengan frío: sin
+-- calcular, ilegible, o marcado como válido pero sin filas en 'pago_netos'
+-- (que sólo puede pasar si nunca se calculó, porque un gasto válido siempre
+-- tiene al menos un pagador y un deudor).
+--
+-- Va antes de leer netos y no adentro de cada fetch porque 'netosDeGrupo' es
+-- SQL puro y nunca trae las filas a Haskell, así que no se puede curar sola.
+-- En régimen normal las dos queries no devuelven nada para recalcular.
+repararCacheDeGastos :: ULID -> Pg ()
+repararCacheDeGastos grupoId = do
+  pagos <- runSelectReturningList $ select $ do
+    pago <- all_ db.pagos
+    guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
+    pure pago
+
+  conFilas <- runSelectReturningList $ select $ nub_ $ do
+    pagoNeto <- all_ db.pago_netos
+    pago <- all_ db.pagos
+    guard_ (pagoNeto.pago `references_` pago)
+    guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
+    pure pagoNeto.pago
+
+  let tieneFilas pagoId = PagoId pagoId `elem` conFilas
+      estaFrio pago =
+        case erroresDeGasto pago of
+          Nothing -> True
+          Just [] -> not $ tieneFilas pago.pagoId
+          Just _ -> False
+
+  forM_ (filter estaFrio pagos) $ \pago ->
+    fetchPago pago.pagoId >>= guardarResumenDeGasto
+
+-- | Los netos de un grupo sumados en la base, sin traer ningún gasto.
+--
+-- No filtra por 'pagoErrores' porque un gasto inválido no tiene filas: el
+-- filtro vive en la escritura. Corré 'repararCacheDeGastos' antes, que es lo
+-- que garantiza que no haya gastos válidos todavía sin calcular.
+netosDeGrupo :: ULID -> Pg (M.PorMoneda (M.Netos M.Monto))
+netosDeGrupo grupoId = do
+  filas <- runSelectReturningList $ select $ do
+    aggregate_
+      -- El cast es necesario: en Postgres SUM(bigint) devuelve numeric, y sin
+      -- él la fila no decodifica.
+      ( \(participante, moneda, neto) ->
+          (group_ participante, group_ moneda, cast_ (fromMaybe_ 0 (sum_ neto)) bigint)
+      )
+      $ do
+        pagoNeto <- all_ db.pago_netos
+        pago <- all_ db.pagos
+        guard_ (pagoNeto.pago `references_` pago)
+        guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
+        let ParticipanteId participante = pagoNeto.participante
+        pure
+          ( participante
+          , pagoNeto.moneda
+          , pagoNeto.pagado_en_unidades_minimas - pagoNeto.consumido_en_unidades_minimas
+          )
+  pure
+    $ filas
+    & foldMap
+      ( \(participante, moneda, neto) ->
+          M.mkDeuda (M.ParticipanteId participante) (desdeUnidadesMinimas moneda neto)
+            `M.enMoneda` moneda
+      )
 
 fetchParticipantes :: ULID -> Pg [M.Participante]
 fetchParticipantes grupoId = do
@@ -641,7 +754,7 @@ savePago grupoId pagoWithoutId = do
       ( insertValues
           [ Pago
               { pagoId = pago.pagoId
-              , pagoIsValid = pago.isValid
+              , pagoErrores = Nothing
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
               , pagoMontoEnUnidadesMinimas = aUnidadesMinimas pago.moneda pago.monto
@@ -659,7 +772,10 @@ savePago grupoId pagoWithoutId = do
     when (viejaPagadores /= distribucionPagadores.id) $ deleteDistribucion viejaPagadores
     when (viejaDeudores /= distribucionDeudores.id) $ deleteDistribucion viejaDeudores
 
-  pure pago{M.pagadores = distribucionPagadores, M.deudores = distribucionDeudores}
+  let guardado = pago{M.pagadores = distribucionPagadores, M.deudores = distribucionDeudores}
+  -- Va después del insert porque las filas de 'pago_netos' apuntan al gasto.
+  guardarResumenDeGasto guardado
+  pure guardado
 
 recomputePagos :: Connection -> IO ()
 recomputePagos conn = go 0 nullUlid
@@ -971,7 +1087,7 @@ saveRepartijaClaim repartijaId repartijaClaim = do
       onConflictUpdateAll
   -- (onConflictUpdateSet (\fields _oldValues ->
   --   repartijaClaimCantidad fields <-. val_ (fromIntegral <$> M.repartijaClaimCantidad claim')))
-  fetchPagoIdFromRepartija repartijaId >>= traverse_ recalcValidezPago
+  fetchPagoIdFromRepartija repartijaId >>= traverse_ recalcularResumenGasto
   pure claim'
 
 deleteRepartijaClaim :: ULID -> Pg ()
@@ -982,15 +1098,15 @@ deleteRepartijaClaim claimId = do
     $ delete
       db.repartija_claims
       (\c -> c.repartijaclaimId ==. val_ claimId)
-  forM_ pagoId recalcValidezPago
+  forM_ pagoId recalcularResumenGasto
 
--- | Recompute and persist a pago's @isValid@ flag. Call this from any mutation
--- that can affect a pago's validity without going through 'savePago' (e.g.
--- editing repartija claims), so the stored flag never goes stale.
-recalcValidezPago :: ULID -> Pg ()
-recalcValidezPago pagoId = do
+-- | Recalcula y guarda el resumen de un gasto. Llamalo desde cualquier mutación
+-- que pueda cambiar el reparto sin pasar por 'savePago' (editar los claims de
+-- una repartija, por ejemplo), así el cache nunca queda viejo.
+recalcularResumenGasto :: ULID -> Pg ()
+recalcularResumenGasto pagoId = do
   pago <- fetchPago pagoId
-  void $ updateIsValidPago (pago & M.addIsValidPago)
+  guardarResumenDeGasto pago
 
 -- | Query fragment: the pago that owns a given repartija row, following
 -- distribución → pago (one repartija belongs to one distribución, which is

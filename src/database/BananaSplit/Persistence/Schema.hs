@@ -9,7 +9,7 @@
 
 module BananaSplit.Persistence.Schema where
 
-import Data.Aeson (FromJSON, ToJSON)
+import Data.Aeson (FromJSON, ToJSON, Value)
 import Data.String (String)
 import Data.Time (Day, UTCTime)
 import Database.Beam as Beam
@@ -27,6 +27,7 @@ data BananaSplitDb f = BananaSplitDb
   , login_attempts :: f (TableEntity LoginAttemptT)
   , participantes :: f (TableEntity ParticipanteT)
   , pagos :: f (TableEntity PagoT)
+  , pago_netos :: f (TableEntity PagoNetoT)
   , distribuciones :: f (TableEntity DistribucionT)
   , distribuciones_monto_equitativo :: f (TableEntity DistribucionMontoEquitativoT)
   , distribuciones_monto_equitativo_items :: f (TableEntity DistribucionMontoEquitativoItemT)
@@ -150,7 +151,12 @@ instance Table ParticipanteT where
 
 data PagoT f = Pago
   { pagoId :: Columnar f ULID
-  , pagoIsValid :: Columnar f Bool
+  , -- | Por qué el gasto es inválido: NULL = sin calcular, @[]@ = válido, no
+    -- vacío = inválido con motivos. Se guarda como 'Value' crudo y no como
+    -- @PgJSONB [M.ErrorResumen]@ a propósito: si el formato cambiara, un blob
+    -- viejo tipado reventaría la query entera en vez de poder detectarse y
+    -- recalcularse (ver 'erroresDeGasto').
+    pagoErrores :: Columnar f (Maybe (PgJSONB Value))
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMontoEnUnidadesMinimas :: Columnar f UnidadesMinimas
@@ -185,6 +191,38 @@ instance Table PagoT where
 -- sale de 'M.escalaDe' aplicado a la moneda de la fila, así que para volver a
 -- un 'M.Monto' hace falta tener esa moneda a mano.
 type UnidadesMinimas = Int64
+
+-- | Cache de cuánto puso y cuánto consumió cada participante en cada gasto.
+-- Es derivado de las distribuciones del pago: existe para poder sumar netos con
+-- un @SUM@ en vez de reconstruir cada gasto entero.
+--
+-- Un gasto inválido no tiene filas. Uno válido siempre tiene al menos una, así
+-- que "válido y sin filas" significa que el cache todavía no se calculó.
+data PagoNetoT f = PagoNeto
+  { pago :: PrimaryKey PagoT f
+  , participante :: PrimaryKey ParticipanteT f
+  , -- | Se repite acá porque sin ella la fila no se puede interpretar: las
+    -- unidades mínimas dependen de la moneda. La escribe el mismo 'savePago'
+    -- que escribe el gasto, así que no puede desincronizarse.
+    moneda :: Columnar f M.Moneda
+  , pagado_en_unidades_minimas :: Columnar f UnidadesMinimas
+  , consumido_en_unidades_minimas :: Columnar f UnidadesMinimas
+  }
+  deriving (Generic, Beamable)
+
+type PagoNeto = PagoNetoT Identity
+
+deriving instance Show PagoNeto
+
+deriving instance Eq PagoNeto
+
+instance Table PagoNetoT where
+  -- No tiene id propio: la identidad de la fila es de qué gasto y de qué
+  -- participante habla.
+  data PrimaryKey PagoNetoT f
+    = PagoNetoId (PrimaryKey PagoT f) (PrimaryKey ParticipanteT f)
+    deriving (Generic, Beamable)
+  primaryKey pagoNeto = PagoNetoId pagoNeto.pago pagoNeto.participante
 
 data DistribucionT f = Distribucion
   { id :: Columnar f ULID

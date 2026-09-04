@@ -5,9 +5,10 @@ module BananaSplit.Persistence.PagosSpec (
   spec,
 ) where
 
+import Data.Aeson qualified as Aeson
 import Data.Time (fromGregorian)
 import Database.Beam
-import Database.Beam.Postgres (Pg)
+import Database.Beam.Postgres (Pg, PgJSONB (..))
 import Protolude
 import Test.Hspec
 import Test.QuickCheck
@@ -21,6 +22,8 @@ import BananaSplit.Persistence
 import BananaSplit.Persistence.Schema qualified as Schema
 import BananaSplit.Persistence.SpecHook
 import BananaSplit.Repartija
+import BananaSplit.TestUtils (netos)
+import BananaSplit.ULID (ULID)
 
 spec :: SpecWith RunDb
 spec =
@@ -104,6 +107,131 @@ spec =
       runDb $ deleteRepartijaClaim claim.id
       shallowInvalid <- runDb $ fetchShallowPagos grupo.id
       fmap (.isValid) shallowInvalid `shouldBe` [False]
+
+    it "netosDeGrupo suma lo mismo que recalcular todos los gastos" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+
+      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+      _ <- runDb $ savePago grupo.id $ gastoEntre USD 50 otro uno
+      -- Un gasto inválido no tiene que aportar nada.
+      _ <- runDb $ savePago grupo.id $ (gastoEntre ARS 70 uno otro){deudores = distribucionVacia}
+
+      desdeElCache <- runDb $ netosDeGrupo grupo.id
+      desdeElCache
+        `shouldBe` netos [(uno, 100), (otro, -100)]
+        `enMoneda` ARS
+        <> netos [(otro, 50), (uno, -50)]
+        `enMoneda` USD
+
+      -- Y tiene que coincidir con recalcular todo desde las distribuciones,
+      -- que es lo que hacía el loop de fetchPago que este cache reemplaza.
+      recalculado <- runDb $ netosRecalculados grupo
+      desdeElCache `shouldBe` recalculado
+
+    it "un gasto invalido no deja filas en el cache" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+      runDb (contarNetosDe pago.pagoId) `shouldReturn` 2
+
+      _ <- runDb $ updatePago grupo.id pago.pagoId pago{deudores = distribucionVacia}
+      runDb (contarNetosDe pago.pagoId) `shouldReturn` 0
+
+    it "borrar un gasto se lleva sus filas del cache" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+      runDb (contarNetosDe pago.pagoId) `shouldReturn` 2
+
+      runDb $ deletePago pago.pagoId
+      runDb (contarNetosDe pago.pagoId) `shouldReturn` 0
+
+    -- Los dos casos de cache frío: nunca calculado, y calculado con un formato
+    -- que ya no decodifica. Este último es el que deja cambiar la forma de
+    -- ErrorResumen sin migrar los blobs viejos.
+    it "la lectura repara un cache sin calcular" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+
+      runDb $ enfriarCache pago.pagoId Nothing
+      runDb (netosDeGrupo grupo.id) `shouldReturn` mempty
+
+      runDb $ repararCacheDeGastos grupo.id
+      runDb (netosDeGrupo grupo.id)
+        `shouldReturn` (netos [(uno, 100), (otro, -100)] `enMoneda` ARS)
+
+    it "la lectura repara un cache que no se puede decodificar" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+
+      runDb $ enfriarCache pago.pagoId $ Just $ Aeson.String "un formato viejo"
+      runDb $ repararCacheDeGastos grupo.id
+      runDb (netosDeGrupo grupo.id)
+        `shouldReturn` (netos [(uno, 100), (otro, -100)] `enMoneda` ARS)
+
+    it "reparar no toca los gastos que ya estan calculados" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+
+      antes <- runDb $ netosDeGrupo grupo.id
+      runDb $ repararCacheDeGastos grupo.id
+      runDb (netosDeGrupo grupo.id) `shouldReturn` antes
+
+grupoConDosParticipantes :: Pg (Grupo, ParticipanteId, ParticipanteId)
+grupoConDosParticipantes = do
+  grupo <- createGrupo "Test Grupo" "uno"
+  otro <-
+    addParticipante grupo.id "otro" >>= \case
+      Right participante -> pure $ ParticipanteId participante.id
+      Left e -> panic e
+  pure (grupo, participanteDe grupo, otro)
+
+-- | Un gasto donde uno pone todo y el otro consume todo.
+gastoEntre :: Moneda -> Monto -> ParticipanteId -> ParticipanteId -> Pago
+gastoEntre moneda monto pagador deudor =
+  Pago
+    { pagoId = nullUlid
+    , monto = monto
+    , moneda = moneda
+    , isValid = False
+    , nombre = "Gasto"
+    , fecha = fromGregorian 2025 1 1
+    , pagadores = distribucionDe [MontoFijo monto pagador]
+    , deudores = distribucionDe [MontoFijo monto deudor]
+    }
+
+distribucionDe :: [Parte] -> Distribucion
+distribucionDe partes =
+  Distribucion nullUlid $ TipoDistribucionPartes $ DistribucionPartes nullUlid partes
+
+distribucionVacia :: Distribucion
+distribucionVacia = distribucionDe []
+
+-- | Los netos reconstruidos desde las distribuciones, sin pasar por el cache.
+netosRecalculados :: Grupo -> Pg (PorMoneda (Netos Monto))
+netosRecalculados grupo = do
+  shallowPagos <- fetchShallowPagos grupo.id
+  pagos <- traverse (fetchPago . (.pagoId)) shallowPagos
+  pure $ calcularNetosTotales grupo{pagos = pagos}
+
+contarNetosDe :: ULID -> Pg Int
+contarNetosDe pagoId =
+  fmap length $ runSelectReturningList $ select $ do
+    pagoNeto <- all_ db.pago_netos
+    guard_ (pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
+    pure pagoNeto.participante
+
+-- | Deja el cache de un gasto como si nunca se hubiera calculado (o como si lo
+-- hubiera calculado una versión con otro formato de errores).
+enfriarCache :: ULID -> Maybe Aeson.Value -> Pg ()
+enfriarCache pagoId errores = do
+  runUpdate $
+    update
+      db.pagos
+      (\p -> p.pagoErrores <-. val_ (fmap PgJSONB errores))
+      (\p -> p.pagoId ==. val_ pagoId)
+  runDelete $
+    delete
+      db.pago_netos
+      (\pagoNeto -> pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
 
 -- | Save a pago whose deudores is a repartija with a single item that sums to
 -- the monto but has no claims, leaving the pago invalid until something is
