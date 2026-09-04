@@ -101,7 +101,9 @@ data Pago = Pago
 
 data ShallowPago = ShallowPago
   { pagoId :: ULID
-  , isValid :: Bool
+  , -- | 'Nothing' sólo si el cache está frío. Los caminos de lectura reparan
+    -- antes de listar, así que en la práctica siempre viene.
+    resumen :: Maybe ResumenGasto
   , nombre :: Text
   , monto :: Monto
   , moneda :: Moneda

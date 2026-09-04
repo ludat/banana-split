@@ -86,14 +86,14 @@ spec =
       -- The items add up to the monto, but there are no claims yet, so the pago
       -- is invalid and the stored flag (read shallowly, without recomputing) is False.
       shallowBefore <- runDb $ fetchShallowPagos grupo.id
-      fmap (.isValid) shallowBefore `shouldBe` [False]
+      fmap esValido shallowBefore `shouldBe` [False]
 
       -- Claiming the whole item makes the montos add up. Saving the claim must
       -- update the stored flag on its own, since the resumen no longer recomputes
       -- validity on read.
       _ <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
       shallowAfter <- runDb $ fetchShallowPagos grupo.id
-      fmap (.isValid) shallowAfter `shouldBe` [True]
+      fmap esValido shallowAfter `shouldBe` [True]
 
     it "deleting a claim turns a valid repartija pago invalid again" $ \(RunDb runDb) -> do
       grupo <- runDb $ createGrupo "Test Grupo" "alguien"
@@ -102,11 +102,11 @@ spec =
 
       claim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
       shallowValid <- runDb $ fetchShallowPagos grupo.id
-      fmap (.isValid) shallowValid `shouldBe` [True]
+      fmap esValido shallowValid `shouldBe` [True]
 
       runDb $ deleteRepartijaClaim claim.id
       shallowInvalid <- runDb $ fetchShallowPagos grupo.id
-      fmap (.isValid) shallowInvalid `shouldBe` [False]
+      fmap esValido shallowInvalid `shouldBe` [False]
 
     it "netosDeGrupo suma lo mismo que recalcular todos los gastos" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
@@ -174,6 +174,9 @@ spec =
       antes <- runDb $ netosDeGrupo grupo.id
       runDb $ repararCacheDeGastos grupo.id
       runDb (netosDeGrupo grupo.id) `shouldReturn` antes
+
+esValido :: ShallowPago -> Bool
+esValido = maybe False gastoEsValido . (.resumen)
 
 grupoConDosParticipantes :: Pg (Grupo, ParticipanteId, ParticipanteId)
 grupoConDosParticipantes = do

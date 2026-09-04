@@ -2,6 +2,7 @@ module Pages.Grupos.GrupoId_.Gastos exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
 import Components.PagoDetalleModal as PagoDetalleModal
+import Components.ResumenGasto as ResumenGasto
 import Date
 import Effect exposing (Effect)
 import Generated.Api exposing (Moneda, ShallowGrupo, ShallowPago, ULID)
@@ -28,7 +29,7 @@ page shared route =
         { init = \() -> init route shared.store
         , update = update (PagoDetalleModal.context shared route) shared.store
         , subscriptions = subscriptions
-        , view = view shared.store
+        , view = view (Shared.currentParticipante shared route.params.grupoId) shared.store
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
         |> Page.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
@@ -87,8 +88,8 @@ subscriptions _ =
     Sub.none
 
 
-view : Store -> Model -> View Msg
-view store model =
+view : Maybe ULID -> Store -> Model -> View Msg
+view participanteId store model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Loading...", body = [] }
@@ -105,14 +106,14 @@ view store model =
             { title = grupo.nombre
             , body =
                 [ div [ class "container-fluid py-3" ]
-                    [ viewPagos store model grupo ]
+                    [ viewPagos participanteId store model grupo ]
                 , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
                 ]
             }
 
 
-viewPagos : Store -> Model -> ShallowGrupo -> Html Msg
-viewPagos store model grupo =
+viewPagos : Maybe ULID -> Store -> Model -> ShallowGrupo -> Html Msg
+viewPagos participanteId store model grupo =
     case store |> Store.getPagos model.grupoId of
         NotAsked ->
             div [ class "text-muted" ] [ text "Cargando..." ]
@@ -137,13 +138,13 @@ viewPagos store model grupo =
                     [ Bs.listGroup [ class "list-group-flush" ]
                         (pagos
                             |> List.sortWith (\a b -> Date.compare b.fecha a.fecha)
-                            |> List.map (viewPago grupo.monedaPorDefecto)
+                            |> List.map (viewPago participanteId grupo.monedaPorDefecto)
                         )
                     ]
 
 
-viewPago : Moneda -> ShallowPago -> Html Msg
-viewPago monedaPorDefecto pago =
+viewPago : Maybe ULID -> Moneda -> ShallowPago -> Html Msg
+viewPago participanteId monedaPorDefecto pago =
     Bs.listGroupItem
         [ class "list-group-item-action"
         , style "cursor" "pointer"
@@ -159,12 +160,16 @@ viewPago monedaPorDefecto pago =
                     [ text (Utils.Day.mesAbreviado pago.fecha) ]
                 , div [ class "fw-bold lh-1" ] [ text (String.fromInt (Date.day pago.fecha)) ]
                 ]
-            , if not pago.isValid then
-                i [ class "bi bi-exclamation-triangle-fill text-warning flex-shrink-0" ] []
+            , if ResumenGasto.esValido pago then
+                text ""
 
               else
-                text ""
-            , div [ class "flex-grow-1 text-truncate" ] [ text pago.nombre ]
+                i [ class "bi bi-exclamation-triangle-fill text-warning flex-shrink-0" ] []
+            , div [ class "flex-grow-1 text-truncate" ]
+                [ div [ class "text-truncate" ] [ text pago.nombre ]
+                , ResumenGasto.viewMiParte participanteId monedaPorDefecto pago
+                , ResumenGasto.viewErrores pago
+                ]
             , div [ class "text-nowrap text-muted small" ]
                 [ text (Moneda.simbolo monedaPorDefecto pago.moneda ++ " " ++ Monto.toString pago.monto) ]
             ]

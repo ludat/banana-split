@@ -206,13 +206,13 @@ un grupo real de dev antes y después.
 
 ### Fase 6 — API y front
 
-- [ ] **6.1** `ShallowPago`: cambiar `isValid :: Bool` por `resumen :: Maybe ResumenGasto`
+- [x] **6.1** `ShallowPago`: cambiar `isValid :: Bool` por `resumen :: Maybe ResumenGasto`
       (`Nothing` = cache frío). Agregar los `DefineElm` de `ResumenGasto`,
       `NetoDeParticipante` y `Netos NetoDeParticipante` en `BananaSplit.Elm`.
-- [ ] **6.2** Regenerar Elm y arreglar los usos de `pago.isValid`
+- [x] **6.2** Regenerar Elm y arreglar los usos de `pago.isValid`
       (`Pages/Grupos/Id_.elm`, `Pages/Grupos/GrupoId_/Gastos.elm`).
-- [ ] **6.3** Mostrar en la lista de gastos cuánto puso y cuánto consumió cada uno.
-- [ ] **6.4** Mostrar el motivo de invalidez desde `errores` en vez del cartel genérico.
+- [x] **6.3** Mostrar en la lista de gastos cuánto puso y cuánto consumió cada uno.
+- [x] **6.4** Mostrar el motivo de invalidez desde `errores` en vez del cartel genérico.
       `TipoErrorResumen` ya está en Elm, falta el texto de cada caso.
 
 **Verificación:** `pnpm build && pnpm format && pnpm review`, y mirarlo en el navegador con

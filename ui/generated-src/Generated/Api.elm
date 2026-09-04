@@ -783,9 +783,32 @@ jsonEncPago  val =
 
 
 
+type alias ResumenGasto  =
+   { pagado: (Netos Monto)
+   , consumido: (Netos Monto)
+   , errores: (List ErrorResumen)
+   }
+
+jsonDecResumenGasto : Json.Decode.Decoder ( ResumenGasto )
+jsonDecResumenGasto =
+   Json.Decode.succeed (\ppagado pconsumido perrores -> {pagado = ppagado, consumido = pconsumido, errores = perrores})
+   |> required "pagado" (jsonDecNetos (jsonDecMonto))
+   |> required "consumido" (jsonDecNetos (jsonDecMonto))
+   |> required "errores" (Json.Decode.list (jsonDecErrorResumen))
+
+jsonEncResumenGasto : ResumenGasto -> Value
+jsonEncResumenGasto  val =
+   Json.Encode.object
+   [ ("pagado", (jsonEncNetos (jsonEncMonto)) val.pagado)
+   , ("consumido", (jsonEncNetos (jsonEncMonto)) val.consumido)
+   , ("errores", (Json.Encode.list jsonEncErrorResumen) val.errores)
+   ]
+
+
+
 type alias ShallowPago  =
    { pagoId: ULID
-   , isValid: Bool
+   , resumen: (Maybe ResumenGasto)
    , nombre: String
    , monto: Monto
    , moneda: Moneda
@@ -794,9 +817,9 @@ type alias ShallowPago  =
 
 jsonDecShallowPago : Json.Decode.Decoder ( ShallowPago )
 jsonDecShallowPago =
-   Json.Decode.succeed (\ppagoId pisValid pnombre pmonto pmoneda pfecha -> {pagoId = ppagoId, isValid = pisValid, nombre = pnombre, monto = pmonto, moneda = pmoneda, fecha = pfecha})
+   Json.Decode.succeed (\ppagoId presumen pnombre pmonto pmoneda pfecha -> {pagoId = ppagoId, resumen = presumen, nombre = pnombre, monto = pmonto, moneda = pmoneda, fecha = pfecha})
    |> required "pagoId" (jsonDecULID)
-   |> required "isValid" (Json.Decode.bool)
+   |> fnullable "resumen" (jsonDecResumenGasto)
    |> required "nombre" (Json.Decode.string)
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
@@ -806,7 +829,7 @@ jsonEncShallowPago : ShallowPago -> Value
 jsonEncShallowPago  val =
    Json.Encode.object
    [ ("pagoId", jsonEncULID val.pagoId)
-   , ("isValid", Json.Encode.bool val.isValid)
+   , ("resumen", (maybeEncode (jsonEncResumenGasto)) val.resumen)
    , ("nombre", Json.Encode.string val.nombre)
    , ("monto", jsonEncMonto val.monto)
    , ("moneda", jsonEncMoneda val.moneda)

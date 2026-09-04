@@ -545,16 +545,46 @@ fetchShallowPagos grupoId = do
     guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
     pure pago
 
-  forM dbPagos $ \pago -> do
-    pure
-      M.ShallowPago
-        { M.pagoId = pago.pagoId
-        , M.isValid = maybe False null (erroresDeGasto pago)
-        , M.nombre = pago.pagoNombre
-        , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
-        , M.moneda = pago.pagoMoneda
-        , M.fecha = pago.fecha
+  -- Todas las filas del cache del grupo de una, no una query por gasto.
+  filas <- runSelectReturningList $ select $ do
+    pagoNeto <- all_ db.pago_netos
+    pago <- all_ db.pagos
+    guard_ (pagoNeto.pago `references_` pago)
+    guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
+    pure pagoNeto
+
+  let netosPorPago =
+        filas
+          & fmap (\fila -> (case fila.pago of PagoId p -> p, [fila]))
+          & Map.fromListWith (<>)
+
+  pure $ dbPagos & fmap (\pago -> toShallowPago pago (Map.findWithDefault [] pago.pagoId netosPorPago))
+
+toShallowPago :: Pago -> [PagoNeto] -> M.ShallowPago
+toShallowPago pago filas =
+  M.ShallowPago
+    { M.pagoId = pago.pagoId
+    , M.resumen = fmap (resumenDesde filas) (erroresDeGasto pago)
+    , M.nombre = pago.pagoNombre
+    , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
+    , M.moneda = pago.pagoMoneda
+    , M.fecha = pago.fecha
+    }
+  where
+    resumenDesde netos errores =
+      M.ResumenGasto
+        { M.pagado = lado (.pagado_en_unidades_minimas) netos
+        , M.consumido = lado (.consumido_en_unidades_minimas) netos
+        , M.errores = errores
         }
+    lado columna netos =
+      netos
+        & foldMap
+          ( \fila ->
+              M.mkDeuda
+                (M.ParticipanteId $ case fila.participante of ParticipanteId p -> p)
+                (desdeUnidadesMinimas fila.moneda (columna fila))
+          )
 
 -- | Recalcula el cache de los gastos del grupo que lo tengan frío: sin
 -- calcular, ilegible, o marcado como válido pero sin filas en 'pago_netos'

@@ -103,7 +103,8 @@ handleGetNetos grupoId = do
             { netos = netos
             , consolidado = consolidarNetos tabla (netosConSaldo netos)
             , cantidadPagos = length shallowPagos
-            , cantidadPagosInvalidos = length $ filter (not . (.isValid)) shallowPagos
+            , cantidadPagosInvalidos =
+                length $ filter (not . maybe False gastoEsValido . (.resumen)) shallowPagos
             , transferenciasHechas = transferenciasHechas guardadas
             }
 

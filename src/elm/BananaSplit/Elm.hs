@@ -101,6 +101,7 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy TransferenciaHecha)
     , DefineElm (Proxy :: Proxy NuevaTransferenciaParams)
     , DefineElm (Proxy :: Proxy Pago)
+    , DefineElm (Proxy :: Proxy ResumenGasto)
     , DefineElm (Proxy :: Proxy ShallowPago)
     , DefineElm (Proxy :: Proxy Parte)
     , DefineElm (Proxy :: Proxy ParticipanteId)
