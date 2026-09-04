@@ -19,7 +19,6 @@ module BananaSplit.Core (
   Pago (..),
   ShallowPago (..),
   TipoDistribucion (..),
-  addIsValidPago,
   calcularNetosPago,
   calcularNetosTotales,
   gastoEsValido,
@@ -91,7 +90,6 @@ data Pago = Pago
   { pagoId :: ULID
   , monto :: Monto
   , moneda :: Moneda
-  , isValid :: Bool
   , nombre :: Text
   , fecha :: Day
   , pagadores :: Distribucion
@@ -177,10 +175,6 @@ isValid pago =
     & getResumenPago
     & getNetosResumen
     & isJust
-
-addIsValidPago :: Pago -> Pago
-addIsValidPago pago =
-  pago{isValid = isValid pago}
 
 instance IsElmDefinition UTCTime where
   compileElmDef _ =

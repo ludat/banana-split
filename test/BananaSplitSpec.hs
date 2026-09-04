@@ -13,7 +13,6 @@ pagoValido :: Pago
 pagoValido =
   Pago
     { pagoId = nullUlid
-    , isValid = True
     , nombre = "Pago"
     , monto = 200
     , moneda = ARS

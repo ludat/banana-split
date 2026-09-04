@@ -220,9 +220,9 @@ un gasto válido, uno inválido y uno de repartija.
 
 ### Fase 7 — Limpieza
 
-- [ ] **7.1** Borrar `updateIsValidPago` y el campo `isValid` de `Pago` si ya nadie lo usa
+- [x] **7.1** Borrar `updateIsValidPago` y el campo `isValid` de `Pago` si ya nadie lo usa
       (ojo: `addIsValidPago` lo escribe hoy en el modelo). La columna ya se fue en la fase 2.
-- [ ] **7.2** De paso, `-Wambiguous-fields` en `addIsValidPago` (`Core.hs`) se apaga solo si
+- [x] **7.2** De paso, `-Wambiguous-fields` en `addIsValidPago` (`Core.hs`) se apaga solo si
       el campo desaparece.
 
 ## Lo que este plan deja afuera a propósito

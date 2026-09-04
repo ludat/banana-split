@@ -329,21 +329,16 @@ fetchPago pagoId = do
 
   (pagadores :: M.Distribucion) <- fromMaybe (panic "Pagadores not found") <$> fetchDistribucion dbPago.pagoMoneda (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
   (deudores :: M.Distribucion) <- fromMaybe (panic "deudores not found") <$> fetchDistribucion dbPago.pagoMoneda (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
-  dbPago
-    & ( \p ->
-          M.Pago
-            { M.pagoId = p.pagoId
-            , M.monto = desdeUnidadesMinimas dbPago.pagoMoneda p.pagoMontoEnUnidadesMinimas
-            , M.moneda = dbPago.pagoMoneda
-            , M.nombre = p.pagoNombre
-            , M.isValid = False
-            , M.fecha = p.fecha
-            , M.pagadores = pagadores
-            , M.deudores = deudores
-            }
-            & M.addIsValidPago
-      )
-    & pure
+  pure
+    M.Pago
+      { M.pagoId = dbPago.pagoId
+      , M.monto = desdeUnidadesMinimas dbPago.pagoMoneda dbPago.pagoMontoEnUnidadesMinimas
+      , M.moneda = dbPago.pagoMoneda
+      , M.nombre = dbPago.pagoNombre
+      , M.fecha = dbPago.fecha
+      , M.pagadores = pagadores
+      , M.deudores = deudores
+      }
 
 
 -- | Los errores guardados de un gasto, o 'Nothing' si el cache está frío: la
@@ -769,7 +764,7 @@ savePago grupoId pagoWithoutId = do
     if pagoWithoutId.pagoId == nullUlid
       then liftIO ULID.getULID
       else pure pagoWithoutId.pagoId
-  let pago = (pagoWithoutId{M.pagoId = pagoId} :: M.Pago) & M.addIsValidPago
+  let pago = pagoWithoutId{M.pagoId = pagoId} :: M.Pago
 
   distribucionesViejas <- runSelectReturningOne $ select $ do
     p <- all_ db.pagos

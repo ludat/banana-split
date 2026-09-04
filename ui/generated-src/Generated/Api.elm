@@ -749,7 +749,6 @@ type alias Pago  =
    { pagoId: ULID
    , monto: Monto
    , moneda: Moneda
-   , isValid: Bool
    , nombre: String
    , fecha: Day
    , pagadores: Distribucion
@@ -758,11 +757,10 @@ type alias Pago  =
 
 jsonDecPago : Json.Decode.Decoder ( Pago )
 jsonDecPago =
-   Json.Decode.succeed (\ppagoId pmonto pmoneda pisValid pnombre pfecha ppagadores pdeudores -> {pagoId = ppagoId, monto = pmonto, moneda = pmoneda, isValid = pisValid, nombre = pnombre, fecha = pfecha, pagadores = ppagadores, deudores = pdeudores})
+   Json.Decode.succeed (\ppagoId pmonto pmoneda pnombre pfecha ppagadores pdeudores -> {pagoId = ppagoId, monto = pmonto, moneda = pmoneda, nombre = pnombre, fecha = pfecha, pagadores = ppagadores, deudores = pdeudores})
    |> required "pagoId" (jsonDecULID)
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
-   |> required "isValid" (Json.Decode.bool)
    |> required "nombre" (Json.Decode.string)
    |> required "fecha" (jsonDecDay)
    |> required "pagadores" (jsonDecDistribucion)
@@ -774,7 +772,6 @@ jsonEncPago  val =
    [ ("pagoId", jsonEncULID val.pagoId)
    , ("monto", jsonEncMonto val.monto)
    , ("moneda", jsonEncMoneda val.moneda)
-   , ("isValid", Json.Encode.bool val.isValid)
    , ("nombre", Json.Encode.string val.nombre)
    , ("fecha", jsonEncDay val.fecha)
    , ("pagadores", jsonEncDistribucion val.pagadores)

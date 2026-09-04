@@ -278,7 +278,7 @@ successEmail host grupo pago =
         , "<p><strong>Deben:</strong></p>"
         , "<ul>" <> renderDistribucion names pago.deudores <> "</ul>"
         ]
-      <> [ if pago.isValid
+      <> [ if isValid pago
              then "<p>Quedó todo listo.</p>"
              else "<p>Quedó marcado como <strong>inválido</strong> porque falta o no cierra alguna información (por ejemplo quién pagó o quiénes deben). Abrilo en la app para completarlo.</p>"
          ]
@@ -352,7 +352,7 @@ savedLog recipient grupo pago =
     <> monto2Text pago.monto
     <> " "
     <> show pago.moneda
-    <> (if pago.isValid then "" else ", INVALID")
+    <> (if isValid pago then "" else ", INVALID")
     <> ") for "
     <> unEmail recipient
     <> " in grupo \""
@@ -381,9 +381,9 @@ mkPagoContext sender grupo =
 
 -- | Turn the AI's parsed pago into a real 'Pago'. This never fails: anything the
 -- model got wrong (an unknown currency or date, a person that isn't in the
--- grupo) is dropped rather than rejected, so we always produce /some/ pago. It
--- is born invalid ('isValid' is recomputed by savePago), so a partial result
--- simply surfaces to the user as an invalid pago to finish editing.
+-- grupo) is dropped rather than rejected, so we always produce /some/ pago. A
+-- partial result simply surfaces to the user as an invalid pago to finish
+-- editing: validity is derived from the distributions, never stated here.
 resolvePago :: ShallowGrupo -> Day -> ParsedEmailPago -> Pago
 resolvePago grupo today parsed =
   let validIds = Set.fromList $ fmap (.id) grupo.participantes
@@ -391,7 +391,6 @@ resolvePago grupo today parsed =
        { pagoId = nullUlid
        , monto = scientificToMonto parsed.monto
        , moneda = resolveMoneda grupo.monedaPorDefecto parsed.moneda
-       , isValid = False -- recomputed by savePago via addIsValidPago
        , nombre = parsed.nombre
        , fecha = resolveFecha today parsed.fecha
        , pagadores = resolvePartes validIds parsed.pagadores

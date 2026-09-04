@@ -194,7 +194,6 @@ gastoEntre moneda monto pagador deudor =
     { pagoId = nullUlid
     , monto = monto
     , moneda = moneda
-    , isValid = False
     , nombre = "Gasto"
     , fecha = fromGregorian 2025 1 1
     , pagadores = distribucionDe [MontoFijo monto pagador]
@@ -246,8 +245,7 @@ saveInvalidRepartijaPago grupo =
       { pagoId = nullUlid
       , monto = 100
       , moneda = ARS
-      , isValid = False
-      , nombre = "Cena"
+        , nombre = "Cena"
       , fecha = fromGregorian 2025 1 1
       , pagadores =
           Distribucion nullUlid $
@@ -312,7 +310,6 @@ instance Arbitrary Pago where
     Pago nullUlid
       <$> arbitrary
       <*> (elements [minBound .. maxBound])
-      <*> pure False
       <*> pure "nombre"
       <*> pure (fromGregorian 2025 1 1)
       <*> arbitrary
