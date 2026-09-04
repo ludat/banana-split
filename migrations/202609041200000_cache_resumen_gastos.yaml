@@ -1,0 +1,90 @@
+# Cache del resumen de cada gasto, para no tener que reconstruir las
+# distribuciones de cada pago sólo para sumar netos.
+#
+# Son dos piezas que se escriben juntas y se leen distinto:
+#
+#  - 'pago_netos': una fila por gasto y participante, con lo que puso y lo que
+#    consumió. Se suma con SUM() en SQL. Un gasto inválido no tiene filas.
+#  - 'pagos.errores': por qué el gasto es inválido. NULL = motivo no calculado,
+#    '[]' = válido, no vacío = inválido con motivos.
+#
+# 'is_valid' se va en esta misma migración, no en una segunda después.
+#
+# El cache arranca frío: justo después de esto ningún gasto tiene filas en
+# 'pago_netos'. No hace falta correr nada para arreglarlo — la lectura repara lo
+# que encuentre sin calcular o ilegible, así que un gasto se cura la primera vez
+# que alguien lo mira, y lo mismo pasaría si en el futuro cambiara el formato de
+# 'errores'. 'recompute-pagos' queda sólo como calentamiento masivo, opcional.
+#
+# El cache de un gasto está frío si 'errores' es NULL, si no se puede decodificar,
+# o si es '[]' pero no tiene filas en 'pago_netos'. Este último caso hace falta
+# porque un gasto válido siempre tiene al menos un pagador y un deudor (las
+# distribuciones vacías son un error): si tiene '[]' y ninguna fila, es que
+# todavía no se calculó, y sin esa condición sumaría cero en silencio.
+operations:
+  - create_table:
+      name: pago_netos
+      constraints:
+        # No tiene id propio: es una tabla derivada y la identidad de la fila es
+        # de qué gasto y de qué participante habla. Así reemplazar el cache de
+        # un gasto es idempotente.
+        - name: pago_netos__pago_participante
+          type: primary_key
+          columns:
+            - pago__id
+            - participante__id
+      columns:
+        - name: pago__id
+          type: text
+          nullable: false
+          references:
+            table: pagos
+            column: id
+            name: fk_pago_netos_pago__id
+            # Borrar un gasto se lleva su cache solo, sin tocar 'deletePago'.
+            on_delete: CASCADE
+        - name: participante__id
+          type: text
+          nullable: false
+          references:
+            table: participantes
+            column: id
+            name: fk_pago_netos_participante__id
+        # La moneda se repite acá a propósito: sin ella la fila no se puede
+        # interpretar (las unidades mínimas dependen de la moneda) y la
+        # agregación necesitaría joinear con 'pagos'. No se puede desincronizar
+        # porque se reescribe en el mismo 'savePago'.
+        - name: moneda
+          type: text
+          nullable: false
+        - name: pagado_en_unidades_minimas
+          type: bigint
+          nullable: false
+        - name: consumido_en_unidades_minimas
+          type: bigint
+          nullable: false
+
+  # Para "cuánto puso y consumió este participante" sin escanear por gasto.
+  - create_index:
+      name: idx_pago_netos_participante
+      table: pago_netos
+      columns:
+        participante__id: {}
+
+  - add_column:
+      table: pagos
+      # Deriva de 'is_valid' lo único que un booleano puede decir. No es para el
+      # cache (la lectura repara lo que falte igual), es para que el 'down' de
+      # abajo reconstruya 'is_valid' exacto: si dejáramos todo en NULL, un
+      # rollback —o el binario viejo durante el expand/contract— vería todos los
+      # gastos como inválidos.
+      up: "CASE WHEN is_valid THEN '[]'::jsonb ELSE NULL END"
+      column:
+        name: errores
+        type: jsonb
+        nullable: true
+
+  - drop_column:
+      table: pagos
+      column: is_valid
+      down: "errores IS NOT NULL AND jsonb_array_length(errores) = 0"

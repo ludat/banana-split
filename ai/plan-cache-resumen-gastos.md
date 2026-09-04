@@ -71,11 +71,21 @@ representación de `Monto`. Ese era el argumento más fuerte en contra de esta o
   inválido no tiene filas y la agregación lo saltea sin leerlo.
 - **Los errores van igual en una columna `jsonb` en `pagos`**, porque no entran en la
   tabla. `NULL` = todavía no calculado, `[]` = válido, no vacío = inválido con motivos.
-  La ausencia de filas **no** es la autoridad sobre la validez: la columna lo es. Eso evita
-  que un gasto recién migrado (cache frío) desaparezca de los netos en silencio.
-- **Cache frío = inválido.** Con `errores IS NULL` el gasto cae en `cantidadPagosInvalidos`,
-  que la UI ya muestra. El modo de falla es visible, no silencioso, y se cura corriendo el
-  backfill.
+- **La lectura repara el cache frío**, en vez de depender de un backfill obligatorio. Un
+  gasto está frío si `errores` es `NULL`, si no se puede decodificar, o si es `[]` pero no
+  tiene filas en `pago_netos` (un gasto válido siempre tiene al menos un pagador y un
+  deudor, así que "válido sin filas" sólo puede ser "sin calcular"). Se cura la primera vez
+  que alguien lo lee. `recompute-pagos` queda como calentamiento masivo opcional.
+  - Esto también cubre un cambio de formato futuro de `errores`, **siempre que la columna se
+    lea como JSON crudo y se decodifique en Haskell**. Si se lee como `PgJSONB [ErrorResumen]`
+    tipado, un JSON que no matchea revienta la query entera en vez de dar un valor que se
+    pueda mirar, y el caso "cambió el formato" deja de ser reparable.
+  - Costo asumido: un GET puede escribir. Es idempotente, y dos requests concurrentes
+    reparando el mismo gasto sólo duplican trabajo.
+- **`is_valid` se dropea en la misma migración de la fase 2**, no en una segunda después.
+  `errores` se deriva de `is_valid` igual (`'[]'` / `NULL`) — no por el cache, que se repara
+  solo, sino para que el `down` reconstruya `is_valid` exacto y el binario viejo no vea todo
+  como inválido durante el expand/contract.
 - **La tabla se llama `pago_netos`**, consistente con el schema de hoy (`pagos`,
   `repartija_items`). El rename a Gastos por ahora es sólo de `ui/`; cuando el backend se
   renombre, esta tabla va en el mismo movimiento.
@@ -123,11 +133,12 @@ representación de `Monto`. Ese era el argumento más fuerte en contra de esta o
       - `consumido_en_unidades_minimas` bigint not null.
       - PK compuesta `(pago__id, participante__id)`.
       - Índice por `(participante__id)` para la consulta "cuánto debe X".
-- [ ] **2.2** Columna `pagos.errores` jsonb **nullable** (NULL = sin calcular).
-- [ ] **2.3** Dejar `pagos.is_valid` como está por ahora. Se dropea en la fase 7, cuando ya
-      nada la lea.
+- [ ] **2.2** Columna `pagos.errores` jsonb **nullable**, derivada de `is_valid`
+      (`'[]'` si era válido, `NULL` si no).
+- [ ] **2.3** Dropear `pagos.is_valid`, con `down` que la reconstruye desde `errores`.
 
-**Verificación:** `cabal run banana-split -- migrations migrate` en dev.
+**Verificación:** `cabal run banana-split -- migrations migrate ./migrations` en dev. Requiere
+que la migración anterior no esté `In progress`.
 
 ### Fase 3 — Schema y persistencia
 
@@ -139,8 +150,14 @@ representación de `Monto`. Ese era el argumento más fuerte en contra de esta o
 - [ ] **3.3** Renombrar `recalcValidezPago` → `recalcularResumenGasto` y que haga lo mismo
       que 3.2 sin volver a guardar el pago. Los dos llamadores
       (`saveRepartijaClaim` / `deleteRepartijaClaim`) quedan igual.
-- [ ] **3.4** `fetchShallowPagos`: leer `errores` y las filas de `pago_netos` del grupo en
-      **una** query aparte (no una por gasto), y armar el `ResumenGasto` de cada uno.
+- [ ] **3.4** `fetchShallowPagos`: leer `errores` (como JSON crudo, decodificando en
+      Haskell) y las filas de `pago_netos` del grupo en **una** query aparte (no una por
+      gasto), y armar el `ResumenGasto` de cada uno.
+- [ ] **3.4b** `repararCacheDeGastos :: ULID -> Pg ()`: busca los gastos del grupo con el
+      cache frío (ver "Decisiones") y los recalcula con la misma función de 3.2. En régimen
+      normal el `SELECT` no devuelve nada. Va en función aparte y no adentro de cada fetch
+      porque la agregación de 3.5 es SQL puro y no se puede curar sola: los caminos de
+      lectura la llaman antes de agregar.
 - [ ] **3.5** `netosDeGrupo :: ULID -> Pg (PorMoneda (Netos Monto))`: la agregación en SQL.
       ```sql
       SELECT participante__id, moneda,
@@ -149,6 +166,8 @@ representación de `Monto`. Ese era el argumento más fuerte en contra de esta o
       WHERE pagos.grupo__id = ? AND pagos.errores = '[]'::jsonb
       GROUP BY 1, 2
       ```
+      Va siempre después de `repararCacheDeGastos`, que es lo que garantiza que no haya
+      gastos válidos sin filas.
       Reconstruir cada `Monto` con `desdeUnidadesMinimas` sobre la `moneda` del grupo.
 
 **Verificación:** que el property test `"Pago roundtrips from the db"` siga pasando, más uno
@@ -156,12 +175,18 @@ nuevo: guardar un grupo con varios gastos y comparar `netosDeGrupo` contra
 `calcularNetosTotales` sobre el mismo grupo cargado a mano. Ese test es el que justifica
 todo el cache y tiene que quedar en el repo.
 
-### Fase 4 — Backfill
+### Fase 4 — Backfill (opcional, sólo calentamiento)
+
+Con la reparación en lectura el cache se cura solo, así que esto ya no es un paso
+obligatorio del deploy: sirve para no pagar la primera lectura de cada grupo.
 
 - [ ] **4.1** `recomputePagos` ya recorre todos los gastos y los re-guarda, así que después
       de la fase 3 ya llena el cache sin tocarlo. Confirmar que sea así y, si no, ajustarlo.
 - [ ] **4.2** Correr `run-migration recompute-pagos` en dev y verificar que no queden
       `pagos` con `errores IS NULL`.
+- [ ] **4.3** Test: dejar un gasto con `errores` en NULL y otro con un JSON que no decodifica,
+      leer el grupo, y verificar que los dos quedaron reparados y que los netos dan bien.
+      Es el test que cubre el cambio de formato futuro.
 
 ### Fase 5 — Handlers (acá muere el N+1)
 
@@ -196,9 +221,9 @@ un gasto válido, uno inválido y uno de repartija.
 ### Fase 7 — Limpieza
 
 - [ ] **7.1** Borrar `updateIsValidPago` y el campo `isValid` de `Pago` si ya nadie lo usa
-      (ojo: `addIsValidPago` lo escribe hoy en el modelo).
-- [ ] **7.2** Migración que dropea `pagos.is_valid`.
-- [ ] **7.3** Correr `recompute-pagos` en prod después de deployar la fase 3.
+      (ojo: `addIsValidPago` lo escribe hoy en el modelo). La columna ya se fue en la fase 2.
+- [ ] **7.2** De paso, `-Wambiguous-fields` en `addIsValidPago` (`Core.hs`) se apaga solo si
+      el campo desaparece.
 
 ## Lo que este plan deja afuera a propósito
 
