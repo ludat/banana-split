@@ -51,8 +51,9 @@ init route store =
     ( { grupoId = grupoId, pagoModal = pagoModal }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
-        , Store.ensurePagos grupoId store
-        , Effect.getCurrentUser grupoId
+        , -- Los gastos los pide Shared cuando resuelve el participante, que
+          -- es lo que este mensaje dispara.
+          Effect.getCurrentUser grupoId
         , Effect.map PagoModalMsg modalEffect
         ]
     )
@@ -133,10 +134,13 @@ viewPagos participanteId store model grupo =
 
             else
                 Bs.card []
-                    [ Bs.listGroup [ class "list-group-flush" ]
+                    [ Bs.listGroupKeyed [ class "list-group-flush" ]
                         (pagos
                             |> List.sortWith (\a b -> Date.compare b.fecha a.fecha)
-                            |> List.map (viewPago participanteId grupo.monedaPorDefecto)
+                            |> List.map
+                                (\pago ->
+                                    ( pago.pagoId, viewPago participanteId grupo.monedaPorDefecto pago )
+                                )
                         )
                     ]
 

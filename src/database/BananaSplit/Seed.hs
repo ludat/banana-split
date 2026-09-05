@@ -140,7 +140,7 @@ benchNetos conn grupoId vueltas = do
   reconstruyendo <- medir "reconstruyendo cada gasto" vueltas $ do
     netos <- runBeamPostgres conn $ do
       shallowGrupo <- fetchGrupo grupoId >>= maybe (panic "grupo no encontrado") pure
-      shallowPagos <- fetchShallowPagos grupoId
+      shallowPagos <- fetchShallowPagos grupoId Nothing
       pagos <- traverse (fetchPago . (.pagoId)) shallowPagos
       pure
         $ M.calcularNetosTotales

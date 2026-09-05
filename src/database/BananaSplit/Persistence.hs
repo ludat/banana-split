@@ -377,8 +377,8 @@ resumenGuardadoDe pago =
 --
 -- Es el único lugar que escribe el cache, así que todo lo que pueda cambiar el
 -- reparto de un gasto tiene que terminar acá.
-guardarResumenDeGasto :: M.Pago -> Pg M.ResumenGasto
-guardarResumenDeGasto pago = do
+guardarResumenDeGasto :: ULID -> M.Pago -> Pg M.ResumenGasto
+guardarResumenDeGasto grupoId pago = do
   let resumen = M.getResumenGasto pago
   let guardado =
         ResumenGuardado
@@ -405,6 +405,7 @@ guardarResumenDeGasto pago = do
                   PagoNeto
                     { pago = PagoId pago.pagoId
                     , participante = participanteId2Persistent participante
+                    , grupo = GrupoId grupoId
                     , moneda = pago.moneda
                     , pagado_en_unidades_minimas =
                         aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante pagado
@@ -555,8 +556,11 @@ fetchDistribucion moneda distribucionId = do
           }
     _ -> pure Nothing
 
-fetchShallowPagos :: ULID -> Pg [M.ShallowPago]
-fetchShallowPagos grupoId = do
+-- | Los gastos de un grupo con su resumen. Con un participante, el resumen de
+-- cada gasto viene recortado a esa persona: las filas de los demás no se leen
+-- ni se serializan.
+fetchShallowPagos :: ULID -> Maybe M.ParticipanteId -> Pg [M.ShallowPago]
+fetchShallowPagos grupoId participanteId = do
   dbPagos <- runSelectReturningList $ select $ do
     pago <-
       all_ db.pagos
@@ -564,12 +568,13 @@ fetchShallowPagos grupoId = do
     guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
     pure pago
 
-  -- Todas las filas del cache del grupo de una, no una query por gasto.
+  -- Todas las filas del cache del grupo de una, no una query por gasto. Sin
+  -- joinear 'pagos': la fila sabe de qué grupo es.
   filas <- runSelectReturningList $ select $ do
     pagoNeto <- all_ db.pago_netos
-    pago <- all_ db.pagos
-    guard_ (pagoNeto.pago `references_` pago)
-    guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
+    guard_ (pagoNeto.grupo ==. GrupoId (val_ grupoId))
+    forM_ participanteId $ \unParticipante ->
+      guard_ (pagoNeto.participante ==. ParticipanteId (val_ (M.participanteId2ULID unParticipante)))
     pure pagoNeto
 
   let netosPorPago =
@@ -577,22 +582,25 @@ fetchShallowPagos grupoId = do
           & fmap (\fila -> (case fila.pago of PagoId p -> p, [fila]))
           & Map.fromListWith (<>)
 
-  -- El cache de un gasto está frío si no tiene resumen guardado, si el que
-  -- tiene no se puede decodificar con el formato de hoy, o si se declara válido
-  -- pero no dejó filas (un gasto válido siempre tiene al menos un pagador y un
-  -- deudor, así que eso sólo pasa si nunca se calculó).
+  -- El cache de un gasto está frío si no tiene resumen guardado o si el que
+  -- tiene no se puede decodificar con el formato de hoy. No hace falta mirar si
+  -- dejó filas: 'guardarResumenDeGasto' es el único que escribe la columna y
+  -- escribe las dos cosas juntas, así que la columna sola ya dice si se
+  -- calculó. Eso es lo que permite leer únicamente las filas del participante
+  -- pedido, sin que un gasto donde no participa parezca frío.
   --
   -- Se decide con lo que las dos queries de arriba ya trajeron, y se recalcula
   -- sólo lo que haga falta: en régimen normal no hay nada que recalcular.
   forM dbPagos $ \pago ->
     case resumenGuardadoDe pago of
-      Just guardado
-        | not (null guardado.errores) || not (null (Map.findWithDefault [] pago.pagoId netosPorPago)) ->
-            pure $ toShallowPago pago $ resumenDesde (Map.findWithDefault [] pago.pagoId netosPorPago) guardado
-      _ -> do
+      Just guardado ->
+        pure $ toShallowPago pago $ resumenDesde (Map.findWithDefault [] pago.pagoId netosPorPago) guardado
+      Nothing -> do
         completo <- fetchPago pago.pagoId
-        resumen <- guardarResumenDeGasto completo
-        pure $ toShallowPago pago resumen
+        resumen <- guardarResumenDeGasto grupoId completo
+        -- El recálculo devuelve el resumen de todos, así que hay que recortarlo
+        -- igual que vienen las filas.
+        pure $ toShallowPago pago $ maybe resumen (`M.resumenDeParticipante` resumen) participanteId
 
 toShallowPago :: Pago -> M.ResumenGasto -> M.ShallowPago
 toShallowPago pago resumen =
@@ -633,7 +641,9 @@ resumenDesde netos guardado =
 -- dos veces lo mismo.
 netosYGastosDelGrupo :: ULID -> Pg (M.PorMoneda (M.Netos M.Monto), [M.ShallowPago])
 netosYGastosDelGrupo grupoId = do
-  gastos <- fetchShallowPagos grupoId
+  -- Sin participante: acá la lista se usa para contar gastos y gastos
+  -- inválidos, que no miran los netos de nadie.
+  gastos <- fetchShallowPagos grupoId Nothing
   netos <- netosDeGrupo grupoId
   pure (netos, gastos)
 
@@ -652,10 +662,10 @@ netosDeGrupo grupoId = do
           (group_ participante, group_ moneda, cast_ (fromMaybe_ 0 (sum_ neto)) bigint)
       )
       $ do
+        -- Una sola tabla: la fila del cache sabe de qué grupo es, así que la
+        -- suma no toca 'pagos' para nada.
         pagoNeto <- all_ db.pago_netos
-        pago <- all_ db.pagos
-        guard_ (pagoNeto.pago `references_` pago)
-        guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
+        guard_ (pagoNeto.grupo ==. GrupoId (val_ grupoId))
         let ParticipanteId participante = pagoNeto.participante
         pure
           ( participante
@@ -826,7 +836,7 @@ savePago grupoId pagoWithoutId = do
   -- insert no los toca), así que calcularlo con lo recibido diría que nadie
   -- reclamó nada. Va después del insert porque las filas de 'pago_netos'
   -- apuntan al gasto.
-  recalcularResumenGasto pago.pagoId
+  fetchPago pago.pagoId >>= void . guardarResumenDeGasto grupoId
   pure pago{M.pagadores = distribucionPagadores, M.deudores = distribucionDeudores}
 
 recomputePagos :: Connection -> IO ()
@@ -1157,8 +1167,17 @@ deleteRepartijaClaim claimId = do
 -- una repartija, por ejemplo), así el cache nunca queda viejo.
 recalcularResumenGasto :: ULID -> Pg ()
 recalcularResumenGasto pagoId = do
+  -- El grupo no viene en 'M.Pago', y las filas del cache lo necesitan.
+  grupoId <-
+    runSelectReturningOne
+      ( select $ do
+          pago <- all_ db.pagos
+          guard_ (pago.pagoId ==. val_ pagoId)
+          pure $ grupoIdDePago pago
+      )
+      >>= maybe (panic $ "no encontré el grupo del pago " <> show pagoId) pure
   pago <- fetchPago pagoId
-  void $ guardarResumenDeGasto pago
+  void $ guardarResumenDeGasto grupoId pago
 
 -- | Query fragment: the pago that owns a given repartija row, following
 -- distribución → pago (one repartija belongs to one distribución, which is

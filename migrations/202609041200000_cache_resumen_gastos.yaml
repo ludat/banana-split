@@ -50,6 +50,18 @@ operations:
             table: participantes
             column: id
             name: fk_pago_netos_participante__id
+        # Se repite igual que 'moneda': sin él, sumar los netos de un grupo
+        # obliga a joinear 'pagos' sólo para filtrar, cuando la suma no necesita
+        # nada más de esa tabla. Lo escribe el mismo 'savePago', así que no
+        # puede desincronizarse.
+        - name: grupo__id
+          type: text
+          nullable: false
+          references:
+            table: grupos
+            column: id
+            name: fk_pago_netos_grupo__id
+            on_delete: CASCADE
         # La moneda se repite acá a propósito: sin ella la fila no se puede
         # interpretar (las unidades mínimas dependen de la moneda) y la
         # agregación necesitaría joinear con 'pagos'. No se puede desincronizar
@@ -64,7 +76,16 @@ operations:
           type: bigint
           nullable: false
 
-  # Para "cuánto puso y consumió este participante" sin escanear por gasto.
+  # La suma de los netos de un grupo, que es la consulta caliente.
+  - create_index:
+      name: idx_pago_netos_grupo_participante
+      table: pago_netos
+      columns:
+        grupo__id: {}
+        participante__id: {}
+
+  # Para "cuánto puso y consumió este participante" cruzando grupos, donde el
+  # índice de arriba no sirve porque no arranca por participante.
   - create_index:
       name: idx_pago_netos_participante
       table: pago_netos

@@ -201,6 +201,9 @@ type UnidadesMinimas = Int64
 data PagoNetoT f = PagoNeto
   { pago :: PrimaryKey PagoT f
   , participante :: PrimaryKey ParticipanteT f
+  , -- | Se repite acá para que sumar los netos de un grupo no tenga que
+    -- joinear 'pagos' sólo para filtrar.
+    grupo :: PrimaryKey GrupoT f
   , -- | Se repite acá porque sin ella la fila no se puede interpretar: las
     -- unidades mínimas dependen de la moneda. La escribe el mismo 'savePago'
     -- que escribe el gasto, así que no puede desincronizarse.

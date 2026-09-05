@@ -27,9 +27,9 @@ import Site.Api
 import Site.Handler.Utils (err423, orElseMay, runBeam, throwJsonError)
 import Site.Types
 
-handlePagosGet :: ULID -> AppHandler [ShallowPago]
-handlePagosGet grupoId = do
-  runBeam (fetchShallowPagos grupoId)
+handlePagosGet :: ULID -> Maybe ULID -> AppHandler [ShallowPago]
+handlePagosGet grupoId participanteId = do
+  runBeam $ fetchShallowPagos grupoId (fmap ParticipanteId participanteId)
 
 handlePagoGet :: ULID -> ULID -> AppHandler Pago
 handlePagoGet _grupoId pagoId = do

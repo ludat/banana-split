@@ -11,6 +11,7 @@ module Components.Bootstrap exposing
     , fileInput
     , listGroup
     , listGroupItem
+    , listGroupKeyed
     , modal
     , montoInput
     , navTab
@@ -31,6 +32,7 @@ import Form.Field as FormField
 import Html exposing (Attribute, Html, button, div, h5, li, nav, span, ul)
 import Html.Attributes as Attr exposing (attribute, class, classList, for, id, placeholder, selected, type_, value)
 import Html.Events exposing (on, onClick, onInput)
+import Html.Keyed as Keyed
 import Json.Decode as Decode
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 
@@ -167,6 +169,15 @@ modal { isOpen, onClose, title, body, footer, centered } =
 listGroup : List (Attribute msg) -> List (Html msg) -> Html msg
 listGroup attrs children =
     ul (class "list-group" :: attrs) children
+
+
+{-| Igual que `listGroup` pero con cada item asociado a una clave estable, para
+que al re-renderizar la lista el diff case los nodos por clave en vez de por
+posición. Vale la pena en listas largas que se reordenan o se vuelven a pedir.
+-}
+listGroupKeyed : List (Attribute msg) -> List ( String, Html msg ) -> Html msg
+listGroupKeyed attrs children =
+    Keyed.ul (class "list-group" :: attrs) children
 
 
 listGroupItem : List (Attribute msg) -> List (Html msg) -> Html msg

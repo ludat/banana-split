@@ -39,10 +39,10 @@ update msg store =
             , Effect.none
             )
 
-        FetchPagos grupoId ->
+        FetchPagos grupoId participanteId ->
             ( store
             , Effect.batch
-                [ Effect.sendCmd <| Api.getGrupoByIdPagos grupoId (RemoteData.fromResult >> PagosFetched grupoId >> StoreMsg)
+                [ Effect.sendCmd <| Api.getGrupoByIdPagos grupoId participanteId (RemoteData.fromResult >> PagosFetched grupoId >> StoreMsg)
                 ]
             )
 
@@ -145,9 +145,9 @@ updateRepartijaForFrontend repartijaId repartijaPage =
     Effect.sendStoreMsg <| RepartijaFetched repartijaId (Success repartijaPage)
 
 
-refreshPagos : ULID -> Effect msg
-refreshPagos grupoId =
-    Effect.sendStoreMsg <| FetchPagos grupoId
+refreshPagos : ULID -> Maybe ULID -> Effect msg
+refreshPagos grupoId participanteId =
+    Effect.sendStoreMsg <| FetchPagos grupoId participanteId
 
 
 refreshPago : ULID -> Effect msg
@@ -176,11 +176,11 @@ ensureGrupo grupoId store =
             Effect.none
 
 
-ensurePagos : ULID -> Store -> Effect msg
-ensurePagos grupoId store =
+ensurePagos : ULID -> Maybe ULID -> Store -> Effect msg
+ensurePagos grupoId participanteId store =
     case getPagos grupoId store of
         NotAsked ->
-            Effect.sendStoreMsg <| FetchPagos grupoId
+            Effect.sendStoreMsg <| FetchPagos grupoId participanteId
 
         Loading ->
             Effect.none

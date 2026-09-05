@@ -1284,13 +1284,15 @@ postGrupoByIdPagos capture_id body toMsg =
                 Nothing
             }
 
-getGrupoByIdPagos : ULID -> (Result Http.Error  ((List ShallowPago))  -> msg) -> Cmd msg
-getGrupoByIdPagos capture_id toMsg =
+getGrupoByIdPagos : ULID -> (Maybe ULID) -> (Result Http.Error  ((List ShallowPago))  -> msg) -> Cmd msg
+getGrupoByIdPagos capture_id query_participante toMsg =
     let
         params =
             List.filterMap identity
             (List.concat
-                [])
+                [ [ query_participante
+                    |> Maybe.map (Url.Builder.string "participante") ]
+                ])
     in
         Http.request
             { method =

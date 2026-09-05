@@ -22,6 +22,7 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Set
+import Shared
 import Shared.Model
 import Task
 import Utils.Day as Day
@@ -52,6 +53,7 @@ type Overlay
 
 type alias Context =
     { grupoId : ULID
+    , participanteId : Maybe ULID
     , path : Path.Path
     , origin : String
     }
@@ -59,7 +61,12 @@ type alias Context =
 
 context : Shared.Model.Model -> Route routeParams -> Context
 context shared route =
-    { grupoId = grupoIdFromPath route.path |> Maybe.withDefault ""
+    let
+        grupoId =
+            grupoIdFromPath route.path |> Maybe.withDefault ""
+    in
+    { grupoId = grupoId
+    , participanteId = Shared.currentParticipante shared grupoId
     , path = route.path
     , origin = shared.origin
     }
@@ -238,7 +245,7 @@ update ctx store msg model =
             , Effect.batch
                 [ Store.refreshGrupo ctx.grupoId
                 , Store.refreshResumen ctx.grupoId
-                , Store.refreshPagos ctx.grupoId
+                , Store.refreshPagos ctx.grupoId ctx.participanteId
                 , Toasts.pushToast Toasts.ToastSuccess "Gasto borrado"
                 , syncUrl ctx.path Nothing
                 ]

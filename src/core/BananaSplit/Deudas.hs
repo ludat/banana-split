@@ -15,6 +15,7 @@ module BananaSplit.Deudas (
   HasResumen (..),
   minimizeTransactions,
   mkDeuda,
+  netosDe,
   netosDeTransferencia,
   Netos (..),
   Parte (..),
@@ -286,6 +287,13 @@ filterNetos :: (a -> Bool) -> Netos a -> Netos a
 filterNetos f (Netos deudasMap) =
   deudasMap
     & Map.filter f
+    & Netos
+
+-- | Lo de un solo participante, o nada si no aparece.
+netosDe :: ParticipanteId -> Netos a -> Netos a
+netosDe participanteId (Netos deudasMap) =
+  deudasMap
+    & Map.filterWithKey (\unId _ -> unId == participanteId)
     & Netos
 
 newtype Netos a = Netos (Map ParticipanteId a)

@@ -103,31 +103,24 @@ viewMiParte participanteId monedaPorDefecto pago =
     case ( participanteId, pago.resumen ) of
         ( Just yo, Just resumen ) ->
             let
-                consumi =
-                    montoDe yo resumen.consumido
+                simbolo =
+                    Moneda.simbolo monedaPorDefecto pago.moneda
 
-                pague =
-                    montoDe yo resumen.pagado
-            in
-            case ( consumi, pague ) of
-                ( Nothing, Nothing ) ->
-                    text ""
-
-                _ ->
-                    let
-                        simbolo =
-                            Moneda.simbolo monedaPorDefecto pago.moneda
-                    in
-                    div
-                        [ class "d-flex align-items-center gap-2 text-body-secondary"
-                        , Html.Attributes.style "font-size" "0.75rem"
+                lados =
+                    List.filterMap identity
+                        [ viewLado "Pagué" "text-success" simbolo (montoDe yo resumen.pagado)
+                        , viewLado "Consumí" "text-danger" simbolo (montoDe yo resumen.consumido)
                         ]
-                        (List.filterMap identity
-                            [ viewLado "Consumí" "text-danger" simbolo consumi
-                            , viewLado "Pagué" "text-success" simbolo pague
-                            ]
-                            |> List.intersperse separador
-                        )
+            in
+            if List.isEmpty lados then
+                text ""
+
+            else
+                div
+                    [ class "d-flex align-items-center gap-2 text-body-secondary"
+                    , Html.Attributes.style "font-size" "0.75rem"
+                    ]
+                    (List.intersperse separador lados)
 
         _ ->
             text ""
@@ -138,9 +131,21 @@ separador =
     span [ class "text-body-tertiary" ] [ text "|" ]
 
 
+{-| Un cero no se muestra. El cache guarda una fila por cada participante que
+aparece de alguno de los dos lados, con cero en el que no le toca, así que
+"Consumí 0" es la forma que tiene de decir que no consumió nada.
+-}
 viewLado : String -> String -> String -> Maybe Monto -> Maybe (Html msg)
 viewLado etiqueta colorDelMonto simbolo monto =
     monto
+        |> Maybe.andThen
+            (\m ->
+                if m.valor == 0 then
+                    Nothing
+
+                else
+                    Just m
+            )
         |> Maybe.map
             (\m ->
                 span [ class "d-flex gap-1" ]

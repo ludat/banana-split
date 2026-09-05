@@ -68,8 +68,9 @@ init route store =
     , Effect.batch
         [ Store.ensureResumen grupoId store
         , Store.ensureGrupo grupoId store
-        , Store.ensurePagos grupoId store
-        , Effect.getCurrentUser grupoId
+        , -- Los gastos los pide Shared cuando resuelve el participante, que es
+          -- lo que este mensaje dispara.
+          Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
         , Effect.map PagoModalMsg modalEffect
         ]

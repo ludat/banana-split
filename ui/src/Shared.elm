@@ -131,38 +131,61 @@ update _ msg model =
             ( { model | store = store }, Effect.batch [ cmd ] )
 
         SetCurrentParticipante { grupoId, participanteId } ->
-            case participanteId of
-                Just pid ->
-                    let
-                        -- The participante the logged-in account owns in this grupo, if
-                        -- any. Picking it is the same as the default derivation, so we
-                        -- clear the stored pick instead of persisting a redundant one.
-                        ownedId =
-                            case ( model.currentUser, Store.getGrupo grupoId model.store ) of
-                                ( Success u, Success grupo ) ->
-                                    Models.Grupo.ownedParticipante u.id grupo |> Maybe.map .id
+            let
+                ( nuevoModel, guardarPreferencia ) =
+                    case participanteId of
+                        Just pid ->
+                            let
+                                -- The participante the logged-in account owns in this grupo, if
+                                -- any. Picking it is the same as the default derivation, so we
+                                -- clear the stored pick instead of persisting a redundant one.
+                                ownedId =
+                                    case ( model.currentUser, Store.getGrupo grupoId model.store ) of
+                                        ( Success u, Success grupo ) ->
+                                            Models.Grupo.ownedParticipante u.id grupo |> Maybe.map .id
 
-                                _ ->
-                                    Nothing
-                    in
-                    if Just pid == ownedId then
-                        ( { model | participanteId = Nothing }
-                        , Effect.clearCurrentUser grupoId
-                        )
+                                        _ ->
+                                            Nothing
+                            in
+                            if Just pid == ownedId then
+                                ( { model | participanteId = Nothing }
+                                , Effect.clearCurrentUser grupoId
+                                )
 
-                    else
-                        ( { model | participanteId = Just pid }
-                        , Effect.saveCurrentUser grupoId pid
-                        )
+                            else
+                                ( { model | participanteId = Just pid }
+                                , Effect.saveCurrentUser grupoId pid
+                                )
 
-                Nothing ->
-                    ( { model | participanteId = Nothing }
-                    , Effect.clearCurrentUser grupoId
-                    )
+                        Nothing ->
+                            ( { model | participanteId = Nothing }
+                            , Effect.clearCurrentUser grupoId
+                            )
+            in
+            ( nuevoModel
+            , Effect.batch
+                [ guardarPreferencia
+                , -- Los gastos que están en el store traen el resumen recortado
+                  -- al participante anterior, así que hay que volver a pedirlos
+                  -- con el nuevo. Tirarlos y esperar a que alguien los pida de
+                  -- nuevo no alcanza: 'ensurePagos' sólo corre al montar la
+                  -- página, y cambiar de participante no navega a ningún lado.
+                  Store.refreshPagos grupoId (currentParticipante nuevoModel grupoId)
+                ]
+            )
 
-        CurrentParticipanteLoaded { participanteId } ->
-            ( { model | participanteId = participanteId }
-            , Effect.none
+        CurrentParticipanteLoaded { grupoId, participanteId } ->
+            let
+                nuevoModel =
+                    { model | participanteId = participanteId }
+            in
+            ( nuevoModel
+            , -- Los gastos se piden acá y no en el 'init' de la página: su
+              -- resumen viene recortado a este participante, y al montar
+              -- todavía no se sabe quién es (sale de localStorage y llega por
+              -- este mensaje). Pedirlos antes sería pedirlos dos veces, la
+              -- primera sin recortar.
+              Store.ensurePagos grupoId (currentParticipante nuevoModel grupoId) nuevoModel.store
             )
 
         CurrentUserLoaded currentUser ->

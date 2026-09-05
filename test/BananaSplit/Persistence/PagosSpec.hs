@@ -85,14 +85,14 @@ spec =
 
       -- The items add up to the monto, but there are no claims yet, so the pago
       -- is invalid and the stored flag (read shallowly, without recomputing) is False.
-      shallowBefore <- runDb $ fetchShallowPagos grupo.id
+      shallowBefore <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido shallowBefore `shouldBe` [False]
 
       -- Claiming the whole item makes the montos add up. Saving the claim must
       -- update the stored flag on its own, since the resumen no longer recomputes
       -- validity on read.
       _ <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
-      shallowAfter <- runDb $ fetchShallowPagos grupo.id
+      shallowAfter <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido shallowAfter `shouldBe` [True]
 
     it "deleting a claim turns a valid repartija pago invalid again" $ \(RunDb runDb) -> do
@@ -101,11 +101,11 @@ spec =
       let repartija = repartijaDe pago
 
       claim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
-      shallowValid <- runDb $ fetchShallowPagos grupo.id
+      shallowValid <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido shallowValid `shouldBe` [True]
 
       runDb $ deleteRepartijaClaim claim.id
-      shallowInvalid <- runDb $ fetchShallowPagos grupo.id
+      shallowInvalid <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido shallowInvalid `shouldBe` [False]
 
     it "netosDeGrupo suma lo mismo que recalcular todos los gastos" $ \(RunDb runDb) -> do
@@ -156,7 +156,7 @@ spec =
       runDb (netosDeGrupo grupo.id) `shouldReturn` mempty
 
       -- Leer los gastos lo detecta y lo recalcula en el momento.
-      reparado <- runDb $ fetchShallowPagos grupo.id
+      reparado <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido reparado `shouldBe` [True]
       runDb (netosDeGrupo grupo.id)
         `shouldReturn` (netos [(uno, 100), (otro, -100)] `enMoneda` ARS)
@@ -166,7 +166,7 @@ spec =
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
       runDb $ enfriarCache pago.pagoId $ Just $ Aeson.String "un formato viejo"
-      _ <- runDb $ fetchShallowPagos grupo.id
+      _ <- runDb $ fetchShallowPagos grupo.id Nothing
       runDb (netosDeGrupo grupo.id)
         `shouldReturn` (netos [(uno, 100), (otro, -100)] `enMoneda` ARS)
 
@@ -175,8 +175,39 @@ spec =
       _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
       antes <- runDb $ netosDeGrupo grupo.id
-      _ <- runDb $ fetchShallowPagos grupo.id
+      _ <- runDb $ fetchShallowPagos grupo.id Nothing
       runDb (netosDeGrupo grupo.id) `shouldReturn` antes
+
+    it "con participante trae solo sus netos" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+
+      gastos <- runDb $ fetchShallowPagos grupo.id (Just uno)
+      fmap (fmap (.pagado) . (.resumen)) gastos `shouldBe` [Just (netos [(uno, 100)])]
+      -- Con cero, no ausente: se guarda una fila por cada participante que
+      -- aparece de alguno de los dos lados, con cero en el que no le toca.
+      fmap (fmap (.consumido) . (.resumen)) gastos `shouldBe` [Just (netos [(uno, 0)])]
+
+    -- Filtrar las filas por participante no puede hacer que un gasto donde esa
+    -- persona no aparece se vea como cache frío: si no, se recalcularía entero
+    -- (siete queries) en cada lectura.
+    it "leer filtrando por alguien que no participa no recalcula el gasto" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      tercero <-
+        runDb (addParticipante grupo.id "tercero") >>= \case
+          Right participante -> pure $ ParticipanteId participante.id
+          Left e -> panic e
+      pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+
+      -- Se ensucia el cache a mano: si la lectura lo recalculara, lo pisaría.
+      runDb $ ensuciarNetos pago.pagoId
+      gastos <- runDb $ fetchShallowPagos grupo.id (Just tercero)
+      fmap esValido gastos `shouldBe` [True]
+
+      -- Si hubiera recalculado, la suciedad se habría ido y los netos darían
+      -- los de verdad.
+      netosDespues <- runDb $ netosDeGrupo grupo.id
+      netosDespues `shouldNotBe` (netos [(uno, 100), (otro, -100)] `enMoneda` ARS)
 
     it "un gasto invalido no se recalcula en cada lectura" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
@@ -184,7 +215,7 @@ spec =
       -- puede significar "frío": lo que lo distingue es el resumen guardado.
       _ <- runDb $ savePago grupo.id $ (gastoEntre ARS 100 uno otro){deudores = distribucionVacia}
 
-      gastos <- runDb $ fetchShallowPagos grupo.id
+      gastos <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido gastos `shouldBe` [False]
       fmap (fmap (.errores) . (.resumen)) gastos `shouldNotBe` [Just []]
 
@@ -223,7 +254,7 @@ distribucionVacia = distribucionDe []
 -- | Los netos reconstruidos desde las distribuciones, sin pasar por el cache.
 netosRecalculados :: Grupo -> Pg (PorMoneda (Netos Monto))
 netosRecalculados grupo = do
-  shallowPagos <- fetchShallowPagos grupo.id
+  shallowPagos <- fetchShallowPagos grupo.id Nothing
   pagos <- traverse (fetchPago . (.pagoId)) shallowPagos
   pure $ calcularNetosTotales grupo{pagos = pagos}
 
@@ -233,6 +264,16 @@ contarNetosDe pagoId =
     pagoNeto <- all_ db.pago_netos
     guard_ (pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
     pure pagoNeto.participante
+
+-- | Le mete un valor reconocible al cache de un gasto, para poder distinguir
+-- una lectura que lo usa de una que lo recalcula por atrás.
+ensuciarNetos :: ULID -> Pg ()
+ensuciarNetos pagoId =
+  runUpdate $
+    update
+      db.pago_netos
+      (\pagoNeto -> pagoNeto.pagado_en_unidades_minimas <-. val_ 999900)
+      (\pagoNeto -> pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
 
 -- | Deja el cache de un gasto como si nunca se hubiera calculado (o como si lo
 -- hubiera calculado una versión con otro formato de resumen).

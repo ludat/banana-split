@@ -390,7 +390,7 @@ update shared msg model =
             ( { newModel | hasUnsavedChanges = False }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Store.refreshPagos model.grupoId
+                , Store.refreshPagos model.grupoId (Shared.currentParticipante shared model.grupoId)
                 , Store.setPago pago.pagoId pago
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el gasto"
                 , irAlPagoEnLista model.grupoId pago.pagoId
@@ -402,7 +402,7 @@ update shared msg model =
             ( model
             , Effect.batch
                 [ Toasts.pushToast Toasts.ToastDanger "Falló la creación del gasto"
-                , Store.refreshPagos model.grupoId
+                , Store.refreshPagos model.grupoId (Shared.currentParticipante shared model.grupoId)
                 ]
             )
 
@@ -414,7 +414,7 @@ update shared msg model =
             ( newModel
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Store.refreshPagos model.grupoId
+                , Store.refreshPagos model.grupoId (Shared.currentParticipante shared model.grupoId)
                 , Store.setPago pago.pagoId pago
                 , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el gasto"
                 , irAlPagoEnLista model.grupoId pago.pagoId
