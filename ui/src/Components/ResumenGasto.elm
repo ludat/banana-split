@@ -3,10 +3,6 @@ module Components.ResumenGasto exposing (viewBadgeRepartija, viewFila, viewIcono
 {-| La fila de un gasto en la lista, con lo que el resumen cacheado agrega:
 cuánto consumió y cuánto pagó el participante que está mirando, por qué el gasto
 es inválido, y cuánta gente reclamó si es una repartija.
-
-El `resumen` viene en `Maybe` porque puede faltar si el cache está frío, pero
-los endpoints reparan antes de listar, así que en la práctica siempre está.
-
 -}
 
 import Generated.Api exposing (Moneda, Monto, Netos, ParticipanteId, ShallowPago, ULID)
@@ -19,12 +15,7 @@ import Models.ResumenNetos exposing (errorMensaje)
 
 esValido : ShallowPago -> Bool
 esValido pago =
-    case pago.resumen of
-        Just resumen ->
-            List.isEmpty resumen.errores
-
-        Nothing ->
-            False
+    List.isEmpty pago.resumen.errores
 
 
 {-| El cuerpo de la fila: nombre, monto total y la línea personal. Los tres
@@ -41,8 +32,12 @@ viewFila participanteId monedaPorDefecto pago =
         ]
 
 
-{-| El triángulo de alerta, con los motivos como tooltip. Antes de tener el
-resumen guardado el ícono no podía explicar nada.
+{-| El triángulo de alerta, con los motivos como tooltip.
+
+"Todavía no lo calculamos" es uno de esos motivos (`ErrorNoCalculado`), así que
+acá no hay nada especial que hacer: un gasto cuyo resumen no se pudo leer no se
+sabe si cierra, y eso es una razón más por la que no está bien.
+
 -}
 viewIconoInvalido : ShallowPago -> Html msg
 viewIconoInvalido pago =
@@ -59,14 +54,9 @@ viewIconoInvalido pago =
 
 motivos : ShallowPago -> String
 motivos pago =
-    case pago.resumen of
-        Just resumen ->
-            resumen.errores
-                |> List.map (\error -> errorMensaje error.tipo)
-                |> String.join " "
-
-        Nothing ->
-            "Todavía no se calculó el estado de este gasto."
+    pago.resumen.errores
+        |> List.map (\error -> errorMensaje error.tipo)
+        |> String.join " "
 
 
 {-| Cuánta gente reclamó en la repartija del gasto. No aparece si el gasto no se
@@ -74,7 +64,7 @@ reparte por repartija.
 -}
 viewBadgeRepartija : ShallowPago -> Html msg
 viewBadgeRepartija pago =
-    case pago.resumen |> Maybe.andThen .participantesEnRepartija of
+    case pago.resumen.participantesEnRepartija of
         Just cuantos ->
             span
                 [ class "badge bg-body-secondary text-body-secondary d-flex align-items-center gap-1 flex-shrink-0"
@@ -100,16 +90,16 @@ si no hay participante elegido o si no participó del gasto.
 -}
 viewMiParte : Maybe ULID -> Moneda -> ShallowPago -> Html msg
 viewMiParte participanteId monedaPorDefecto pago =
-    case ( participanteId, pago.resumen ) of
-        ( Just yo, Just resumen ) ->
+    case participanteId of
+        Just yo ->
             let
                 simbolo =
                     Moneda.simbolo monedaPorDefecto pago.moneda
 
                 lados =
                     List.filterMap identity
-                        [ viewLado "Pagué" "text-success" simbolo (montoDe yo resumen.pagado)
-                        , viewLado "Consumí" "text-danger" simbolo (montoDe yo resumen.consumido)
+                        [ viewLado "Pagué" "text-success" simbolo (montoDe yo pago.resumen.pagado)
+                        , viewLado "Consumí" "text-danger" simbolo (montoDe yo pago.resumen.consumido)
                         ]
             in
             if List.isEmpty lados then
@@ -122,7 +112,7 @@ viewMiParte participanteId monedaPorDefecto pago =
                     ]
                     (List.intersperse separador lados)
 
-        _ ->
+        Nothing ->
             text ""
 
 

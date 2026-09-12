@@ -95,6 +95,14 @@ data TipoErrorResumen
     ErrorPartesMontoFijoSuperaTotal Monto Monto
   | -- | totalFijos, totalPago
     ErrorPartesTotalNoCoincide Monto Monto
+  | -- | El resumen guardado del gasto no se pudo leer: o todavía no se calculó,
+    -- o quedó con un formato que ya no entendemos. Pasa mientras corre el
+    -- backfill de un cambio de formato.
+    --
+    -- No lo produce el dominio, sólo la lectura del cache. Existe porque no
+    -- saber si un gasto cierra es, para el usuario, una razón más por la que no
+    -- está bien — y así la UI no tiene que aprender un concepto nuevo.
+    ErrorNoCalculado
   deriving (Show, Eq, Generic)
 
 data ErrorResumen = ErrorResumen

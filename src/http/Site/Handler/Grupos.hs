@@ -16,7 +16,6 @@ module Site.Handler.Grupos (
 ) where
 
 import Data.Text qualified as Text
-import Database.Beam.Postgres (Pg)
 import Protolude
 import Servant
 
@@ -34,7 +33,8 @@ import BananaSplit.Persistence (
   fetchTransferencias,
   freezeGrupo,
   guardarTasasDeCambio,
-  netosYGastosDelGrupo,
+  fetchShallowPagos,
+  netosDeGrupo,
   transferenciasHechas,
   transferenciasPendientes,
   unclaimParticipante,
@@ -77,7 +77,8 @@ handleGetNetos grupoId = do
             }
     Nothing -> do
       guardadas <- runBeam $ fetchTransferencias grupoId
-      (netosDeGastos, shallowPagos) <- runBeam $ netosYGastosDelGrupo grupoId
+      netosDeGastos <- runBeam $ netosDeGrupo grupoId
+      shallowPagos <- runBeam $ fetchShallowPagos grupoId Nothing
 
       let netos =
             netosPendientes netosDeGastos (transferenciasHechas guardadas & fmap (fmap (.transferencia)))
@@ -90,7 +91,7 @@ handleGetNetos grupoId = do
             , consolidado = consolidarNetos tabla (netosConSaldo netos)
             , cantidadPagos = length shallowPagos
             , cantidadPagosInvalidos =
-                length $ filter (not . maybe False gastoEsValido . (.resumen)) shallowPagos
+                length $ filter (not . gastoEsValido . (.resumen)) shallowPagos
             , transferenciasHechas = transferenciasHechas guardadas
             }
 
@@ -130,7 +131,7 @@ handleFreezeGrupo grupoId = do
     runBeam (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
-  (netosDeGastos, _) <- runBeam $ netosYGastosDelGrupo grupoId
+  netosDeGastos <- runBeam $ netosDeGrupo grupoId
   guardadas <- runBeam $ fetchTransferencias grupoId
   tasasDeCambio <- runBeam $ fetchTasasDeCambio grupoId
 

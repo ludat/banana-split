@@ -515,6 +515,7 @@ type TipoErrorResumen  =
     | ErrorPartesVacias 
     | ErrorPartesMontoFijoSuperaTotal Monto Monto
     | ErrorPartesTotalNoCoincide Monto Monto
+    | ErrorNoCalculado 
 
 jsonDecTipoErrorResumen : Json.Decode.Decoder ( TipoErrorResumen )
 jsonDecTipoErrorResumen =
@@ -526,6 +527,7 @@ jsonDecTipoErrorResumen =
             , ("ErrorPartesVacias", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorPartesVacias))
             , ("ErrorPartesMontoFijoSuperaTotal", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorPartesMontoFijoSuperaTotal (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
             , ("ErrorPartesTotalNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorPartesTotalNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
+            , ("ErrorNoCalculado", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorNoCalculado))
             ]
     in  decodeSumObjectWithSingleField  "TipoErrorResumen" jsonDecDictTipoErrorResumen
 
@@ -539,6 +541,7 @@ jsonEncTipoErrorResumen  val =
                     ErrorPartesVacias  -> ("ErrorPartesVacias", encodeValue (Json.Encode.list identity []))
                     ErrorPartesMontoFijoSuperaTotal v1 v2 -> ("ErrorPartesMontoFijoSuperaTotal", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
                     ErrorPartesTotalNoCoincide v1 v2 -> ("ErrorPartesTotalNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
+                    ErrorNoCalculado  -> ("ErrorNoCalculado", encodeValue (Json.Encode.list identity []))
     in encodeSumObjectWithSingleField keyval val
 
 
@@ -808,7 +811,7 @@ jsonEncResumenGasto  val =
 
 type alias ShallowPago  =
    { pagoId: ULID
-   , resumen: (Maybe ResumenGasto)
+   , resumen: ResumenGasto
    , nombre: String
    , monto: Monto
    , moneda: Moneda
@@ -819,7 +822,7 @@ jsonDecShallowPago : Json.Decode.Decoder ( ShallowPago )
 jsonDecShallowPago =
    Json.Decode.succeed (\ppagoId presumen pnombre pmonto pmoneda pfecha -> {pagoId = ppagoId, resumen = presumen, nombre = pnombre, monto = pmonto, moneda = pmoneda, fecha = pfecha})
    |> required "pagoId" (jsonDecULID)
-   |> fnullable "resumen" (jsonDecResumenGasto)
+   |> required "resumen" (jsonDecResumenGasto)
    |> required "nombre" (Json.Decode.string)
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
@@ -829,7 +832,7 @@ jsonEncShallowPago : ShallowPago -> Value
 jsonEncShallowPago  val =
    Json.Encode.object
    [ ("pagoId", jsonEncULID val.pagoId)
-   , ("resumen", (maybeEncode (jsonEncResumenGasto)) val.resumen)
+   , ("resumen", jsonEncResumenGasto val.resumen)
    , ("nombre", Json.Encode.string val.nombre)
    , ("monto", jsonEncMonto val.monto)
    , ("moneda", jsonEncMoneda val.moneda)

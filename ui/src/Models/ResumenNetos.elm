@@ -29,6 +29,9 @@ errorMensaje tipo =
         ErrorPartesTotalNoCoincide totalFijos totalPago ->
             "El total de los montos fijos (" ++ Monto.toString totalFijos ++ ") debería ser igual al monto del gasto (" ++ Monto.toString totalPago ++ "), " ++ Monto.diffText totalFijos totalPago
 
+        ErrorNoCalculado ->
+            "Estamos recalculando este gasto. En un rato vuelve a estar disponible."
+
 
 errorAccionableEn : TipoErrorResumen -> List LugarParaAccionar
 errorAccionableEn tipo =
@@ -53,6 +56,10 @@ errorAccionableEn tipo =
 
         ErrorPartesTotalNoCoincide _ _ ->
             [ Lugar_CreacionPago ]
+
+        -- No hay nada que el usuario pueda hacer: lo resuelve el backend solo.
+        ErrorNoCalculado ->
+            []
 
 
 getDeudasFromResumen : ResumenNetos -> Maybe (Netos Monto)

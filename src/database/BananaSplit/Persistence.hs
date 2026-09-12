@@ -9,6 +9,7 @@ module BananaSplit.Persistence (
   recordAttempt,
   clearAttempts,
   deleteOldLoginAttempts,
+  crearBaseSiNoExiste,
   makePool,
   openConnection,
   runMigration,
@@ -37,7 +38,7 @@ module BananaSplit.Persistence (
   fetchTasasDeCambio,
   fetchTransferencias,
   netosDeGrupo,
-  netosYGastosDelGrupo,
+
   freezeGrupo,
   guardarTasasDeCambio,
   borrarTransferencia,
@@ -48,6 +49,7 @@ module BananaSplit.Persistence (
   TransferenciaGuardada (..),
   transferenciasHechas,
   transferenciasPendientes,
+  recalcularResumenGasto,
   savePago,
   saveRepartija,
   saveRepartijaClaim,
@@ -58,25 +60,49 @@ module BananaSplit.Persistence (
 
 import Conferer qualified
 import Data.Aeson qualified as Aeson
+import Data.Aeson.KeyMap qualified as Aeson.KeyMap
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
-import Data.String (String)
+import Data.String (String, fromString)
 import Data.Text qualified as Text
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
 import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full hiding (insert)
-import Database.PostgreSQL.Simple (Only (..), execute, query)
+import Database.PostgreSQL.Simple (Only (..), execute, execute_, query)
 
 import BananaSplit qualified as M
 import BananaSplit.Persistence.Migration_2026_05_26_FixDates qualified as FixDates
+import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..), sinCalcular)
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
 import Preludat
+
+-- | Crea la base si no existe. 'PgRoll.init' es idempotente pero necesita que
+-- la base ya esté, así que el suite de tests no puede arrancar de cero sin
+-- esto.
+crearBaseSiNoExiste :: Conferer.Config -> IO ()
+crearBaseSiNoExiste config = do
+  url <- Conferer.fetchFromConfig "database.url" config
+  -- La misma URL apuntando a 'postgres', que es la base de mantenimiento: no se
+  -- puede crear una base estando conectado a ella.
+  let (servidor, nombre) = Text.breakOnEnd "/" url
+  bracket (connectPostgreSQL (encodeUtf8 (servidor <> "postgres"))) close $ \conn -> do
+    existentes :: [Only Int] <- query conn "SELECT 1 FROM pg_database WHERE datname = ?" (Only nombre)
+    when (null existentes)
+      -- El nombre no puede ir como parámetro, y 'CREATE DATABASE' tampoco puede
+      -- ir adentro de una transacción. Sale de la config, no de un usuario.
+      $ void
+      $ execute_ conn
+      $ fromString
+      $ toS
+      $ "CREATE DATABASE \""
+      <> Text.replace "\"" "\"\"" nombre
+      <> "\""
 
 -- | Una conexión suelta, con el @search_path@ apuntando al esquema que pgroll
 -- tiene activo. Para los comandos de línea que no levantan el server.
@@ -349,28 +375,22 @@ fetchPago pagoId = do
       }
 
 
--- | La parte del resumen de un gasto que no son números por participante, y
--- que por eso no vive en 'pago_netos' sino en un jsonb: no se puede sumar en
--- SQL. Todo lo derivado que la UI necesite y no sea sumable va acá.
-data ResumenGuardado = ResumenGuardado
-  { errores :: [M.ErrorResumen]
-  , participantesEnRepartija :: Maybe Int
-  }
-  deriving stock (Generic)
-  deriving anyclass (Aeson.ToJSON, Aeson.FromJSON)
-
--- | El resumen guardado de un gasto, o 'Nothing' si el cache está frío: la
--- columna está en NULL, o tiene un JSON que no se puede decodificar con el
--- formato de hoy. Ese segundo caso es el que deja cambiarle la forma sin migrar
--- nada: los blobs viejos se recalculan al leerlos.
+-- | El resumen guardado de un gasto, o 'Nothing' si no está o no se puede leer
+-- con el formato de hoy.
+--
+-- No falla: lo que sigue lo reporta como 'M.ErrorNoCalculado' y el gasto se muestra
+-- degradado en vez de voltear el listado entero del grupo. Pasa mientras corre
+-- el backfill de un cambio de forma de 'ResumenGuardado', o si se deployó sin
+-- correr @run-migration recompute-pagos@.
+--
+-- Ojo que esto no reintroduce el cálculo al leer: leer sigue sin calcular
+-- nunca. Lo único que hace es poder decir "no sé" en vez de romper.
 resumenGuardadoDe :: Pago -> Maybe ResumenGuardado
-resumenGuardadoDe pago =
-  case pago.pagoResumen of
-    Nothing -> Nothing
-    Just (PgJSONB value) ->
-      case Aeson.fromJSON value of
-        Aeson.Success guardado -> Just guardado
-        Aeson.Error _ -> Nothing
+resumenGuardadoDe pago = do
+  PgJSONB value <- pago.pagoResumen
+  case Aeson.fromJSON value of
+    Aeson.Success guardado -> Just guardado
+    Aeson.Error _ -> Nothing
 
 -- | Escribe el resumen de un gasto: los errores en la fila del pago y una fila
 -- por participante en 'pago_netos'. Un gasto inválido deja cero filas.
@@ -582,31 +602,17 @@ fetchShallowPagos grupoId participanteId = do
           & fmap (\fila -> (case fila.pago of PagoId p -> p, [fila]))
           & Map.fromListWith (<>)
 
-  -- El cache de un gasto está frío si no tiene resumen guardado o si el que
-  -- tiene no se puede decodificar con el formato de hoy. No hace falta mirar si
-  -- dejó filas: 'guardarResumenDeGasto' es el único que escribe la columna y
-  -- escribe las dos cosas juntas, así que la columna sola ya dice si se
-  -- calculó. Eso es lo que permite leer únicamente las filas del participante
-  -- pedido, sin que un gasto donde no participa parezca frío.
-  --
-  -- Se decide con lo que las dos queries de arriba ya trajeron, y se recalcula
-  -- sólo lo que haga falta: en régimen normal no hay nada que recalcular.
-  forM dbPagos $ \pago ->
-    case resumenGuardadoDe pago of
-      Just guardado ->
-        pure $ toShallowPago pago $ resumenDesde (Map.findWithDefault [] pago.pagoId netosPorPago) guardado
-      Nothing -> do
-        completo <- fetchPago pago.pagoId
-        resumen <- guardarResumenDeGasto grupoId completo
-        -- El recálculo devuelve el resumen de todos, así que hay que recortarlo
-        -- igual que vienen las filas.
-        pure $ toShallowPago pago $ maybe resumen (`M.resumenDeParticipante` resumen) participanteId
+  -- Leer nunca calcula: el resumen de un gasto queda escrito por la misma
+  -- transacción que lo modifica ('guardarResumenDeGasto'), así que acá siempre
+  -- tiene que estar. Si falta es que algo lo dejó a medias, y eso se arregla
+  -- corriendo el backfill, no disimulándolo en cada lectura.
+  pure $ dbPagos & fmap (\pago -> toShallowPago pago (Map.findWithDefault [] pago.pagoId netosPorPago))
 
-toShallowPago :: Pago -> M.ResumenGasto -> M.ShallowPago
-toShallowPago pago resumen =
+toShallowPago :: Pago -> [PagoNeto] -> M.ShallowPago
+toShallowPago pago filas =
   M.ShallowPago
     { M.pagoId = pago.pagoId
-    , M.resumen = Just resumen
+    , M.resumen = resumenDesde filas (resumenGuardadoDe pago)
     , M.nombre = pago.pagoNombre
     , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
     , M.moneda = pago.pagoMoneda
@@ -615,13 +621,19 @@ toShallowPago pago resumen =
 
 -- | Rearma el resumen de un gasto juntando sus dos mitades guardadas: los
 -- números por participante salen de 'pago_netos' y el resto del jsonb.
-resumenDesde :: [PagoNeto] -> ResumenGuardado -> M.ResumenGasto
+resumenDesde :: [PagoNeto] -> Maybe ResumenGuardado -> M.ResumenGasto
 resumenDesde netos guardado =
   M.ResumenGasto
+    -- Los netos salen de las filas, que un cambio de formato del blob no toca:
+    -- siguen siendo correctos aunque el resto venga en default.
     { M.pagado = lado (.pagado_en_unidades_minimas) netos
     , M.consumido = lado (.consumido_en_unidades_minimas) netos
-    , M.errores = guardado.errores
-    , M.participantesEnRepartija = guardado.participantesEnRepartija
+    , M.errores = case guardado of
+        Just g -> g.errores
+        -- Sin blob no sabemos si cierra, y eso para el usuario es una razón más
+        -- por la que el gasto no está bien.
+        Nothing -> sinCalcular
+    , M.participantesEnRepartija = guardado >>= (.participantesEnRepartija)
     }
   where
     lado columna =
@@ -632,26 +644,10 @@ resumenDesde netos guardado =
               (desdeUnidadesMinimas fila.moneda (columna fila))
         )
 
--- | Los gastos del grupo y sus netos totales.
---
--- Las dos cosas juntas y no por separado porque 'netosDeGrupo' suma en SQL y
--- nunca trae las filas a Haskell: no puede notar si a algún gasto le falta el
--- cache. Quien sí lo nota es 'fetchShallowPagos', que ya lee todo lo necesario
--- para decidirlo y lo recalcula en el momento. Pedirlas por separado sería leer
--- dos veces lo mismo.
-netosYGastosDelGrupo :: ULID -> Pg (M.PorMoneda (M.Netos M.Monto), [M.ShallowPago])
-netosYGastosDelGrupo grupoId = do
-  -- Sin participante: acá la lista se usa para contar gastos y gastos
-  -- inválidos, que no miran los netos de nadie.
-  gastos <- fetchShallowPagos grupoId Nothing
-  netos <- netosDeGrupo grupoId
-  pure (netos, gastos)
-
 -- | Los netos de un grupo sumados en la base, sin traer ningún gasto.
 --
 -- No filtra por el resumen guardado porque un gasto inválido no tiene filas: el
--- filtro vive en la escritura. Asume que el cache está caliente, así que salvo
--- que sepas que lo está, usá 'netosYGastosDelGrupo'.
+-- filtro vive en la escritura.
 netosDeGrupo :: ULID -> Pg (M.PorMoneda (M.Netos M.Monto))
 netosDeGrupo grupoId = do
   filas <- runSelectReturningList $ select $ do
@@ -831,6 +827,10 @@ savePago grupoId pagoWithoutId = do
     when (viejaPagadores /= distribucionPagadores.id) $ deleteDistribucion viejaPagadores
     when (viejaDeudores /= distribucionDeudores.id) $ deleteDistribucion viejaDeudores
 
+  -- El lock ya lo tenemos por el upsert de arriba, pero se pide explícito para
+  -- que no dependa de ese orden: lo que hace correcto al recálculo es tomarlo
+  -- antes de leer los insumos (ver 'recalcularResumenGasto').
+  void $ lockearPago pago.pagoId
   -- Se recalcula releyendo de la base, no desde el pago que llegó: los claims
   -- de una repartija no viajan con el gasto (el front no los manda y este
   -- insert no los toca), así que calcularlo con lo recibido diría que nadie
@@ -1164,20 +1164,39 @@ deleteRepartijaClaim claimId = do
 
 -- | Recalcula y guarda el resumen de un gasto. Llamalo desde cualquier mutación
 -- que pueda cambiar el reparto sin pasar por 'savePago' (editar los claims de
--- una repartija, por ejemplo), así el cache nunca queda viejo.
+-- una repartija, por ejemplo).
+--
+-- Recalcula acá y no en la próxima lectura a propósito: al terminar la
+-- transacción el cache tiene que estar bien. Si sólo se invalidara, entre la
+-- escritura y la primera lectura las filas de 'pago_netos' quedarían viejas, y
+-- cualquiera que las sume sin pasar por 'fetchShallowPagos' —hoy nadie, pero
+-- eso es una convención, no una garantía— leería datos incorrectos.
+--
+-- El precio es que N claims simultáneos sobre la misma repartija hacen N
+-- recálculos serializados por el lock, en vez de uno solo.
 recalcularResumenGasto :: ULID -> Pg ()
-recalcularResumenGasto pagoId = do
-  -- El grupo no viene en 'M.Pago', y las filas del cache lo necesitan.
-  grupoId <-
-    runSelectReturningOne
-      ( select $ do
-          pago <- all_ db.pagos
-          guard_ (pago.pagoId ==. val_ pagoId)
-          pure $ grupoIdDePago pago
-      )
-      >>= maybe (panic $ "no encontré el grupo del pago " <> show pagoId) pure
-  pago <- fetchPago pagoId
-  void $ guardarResumenDeGasto grupoId pago
+recalcularResumenGasto pagoId =
+  lockearPago pagoId >>= \case
+    -- El gasto se borró; el cascade ya se llevó sus filas.
+    Nothing -> pure ()
+    Just pago -> do
+      completo <- fetchPago pagoId
+      void $ guardarResumenDeGasto (case pago.pagoGrupo of GrupoId g -> g) completo
+
+-- | La fila de un gasto con su lock tomado hasta el fin de la transacción.
+lockearPago :: ULID -> Pg (Maybe Pago)
+lockearPago pagoId =
+  runSelectReturningOne
+    -- 'lockingAllTablesFor_' bloquea las filas de __todas__ las tablas de esta
+    -- query. Acá hay una sola y es la fila del gasto, que es justo lo que se
+    -- quiere; si algún día se le agrega un join, el lock se ensancharía sin que
+    -- nada avise.
+    $ select
+    $ lockingAllTablesFor_ PgSelectLockingStrengthUpdate Nothing
+    $ do
+      pago <- all_ db.pagos
+      guard_ (pago.pagoId ==. val_ pagoId)
+      pure pago
 
 -- | Query fragment: the pago that owns a given repartija row, following
 -- distribución → pago (one repartija belongs to one distribución, which is
