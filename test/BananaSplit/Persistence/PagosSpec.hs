@@ -149,9 +149,9 @@ spec =
       desdeElCache <- runDb $ netosDeGrupo grupo.id
       desdeElCache
         `shouldBe` netos [(uno, 100), (otro, -100)]
-        `enMoneda` ARS
-        <> netos [(otro, 50), (uno, -50)]
-        `enMoneda` USD
+          `enMoneda` ARS
+          <> netos [(otro, 50), (uno, -50)]
+          `enMoneda` USD
 
       -- Y tiene que coincidir con recalcular todo desde las distribuciones,
       -- que es lo que hacía el loop de fetchPago que este cache reemplaza.
@@ -382,7 +382,6 @@ ensuciarNetos pagoId =
       (\pagoNeto -> pagoNeto.pagado_en_unidades_minimas <-. val_ 999900)
       (\pagoNeto -> pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
 
-
 -- | Save a pago whose deudores is a repartija with a single item that sums to
 -- the monto but has no claims, leaving the pago invalid until something is
 -- claimed.
@@ -393,7 +392,7 @@ saveInvalidRepartijaPago grupo =
       { pagoId = nullUlid
       , monto = 100
       , moneda = ARS
-        , nombre = "Cena"
+      , nombre = "Cena"
       , fecha = fromGregorian 2025 1 1
       , pagadores =
           Distribucion nullUlid $

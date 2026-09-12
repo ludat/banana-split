@@ -40,7 +40,6 @@ module BananaSplit.Persistence (
   fetchTasasDeCambio,
   fetchTransferencias,
   netosDeGrupo,
-
   freezeGrupo,
   guardarTasasDeCambio,
   borrarTransferencia,
@@ -376,7 +375,6 @@ fetchPago pagoId = do
       , M.deudores = deudores
       }
 
-
 -- | El resumen guardado de un gasto, o 'Nothing' si no está o no se puede leer
 -- con el formato de hoy.
 --
@@ -671,9 +669,9 @@ toShallowPago pago filas =
 resumenDesde :: [PagoNeto] -> Maybe ResumenGuardado -> M.ResumenGasto
 resumenDesde netos guardado =
   M.ResumenGasto
-    -- Los netos salen de las filas, que un cambio de formato del blob no toca:
-    -- siguen siendo correctos aunque el resto venga en default.
-    { M.pagado = lado (.pagado_en_unidades_minimas) netos
+    { -- Los netos salen de las filas, que un cambio de formato del blob no toca:
+      -- siguen siendo correctos aunque el resto venga en default.
+      M.pagado = lado (.pagado_en_unidades_minimas) netos
     , M.consumido = lado (.consumido_en_unidades_minimas) netos
     , M.errores = case guardado of
         Just g -> g.errores

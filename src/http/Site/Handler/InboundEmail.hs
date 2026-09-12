@@ -224,8 +224,8 @@ processPago payload fromEmail = do
       pure
       (extractGrupoId payload)
   grupos <- lift $ runBeam $ fetchGruposForUser user.id
-  unless (any (\g -> g.id == grupoId) grupos) $
-    throwError "No perteneces a ese grupo, o el grupo no existe."
+  unless (any (\g -> g.id == grupoId) grupos)
+    $ throwError "No perteneces a ese grupo, o el grupo no existe."
   grupo <-
     lift (runBeam $ fetchGrupo grupoId)
       `orElseMay` throwError "No perteneces a ese grupo, o el grupo no existe."

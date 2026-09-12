@@ -21,8 +21,8 @@ import Servant
 
 import BananaSplit
 import BananaSplit.Persistence (
-  addParticipante,
   ConteoDePagos (..),
+  addParticipante,
   claimParticipante,
   contarPagos,
   createGrupo,

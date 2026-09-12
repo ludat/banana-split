@@ -136,4 +136,3 @@ spec = describe "Pago" $ do
       let resumen = getResumenGasto pagoValido{deudores = distribucionMontosEspecificos []}
       resumen `shouldNotSatisfy` gastoEsValido
       fmap (.objeto) resumen.errores `shouldBe` [["deudores"]]
-

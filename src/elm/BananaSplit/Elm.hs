@@ -125,9 +125,9 @@ generateElmFiles = do
 -- cambiarle la escala no puede dejar los dos lados desincronizados.
 generateElmMoneda :: IO ()
 generateElmMoneda =
-  writeFile "ui/generated-src/Generated/Moneda.elm"
-    $ Text.unlines
-    $ [ "module Generated.Moneda exposing (escalaDe)"
+  writeFile "ui/generated-src/Generated/Moneda.elm" $
+    Text.unlines $
+      [ "module Generated.Moneda exposing (escalaDe)"
       , ""
       , "import Generated.Api exposing (Moneda(..))"
       , ""
@@ -141,7 +141,7 @@ generateElmMoneda =
       , "escalaDe moneda ="
       , "    case moneda of"
       ]
-    <> (todasLasMonedas & fmap ramaDe & intersperse [""] & mconcat)
+        <> (todasLasMonedas & fmap ramaDe & intersperse [""] & mconcat)
   where
     ramaDe moneda =
       [ "        " <> show moneda <> " ->"

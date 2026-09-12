@@ -16,6 +16,7 @@ module BananaSplit.Seed (
   seedGrupo,
   benchNetos,
   probarClaimsConcurrentes,
+
   -- * Piezas del escenario de concurrencia, para el test de integración
   Escenario (..),
   prepararEscenario,
@@ -31,10 +32,9 @@ import Database.Beam
 import Database.Beam.Postgres (Connection, runBeamPostgres)
 import Database.PostgreSQL.Simple qualified as Simple
 
-import BananaSplit.Persistence.Schema
-
 import BananaSplit qualified as M
 import BananaSplit.Persistence
+import BananaSplit.Persistence.Schema
 import BananaSplit.ULID (ULID, nullUlid)
 import Preludat
 

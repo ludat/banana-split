@@ -101,9 +101,9 @@ data Pago = Pago
 
 data ShallowPago = ShallowPago
   { pagoId :: ULID
-  , -- | Siempre viene: lo deja escrito la misma transacción que modifica el
-    -- gasto, nunca se calcula al leer.
-    resumen :: ResumenGasto
+  , resumen :: ResumenGasto
+  -- ^ Siempre viene: lo deja escrito la misma transacción que modifica el
+  -- gasto, nunca se calcula al leer.
   , nombre :: Text
   , monto :: Monto
   , moneda :: Moneda
@@ -141,10 +141,10 @@ data ResumenGasto = ResumenGasto
   { pagado :: Netos Monto
   , consumido :: Netos Monto
   , errores :: [ErrorResumen]
-  , -- | Cuánta gente reclamó algo, si el gasto se reparte por repartija.
-    -- 'Nothing' cuando no lo es. Es de la misma familia que 'errores': algo
-    -- derivado del gasto que la UI quiere mostrar y que no se puede sumar.
-    participantesEnRepartija :: Maybe Int
+  , participantesEnRepartija :: Maybe Int
+  -- ^ Cuánta gente reclamó algo, si el gasto se reparte por repartija.
+  -- 'Nothing' cuando no lo es. Es de la misma familia que 'errores': algo
+  -- derivado del gasto que la UI quiere mostrar y que no se puede sumar.
   }
   deriving (Show, Eq, Generic)
 

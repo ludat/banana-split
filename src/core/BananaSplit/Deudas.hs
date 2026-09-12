@@ -30,12 +30,12 @@ module BananaSplit.Deudas (
 ) where
 
 import Data.Decimal (Decimal)
-import Data.Time (UTCTime)
 import Data.Decimal qualified as Decimal
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific)
 import Data.Scientific qualified as Scientific
+import Data.Time (UTCTime)
 import Elm.Derive qualified as Elm
 import Numeric.Optimization.MIP qualified as MIP
 import Numeric.Optimization.MIP.Solver qualified as MIP

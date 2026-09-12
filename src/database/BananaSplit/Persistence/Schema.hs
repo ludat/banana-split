@@ -151,12 +151,12 @@ instance Table ParticipanteT where
 
 data PagoT f = Pago
   { pagoId :: Columnar f ULID
-  , -- | La parte no sumable del resumen del gasto (por qué es inválido, cuánta
-    -- gente reclamó en su repartija). NULL = todavía sin calcular. Se guarda
-    -- como 'Value' crudo y no tipado a propósito: si el formato cambiara, un
-    -- blob viejo tipado reventaría la query entera en vez de poder detectarse
-    -- y recalcularse (ver 'resumenGuardadoDe').
-    pagoResumen :: Columnar f (Maybe (PgJSONB Value))
+  , pagoResumen :: Columnar f (Maybe (PgJSONB Value))
+  -- ^ La parte no sumable del resumen del gasto (por qué es inválido, cuánta
+  -- gente reclamó en su repartija). NULL = todavía sin calcular. Se guarda
+  -- como 'Value' crudo y no tipado a propósito: si el formato cambiara, un
+  -- blob viejo tipado reventaría la query entera en vez de poder detectarse
+  -- y recalcularse (ver 'resumenGuardadoDe').
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMontoEnUnidadesMinimas :: Columnar f UnidadesMinimas
@@ -201,13 +201,13 @@ type UnidadesMinimas = Int64
 data PagoNetoT f = PagoNeto
   { pago :: PrimaryKey PagoT f
   , participante :: PrimaryKey ParticipanteT f
-  , -- | Se repite acá para que sumar los netos de un grupo no tenga que
-    -- joinear 'pagos' sólo para filtrar.
-    grupo :: PrimaryKey GrupoT f
-  , -- | Se repite acá porque sin ella la fila no se puede interpretar: las
-    -- unidades mínimas dependen de la moneda. La escribe el mismo 'savePago'
-    -- que escribe el gasto, así que no puede desincronizarse.
-    moneda :: Columnar f M.Moneda
+  , grupo :: PrimaryKey GrupoT f
+  -- ^ Se repite acá para que sumar los netos de un grupo no tenga que
+  -- joinear 'pagos' sólo para filtrar.
+  , moneda :: Columnar f M.Moneda
+  -- ^ Se repite acá porque sin ella la fila no se puede interpretar: las
+  -- unidades mínimas dependen de la moneda. La escribe el mismo 'savePago'
+  -- que escribe el gasto, así que no puede desincronizarse.
   , pagado_en_unidades_minimas :: Columnar f UnidadesMinimas
   , consumido_en_unidades_minimas :: Columnar f UnidadesMinimas
   }
