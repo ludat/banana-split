@@ -34,6 +34,8 @@ module BananaSplit.Persistence (
   fetchGrupoIdFromRepartija,
   fetchPago,
   fetchRepartija,
+  ConteoDePagos (..),
+  contarPagos,
   fetchShallowPagos,
   fetchTasasDeCambio,
   fetchTransferencias,
@@ -385,12 +387,57 @@ fetchPago pagoId = do
 --
 -- Ojo que esto no reintroduce el cálculo al leer: leer sigue sin calcular
 -- nunca. Lo único que hace es poder decir "no sé" en vez de romper.
-resumenGuardadoDe :: Pago -> Maybe ResumenGuardado
-resumenGuardadoDe pago = do
-  PgJSONB value <- pago.pagoResumen
+resumenGuardadoDe :: Maybe (PgJSONB Aeson.Value) -> Maybe ResumenGuardado
+resumenGuardadoDe columna = do
+  PgJSONB value <- columna
   case Aeson.fromJSON value of
     Aeson.Success guardado -> Just guardado
     Aeson.Error _ -> Nothing
+
+-- | Cuántos gastos tiene un grupo y cuántos de ellos no están bien.
+data ConteoDePagos = ConteoDePagos
+  { total :: Int
+  , invalidos :: Int
+  }
+  deriving stock (Show, Eq)
+
+-- | Los dos conteos de un grupo.
+--
+-- Se cuenta en la base: para dos enteros no hace falta traer los gastos ni sus
+-- filas de 'pago_netos'. Y van juntos porque salen de la misma pasada.
+--
+-- Un gasto es válido si y sólo si @resumen -> 'errores'@ es exactamente un
+-- array vacío. Eso es idéntico a lo que decide 'resumenGuardadoDe', caso por
+-- caso: la columna en NULL, un blob que no es objeto, uno sin la clave, o con
+-- un 'errores' que no decodifica, todos dan algo distinto de @[]@ acá y todos
+-- degradan a 'sinCalcular' allá.
+contarPagos :: ULID -> Pg ConteoDePagos
+contarPagos grupoId = do
+  resultado <- runSelectReturningOne $ select $ do
+    aggregate_
+      ( \pago ->
+          let
+            resumen = fromMaybe_ (val_ (PgJSONB Aeson.Null)) pago.pagoResumen
+            -- Se pregunta por los válidos y no por los inválidos a propósito.
+            -- En SQL @resumen -> 'errores'@ es NULL si la columna está en NULL,
+            -- si el blob no es un objeto o si no tiene la clave, y
+            -- @NULL <> '[]'@ no es true sino NULL: preguntando al revés esos
+            -- casos no contarían. El @CASE@ del 'ifThenElse_' sí trata el NULL
+            -- como falso, así que caen del lado de los inválidos.
+            esValido = (resumen ->$ val_ "errores") ==. val_ (PgJSONB (Aeson.Array mempty))
+          in
+            ( as_ @Int32 countAll_
+            , fromMaybe_ 0 $ sum_ $ ifThenElse_ esValido (val_ 0) (val_ (1 :: Int32))
+            )
+      )
+      $ do
+        pago <- all_ db.pagos
+        guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
+        pure pago
+  pure $ case resultado of
+    Nothing -> ConteoDePagos{total = 0, invalidos = 0}
+    Just (cantidad, malos) ->
+      ConteoDePagos{total = fromIntegral cantidad, invalidos = fromIntegral malos}
 
 -- | Escribe el resumen de un gasto: los errores en la fila del pago y una fila
 -- por participante en 'pago_netos'. Un gasto inválido deja cero filas.
@@ -612,7 +659,7 @@ toShallowPago :: Pago -> [PagoNeto] -> M.ShallowPago
 toShallowPago pago filas =
   M.ShallowPago
     { M.pagoId = pago.pagoId
-    , M.resumen = resumenDesde filas (resumenGuardadoDe pago)
+    , M.resumen = resumenDesde filas (resumenGuardadoDe pago.pagoResumen)
     , M.nombre = pago.pagoNombre
     , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
     , M.moneda = pago.pagoMoneda

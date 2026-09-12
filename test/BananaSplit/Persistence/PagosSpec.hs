@@ -207,6 +207,48 @@ spec =
       gastos <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap (fmap (.tipo) . (.errores) . (.resumen)) gastos `shouldBe` [[ErrorNoCalculado]]
 
+    it "contarPagos cuenta los gastos y los invalidos" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 0, invalidos = 0}
+
+      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 0}
+
+      _ <- runDb $ savePago grupo.id $ (gastoEntre ARS 70 uno otro){deudores = distribucionVacia}
+      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 2, invalidos = 1}
+
+    it "un gasto sin calcular cuenta como invalido" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 0}
+
+      -- Como queda tras la migración: sin resumen y sin filas.
+      runDb $ borrarResumen pago.pagoId
+      runDb $ borrarNetos pago.pagoId
+      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 1}
+
+    -- El criterio de la base mira el jsonb, igual que el decoder: un blob con
+    -- formato viejo no se sabe si cierra, así que cuenta inválido aunque haya
+    -- dejado filas en 'pago_netos'. Así el contador dice lo mismo que el
+    -- triángulo que muestra la lista.
+    it "un resumen ilegible cuenta como invalido aunque tenga netos" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 0}
+
+      runDb $ ensuciarResumen pago.pagoId $ Aeson.String "un formato que ya no existe"
+      runDb (contarNetosDe pago.pagoId) `shouldReturn` 2
+      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 1}
+
+    it "no cuenta los gastos de otro grupo" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      (otroGrupo, unoDeAlla, otroDeAlla) <- runDb grupoConDosParticipantes
+      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+      _ <- runDb $ savePago otroGrupo.id $ (gastoEntre ARS 70 unoDeAlla otroDeAlla){deudores = distribucionVacia}
+
+      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 0}
+      runDb (contarPagos otroGrupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 1}
+
     it "con participante trae solo sus netos" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
       _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
@@ -303,6 +345,13 @@ ensuciarResumen pagoId value =
       db.pagos
       (\p -> p.pagoResumen <-. val_ (Just (PgJSONB value)))
       (\p -> p.pagoId ==. val_ pagoId)
+
+borrarNetos :: ULID -> Pg ()
+borrarNetos pagoId =
+  runDelete $
+    delete
+      db.pago_netos
+      (\pagoNeto -> pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
 
 -- | Como queda un gasto recién migrado, antes del backfill.
 borrarResumen :: ULID -> Pg ()

@@ -22,18 +22,18 @@ import Servant
 import BananaSplit
 import BananaSplit.Persistence (
   addParticipante,
+  ConteoDePagos (..),
   claimParticipante,
+  contarPagos,
   createGrupo,
   createGrupoForUser,
   deleteShallowParticipante,
   fetchGrupo,
   fetchGruposForUser,
-  fetchShallowPagos,
   fetchTasasDeCambio,
   fetchTransferencias,
   freezeGrupo,
   guardarTasasDeCambio,
-  fetchShallowPagos,
   netosDeGrupo,
   transferenciasHechas,
   transferenciasPendientes,
@@ -78,7 +78,7 @@ handleGetNetos grupoId = do
     Nothing -> do
       guardadas <- runBeam $ fetchTransferencias grupoId
       netosDeGastos <- runBeam $ netosDeGrupo grupoId
-      shallowPagos <- runBeam $ fetchShallowPagos grupoId Nothing
+      conteo <- runBeam $ contarPagos grupoId
 
       let netos =
             netosPendientes netosDeGastos (transferenciasHechas guardadas & fmap (fmap (.transferencia)))
@@ -89,9 +89,8 @@ handleGetNetos grupoId = do
           ResumenAbierto
             { netos = netos
             , consolidado = consolidarNetos tabla (netosConSaldo netos)
-            , cantidadPagos = length shallowPagos
-            , cantidadPagosInvalidos =
-                length $ filter (not . gastoEsValido . (.resumen)) shallowPagos
+            , cantidadPagos = conteo.total
+            , cantidadPagosInvalidos = conteo.invalidos
             , transferenciasHechas = transferenciasHechas guardadas
             }
 
