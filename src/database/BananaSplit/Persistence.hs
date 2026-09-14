@@ -375,8 +375,14 @@ fetchPago pagoId = do
       , M.deudores = deudores
       }
 
--- | El resumen guardado de un gasto, o 'Nothing' si no está o no se puede leer
--- con el formato de hoy.
+-- | El resumen guardado de un gasto, o 'Nothing' si no se puede leer con el
+-- formato de hoy.
+--
+-- La columna nunca es NULL, así que el único caso raro es el blob que no
+-- entendemos. El @{}@ con el que arranca un gasto sin calcular ni siquiera
+-- llega hasta acá: decodifica bien y el decoder laxo lo deja con
+-- 'sinCalcular'. 'Nothing' queda para lo que no es un objeto, que no tiene
+-- nada rescatable; termina diciendo lo mismo.
 --
 -- No falla: lo que sigue lo reporta como 'M.ErrorNoCalculado' y el gasto se muestra
 -- degradado en vez de voltear el listado entero del grupo. Pasa mientras corre
@@ -385,9 +391,8 @@ fetchPago pagoId = do
 --
 -- Ojo que esto no reintroduce el cálculo al leer: leer sigue sin calcular
 -- nunca. Lo único que hace es poder decir "no sé" en vez de romper.
-resumenGuardadoDe :: Maybe (PgJSONB Aeson.Value) -> Maybe ResumenGuardado
-resumenGuardadoDe columna = do
-  PgJSONB value <- columna
+resumenGuardadoDe :: PgJSONB Aeson.Value -> Maybe ResumenGuardado
+resumenGuardadoDe (PgJSONB value) =
   case Aeson.fromJSON value of
     Aeson.Success guardado -> Just guardado
     Aeson.Error _ -> Nothing
@@ -405,24 +410,23 @@ data ConteoDePagos = ConteoDePagos
 -- filas de 'pago_netos'. Y van juntos porque salen de la misma pasada.
 --
 -- Un gasto es válido si y sólo si @resumen -> 'errores'@ es exactamente un
--- array vacío. Eso es idéntico a lo que decide 'resumenGuardadoDe', caso por
--- caso: la columna en NULL, un blob que no es objeto, uno sin la clave, o con
--- un 'errores' que no decodifica, todos dan algo distinto de @[]@ acá y todos
--- degradan a 'sinCalcular' allá.
+-- array vacío. Eso es idéntico a lo que decide leer el blob, caso por caso: un
+-- blob que no es objeto, uno sin la clave (el @{}@ de un gasto sin calcular) o
+-- uno con un 'errores' que no decodifica, todos dan algo distinto de @[]@ acá y
+-- todos degradan a 'sinCalcular' allá.
 contarPagos :: ULID -> Pg ConteoDePagos
 contarPagos grupoId = do
   resultado <- runSelectReturningOne $ select $ do
     aggregate_
       ( \pago ->
           let
-            resumen = fromMaybe_ (val_ (PgJSONB Aeson.Null)) pago.pagoResumen
             -- Se pregunta por los válidos y no por los inválidos a propósito.
-            -- En SQL @resumen -> 'errores'@ es NULL si la columna está en NULL,
-            -- si el blob no es un objeto o si no tiene la clave, y
-            -- @NULL <> '[]'@ no es true sino NULL: preguntando al revés esos
-            -- casos no contarían. El @CASE@ del 'ifThenElse_' sí trata el NULL
-            -- como falso, así que caen del lado de los inválidos.
-            esValido = (resumen ->$ val_ "errores") ==. val_ (PgJSONB (Aeson.Array mempty))
+            -- En SQL @resumen -> 'errores'@ es NULL si el blob no es un objeto
+            -- o si no tiene la clave (el @{}@ de un gasto sin calcular, por
+            -- ejemplo), y @NULL <> '[]'@ no es true sino NULL: preguntando al
+            -- revés esos casos no contarían. El @CASE@ del 'ifThenElse_' sí
+            -- trata el NULL como falso, así que caen del lado de los inválidos.
+            esValido = (pago.pagoResumen ->$ val_ "errores") ==. val_ (PgJSONB (Aeson.Array mempty))
           in
             ( as_ @Int32 countAll_
             , fromMaybe_ 0 $ sum_ $ ifThenElse_ esValido (val_ 0) (val_ (1 :: Int32))
@@ -453,7 +457,7 @@ guardarResumenDeGasto grupoId pago = do
   runUpdate
     $ update
       db.pagos
-      (\p -> p.pagoResumen <-. val_ (Just (PgJSONB (Aeson.toJSON guardado))))
+      (\p -> p.pagoResumen <-. val_ (PgJSONB (Aeson.toJSON guardado)))
       (\p -> p.pagoId ==. val_ pago.pagoId)
   runDelete
     $ delete
@@ -854,7 +858,14 @@ savePago grupoId pagoWithoutId = do
       ( insertValues
           [ Pago
               { pagoId = pago.pagoId
-              , pagoResumen = Nothing
+              , -- Sin calcular por ahora: 'guardarResumenDeGasto' lo pisa unas
+                -- líneas más abajo, dentro de la misma transacción.
+                pagoResumen = PgJSONB (Aeson.object [])
+                -- TODO: Realmente no me gusta esto de guardar y despeus recalcular,
+                -- estaria bueno hacer esto bien de una sola vez
+                -- Una manera de hacer eso podria ser que `saveDistribucion` devuelva
+                -- traiga los claims en vez de usar los que quedaron guardados
+                -- no estoy seguro de que cosa afectaria eso QUESTION
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
               , pagoMontoEnUnidadesMinimas = aUnidadesMinimas pago.moneda pago.monto

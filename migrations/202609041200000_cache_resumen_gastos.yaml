@@ -5,22 +5,16 @@
 #
 #  - 'pago_netos': una fila por gasto y participante, con lo que puso y lo que
 #    consumió. Se suma con SUM() en SQL. Un gasto inválido no tiene filas.
-#  - 'pagos.errores': por qué el gasto es inválido. NULL = motivo no calculado,
-#    '[]' = válido, no vacío = inválido con motivos.
+#  - 'pagos.resumen': un jsonb con lo que no se puede sumar, sobre todo por qué
+#    el gasto es inválido. '{}' = todavía sin calcular, '{"errores": []}' =
+#    válido, errores no vacío = inválido con motivos.
 #
 # 'is_valid' se va en esta misma migración, no en una segunda después.
 #
 # El cache arranca frío: justo después de esto ningún gasto tiene filas en
-# 'pago_netos'. No hace falta correr nada para arreglarlo — la lectura repara lo
-# que encuentre sin calcular o ilegible, así que un gasto se cura la primera vez
-# que alguien lo mira, y lo mismo pasaría si en el futuro cambiara el formato de
-# 'errores'. 'recompute-pagos' queda sólo como calentamiento masivo, opcional.
-#
-# El cache de un gasto está frío si 'errores' es NULL, si no se puede decodificar,
-# o si es '[]' pero no tiene filas en 'pago_netos'. Este último caso hace falta
-# porque un gasto válido siempre tiene al menos un pagador y un deudor (las
-# distribuciones vacías son un error): si tiene '[]' y ninguna fila, es que
-# todavía no se calculó, y sin esa condición sumaría cero en silencio.
+# 'pago_netos' y todos tienen '{}'. Leer no calcula nada, así que hay que correr
+# 'recompute-pagos' antes de servir tráfico; hasta entonces los gastos se ven
+# como inválidos, no como sumando cero.
 operations:
   - create_table:
       name: pago_netos
@@ -97,18 +91,25 @@ operations:
   # participante (cuánta gente reclamó en su repartija, por ejemplo).
   - add_column:
       table: pagos
-      # Deriva de 'is_valid' lo único que un booleano puede decir. No es para el
-      # cache (la lectura repara lo que falte igual), es para que el 'down' de
-      # abajo reconstruya 'is_valid' exacto: si dejáramos todo en NULL, un
-      # rollback —o el binario viejo durante el expand/contract— vería todos los
-      # gastos como inválidos.
-      up: "NULL"
+      # Arranca en '{}' y no en NULL: no hay un estado "sin columna". '{}' es un
+      # resumen del que no se puede leer ningún campo, o sea "todavía no lo
+      # calculé", que es exactamente lo que pasa acá. Así la columna es NOT NULL
+      # y el código no tiene que distinguir entre falta y es ilegible.
+      #
+      # No deriva de 'is_valid' a propósito: un gasto marcado válido tampoco
+      # tiene todavía filas en 'pago_netos', así que copiar ese true diría que
+      # cierra y sumaría cero. Todos arrancan sin calcular y 'recompute-pagos'
+      # los llena.
+      up: "'{}'::jsonb"
       column:
         name: resumen
         type: jsonb
-        nullable: true
+        nullable: false
 
   - drop_column:
       table: pagos
       column: is_valid
-      down: "resumen IS NOT NULL AND jsonb_array_length(resumen -> 'errores') = 0"
+      # El 'coalesce' es por el '{}': ahí 'resumen -> errores' es NULL y
+      # 'jsonb_array_length' también, y la columna no acepta NULL. Un gasto sin
+      # calcular vuelve como inválido, que es lo mismo que ve el binario nuevo.
+      down: "coalesce(jsonb_array_length(resumen -> 'errores') = 0, false)"

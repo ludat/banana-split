@@ -122,7 +122,7 @@ spec =
       _ <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
 
       -- Sin ninguna lectura por el medio, el cache ya refleja el claim.
-      runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Nothing
+      runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Just sinCalcularCrudo
       runDb (contarNetosDe pago.pagoId) `shouldReturn` 1
 
     it "borrar un claim tambien deja el cache al dia" $ \(RunDb runDb) -> do
@@ -135,7 +135,7 @@ spec =
 
       runDb $ deleteRepartijaClaim claim.id
       -- Vuelve a ser inválido, y el cache lo dice ya mismo.
-      runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Nothing
+      runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Just sinCalcularCrudo
       runDb (contarNetosDe pago.pagoId) `shouldReturn` 0
 
     it "netosDeGrupo suma lo mismo que recalcular todos los gastos" $ \(RunDb runDb) -> do
@@ -343,7 +343,7 @@ ensuciarResumen pagoId value =
   runUpdate $
     update
       db.pagos
-      (\p -> p.pagoResumen <-. val_ (Just (PgJSONB value)))
+      (\p -> p.pagoResumen <-. val_ (PgJSONB value))
       (\p -> p.pagoId ==. val_ pagoId)
 
 borrarNetos :: ULID -> Pg ()
@@ -353,14 +353,14 @@ borrarNetos pagoId =
       db.pago_netos
       (\pagoNeto -> pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
 
+-- | El jsonb de un gasto todavía sin calcular. La columna no acepta NULL, así
+-- que "no lo calculé" es el objeto vacío: no se le puede leer ningún campo.
+sinCalcularCrudo :: Aeson.Value
+sinCalcularCrudo = Aeson.object []
+
 -- | Como queda un gasto recién migrado, antes del backfill.
 borrarResumen :: ULID -> Pg ()
-borrarResumen pagoId =
-  runUpdate $
-    update
-      db.pagos
-      (\p -> p.pagoResumen <-. val_ Nothing)
-      (\p -> p.pagoId ==. val_ pagoId)
+borrarResumen pagoId = ensuciarResumen pagoId sinCalcularCrudo
 
 -- | El jsonb del resumen tal cual está guardado, para poder distinguir
 -- "invalidado" de "calculado" sin pasar por la reparación.
@@ -370,7 +370,7 @@ resumenCrudo pagoId = do
     pago <- all_ db.pagos
     guard_ (pago.pagoId ==. val_ pagoId)
     pure pago.pagoResumen
-  pure $ fmap (\(PgJSONB value) -> value) (join guardado)
+  pure $ fmap (\(PgJSONB value) -> value) guardado
 
 -- | Le mete un valor reconocible al cache de un gasto, para poder distinguir
 -- una lectura que lo usa de una que lo recalcula por atrás.

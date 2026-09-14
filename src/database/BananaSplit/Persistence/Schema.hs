@@ -151,12 +151,14 @@ instance Table ParticipanteT where
 
 data PagoT f = Pago
   { pagoId :: Columnar f ULID
-  , pagoResumen :: Columnar f (Maybe (PgJSONB Value))
+  , pagoResumen :: Columnar f (PgJSONB Value)
   -- ^ La parte no sumable del resumen del gasto (por qué es inválido, cuánta
-  -- gente reclamó en su repartija). NULL = todavía sin calcular. Se guarda
-  -- como 'Value' crudo y no tipado a propósito: si el formato cambiara, un
-  -- blob viejo tipado reventaría la query entera en vez de poder detectarse
-  -- y recalcularse (ver 'resumenGuardadoDe').
+  -- gente reclamó en su repartija). Nunca es NULL: un gasto todavía sin
+  -- calcular tiene @{}@, que se lee como "no sé si cierra" igual que un blob
+  -- ilegible, así que no hace falta un tercer caso. Se guarda como 'Value'
+  -- crudo y no tipado a propósito: si el formato cambiara, un blob viejo
+  -- tipado reventaría la query entera en vez de poder detectarse y
+  -- recalcularse (ver 'resumenGuardadoDe').
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMontoEnUnidadesMinimas :: Columnar f UnidadesMinimas
