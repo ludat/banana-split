@@ -1182,13 +1182,8 @@ saveRepartija moneda distribucionId repartijaSinId = do
       (conflictingFields (\r -> r.id))
       onConflictUpdateAll
   items <- saveRepartijaItems moneda repartijaId repartija.items
-  -- Los claims no viajan en el gasto que manda el front, y este save tampoco
-  -- los toca, así que hay que ir a buscarlos: son lo único que le falta a
-  -- 'savePago' para armar el resumen sin releer el gasto entero.
-  --
-  -- Va después de guardar los items porque borrar un item se lleva sus claims
-  -- por cascade: antes se leerían claims que están por desaparecer.
-  claims <- claimsDeRepartija repartijaId
+
+  claims <- claimsDeItems (fmap (RepartijaItemId . (.id)) items)
   pure
     repartija
       { M.items = items
@@ -1243,10 +1238,7 @@ fetchRepartija unRepartijaId = do
     item <- all_ db.repartija_items
     guard_ $ item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartija.id)
     pure item
-  claims :: [RepartijaClaim] <- runSelectReturningList $ select $ do
-    claim <- all_ db.repartija_claims
-    guard_ $ claim.repartijaclaimRepartijaItem `in_` fmap (val_ . RepartijaItemId . (.repartijaitemId)) items
-    pure claim
+  claims <- claimsDeItems (fmap (RepartijaItemId . (.repartijaitemId)) items)
 
   pure
     $ M.RepartijaForFrontend
@@ -1256,7 +1248,7 @@ fetchRepartija unRepartijaId = do
             , nombre = pagoNombre
             , extra = desdeUnidadesMinimas moneda repartija.extra_en_unidades_minimas
             , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
-            , claims = fmap claimDesdeFila claims
+            , claims = claims
             , items =
                 items
                   & fmap
@@ -1282,17 +1274,11 @@ claimDesdeFila r =
     , M.itemId = case r.repartijaclaimRepartijaItem of RepartijaItemId ulid -> ulid
     }
 
--- | Los claims que hay guardados hoy en una repartija.
---
--- Se leen por los items, que es como cuelgan: el claim apunta al item y el item
--- a la repartija.
-claimsDeRepartija :: ULID -> Pg [M.RepartijaClaim]
-claimsDeRepartija repartijaId = do
+claimsDeItems :: [RepartijaItemId] -> Pg [M.RepartijaClaim]
+claimsDeItems itemIds = do
   claims <- runSelectReturningList $ select $ do
-    item <- all_ db.repartija_items
-    guard_ (item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartijaId))
     claim <- all_ db.repartija_claims
-    guard_ (claim.repartijaclaimRepartijaItem ==. RepartijaItemId item.repartijaitemId)
+    guard_ (claim.repartijaclaimRepartijaItem `in_` fmap (val_) itemIds)
     pure claim
   pure $ fmap claimDesdeFila claims
 
