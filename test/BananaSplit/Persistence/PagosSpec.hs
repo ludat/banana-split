@@ -6,6 +6,7 @@ module BananaSplit.Persistence.PagosSpec (
 ) where
 
 import Data.Aeson qualified as Aeson
+import Data.Text qualified as Text
 import Data.Time (fromGregorian)
 import Database.Beam
 import Database.Beam.Postgres (Pg, PgJSONB (..))
@@ -157,6 +158,16 @@ spec =
       -- que es lo que hacía el loop de fetchPago que este cache reemplaza.
       recalculado <- runDb $ netosRecalculados grupo
       desdeElCache `shouldBe` recalculado
+
+    -- La UI manda siempre la escala de la moneda y el reparto sale en esa misma
+    -- escala, así que un monto con más decimales sólo puede llegar de un cliente
+    -- que no sea el nuestro. Guardarlo redondeado cambiaría lo que el gasto dice.
+    it "un monto con mas precision que su moneda no se guarda redondeado" $ \(RunDb runDb) -> do
+      (grupo, uno, otro) <- runDb grupoConDosParticipantes
+      -- 5.005 en una moneda de dos decimales.
+      let demasiadoPreciso = mkMonto 3 5005
+      runDb (savePago grupo.id $ gastoEntre ARS demasiadoPreciso uno otro)
+        `shouldThrow` (\(FatalError mensaje) -> "más precisión" `Text.isInfixOf` mensaje)
 
     it "un gasto invalido no deja filas en el cache" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes

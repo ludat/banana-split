@@ -9,6 +9,8 @@ module BananaSplit.Persistence (
   recordAttempt,
   clearAttempts,
   deleteOldLoginAttempts,
+  Aislamiento (..),
+  conTransaccion,
   crearBaseSiNoExiste,
   makePool,
   openConnection,
@@ -61,7 +63,6 @@ module BananaSplit.Persistence (
 
 import Conferer qualified
 import Data.Aeson qualified as Aeson
-import Data.Aeson.KeyMap qualified as Aeson.KeyMap
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
@@ -73,6 +74,8 @@ import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full hiding (insert)
 import Database.PostgreSQL.Simple (Only (..), execute, execute_, query)
+import Database.PostgreSQL.Simple.Errors (isSerializationError)
+import Database.PostgreSQL.Simple.Transaction qualified as Transaction
 
 import BananaSplit qualified as M
 import BananaSplit.Persistence.Migration_2026_05_26_FixDates qualified as FixDates
@@ -114,6 +117,53 @@ openConnection config = do
   conn <- connectPostgreSQL connString
   _ <- execute conn "SET search_path TO ?" (Only schema)
   pure conn
+
+-- | Con cuánto aislamiento corre una transacción.
+--
+-- Elegirlo es una decisión por operación, no una global: SERIALIZABLE cuesta
+-- (predicate locks, y abortos que hay que reintentar) y no todo lo que toca la
+-- base lo necesita.
+data Aislamiento
+  = -- | SERIALIZABLE con reintento. Es lo que necesita cualquier cosa que
+    -- escriba el cache del resumen de un gasto: se calcula leyendo cosas que
+    -- otra transacción puede estar cambiando al mismo tiempo (los claims de una
+    -- repartija, sobre todo). Con READ COMMITTED cada statement ve un snapshot
+    -- nuevo, así que dos escrituras pueden leer los mismos insumos y pisarse;
+    -- en SERIALIZABLE el resultado tiene que ser equivalente a haberlas corrido
+    -- una después de la otra, y si no lo es Postgres aborta una.
+    --
+    -- De ahí el reintento: fallar con @40001@ es parte del protocolo, no un
+    -- error. La transacción que aborta no dejó nada escrito, así que volver a
+    -- correr el bloque entero es seguro.
+    Serializable
+  | -- | READ COMMITTED de sólo lectura, que es lo más barato que hay: no toma
+    -- predicate locks, no puede abortar por conflicto y no le agrega trabajo a
+    -- las escrituras que corren en paralelo.
+    --
+    -- Sirve para leer y mostrar. Lo que se resigna es que cada statement ve un
+    -- snapshot distinto, así que dos queries de la misma transacción pueden ver
+    -- estados distintos de la base. Para un endpoint que ya hace varias
+    -- transacciones seguidas eso no cambia nada, pero no lo uses para decidir
+    -- algo que después vas a escribir.
+    SoloLectura
+  deriving stock (Show, Eq)
+
+-- | Corre el bloque dentro de una transacción con el aislamiento pedido.
+conTransaccion :: Aislamiento -> Connection -> IO a -> IO a
+conTransaccion aislamiento = case aislamiento of
+  Serializable ->
+    Transaction.withTransactionModeRetry
+      Transaction.TransactionMode
+        { Transaction.isolationLevel = Transaction.Serializable
+        , Transaction.readWriteMode = Transaction.DefaultReadWriteMode
+        }
+      isSerializationError
+  SoloLectura ->
+    Transaction.withTransactionMode
+      Transaction.TransactionMode
+        { Transaction.isolationLevel = Transaction.ReadCommitted
+        , Transaction.readWriteMode = Transaction.ReadOnly
+        }
 
 runMigration :: Conferer.Config -> [String] -> IO ()
 runMigration config args = do
@@ -441,56 +491,98 @@ contarPagos grupoId = do
     Just (cantidad, malos) ->
       ConteoDePagos{total = fromIntegral cantidad, invalidos = fromIntegral malos}
 
+-- | La mitad del resumen que va en el jsonb de la fila del gasto.
+--
+-- Separada de la escritura porque 'savePago' la mete en el mismo upsert del
+-- gasto en vez de actualizar la fila después.
+columnaResumen :: M.ResumenGasto -> PgJSONB Aeson.Value
+columnaResumen resumen =
+  PgJSONB
+    $ Aeson.toJSON
+      ResumenGuardado
+        { errores = resumen.errores
+        , participantesEnRepartija = resumen.participantesEnRepartija
+        }
+
 -- | Escribe el resumen de un gasto: los errores en la fila del pago y una fila
 -- por participante en 'pago_netos'. Un gasto inválido deja cero filas.
 --
--- Es el único lugar que escribe el cache, así que todo lo que pueda cambiar el
--- reparto de un gasto tiene que terminar acá.
+-- Para un gasto que ya existe. 'savePago' no pasa por acá porque puede escribir
+-- el jsonb en el insert y ahorrarse este update.
 guardarResumenDeGasto :: ULID -> M.Pago -> Pg M.ResumenGasto
 guardarResumenDeGasto grupoId pago = do
   let resumen = M.getResumenGasto pago
-  let guardado =
-        ResumenGuardado
-          { errores = resumen.errores
-          , participantesEnRepartija = resumen.participantesEnRepartija
-          }
   runUpdate
     $ update
       db.pagos
-      (\p -> p.pagoResumen <-. val_ (PgJSONB (Aeson.toJSON guardado)))
+      (\p -> p.pagoResumen <-. val_ (columnaResumen resumen))
       (\p -> p.pagoId ==. val_ pago.pagoId)
+  escribirNetosDeGasto grupoId pago resumen
+  pure resumen
+
+-- | Reemplaza las filas de 'pago_netos' del gasto.
+--
+-- Va siempre después del insert del gasto: las filas tienen una FK contra él.
+--
+-- Es upsert y no borrar-todo-e-insertar porque casi siempre los participantes
+-- del gasto son los mismos que ya estaban y sólo cambian los montos, que no
+-- están indexados: eso le deja a Postgres la chance de hacer un HOT update y no
+-- tocar ninguno de los tres índices de la tabla. Borrar e insertar los tocaría
+-- todos, dos veces. El delete sigue haciendo falta igual, pero sólo para los
+-- participantes que se fueron del gasto; con la lista vacía —un gasto que pasó
+-- a ser inválido— borra todas, que es lo correcto.
+escribirNetosDeGasto :: ULID -> M.Pago -> M.ResumenGasto -> Pg ()
+escribirNetosDeGasto grupoId pago resumen = do
+  let M.Netos pagado = resumen.pagado
+      M.Netos consumido = resumen.consumido
+      filas
+        | not (M.gastoEsValido resumen) = []
+        | otherwise =
+            Map.union pagado consumido
+              & Map.keys
+              & fmap
+                ( \participante ->
+                    PagoNeto
+                      { pago = PagoId pago.pagoId
+                      , participante = participanteId2Persistent participante
+                      , grupo = GrupoId grupoId
+                      , moneda = pago.moneda
+                      , pagado_en_unidades_minimas =
+                          aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante pagado
+                      , consumido_en_unidades_minimas =
+                          aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante consumido
+                      }
+                )
+
   runDelete
     $ delete
       db.pago_netos
-      (\pn -> pn.pago ==. val_ (PagoId pago.pagoId))
-  when (M.gastoEsValido resumen) $ do
-    let M.Netos pagado = resumen.pagado
-        M.Netos consumido = resumen.consumido
-        filas =
-          Map.union pagado consumido
-            & Map.keys
-            & fmap
-              ( \participante ->
-                  PagoNeto
-                    { pago = PagoId pago.pagoId
-                    , participante = participanteId2Persistent participante
-                    , grupo = GrupoId grupoId
-                    , moneda = pago.moneda
-                    , pagado_en_unidades_minimas =
-                        aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante pagado
-                    , consumido_en_unidades_minimas =
-                        aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante consumido
-                    }
-              )
-    unless (null filas)
-      $ runInsert
-      $ insert db.pago_netos
-      $ insertValues filas
-  pure resumen
+      ( \pn ->
+          pn.pago
+            ==. val_ (PagoId pago.pagoId)
+            &&. not_ (pn.participante `in_` fmap (val_ . (.participante)) filas)
+      )
+  unless (null filas)
+    $ runInsert
+    $ insertOnConflict
+      db.pago_netos
+      (insertValues filas)
+      (conflictingFields primaryKey)
+      onConflictUpdateAll
 
 aUnidadesMinimas :: M.Moneda -> M.Monto -> UnidadesMinimas
-aUnidadesMinimas moneda monto =
-  fromIntegral $ M.mantisaEn (M.escalaDe moneda) monto
+aUnidadesMinimas moneda monto
+  | M.getLugaresDespuesDeLaComa monto > escala =
+      panic
+        $ "monto con más precisión que "
+        <> show moneda
+        <> ", que tiene "
+        <> show escala
+        <> " decimales: "
+        <> show monto
+  | otherwise = fromIntegral $ M.mantisaEn escala monto
+  where
+    escala = M.escalaDe moneda
 
 aUnidadesMinimasMaybe :: M.Moneda -> Maybe M.Monto -> Maybe UnidadesMinimas
 aUnidadesMinimasMaybe moneda = fmap (aUnidadesMinimas moneda)
@@ -852,20 +944,22 @@ savePago grupoId pagoWithoutId = do
 
   distribucionPagadores <- saveDistribucion pago.moneda pago.pagadores
   distribucionDeudores <- saveDistribucion pago.moneda pago.deudores
+
+  let pagoNuevo =
+        pago
+          { M.pagadores = distribucionPagadores
+          , M.deudores = distribucionDeudores
+          }
+
+  let resumen = M.getResumenGasto pagoNuevo
+
   runInsert
     $ insertOnConflict
       db.pagos
       ( insertValues
           [ Pago
               { pagoId = pago.pagoId
-              , -- Sin calcular por ahora: 'guardarResumenDeGasto' lo pisa unas
-                -- líneas más abajo, dentro de la misma transacción.
-                pagoResumen = PgJSONB (Aeson.object [])
-                -- TODO: Realmente no me gusta esto de guardar y despeus recalcular,
-                -- estaria bueno hacer esto bien de una sola vez
-                -- Una manera de hacer eso podria ser que `saveDistribucion` devuelva
-                -- traiga los claims en vez de usar los que quedaron guardados
-                -- no estoy seguro de que cosa afectaria eso QUESTION
+              , pagoResumen = columnaResumen resumen
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
               , pagoMontoEnUnidadesMinimas = aUnidadesMinimas pago.moneda pago.monto
@@ -883,17 +977,8 @@ savePago grupoId pagoWithoutId = do
     when (viejaPagadores /= distribucionPagadores.id) $ deleteDistribucion viejaPagadores
     when (viejaDeudores /= distribucionDeudores.id) $ deleteDistribucion viejaDeudores
 
-  -- El lock ya lo tenemos por el upsert de arriba, pero se pide explícito para
-  -- que no dependa de ese orden: lo que hace correcto al recálculo es tomarlo
-  -- antes de leer los insumos (ver 'recalcularResumenGasto').
-  void $ lockearPago pago.pagoId
-  -- Se recalcula releyendo de la base, no desde el pago que llegó: los claims
-  -- de una repartija no viajan con el gasto (el front no los manda y este
-  -- insert no los toca), así que calcularlo con lo recibido diría que nadie
-  -- reclamó nada. Va después del insert porque las filas de 'pago_netos'
-  -- apuntan al gasto.
-  fetchPago pago.pagoId >>= void . guardarResumenDeGasto grupoId
-  pure pago{M.pagadores = distribucionPagadores, M.deudores = distribucionDeudores}
+  escribirNetosDeGasto grupoId pagoNuevo resumen
+  pure pagoNuevo
 
 recomputePagos :: Connection -> IO ()
 recomputePagos conn = go 0 nullUlid
@@ -1097,9 +1182,17 @@ saveRepartija moneda distribucionId repartijaSinId = do
       (conflictingFields (\r -> r.id))
       onConflictUpdateAll
   items <- saveRepartijaItems moneda repartijaId repartija.items
+  -- Los claims no viajan en el gasto que manda el front, y este save tampoco
+  -- los toca, así que hay que ir a buscarlos: son lo único que le falta a
+  -- 'savePago' para armar el resumen sin releer el gasto entero.
+  --
+  -- Va después de guardar los items porque borrar un item se lleva sus claims
+  -- por cascade: antes se leerían claims que están por desaparecer.
+  claims <- claimsDeRepartija repartijaId
   pure
     repartija
       { M.items = items
+      , M.claims = claims
       }
 
 saveRepartijaItems :: M.Moneda -> ULID -> [M.RepartijaItem] -> Pg [M.RepartijaItem]
@@ -1163,17 +1256,7 @@ fetchRepartija unRepartijaId = do
             , nombre = pagoNombre
             , extra = desdeUnidadesMinimas moneda repartija.extra_en_unidades_minimas
             , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
-            , claims =
-                claims
-                  & fmap
-                    ( \r ->
-                        M.RepartijaClaim
-                          { M.id = r.repartijaclaimId
-                          , M.cantidad = fromIntegral <$> r.repartijaclaimCantidad
-                          , M.participante = M.ParticipanteId $ case r.repartijaclaimParticipante of ParticipanteId ulid -> ulid
-                          , M.itemId = case r.repartijaclaimRepartijaItem of RepartijaItemId ulid -> ulid
-                          }
-                    )
+            , claims = fmap claimDesdeFila claims
             , items =
                 items
                   & fmap
@@ -1189,6 +1272,29 @@ fetchRepartija unRepartijaId = do
       , pagoId = pagoId
       , pagoNombre = pagoNombre
       }
+
+claimDesdeFila :: RepartijaClaim -> M.RepartijaClaim
+claimDesdeFila r =
+  M.RepartijaClaim
+    { M.id = r.repartijaclaimId
+    , M.cantidad = fromIntegral <$> r.repartijaclaimCantidad
+    , M.participante = M.ParticipanteId $ case r.repartijaclaimParticipante of ParticipanteId ulid -> ulid
+    , M.itemId = case r.repartijaclaimRepartijaItem of RepartijaItemId ulid -> ulid
+    }
+
+-- | Los claims que hay guardados hoy en una repartija.
+--
+-- Se leen por los items, que es como cuelgan: el claim apunta al item y el item
+-- a la repartija.
+claimsDeRepartija :: ULID -> Pg [M.RepartijaClaim]
+claimsDeRepartija repartijaId = do
+  claims <- runSelectReturningList $ select $ do
+    item <- all_ db.repartija_items
+    guard_ (item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartijaId))
+    claim <- all_ db.repartija_claims
+    guard_ (claim.repartijaclaimRepartijaItem ==. RepartijaItemId item.repartijaitemId)
+    pure claim
+  pure $ fmap claimDesdeFila claims
 
 saveRepartijaClaim :: ULID -> M.RepartijaClaim -> Pg M.RepartijaClaim
 saveRepartijaClaim repartijaId repartijaClaim = do
@@ -1228,31 +1334,25 @@ deleteRepartijaClaim claimId = do
 -- cualquiera que las sume sin pasar por 'fetchShallowPagos' —hoy nadie, pero
 -- eso es una convención, no una garantía— leería datos incorrectos.
 --
--- El precio es que N claims simultáneos sobre la misma repartija hacen N
--- recálculos serializados por el lock, en vez de uno solo.
+-- No hay lock explícito: lo que impide que dos recálculos simultáneos se pisen
+-- es el nivel de aislamiento de la transacción (ver 'conTransaccion'). El
+-- precio es que N claims simultáneos sobre la misma repartija hacen N
+-- recálculos, y los que pierdan se reintentan.
 recalcularResumenGasto :: ULID -> Pg ()
 recalcularResumenGasto pagoId =
-  lockearPago pagoId >>= \case
+  filaDelPago pagoId >>= \case
     -- El gasto se borró; el cascade ya se llevó sus filas.
     Nothing -> pure ()
     Just pago -> do
       completo <- fetchPago pagoId
       void $ guardarResumenDeGasto (case pago.pagoGrupo of GrupoId g -> g) completo
 
--- | La fila de un gasto con su lock tomado hasta el fin de la transacción.
-lockearPago :: ULID -> Pg (Maybe Pago)
-lockearPago pagoId =
-  runSelectReturningOne
-    -- 'lockingAllTablesFor_' bloquea las filas de __todas__ las tablas de esta
-    -- query. Acá hay una sola y es la fila del gasto, que es justo lo que se
-    -- quiere; si algún día se le agrega un join, el lock se ensancharía sin que
-    -- nada avise.
-    $ select
-    $ lockingAllTablesFor_ PgSelectLockingStrengthUpdate Nothing
-    $ do
-      pago <- all_ db.pagos
-      guard_ (pago.pagoId ==. val_ pagoId)
-      pure pago
+filaDelPago :: ULID -> Pg (Maybe Pago)
+filaDelPago pagoId =
+  runSelectReturningOne $ select $ do
+    pago <- all_ db.pagos
+    guard_ (pago.pagoId ==. val_ pagoId)
+    pure pago
 
 -- | Query fragment: the pago that owns a given repartija row, following
 -- distribución → pago (one repartija belongs to one distribución, which is

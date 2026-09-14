@@ -21,6 +21,7 @@ import Servant
 
 import BananaSplit
 import BananaSplit.Persistence (
+  Aislamiento (..),
   ConteoDePagos (..),
   addParticipante,
   claimParticipante,
@@ -60,15 +61,19 @@ netosPendientes netosDeGastos hechas =
 netosConSaldo :: PorMoneda (Netos Monto) -> PorMoneda (Netos Monto)
 netosConSaldo = filterPorMoneda ((> 0) . deudoresNoNulos)
 
+-- | Todo lo que hace es leer y sumar para mostrar, así que va en
+-- 'SoloLectura': la suma de los netos recorre una fila por gasto y
+-- participante, que en un grupo grande es justo lo que menos conviene andar
+-- marcando con predicate locks.
 handleGetNetos :: ULID -> AppHandler ResumenGrupo
 handleGetNetos grupoId = do
   shallowGrupo <-
-    runBeam (fetchGrupo grupoId)
+    runBeamCon SoloLectura (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   case shallowGrupo.congeladoAt of
     Just _ -> do
-      guardadas <- runBeam $ fetchTransferencias grupoId
+      guardadas <- runBeamCon SoloLectura $ fetchTransferencias grupoId
       pure $
         GrupoCongelado
           ResumenCongelado
@@ -76,9 +81,9 @@ handleGetNetos grupoId = do
             , transferenciasHechas = transferenciasHechas guardadas
             }
     Nothing -> do
-      guardadas <- runBeam $ fetchTransferencias grupoId
-      netosDeGastos <- runBeam $ netosDeGrupo grupoId
-      conteo <- runBeam $ contarPagos grupoId
+      guardadas <- runBeamCon SoloLectura $ fetchTransferencias grupoId
+      netosDeGastos <- runBeamCon SoloLectura $ netosDeGrupo grupoId
+      conteo <- runBeamCon SoloLectura $ contarPagos grupoId
 
       let netos =
             netosPendientes netosDeGastos (transferenciasHechas guardadas & fmap (fmap (.transferencia)))

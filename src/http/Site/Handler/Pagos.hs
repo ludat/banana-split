@@ -16,6 +16,7 @@ import Servant (err404)
 
 import BananaSplit
 import BananaSplit.Persistence (
+  Aislamiento (..),
   deletePago,
   fetchGrupo,
   fetchPago,
@@ -24,16 +25,18 @@ import BananaSplit.Persistence (
   updatePago,
  )
 import Site.Api
-import Site.Handler.Utils (err423, orElseMay, runBeam, throwJsonError)
+import Site.Handler.Utils (err423, orElseMay, runBeam, runBeamCon, throwJsonError)
 import Site.Types
 
+-- | El listado de gastos es la lectura más pesada de la app y no decide nada
+-- que se vaya a escribir después, así que no paga el costo de SERIALIZABLE.
 handlePagosGet :: ULID -> Maybe ULID -> AppHandler [ShallowPago]
 handlePagosGet grupoId participanteId = do
-  runBeam $ fetchShallowPagos grupoId (fmap ParticipanteId participanteId)
+  runBeamCon SoloLectura $ fetchShallowPagos grupoId (fmap ParticipanteId participanteId)
 
 handlePagoGet :: ULID -> ULID -> AppHandler Pago
 handlePagoGet _grupoId pagoId = do
-  runBeam (fetchPago pagoId)
+  runBeamCon SoloLectura (fetchPago pagoId)
 
 handlePagoPost :: ULID -> Pago -> AppHandler Pago
 handlePagoPost grupoId pago = do

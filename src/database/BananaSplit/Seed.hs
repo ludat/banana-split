@@ -21,6 +21,7 @@ module BananaSplit.Seed (
   Escenario (..),
   prepararEscenario,
   correrVueltaDeClaims,
+  correrVueltaDeGuardarYClaim,
   limpiarTodo,
 ) where
 
@@ -263,6 +264,55 @@ correrVueltaDeClaims connA connB escenario = do
     pure $ M.calcularNetosPago pago `M.enMoneda` pago.moneda
   pure (desdeCache, recalculado)
 
+-- | La otra carrera: alguien edita el gasto mientras otro reclama en su
+-- repartija.
+--
+-- 'savePago' arma el resumen sin releer el gasto, así que tiene que ir a buscar
+-- los claims por su cuenta: son el único insumo que no escribe él mismo y que
+-- no viaja en lo que manda el front. Esto verifica justamente eso.
+--
+-- El item A viene reclamado de antes para que el final sea un gasto válido: si
+-- quedaran items sin reclamar el gasto sería inválido igual y la carrera no se
+-- notaría.
+--
+-- Para ver la versión rota, hacé que 'savePago' use las distribuciones tal como
+-- se las devolvió 'saveDistribucion', sin pasarlas por 'conClaimsGuardados':
+-- el cache queda diciendo que el gasto no cierra.
+correrVueltaDeGuardarYClaim ::
+  Connection
+  -> Connection
+  -> Escenario
+  -> IO (M.PorMoneda (M.Netos M.Monto), M.PorMoneda (M.Netos M.Monto))
+correrVueltaDeGuardarYClaim connA connB escenario = do
+  limpiarClaims connA escenario
+  reclamar connA escenario.repartijaId escenario.itemA escenario.participanteA
+
+  -- El gasto como lo tiene el front antes de mandar la edición. Los claims no
+  -- viajan con él, así que da igual cuáles trae: 'savePago' los relee.
+  pago <- runBeamPostgres connA $ fetchPago escenario.pagoId
+
+  listoA <- newEmptyMVar
+  listoB <- newEmptyMVar
+  _ <- forkIO $ reguardar connA escenario.grupoId pago >> putMVar listoA ()
+  _ <- forkIO $ reclamar connB escenario.repartijaId escenario.itemB escenario.participanteB >> putMVar listoB ()
+  takeMVar listoA
+  takeMVar listoB
+
+  desdeCache <- runBeamPostgres connA $ netosDeGrupo escenario.grupoId
+  recalculado <- runBeamPostgres connA $ do
+    guardado <- fetchPago escenario.pagoId
+    pure $ M.calcularNetosPago guardado `M.enMoneda` guardado.moneda
+  pure (desdeCache, recalculado)
+
+-- | Una transacción como la del handler de editar: vuelve a guardar el gasto
+-- con un cambio que no toca el reparto.
+reguardar :: Connection -> ULID -> M.Pago -> IO ()
+reguardar conn unGrupoId pago =
+  conTransaccion Serializable conn
+    $ runBeamPostgres conn
+    $ void
+    $ savePago unGrupoId pago{M.nombre = "Cena editada"}
+
 -- | La versión de línea de comandos, para correr muchas más vueltas de las que
 -- conviene meter en el suite.
 probarClaimsConcurrentes :: Conferer.Config -> Int -> IO ()
@@ -288,7 +338,7 @@ probarClaimsConcurrentes config vueltas = do
 -- | Una transacción como la del handler: reclamar un item.
 reclamar :: Connection -> ULID -> ULID -> M.ParticipanteId -> IO ()
 reclamar conn unaRepartijaId unItemId participante =
-  Simple.withTransaction conn
+  conTransaccion Serializable conn
     $ runBeamPostgres conn
     $ void
     $ saveRepartijaClaim unaRepartijaId (M.RepartijaClaim nullUlid participante unItemId Nothing)
@@ -296,7 +346,7 @@ reclamar conn unaRepartijaId unItemId participante =
 -- | Vuelve al estado sin claims, con el cache al día.
 limpiarClaims :: Connection -> Escenario -> IO ()
 limpiarClaims conn escenario =
-  Simple.withTransaction conn $ runBeamPostgres conn $ do
+  conTransaccion Serializable conn $ runBeamPostgres conn $ do
     runDelete
       $ delete
         db.repartija_claims
@@ -307,7 +357,7 @@ limpiarClaims conn escenario =
     recalcularResumenGasto escenario.pagoId
 
 prepararEscenario :: Connection -> IO Escenario
-prepararEscenario conn = Simple.withTransaction conn $ runBeamPostgres conn $ do
+prepararEscenario conn = conTransaccion Serializable conn $ runBeamPostgres conn $ do
   grupo <- createGrupo "Concurrencia" "uno"
   otro <-
     addParticipante grupo.id "otro" >>= \case

@@ -27,15 +27,22 @@ vueltas = 25
 
 spec :: Spec
 spec =
-  around conConexiones $
+  around conConexiones $ do
+    -- El oráculo no sabe nada de estas carreras en particular: compara el cache
+    -- contra recalcular desde las distribuciones, así que también atraparía
+    -- otras formas de dejarlo inconsistente.
     describe "dos personas reclamando en la misma repartija" $
-      -- El oráculo no sabe nada de esta carrera en particular: compara el cache
-      -- contra recalcular desde las distribuciones, así que también atraparía
-      -- otras formas de dejarlo inconsistente.
       it "dejan el cache consistente con lo que dicen las distribuciones" $
         \(connA, connB, escenario) ->
           replicateM_ vueltas $ do
             (desdeCache, recalculado) <- Seed.correrVueltaDeClaims connA connB escenario
+            desdeCache `shouldBe` recalculado
+
+    describe "alguien editando el gasto mientras otro reclama" $
+      it "dejan el cache consistente con lo que dicen las distribuciones" $
+        \(connA, connB, escenario) ->
+          replicateM_ vueltas $ do
+            (desdeCache, recalculado) <- Seed.correrVueltaDeGuardarYClaim connA connB escenario
             desdeCache `shouldBe` recalculado
 
 conConexiones :: ((Connection, Connection, Seed.Escenario) -> IO ()) -> IO ()

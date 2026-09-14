@@ -6,6 +6,7 @@ module Site.Handler.Utils (
   orElse_,
   redirect,
   runBeam,
+  runBeamCon,
   throwJsonError,
 ) where
 
@@ -15,9 +16,9 @@ import Control.Monad.Reader.Class
 import Data.Aeson
 import Data.Pool qualified as Pool
 import Database.Beam.Postgres qualified as Beam
-import Database.PostgreSQL.Simple qualified as Simple
 import Servant
 
+import BananaSplit.Persistence qualified as Persistence
 import Preludat
 import Site.Types
 
@@ -52,9 +53,15 @@ throwJsonError serverError errorMessage =
       , errHeaders = errHeaders serverError ++ [("Content-Type", "application/json")]
       }
 
+-- | El default, que es el seguro: cualquier cosa que escriba tiene que ir por
+-- acá. Para una lectura que no necesita tanto está 'runBeamCon'
+-- 'Persistence.SoloLectura'.
 runBeam :: Beam.Pg a -> AppHandler a
-runBeam dbAction = do
+runBeam = runBeamCon Persistence.Serializable
+
+runBeamCon :: Persistence.Aislamiento -> Beam.Pg a -> AppHandler a
+runBeamCon aislamiento dbAction = do
   pool <- asks (.beamConnectionPool)
 
   liftIO $ Pool.withResource pool $ \conn -> do
-    Simple.withTransaction conn (Beam.runBeamPostgres conn dbAction)
+    Persistence.conTransaccion aislamiento conn (Beam.runBeamPostgres conn dbAction)
