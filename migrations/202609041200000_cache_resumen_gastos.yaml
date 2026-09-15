@@ -66,4 +66,4 @@ operations:
   - drop_column:
       table: pagos
       column: is_valid
-      down: "coalesce(jsonb_array_length(resumen -> 'errores') = 0, false)"
+      down: "coalesce(resumen -> 'errores' = '[]'::jsonb, false)"
