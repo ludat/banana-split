@@ -477,7 +477,7 @@ escribirNetosDeGasto grupoId pago resumen = do
   let M.Netos pagado = resumen.pagado
       M.Netos consumido = resumen.consumido
       filas
-        | not (M.gastoEsValido resumen) = []
+        | not (M.resumenGastoEsValido resumen) = []
         | otherwise =
             Map.union pagado consumido
               & Map.keys

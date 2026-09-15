@@ -22,9 +22,9 @@ module BananaSplit.Core (
   calcularNetosPago,
   calcularNetosTotales,
   gastoEsValido,
+  resumenGastoEsValido,
   getResumenGasto,
   getResumenPago,
-  isValid,
   netosDeGasto,
   netosDeTransferencias,
   ResumenGasto (..),
@@ -44,7 +44,7 @@ import Elm.TyRep (
 import BananaSplit.Deudas
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
 import BananaSplit.Monto (Monto)
-import BananaSplit.Participante (Participante, ParticipanteId)
+import BananaSplit.Participante (Participante)
 import BananaSplit.Repartija (RepartijaClaim (..))
 import BananaSplit.TasaDeCambio (TasaDeCambio)
 import BananaSplit.ULID
@@ -100,20 +100,18 @@ data Pago = Pago
 
 data ShallowPago = ShallowPago
   { pagoId :: ULID
-  , resumen :: ResumenGasto
-  -- ^ Siempre viene: lo deja escrito la misma transacción que modifica el
-  -- gasto, nunca se calcula al leer.
   , nombre :: Text
   , monto :: Monto
   , moneda :: Moneda
   , fecha :: Day
+  , resumen :: ResumenGasto
   }
   deriving (Show, Eq, Generic)
 
 calcularNetosTotales :: Grupo -> PorMoneda (Netos Monto)
 calcularNetosTotales grupo =
   grupo.pagos
-    & filter isValid
+    & filter gastoEsValido
     & fmap (\pago -> (calcularNetosPago pago) `enMoneda` pago.moneda)
     & mconcat
 
@@ -129,21 +127,11 @@ calcularNetosPago :: Pago -> Netos Monto
 calcularNetosPago pago =
   fromMaybe mempty $ getNetosResumen $ getResumenPago pago
 
--- | Un gasto visto desde los dos lados: cuánto puso y cuánto consumió cada
--- participante. El neto de cada uno es la resta, pero los dos lados se guardan
--- por separado porque es lo que la lista de gastos quiere mostrar, y porque es
--- lo que termina guardado en la base.
---
--- Son dos 'Netos' y no un mapa de pares porque el 'Semigroup' de 'Netos' pide
--- 'Num' en el contenido, y un par pagado/consumido no es un número.
 data ResumenGasto = ResumenGasto
   { pagado :: Netos Monto
   , consumido :: Netos Monto
   , errores :: [ErrorResumen]
   , participantesEnRepartija :: Maybe Int
-  -- ^ Cuánta gente reclamó algo, si el gasto se reparte por repartija.
-  -- 'Nothing' cuando no lo es. Es de la misma familia que 'errores': algo
-  -- derivado del gasto que la UI quiere mostrar y que no se puede sumar.
   }
   deriving (Show, Eq, Generic)
 
@@ -161,7 +149,11 @@ getResumenGasto pago =
             <> fmap (relabelError "deudores") resumenDeudores.errores
       , participantesEnRepartija = case pago.deudores.tipo of
           TipoDistribucionRepartija repartija ->
-            Just $ length $ ordNub $ fmap (\claim -> claim.participante :: ParticipanteId) repartija.claims
+            repartija.claims
+              & fmap (.participante)
+              & ordNub
+              & length
+              & Just
           _ -> Nothing
       }
 
@@ -169,21 +161,20 @@ netosDeGasto :: ResumenGasto -> Netos Monto
 netosDeGasto resumen =
   resumen.pagado <> fmap negate resumen.consumido
 
-gastoEsValido :: ResumenGasto -> Bool
-gastoEsValido resumen =
+gastoEsValido :: Pago -> Bool
+gastoEsValido pago =
+  pago
+    & getResumenGasto
+    & resumenGastoEsValido
+
+resumenGastoEsValido :: ResumenGasto -> Bool
+resumenGastoEsValido resumen =
   null resumen.errores
 
 getResumenPago :: Pago -> ResumenNetos
 getResumenPago pago =
   let resumen = getResumenGasto pago
   in ResumenNetos pago.monto (netosDeGasto resumen) resumen.errores
-
-isValid :: Pago -> Bool
-isValid pago =
-  pago
-    & getResumenPago
-    & getNetosResumen
-    & isJust
 
 instance IsElmDefinition UTCTime where
   compileElmDef _ =

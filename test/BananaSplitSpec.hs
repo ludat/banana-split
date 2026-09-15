@@ -29,9 +29,9 @@ pagoValido =
 
 spec :: Spec
 spec = describe "Pago" $ do
-  describe "#isValid" $ do
+  describe "#gastoEsValido" $ do
     it "un pago completo es valido" $
-      pagoValido `shouldSatisfy` isValid
+      pagoValido `shouldSatisfy` gastoEsValido
     it "un pago con monto de deudores negativo es invalido" $
       pagoValido
         { deudores =
@@ -39,7 +39,7 @@ spec = describe "Pago" $ do
               [ (participante 1, -100)
               ]
         }
-        `shouldNotSatisfy` isValid
+        `shouldNotSatisfy` gastoEsValido
     it "un pago con monto de deudores 0 es invalido" $
       pagoValido
         { deudores =
@@ -47,7 +47,7 @@ spec = describe "Pago" $ do
               [ (participante 1, 0)
               ]
         }
-        `shouldNotSatisfy` isValid
+        `shouldNotSatisfy` gastoEsValido
     it "un pago con monto de pagadores negativo es invalido" $
       pagoValido
         { pagadores =
@@ -55,7 +55,7 @@ spec = describe "Pago" $ do
               [ (participante 1, -100)
               ]
         }
-        `shouldNotSatisfy` isValid
+        `shouldNotSatisfy` gastoEsValido
     it "un pago con monto de pagadores 0 es invalido" $
       pagoValido
         { pagadores =
@@ -63,7 +63,7 @@ spec = describe "Pago" $ do
               [ (participante 1, 0)
               ]
         }
-        `shouldNotSatisfy` isValid
+        `shouldNotSatisfy` gastoEsValido
 
     it "un pago con monto de pagadores que difiere del monto de deudores es invalido" $
       pagoValido
@@ -76,19 +76,19 @@ spec = describe "Pago" $ do
               [ (participante 2, 101)
               ]
         }
-        `shouldNotSatisfy` isValid
+        `shouldNotSatisfy` gastoEsValido
 
     it "un pago sin deudores es invalido" $
       pagoValido
         { deudores = distribucionMontosEspecificos []
         }
-        `shouldNotSatisfy` isValid
+        `shouldNotSatisfy` gastoEsValido
 
     it "un pago sin pagadores es invalido" $
       pagoValido
         { pagadores = distribucionMontosEspecificos []
         }
-        `shouldNotSatisfy` isValid
+        `shouldNotSatisfy` gastoEsValido
 
     it "un pago con monto de pagadores que difiere del monto del pago es invalido" $
       pagoValido
@@ -98,7 +98,7 @@ spec = describe "Pago" $ do
               [ (participante 1, 100)
               ]
         }
-        `shouldNotSatisfy` isValid
+        `shouldNotSatisfy` gastoEsValido
     it "un pago con monto de deudores que difiere del monto del pago es invalido" $
       pagoValido
         { monto = 200
@@ -107,7 +107,7 @@ spec = describe "Pago" $ do
               [ (participante 1, 100)
               ]
         }
-        `shouldNotSatisfy` isValid
+        `shouldNotSatisfy` gastoEsValido
 
   describe "#getResumenGasto" $ do
     it "separa lo que puso cada uno de lo que consumio cada uno" $ do
@@ -130,9 +130,9 @@ spec = describe "Pago" $ do
               }
       netosDeGasto (getResumenGasto gastoPropio)
         `shouldBe` calcularNetosPago gastoPropio
-      getResumenGasto gastoPropio `shouldSatisfy` gastoEsValido
+      getResumenGasto gastoPropio `shouldSatisfy` resumenGastoEsValido
 
     it "un pago invalido dice por que lo es" $ do
       let resumen = getResumenGasto pagoValido{deudores = distribucionMontosEspecificos []}
-      resumen `shouldNotSatisfy` gastoEsValido
+      resumen `shouldNotSatisfy` resumenGastoEsValido
       fmap (.objeto) resumen.errores `shouldBe` [["deudores"]]

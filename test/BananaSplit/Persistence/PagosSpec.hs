@@ -308,7 +308,7 @@ spec =
       fmap ((.errores) . (.resumen)) gastos `shouldNotBe` [[]]
 
 esValido :: ShallowPago -> Bool
-esValido = gastoEsValido . (.resumen)
+esValido = resumenGastoEsValido . (.resumen)
 
 grupoConDosParticipantes :: Pg (Grupo, ParticipanteId, ParticipanteId)
 grupoConDosParticipantes = do

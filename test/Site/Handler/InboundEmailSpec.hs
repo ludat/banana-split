@@ -22,7 +22,7 @@ import BananaSplit (
   ShallowGrupo (..),
   TipoDistribucion (..),
   ULID,
-  isValid,
+  gastoEsValido,
   mkEmail,
   nullUlid,
   scientificToMonto,
@@ -142,7 +142,7 @@ spec = do
       pago.moneda `shouldBe` USD
       pago.fecha `shouldBe` fromGregorian 2026 1 15
       pago.pagoId `shouldBe` nullUlid
-      isValid pago `shouldBe` True
+      gastoEsValido pago `shouldBe` True
       partesOf pago.pagadores
         `shouldBe` [MontoFijo (scientificToMonto 1000) (ParticipanteId p1)]
       partesOf pago.deudores

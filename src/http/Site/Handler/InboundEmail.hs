@@ -278,7 +278,7 @@ successEmail host grupo pago =
         , "<p><strong>Deben:</strong></p>"
         , "<ul>" <> renderDistribucion names pago.deudores <> "</ul>"
         ]
-      <> [ if isValid pago
+      <> [ if gastoEsValido pago
              then "<p>Quedó todo listo.</p>"
              else "<p>Quedó marcado como <strong>inválido</strong> porque falta o no cierra alguna información (por ejemplo quién pagó o quiénes deben). Abrilo en la app para completarlo.</p>"
          ]
@@ -352,7 +352,7 @@ savedLog recipient grupo pago =
     <> monto2Text pago.monto
     <> " "
     <> show pago.moneda
-    <> (if isValid pago then "" else ", INVALID")
+    <> (if gastoEsValido pago then "" else ", INVALID")
     <> ") for "
     <> unEmail recipient
     <> " in grupo \""

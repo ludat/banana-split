@@ -811,32 +811,32 @@ jsonEncResumenGasto  val =
 
 type alias ShallowPago  =
    { pagoId: ULID
-   , resumen: ResumenGasto
    , nombre: String
    , monto: Monto
    , moneda: Moneda
    , fecha: Day
+   , resumen: ResumenGasto
    }
 
 jsonDecShallowPago : Json.Decode.Decoder ( ShallowPago )
 jsonDecShallowPago =
-   Json.Decode.succeed (\ppagoId presumen pnombre pmonto pmoneda pfecha -> {pagoId = ppagoId, resumen = presumen, nombre = pnombre, monto = pmonto, moneda = pmoneda, fecha = pfecha})
+   Json.Decode.succeed (\ppagoId pnombre pmonto pmoneda pfecha presumen -> {pagoId = ppagoId, nombre = pnombre, monto = pmonto, moneda = pmoneda, fecha = pfecha, resumen = presumen})
    |> required "pagoId" (jsonDecULID)
-   |> required "resumen" (jsonDecResumenGasto)
    |> required "nombre" (Json.Decode.string)
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
    |> required "fecha" (jsonDecDay)
+   |> required "resumen" (jsonDecResumenGasto)
 
 jsonEncShallowPago : ShallowPago -> Value
 jsonEncShallowPago  val =
    Json.Encode.object
    [ ("pagoId", jsonEncULID val.pagoId)
-   , ("resumen", jsonEncResumenGasto val.resumen)
    , ("nombre", Json.Encode.string val.nombre)
    , ("monto", jsonEncMonto val.monto)
    , ("moneda", jsonEncMoneda val.moneda)
    , ("fecha", jsonEncDay val.fecha)
+   , ("resumen", jsonEncResumenGasto val.resumen)
    ]
 
 

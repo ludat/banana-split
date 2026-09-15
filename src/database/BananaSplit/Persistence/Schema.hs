@@ -9,7 +9,7 @@
 
 module BananaSplit.Persistence.Schema where
 
-import Data.Aeson (FromJSON, ToJSON, Value)
+import Data.Aeson (FromJSON, ToJSON)
 import Data.String (String)
 import Data.Time (Day, UTCTime)
 import Database.Beam as Beam
