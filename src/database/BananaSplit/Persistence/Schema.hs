@@ -28,7 +28,7 @@ data BananaSplitDb f = BananaSplitDb
   , login_attempts :: f (TableEntity LoginAttemptT)
   , participantes :: f (TableEntity ParticipanteT)
   , pagos :: f (TableEntity PagoT)
-  , pago_netos :: f (TableEntity PagoNetoT)
+  , pagado_y_consumido_en_gasto :: f (TableEntity PagadoYConsumidoEnGastoT)
   , distribuciones :: f (TableEntity DistribucionT)
   , distribuciones_monto_equitativo :: f (TableEntity DistribucionMontoEquitativoT)
   , distribuciones_monto_equitativo_items :: f (TableEntity DistribucionMontoEquitativoItemT)
@@ -194,8 +194,8 @@ type UnidadesMinimas = Int64
 --
 -- Un gasto inválido no tiene filas. Uno válido siempre tiene al menos una, así
 -- que "válido y sin filas" significa que el cache todavía no se calculó.
-data PagoNetoT f = PagoNeto
-  { pago :: PrimaryKey PagoT f
+data PagadoYConsumidoEnGastoT f = PagadoYConsumidoEnGasto
+  { gasto :: PrimaryKey PagoT f
   , participante :: PrimaryKey ParticipanteT f
   , grupo :: PrimaryKey GrupoT f
   -- ^ Se repite acá para que sumar los netos de un grupo no tenga que
@@ -209,19 +209,19 @@ data PagoNetoT f = PagoNeto
   }
   deriving (Generic, Beamable)
 
-type PagoNeto = PagoNetoT Identity
+type PagadoYConsumidoEnGasto = PagadoYConsumidoEnGastoT Identity
 
-deriving instance Show PagoNeto
+deriving instance Show PagadoYConsumidoEnGasto
 
-deriving instance Eq PagoNeto
+deriving instance Eq PagadoYConsumidoEnGasto
 
-instance Table PagoNetoT where
+instance Table PagadoYConsumidoEnGastoT where
   -- No tiene id propio: la identidad de la fila es de qué gasto y de qué
   -- participante habla.
-  data PrimaryKey PagoNetoT f
-    = PagoNetoId (PrimaryKey PagoT f) (PrimaryKey ParticipanteT f)
+  data PrimaryKey PagadoYConsumidoEnGastoT f
+    = PagadoYConsumidoEnGastoId (PrimaryKey PagoT f) (PrimaryKey ParticipanteT f)
     deriving (Generic, Beamable)
-  primaryKey pagoNeto = PagoNetoId pagoNeto.pago pagoNeto.participante
+  primaryKey fila = PagadoYConsumidoEnGastoId fila.gasto fila.participante
 
 data DistribucionT f = Distribucion
   { id :: Columnar f ULID

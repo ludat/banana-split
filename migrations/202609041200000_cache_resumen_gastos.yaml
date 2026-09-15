@@ -1,20 +1,20 @@
 operations:
   - create_table:
-      name: pago_netos
+      name: pagado_y_consumido_en_gasto
       constraints:
-        - name: pago_netos__pago_participante
+        - name: pagado_y_consumido_en_gasto__gasto_participante
           type: primary_key
           columns:
-            - pago__id
+            - gasto__id
             - participante__id
       columns:
-        - name: pago__id
+        - name: gasto__id
           type: text
           nullable: false
           references:
             table: pagos
             column: id
-            name: fk_pago_netos_pago__id
+            name: fk_pagado_y_consumido_gasto__id
             on_delete: CASCADE
         - name: grupo__id
           type: text
@@ -22,7 +22,7 @@ operations:
           references:
             table: grupos
             column: id
-            name: fk_pago_netos_grupo__id
+            name: fk_pagado_y_consumido_grupo__id
             on_delete: CASCADE
         - name: participante__id
           type: text
@@ -30,7 +30,7 @@ operations:
           references:
             table: participantes
             column: id
-            name: fk_pago_netos_participante__id
+            name: fk_pagado_y_consumido_participante__id
             on_delete: CASCADE
         - name: moneda
           type: text
@@ -42,16 +42,20 @@ operations:
           type: bigint
           nullable: false
 
+  # El orden de las columnas puede salir invertido: pgroll las toma como un map
+  # y no es determinista. Si queda '(participante__id, grupo__id)' no le sirve a
+  # 'netosDeGrupo', que filtra por grupo. Recrear el índice cuando pgroll
+  # respete el orden.
   - create_index:
-      name: idx_pago_netos_grupo_participante
-      table: pago_netos
+      name: idx_pagado_y_consumido_grupo_participante
+      table: pagado_y_consumido_en_gasto
       columns:
         grupo__id: {}
         participante__id: {}
 
   - create_index:
-      name: idx_pago_netos_participante
-      table: pago_netos
+      name: idx_pagado_y_consumido_participante
+      table: pagado_y_consumido_en_gasto
       columns:
         participante__id: {}
 

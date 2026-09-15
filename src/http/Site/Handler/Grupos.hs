@@ -22,10 +22,10 @@ import Servant
 import BananaSplit
 import BananaSplit.Persistence (
   Aislamiento (..),
-  ConteoDePagos (..),
+  ConteoDeGastos (..),
   addParticipante,
   claimParticipante,
-  contarPagos,
+  contarGastos,
   createGrupo,
   createGrupoForUser,
   deleteShallowParticipante,
@@ -83,7 +83,7 @@ handleGetNetos grupoId = do
     Nothing -> do
       guardadas <- runBeamCon SoloLectura $ fetchTransferencias grupoId
       netosDeGastos <- runBeamCon SoloLectura $ netosDeGrupo grupoId
-      conteo <- runBeamCon SoloLectura $ contarPagos grupoId
+      conteo <- runBeamCon SoloLectura $ contarGastos grupoId
 
       let netos =
             netosPendientes netosDeGastos (transferenciasHechas guardadas & fmap (fmap (.transferencia)))

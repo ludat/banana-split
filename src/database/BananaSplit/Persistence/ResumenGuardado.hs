@@ -3,7 +3,7 @@
 {-# LANGUAGE DerivingVia #-}
 
 -- | El jsonb donde se guarda la parte del resumen de un gasto que no son
--- números por participante, y que por eso no vive en @pago_netos@: no se puede
+-- números por participante, y que por eso no vive en @pagado_y_consumido_en_gasto@: no se puede
 -- sumar en SQL.
 --
 -- Es un detalle de cómo se guarda y nada más. Al resto de la app le llega un

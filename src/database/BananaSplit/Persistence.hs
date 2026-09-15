@@ -36,8 +36,8 @@ module BananaSplit.Persistence (
   fetchGrupoIdFromRepartija,
   fetchPago,
   fetchRepartija,
-  ConteoDePagos (..),
-  contarPagos,
+  ConteoDeGastos (..),
+  contarGastos,
   fetchShallowPagos,
   fetchTasasDeCambio,
   fetchTransferencias,
@@ -426,7 +426,7 @@ fetchPago pagoId = do
       }
 
 -- | Cuántos gastos tiene un grupo y cuántos de ellos no están bien.
-data ConteoDePagos = ConteoDePagos
+data ConteoDeGastos = ConteoDeGastos
   { total :: Int
   , invalidos :: Int
   }
@@ -435,11 +435,11 @@ data ConteoDePagos = ConteoDePagos
 -- | Los dos conteos de un grupo.
 --
 -- Se cuenta en la base: para dos enteros no hace falta traer los gastos ni sus
--- filas de 'pago_netos'. Y van juntos porque salen de la misma pasada.
+-- filas de 'pagado_y_consumido_en_gasto'. Y van juntos porque salen de la misma pasada.
 --
 -- Qué cuenta como válido lo decide 'esValido_', al lado del decoder del blob.
-contarPagos :: ULID -> Pg ConteoDePagos
-contarPagos grupoId = do
+contarGastos :: ULID -> Pg ConteoDeGastos
+contarGastos grupoId = do
   resultado <- runSelectReturningOne $ select $ do
     aggregate_
       ( \pago ->
@@ -452,12 +452,12 @@ contarPagos grupoId = do
         guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
         pure pago
   pure $ case resultado of
-    Nothing -> ConteoDePagos{total = 0, invalidos = 0}
+    Nothing -> ConteoDeGastos{total = 0, invalidos = 0}
     Just (cantidad, malos) ->
-      ConteoDePagos{total = fromIntegral cantidad, invalidos = fromIntegral malos}
+      ConteoDeGastos{total = fromIntegral cantidad, invalidos = fromIntegral malos}
 
 -- | Escribe el resumen de un gasto: los errores en la fila del pago y una fila
--- por participante en 'pago_netos'. Un gasto inválido deja cero filas.
+-- por participante en 'pagado_y_consumido_en_gasto'. Un gasto inválido deja cero filas.
 --
 -- Para un gasto que ya existe. 'savePago' no pasa por acá porque puede escribir
 -- el jsonb en el insert y ahorrarse este update.
@@ -469,11 +469,11 @@ guardarResumenDeGasto grupoId pago = do
       db.pagos
       (\p -> p.resumen <-. val_ (ResumenGuardado.resumen2Guardado resumen))
       (\p -> p.pagoId ==. val_ pago.pagoId)
-  escribirNetosDeGasto grupoId pago resumen
+  escribirPagadoYConsumido grupoId pago resumen
   pure resumen
 
-escribirNetosDeGasto :: ULID -> M.Pago -> M.ResumenGasto -> Pg ()
-escribirNetosDeGasto grupoId pago resumen = do
+escribirPagadoYConsumido :: ULID -> M.Pago -> M.ResumenGasto -> Pg ()
+escribirPagadoYConsumido grupoId pago resumen = do
   let M.Netos pagado = resumen.pagado
       M.Netos consumido = resumen.consumido
       filas
@@ -483,8 +483,8 @@ escribirNetosDeGasto grupoId pago resumen = do
               & Map.keys
               & fmap
                 ( \participante ->
-                    PagoNeto
-                      { pago = PagoId pago.pagoId
+                    PagadoYConsumidoEnGasto
+                      { gasto = PagoId pago.pagoId
                       , participante = participanteId2Persistent participante
                       , grupo = GrupoId grupoId
                       , moneda = pago.moneda
@@ -497,16 +497,16 @@ escribirNetosDeGasto grupoId pago resumen = do
 
   runDelete
     $ delete
-      db.pago_netos
+      db.pagado_y_consumido_en_gasto
       ( \pn ->
-          pn.pago
+          pn.gasto
             ==. val_ (PagoId pago.pagoId)
             &&. not_ (pn.participante `in_` fmap (val_ . (.participante)) filas)
       )
   unless (null filas)
     $ runInsert
     $ insertOnConflict
-      db.pago_netos
+      db.pagado_y_consumido_en_gasto
       (insertValues filas)
       (conflictingFields primaryKey)
       onConflictUpdateAll
@@ -673,15 +673,15 @@ fetchShallowPagos grupoId participanteId = do
   -- Todas las filas del cache del grupo de una, no una query por gasto. Sin
   -- joinear 'pagos': la fila sabe de qué grupo es.
   filas <- runSelectReturningList $ select $ do
-    pagoNeto <- all_ db.pago_netos
-    guard_ (pagoNeto.grupo ==. GrupoId (val_ grupoId))
+    fila <- all_ db.pagado_y_consumido_en_gasto
+    guard_ (fila.grupo ==. GrupoId (val_ grupoId))
     forM_ participanteId $ \unParticipante ->
-      guard_ (pagoNeto.participante ==. ParticipanteId (val_ (M.participanteId2ULID unParticipante)))
-    pure pagoNeto
+      guard_ (fila.participante ==. ParticipanteId (val_ (M.participanteId2ULID unParticipante)))
+    pure fila
 
   let netosPorPago =
         filas
-          & fmap (\fila -> (case fila.pago of PagoId p -> p, [fila]))
+          & fmap (\fila -> (case fila.gasto of PagoId p -> p, [fila]))
           & Map.fromListWith (<>)
 
   -- Leer nunca calcula: el resumen de un gasto queda escrito por la misma
@@ -690,7 +690,7 @@ fetchShallowPagos grupoId participanteId = do
   -- corriendo el backfill, no disimulándolo en cada lectura.
   pure $ dbPagos & fmap (\pago -> toShallowPago pago (Map.findWithDefault [] pago.pagoId netosPorPago))
 
-toShallowPago :: Pago -> [PagoNeto] -> M.ShallowPago
+toShallowPago :: Pago -> [PagadoYConsumidoEnGasto] -> M.ShallowPago
 toShallowPago pago filas =
   M.ShallowPago
     { M.pagoId = pago.pagoId
@@ -702,8 +702,8 @@ toShallowPago pago filas =
     }
 
 -- | Rearma el resumen de un gasto juntando sus dos mitades guardadas: los
--- números por participante salen de 'pago_netos' y el resto del jsonb.
-resumenDesde :: [PagoNeto] -> ResumenGuardado -> M.ResumenGasto
+-- números por participante salen de 'pagado_y_consumido_en_gasto' y el resto del jsonb.
+resumenDesde :: [PagadoYConsumidoEnGasto] -> ResumenGuardado -> M.ResumenGasto
 resumenDesde netos guardado =
   M.ResumenGasto
     { -- Los netos salen de las filas, que un cambio de formato del blob no toca:
@@ -738,13 +738,13 @@ netosDeGrupo grupoId = do
       $ do
         -- Una sola tabla: la fila del cache sabe de qué grupo es, así que la
         -- suma no toca 'pagos' para nada.
-        pagoNeto <- all_ db.pago_netos
-        guard_ (pagoNeto.grupo ==. GrupoId (val_ grupoId))
-        let ParticipanteId participante = pagoNeto.participante
+        fila <- all_ db.pagado_y_consumido_en_gasto
+        guard_ (fila.grupo ==. GrupoId (val_ grupoId))
+        let ParticipanteId participante = fila.participante
         pure
           ( participante
-          , pagoNeto.moneda
-          , pagoNeto.pagado_en_unidades_minimas - pagoNeto.consumido_en_unidades_minimas
+          , fila.moneda
+          , fila.pagado_en_unidades_minimas - fila.consumido_en_unidades_minimas
           )
   pure
     $ filas
@@ -914,7 +914,7 @@ savePago grupoId pagoWithoutId = do
     when (viejaPagadores /= distribucionPagadores.id) $ deleteDistribucion viejaPagadores
     when (viejaDeudores /= distribucionDeudores.id) $ deleteDistribucion viejaDeudores
 
-  escribirNetosDeGasto grupoId pagoNuevo resumen
+  escribirPagadoYConsumido grupoId pagoNuevo resumen
   pure pagoNuevo
 
 recomputePagos :: Connection -> IO ()
@@ -1253,7 +1253,7 @@ deleteRepartijaClaim claimId = do
 --
 -- Recalcula acá y no en la próxima lectura a propósito: al terminar la
 -- transacción el cache tiene que estar bien. Si sólo se invalidara, entre la
--- escritura y la primera lectura las filas de 'pago_netos' quedarían viejas, y
+-- escritura y la primera lectura las filas de 'pagado_y_consumido_en_gasto' quedarían viejas, y
 -- cualquiera que las sume sin pasar por 'fetchShallowPagos' —hoy nadie, pero
 -- eso es una convención, no una garantía— leería datos incorrectos.
 --
@@ -1263,15 +1263,15 @@ deleteRepartijaClaim claimId = do
 -- recálculos, y los que pierdan se reintentan.
 recalcularResumenGasto :: ULID -> Pg ()
 recalcularResumenGasto pagoId =
-  filaDelPago pagoId >>= \case
+  filaDelGasto pagoId >>= \case
     -- El gasto se borró; el cascade ya se llevó sus filas.
     Nothing -> pure ()
     Just pago -> do
       completo <- fetchPago pagoId
       void $ guardarResumenDeGasto (case pago.pagoGrupo of GrupoId g -> g) completo
 
-filaDelPago :: ULID -> Pg (Maybe Pago)
-filaDelPago pagoId =
+filaDelGasto :: ULID -> Pg (Maybe Pago)
+filaDelGasto pagoId =
   runSelectReturningOne $ select $ do
     pago <- all_ db.pagos
     guard_ (pago.pagoId ==. val_ pagoId)

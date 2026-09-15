@@ -111,7 +111,7 @@ spec =
       fmap esValido shallowInvalid `shouldBe` [False]
 
     -- Al terminar la transacción el cache tiene que estar bien, sin depender de
-    -- que alguien lo lea después: cualquier cosa que sume 'pago_netos' por su
+    -- que alguien lo lea después: cualquier cosa que sume 'pagado_y_consumido_en_gasto' por su
     -- cuenta tiene que ver datos correctos.
     it "guardar un claim deja el cache al dia sin que nadie lea" $ \(RunDb runDb) -> do
       grupo <- runDb $ createGrupo "Test Grupo" "alguien"
@@ -119,13 +119,13 @@ spec =
       let repartija = repartijaDe pago
 
       -- Sin claims el gasto es inválido, así que no deja filas.
-      runDb (contarNetosDe pago.pagoId) `shouldReturn` 0
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 0
 
       _ <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
 
       -- Sin ninguna lectura por el medio, el cache ya refleja el claim.
       runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Just sinCalcularCrudo
-      runDb (contarNetosDe pago.pagoId) `shouldReturn` 1
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 1
 
     it "borrar un claim tambien deja el cache al dia" $ \(RunDb runDb) -> do
       grupo <- runDb $ createGrupo "Test Grupo" "alguien"
@@ -133,12 +133,12 @@ spec =
       let repartija = repartijaDe pago
 
       claim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
-      runDb (contarNetosDe pago.pagoId) `shouldReturn` 1
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 1
 
       runDb $ deleteRepartijaClaim claim.id
       -- Vuelve a ser inválido, y el cache lo dice ya mismo.
       runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Just sinCalcularCrudo
-      runDb (contarNetosDe pago.pagoId) `shouldReturn` 0
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 0
 
     it "netosDeGrupo suma lo mismo que recalcular todos los gastos" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
@@ -173,18 +173,18 @@ spec =
     it "un gasto invalido no deja filas en el cache" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
-      runDb (contarNetosDe pago.pagoId) `shouldReturn` 2
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 2
 
       _ <- runDb $ updatePago grupo.id pago.pagoId pago{deudores = distribucionVacia}
-      runDb (contarNetosDe pago.pagoId) `shouldReturn` 0
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 0
 
     it "borrar un gasto se lleva sus filas del cache" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
-      runDb (contarNetosDe pago.pagoId) `shouldReturn` 2
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 2
 
       runDb $ deletePago pago.pagoId
-      runDb (contarNetosDe pago.pagoId) `shouldReturn` 0
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 0
 
     it "leer no toca los gastos que ya estan calculados" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
@@ -224,38 +224,38 @@ spec =
       gastos <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap (fmap (.tipo) . (.errores) . (.resumen)) gastos `shouldBe` [[ErrorNoCalculado]]
 
-    it "contarPagos cuenta los gastos y los invalidos" $ \(RunDb runDb) -> do
+    it "contarGastos cuenta los gastos y los invalidos" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
-      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 0, invalidos = 0}
+      runDb (contarGastos grupo.id) `shouldReturn` ConteoDeGastos{total = 0, invalidos = 0}
 
       _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
-      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 0}
+      runDb (contarGastos grupo.id) `shouldReturn` ConteoDeGastos{total = 1, invalidos = 0}
 
       _ <- runDb $ savePago grupo.id $ (gastoEntre ARS 70 uno otro){deudores = distribucionVacia}
-      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 2, invalidos = 1}
+      runDb (contarGastos grupo.id) `shouldReturn` ConteoDeGastos{total = 2, invalidos = 1}
 
     it "un gasto sin calcular cuenta como invalido" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
-      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 0}
+      runDb (contarGastos grupo.id) `shouldReturn` ConteoDeGastos{total = 1, invalidos = 0}
 
       -- Como queda tras la migración: sin resumen y sin filas.
       runDb $ borrarResumen pago.pagoId
-      runDb $ borrarNetos pago.pagoId
-      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 1}
+      runDb $ borrarPagadoYConsumido pago.pagoId
+      runDb (contarGastos grupo.id) `shouldReturn` ConteoDeGastos{total = 1, invalidos = 1}
 
     -- El criterio de la base mira el jsonb, igual que el decoder: un blob con
     -- formato viejo no se sabe si cierra, así que cuenta inválido aunque haya
-    -- dejado filas en 'pago_netos'. Así el contador dice lo mismo que el
+    -- dejado filas en 'pagado_y_consumido_en_gasto'. Así el contador dice lo mismo que el
     -- triángulo que muestra la lista.
     it "un resumen ilegible cuenta como invalido aunque tenga netos" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
-      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 0}
+      runDb (contarGastos grupo.id) `shouldReturn` ConteoDeGastos{total = 1, invalidos = 0}
 
       runDb $ ensuciarResumen pago.pagoId $ Aeson.String "un formato que ya no existe"
-      runDb (contarNetosDe pago.pagoId) `shouldReturn` 2
-      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 1}
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 2
+      runDb (contarGastos grupo.id) `shouldReturn` ConteoDeGastos{total = 1, invalidos = 1}
 
     it "no cuenta los gastos de otro grupo" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
@@ -263,8 +263,8 @@ spec =
       _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
       _ <- runDb $ savePago otroGrupo.id $ (gastoEntre ARS 70 unoDeAlla otroDeAlla){deudores = distribucionVacia}
 
-      runDb (contarPagos grupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 0}
-      runDb (contarPagos otroGrupo.id) `shouldReturn` ConteoDePagos{total = 1, invalidos = 1}
+      runDb (contarGastos grupo.id) `shouldReturn` ConteoDeGastos{total = 1, invalidos = 0}
+      runDb (contarGastos otroGrupo.id) `shouldReturn` ConteoDeGastos{total = 1, invalidos = 1}
 
     it "con participante trae solo sus netos" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
@@ -288,7 +288,7 @@ spec =
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
       -- Se ensucia el cache a mano: si la lectura lo recalculara, lo pisaría.
-      runDb $ ensuciarNetos pago.pagoId
+      runDb $ ensuciarPagadoYConsumido pago.pagoId
       gastos <- runDb $ fetchShallowPagos grupo.id (Just tercero)
       fmap esValido gastos `shouldBe` [True]
 
@@ -346,12 +346,12 @@ netosRecalculados grupo = do
   pagos <- traverse (fetchPago . (.pagoId)) shallowPagos
   pure $ calcularNetosTotales grupo{pagos = pagos}
 
-contarNetosDe :: ULID -> Pg Int
-contarNetosDe pagoId =
+contarFilasDe :: ULID -> Pg Int
+contarFilasDe pagoId =
   fmap length $ runSelectReturningList $ select $ do
-    pagoNeto <- all_ db.pago_netos
-    guard_ (pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
-    pure pagoNeto.participante
+    fila <- all_ db.pagado_y_consumido_en_gasto
+    guard_ (fila.gasto ==. val_ (Schema.PagoId pagoId))
+    pure fila.participante
 
 -- | Deja en el resumen un jsonb que el formato de hoy no puede decodificar,
 -- que es lo que se ve mientras corre el backfill de un cambio de formato.
@@ -368,12 +368,12 @@ ensuciarResumen pagoId value =
         "UPDATE public.pagos SET resumen = ? WHERE id = ?"
         (value, show pagoId :: Text)
 
-borrarNetos :: ULID -> Pg ()
-borrarNetos pagoId =
+borrarPagadoYConsumido :: ULID -> Pg ()
+borrarPagadoYConsumido pagoId =
   runDelete $
     delete
-      db.pago_netos
-      (\pagoNeto -> pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
+      db.pagado_y_consumido_en_gasto
+      (\fila -> fila.gasto ==. val_ (Schema.PagoId pagoId))
 
 -- | El jsonb de un gasto todavía sin calcular. La columna no acepta NULL, así
 -- que "no lo calculé" es el objeto vacío: no se le puede leer ningún campo.
@@ -399,13 +399,13 @@ resumenCrudo pagoId =
 
 -- | Le mete un valor reconocible al cache de un gasto, para poder distinguir
 -- una lectura que lo usa de una que lo recalcula por atrás.
-ensuciarNetos :: ULID -> Pg ()
-ensuciarNetos pagoId =
+ensuciarPagadoYConsumido :: ULID -> Pg ()
+ensuciarPagadoYConsumido pagoId =
   runUpdate $
     update
-      db.pago_netos
-      (\pagoNeto -> pagoNeto.pagado_en_unidades_minimas <-. val_ 999900)
-      (\pagoNeto -> pagoNeto.pago ==. val_ (Schema.PagoId pagoId))
+      db.pagado_y_consumido_en_gasto
+      (\fila -> fila.pagado_en_unidades_minimas <-. val_ 999900)
+      (\fila -> fila.gasto ==. val_ (Schema.PagoId pagoId))
 
 -- | Save a pago whose deudores is a repartija with a single item that sums to
 -- the monto but has no claims, leaving the pago invalid until something is
