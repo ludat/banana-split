@@ -42,10 +42,10 @@ operations:
           type: bigint
           nullable: false
 
-  # El orden de las columnas puede salir invertido: pgroll las toma como un map
-  # y no es determinista. Si queda '(participante__id, grupo__id)' no le sirve a
-  # 'netosDeGrupo', que filtra por grupo. Recrear el índice cuando pgroll
-  # respete el orden.
+  # TODO: El orden de las columnas puede salir invertido: pgroll las toma como
+  # un map y no es determinista. Si queda '(participante__id, grupo__id)' no le
+  # sirve a 'netosDeGrupo', que filtra por grupo. Recrear el índice cuando
+  # pgroll respete el orden.
   - create_index:
       name: idx_pagado_y_consumido_grupo_participante
       table: pagado_y_consumido_en_gasto
