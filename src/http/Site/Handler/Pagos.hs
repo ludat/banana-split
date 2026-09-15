@@ -50,7 +50,7 @@ handlePagoResumenPost :: Pago -> AppHandler ResumenPago
 handlePagoResumenPost pago = do
   pure $
     ResumenPago
-      { resumen = getResumenPago pago
+      { resumen = resumenGastos2ResumenNetos $ getResumenGasto pago
       , resumenPagadores = getResumen pago.monto pago.pagadores
       , resumenDeudores = getResumen pago.monto pago.deudores
       }

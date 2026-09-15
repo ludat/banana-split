@@ -194,7 +194,7 @@ spec = do
       res.errores
         `shouldBe` [err [] (ErrorRepartijaTotalReclamadoNoCoincide (totalNetos res.netos) 250)]
 
-  describe "getResumenPago" $ do
+  describe "getResumenGasto" $ do
     it "con pagadores y deudores que no balancean devuelve errores con objeto correcto" $ do
       let pago =
             pagoValido
@@ -202,7 +202,7 @@ spec = do
               , pagadores = distribucionMontosEspecificos [(u1, 500)]
               , deudores = distribucionMontosEspecificos [(u2, 300)]
               }
-          res = getResumenPago pago
+          res = getResumenGasto pago
       res.errores
         `shouldBe` [ err ["deudores"] (ErrorPartesTotalNoCoincide 300 500)
                    ]
@@ -214,7 +214,7 @@ spec = do
               , pagadores = distribucionMontosEspecificos [(u1, 500)]
               , deudores = distribucionMontosEspecificos [(u2, 500)]
               }
-      (getResumenPago pago).errores
+      (getResumenGasto pago).errores
         `shouldBe` []
 
     it "errores de pagadores tienen objeto 'pagadores'" $ do
@@ -224,7 +224,7 @@ spec = do
               , pagadores = distribucionMontosEspecificos []
               , deudores = distribucionMontosEspecificos [(u2, 500)]
               }
-      (getResumenPago pago).errores
+      (getResumenGasto pago).errores
         `shouldBe` [err ["pagadores"] ErrorPartesVacias]
 
   describe "calcularNetos" $ do

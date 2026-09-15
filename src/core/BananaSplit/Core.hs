@@ -24,10 +24,10 @@ module BananaSplit.Core (
   gastoEsValido,
   resumenGastoEsValido,
   getResumenGasto,
-  getResumenPago,
-  netosDeGasto,
+  netosDeResumenGasto,
   netosDeTransferencias,
   ResumenGasto (..),
+  resumenGastos2ResumenNetos,
 ) where
 
 import Data.Time (Day, UTCTime)
@@ -124,8 +124,10 @@ netosDeTransferencias =
   fmap (foldMap netosDeTransferencia)
 
 calcularNetosPago :: Pago -> Netos Monto
-calcularNetosPago pago =
-  fromMaybe mempty $ getNetosResumen $ getResumenPago pago
+calcularNetosPago gasto =
+  gasto
+    & getResumenGasto
+    & netosDeResumenGasto
 
 data ResumenGasto = ResumenGasto
   { pagado :: Netos Monto
@@ -134,6 +136,14 @@ data ResumenGasto = ResumenGasto
   , participantesEnRepartija :: Maybe Int
   }
   deriving (Show, Eq, Generic)
+
+resumenGastos2ResumenNetos :: ResumenGasto -> ResumenNetos
+resumenGastos2ResumenNetos resumen =
+  ResumenNetos
+    { netos = resumen.pagado <> fmap negate resumen.consumido
+    , total = totalNetos resumen.pagado
+    , errores = resumen.errores
+    }
 
 getResumenGasto :: Pago -> ResumenGasto
 getResumenGasto pago =
@@ -157,8 +167,8 @@ getResumenGasto pago =
           _ -> Nothing
       }
 
-netosDeGasto :: ResumenGasto -> Netos Monto
-netosDeGasto resumen =
+netosDeResumenGasto :: ResumenGasto -> Netos Monto
+netosDeResumenGasto resumen =
   resumen.pagado <> fmap negate resumen.consumido
 
 gastoEsValido :: Pago -> Bool
@@ -170,11 +180,6 @@ gastoEsValido pago =
 resumenGastoEsValido :: ResumenGasto -> Bool
 resumenGastoEsValido resumen =
   null resumen.errores
-
-getResumenPago :: Pago -> ResumenNetos
-getResumenPago pago =
-  let resumen = getResumenGasto pago
-  in ResumenNetos pago.monto (netosDeGasto resumen) resumen.errores
 
 instance IsElmDefinition UTCTime where
   compileElmDef _ =
