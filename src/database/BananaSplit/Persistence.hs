@@ -62,7 +62,6 @@ module BananaSplit.Persistence (
 ) where
 
 import Conferer qualified
-import Data.Aeson qualified as Aeson
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
@@ -79,7 +78,8 @@ import Database.PostgreSQL.Simple.Transaction qualified as Transaction
 
 import BananaSplit qualified as M
 import BananaSplit.Persistence.Migration_2026_05_26_FixDates qualified as FixDates
-import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..), sinCalcular)
+import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..))
+import BananaSplit.Persistence.ResumenGuardado qualified as ResumenGuardado
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
 import BananaSplit.ULID (ULID, nullUlid)
@@ -425,28 +425,6 @@ fetchPago pagoId = do
       , M.deudores = deudores
       }
 
--- | El resumen guardado de un gasto, o 'Nothing' si no se puede leer con el
--- formato de hoy.
---
--- La columna nunca es NULL, así que el único caso raro es el blob que no
--- entendemos. El @{}@ con el que arranca un gasto sin calcular ni siquiera
--- llega hasta acá: decodifica bien y el decoder laxo lo deja con
--- 'sinCalcular'. 'Nothing' queda para lo que no es un objeto, que no tiene
--- nada rescatable; termina diciendo lo mismo.
---
--- No falla: lo que sigue lo reporta como 'M.ErrorNoCalculado' y el gasto se muestra
--- degradado en vez de voltear el listado entero del grupo. Pasa mientras corre
--- el backfill de un cambio de forma de 'ResumenGuardado', o si se deployó sin
--- correr @run-migration recompute-pagos@.
---
--- Ojo que esto no reintroduce el cálculo al leer: leer sigue sin calcular
--- nunca. Lo único que hace es poder decir "no sé" en vez de romper.
-resumenGuardadoDe :: PgJSONB Aeson.Value -> Maybe ResumenGuardado
-resumenGuardadoDe (PgJSONB value) =
-  case Aeson.fromJSON value of
-    Aeson.Success guardado -> Just guardado
-    Aeson.Error _ -> Nothing
-
 -- | Cuántos gastos tiene un grupo y cuántos de ellos no están bien.
 data ConteoDePagos = ConteoDePagos
   { total :: Int
@@ -459,28 +437,15 @@ data ConteoDePagos = ConteoDePagos
 -- Se cuenta en la base: para dos enteros no hace falta traer los gastos ni sus
 -- filas de 'pago_netos'. Y van juntos porque salen de la misma pasada.
 --
--- Un gasto es válido si y sólo si @resumen -> 'errores'@ es exactamente un
--- array vacío. Eso es idéntico a lo que decide leer el blob, caso por caso: un
--- blob que no es objeto, uno sin la clave (el @{}@ de un gasto sin calcular) o
--- uno con un 'errores' que no decodifica, todos dan algo distinto de @[]@ acá y
--- todos degradan a 'sinCalcular' allá.
+-- Qué cuenta como válido lo decide 'esValido_', al lado del decoder del blob.
 contarPagos :: ULID -> Pg ConteoDePagos
 contarPagos grupoId = do
   resultado <- runSelectReturningOne $ select $ do
     aggregate_
       ( \pago ->
-          let
-            -- Se pregunta por los válidos y no por los inválidos a propósito.
-            -- En SQL @resumen -> 'errores'@ es NULL si el blob no es un objeto
-            -- o si no tiene la clave (el @{}@ de un gasto sin calcular, por
-            -- ejemplo), y @NULL <> '[]'@ no es true sino NULL: preguntando al
-            -- revés esos casos no contarían. El @CASE@ del 'ifThenElse_' sí
-            -- trata el NULL como falso, así que caen del lado de los inválidos.
-            esValido = (pago.pagoResumen ->$ val_ "errores") ==. val_ (PgJSONB (Aeson.Array mempty))
-          in
-            ( as_ @Int32 countAll_
-            , fromMaybe_ 0 $ sum_ $ ifThenElse_ esValido (val_ 0) (val_ (1 :: Int32))
-            )
+          ( as_ @Int32 countAll_
+          , fromMaybe_ 0 $ sum_ $ ifThenElse_ (ResumenGuardado.esValido_ pago.resumen) (val_ 0) (val_ (1 :: Int32))
+          )
       )
       $ do
         pago <- all_ db.pagos
@@ -490,19 +455,6 @@ contarPagos grupoId = do
     Nothing -> ConteoDePagos{total = 0, invalidos = 0}
     Just (cantidad, malos) ->
       ConteoDePagos{total = fromIntegral cantidad, invalidos = fromIntegral malos}
-
--- | La mitad del resumen que va en el jsonb de la fila del gasto.
---
--- Separada de la escritura porque 'savePago' la mete en el mismo upsert del
--- gasto en vez de actualizar la fila después.
-columnaResumen :: M.ResumenGasto -> PgJSONB Aeson.Value
-columnaResumen resumen =
-  PgJSONB
-    $ Aeson.toJSON
-      ResumenGuardado
-        { errores = resumen.errores
-        , participantesEnRepartija = resumen.participantesEnRepartija
-        }
 
 -- | Escribe el resumen de un gasto: los errores en la fila del pago y una fila
 -- por participante en 'pago_netos'. Un gasto inválido deja cero filas.
@@ -515,22 +467,11 @@ guardarResumenDeGasto grupoId pago = do
   runUpdate
     $ update
       db.pagos
-      (\p -> p.pagoResumen <-. val_ (columnaResumen resumen))
+      (\p -> p.resumen <-. val_ (ResumenGuardado.resumen2Guardado resumen))
       (\p -> p.pagoId ==. val_ pago.pagoId)
   escribirNetosDeGasto grupoId pago resumen
   pure resumen
 
--- | Reemplaza las filas de 'pago_netos' del gasto.
---
--- Va siempre después del insert del gasto: las filas tienen una FK contra él.
---
--- Es upsert y no borrar-todo-e-insertar porque casi siempre los participantes
--- del gasto son los mismos que ya estaban y sólo cambian los montos, que no
--- están indexados: eso le deja a Postgres la chance de hacer un HOT update y no
--- tocar ninguno de los tres índices de la tabla. Borrar e insertar los tocaría
--- todos, dos veces. El delete sigue haciendo falta igual, pero sólo para los
--- participantes que se fueron del gasto; con la lista vacía —un gasto que pasó
--- a ser inválido— borra todas, que es lo correcto.
 escribirNetosDeGasto :: ULID -> M.Pago -> M.ResumenGasto -> Pg ()
 escribirNetosDeGasto grupoId pago resumen = do
   let M.Netos pagado = resumen.pagado
@@ -753,7 +694,7 @@ toShallowPago :: Pago -> [PagoNeto] -> M.ShallowPago
 toShallowPago pago filas =
   M.ShallowPago
     { M.pagoId = pago.pagoId
-    , M.resumen = resumenDesde filas (resumenGuardadoDe pago.pagoResumen)
+    , M.resumen = resumenDesde filas pago.resumen
     , M.nombre = pago.pagoNombre
     , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
     , M.moneda = pago.pagoMoneda
@@ -762,19 +703,15 @@ toShallowPago pago filas =
 
 -- | Rearma el resumen de un gasto juntando sus dos mitades guardadas: los
 -- números por participante salen de 'pago_netos' y el resto del jsonb.
-resumenDesde :: [PagoNeto] -> Maybe ResumenGuardado -> M.ResumenGasto
+resumenDesde :: [PagoNeto] -> ResumenGuardado -> M.ResumenGasto
 resumenDesde netos guardado =
   M.ResumenGasto
     { -- Los netos salen de las filas, que un cambio de formato del blob no toca:
       -- siguen siendo correctos aunque el resto venga en default.
       M.pagado = lado (.pagado_en_unidades_minimas) netos
     , M.consumido = lado (.consumido_en_unidades_minimas) netos
-    , M.errores = case guardado of
-        Just g -> g.errores
-        -- Sin blob no sabemos si cierra, y eso para el usuario es una razón más
-        -- por la que el gasto no está bien.
-        Nothing -> sinCalcular
-    , M.participantesEnRepartija = guardado >>= (.participantesEnRepartija)
+    , M.errores = guardado.errores
+    , M.participantesEnRepartija = guardado.participantesEnRepartija
     }
   where
     lado columna =
@@ -959,13 +896,13 @@ savePago grupoId pagoWithoutId = do
       ( insertValues
           [ Pago
               { pagoId = pago.pagoId
-              , pagoResumen = columnaResumen resumen
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
               , pagoMontoEnUnidadesMinimas = aUnidadesMinimas pago.moneda pago.monto
               , pagoMoneda = pago.moneda
               , distribucion_pagadores = DistribucionId distribucionPagadores.id
               , distribucion_deudores = DistribucionId distribucionDeudores.id
+              , resumen = ResumenGuardado.resumen2Guardado resumen
               , fecha = pago.fecha
               }
           ]

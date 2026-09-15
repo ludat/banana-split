@@ -9,7 +9,8 @@ import Data.Aeson qualified as Aeson
 import Data.Text qualified as Text
 import Data.Time (fromGregorian)
 import Database.Beam
-import Database.Beam.Postgres (Pg, PgJSONB (..))
+import Database.Beam.Postgres (Pg, PgJSONB (..), liftIOWithHandle)
+import Database.PostgreSQL.Simple qualified as Simple
 import Protolude
 import Test.Hspec
 import Test.QuickCheck
@@ -201,7 +202,12 @@ spec =
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
-      runDb $ ensuciarResumen pago.pagoId $ Aeson.String "un formato que ya no existe"
+      -- Un objeto cuyos campos son de otra forma. Tiene que ser un objeto: la
+      -- columna está tipada como 'ResumenGuardado', y ese decoder degrada campo
+      -- por campo pero no rescata nada de un blob que no sea un objeto.
+      runDb $
+        ensuciarResumen pago.pagoId $
+          Aeson.object [("errores", Aeson.String "un formato que ya no existe")]
 
       gastos <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap (fmap (.tipo) . (.errores) . (.resumen)) gastos `shouldBe` [[ErrorNoCalculado]]
@@ -349,13 +355,18 @@ contarNetosDe pagoId =
 
 -- | Deja en el resumen un jsonb que el formato de hoy no puede decodificar,
 -- que es lo que se ve mientras corre el backfill de un cambio de formato.
+--
+-- Va por SQL crudo porque la columna está tipada como 'ResumenGuardado': por
+-- beam sólo se puede escribir algo que ya sea un resumen válido, que es
+-- justamente lo que acá no queremos.
 ensuciarResumen :: ULID -> Aeson.Value -> Pg ()
 ensuciarResumen pagoId value =
-  runUpdate $
-    update
-      db.pagos
-      (\p -> p.pagoResumen <-. val_ (PgJSONB value))
-      (\p -> p.pagoId ==. val_ pagoId)
+  liftIOWithHandle $ \conn ->
+    void $
+      Simple.execute
+        conn
+        "UPDATE public.pagos SET resumen = ? WHERE id = ?"
+        (value, show pagoId :: Text)
 
 borrarNetos :: ULID -> Pg ()
 borrarNetos pagoId =
@@ -373,15 +384,18 @@ sinCalcularCrudo = Aeson.object []
 borrarResumen :: ULID -> Pg ()
 borrarResumen pagoId = ensuciarResumen pagoId sinCalcularCrudo
 
--- | El jsonb del resumen tal cual está guardado, para poder distinguir
--- "invalidado" de "calculado" sin pasar por la reparación.
+-- | El jsonb del resumen tal cual está guardado, sin pasar por el decoder.
 resumenCrudo :: ULID -> Pg (Maybe Aeson.Value)
-resumenCrudo pagoId = do
-  guardado <- runSelectReturningOne $ select $ do
-    pago <- all_ db.pagos
-    guard_ (pago.pagoId ==. val_ pagoId)
-    pure pago.pagoResumen
-  pure $ fmap (\(PgJSONB value) -> value) guardado
+resumenCrudo pagoId =
+  liftIOWithHandle $ \conn -> do
+    filas <-
+      Simple.query
+        conn
+        "SELECT resumen FROM public.pagos WHERE id = ?"
+        (Simple.Only (show pagoId :: Text))
+    pure $ case filas of
+      (Simple.Only value : _) -> Just value
+      [] -> Nothing
 
 -- | Le mete un valor reconocible al cache de un gasto, para poder distinguir
 -- una lectura que lo usa de una que lo recalcula por atrás.

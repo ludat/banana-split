@@ -15,7 +15,6 @@ module BananaSplit.Deudas (
   HasResumen (..),
   minimizeTransactions,
   mkDeuda,
-  netosDe,
   netosDeTransferencia,
   Netos (..),
   Parte (..),
@@ -276,10 +275,6 @@ data TransferenciaHecha = TransferenciaHecha
   }
   deriving (Show, Eq, Generic)
 
--- | Lo que una transferencia ya hecha le hace a los netos: el que la mandó
--- salda lo que debía y el que la recibió cobra lo suyo. Los signos son los
--- mismos que los de un pago donde 'from' es el único pagador y 'to' el único
--- deudor, que es lo que esta transferencia reemplaza.
 netosDeTransferencia :: Transferencia -> Netos Monto
 netosDeTransferencia transferencia =
   mkDeuda transferencia.from transferencia.monto
@@ -295,13 +290,6 @@ filterNetos :: (a -> Bool) -> Netos a -> Netos a
 filterNetos f (Netos deudasMap) =
   deudasMap
     & Map.filter f
-    & Netos
-
--- | Lo de un solo participante, o nada si no aparece.
-netosDe :: ParticipanteId -> Netos a -> Netos a
-netosDe participanteId (Netos deudasMap) =
-  deudasMap
-    & Map.filterWithKey (\unId _ -> unId == participanteId)
     & Netos
 
 newtype Netos a = Netos (Map ParticipanteId a)

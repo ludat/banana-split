@@ -28,7 +28,6 @@ module BananaSplit.Core (
   netosDeGasto,
   netosDeTransferencias,
   ResumenGasto (..),
-  resumenDeParticipante,
 ) where
 
 import Data.Time (Day, UTCTime)
@@ -165,19 +164,6 @@ getResumenGasto pago =
             Just $ length $ ordNub $ fmap (\claim -> claim.participante :: ParticipanteId) repartija.claims
           _ -> Nothing
       }
-
--- | Recorta el resumen a un solo participante. La lista de gastos muestra
--- únicamente lo del que está mirando, así que mandarle los netos de todos los
--- demás es JSON que nadie usa.
---
--- Los errores y el conteo de la repartija quedan: son del gasto, no de nadie
--- en particular.
-resumenDeParticipante :: ParticipanteId -> ResumenGasto -> ResumenGasto
-resumenDeParticipante participanteId resumen =
-  resumen
-    { pagado = netosDe participanteId resumen.pagado
-    , consumido = netosDe participanteId resumen.consumido
-    }
 
 netosDeGasto :: ResumenGasto -> Netos Monto
 netosDeGasto resumen =

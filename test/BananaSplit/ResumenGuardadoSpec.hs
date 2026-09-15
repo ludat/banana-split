@@ -15,7 +15,7 @@ import Test.Hspec
 
 import BananaSplit.Deudas (ErrorResumen (..), TipoErrorResumen (..))
 import BananaSplit.Monto (mkMonto)
-import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..), sinCalcular)
+import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..), erroresDeErroresFaltantes)
 
 spec :: Spec
 spec = describe "ResumenGuardado" $ do
@@ -55,7 +55,7 @@ spec = describe "ResumenGuardado" $ do
 
     it "errores ilegible deja el gasto sin calcular pero conserva el resto" $
       leer (object ["errores" .= ("cualquier cosa" :: Text), "participantesEnRepartija" .= (3 :: Int)])
-        `shouldBe` Just ResumenGuardado{errores = sinCalcular, participantesEnRepartija = Just 3}
+        `shouldBe` Just ResumenGuardado{errores = erroresDeErroresFaltantes, participantesEnRepartija = Just 3}
 
     it "un error con un constructor que ya no existe también" $
       leer
@@ -64,11 +64,11 @@ spec = describe "ResumenGuardado" $ do
             , "participantesEnRepartija" .= (2 :: Int)
             ]
         )
-        `shouldBe` Just ResumenGuardado{errores = sinCalcular, participantesEnRepartija = Just 2}
+        `shouldBe` Just ResumenGuardado{errores = erroresDeErroresFaltantes, participantesEnRepartija = Just 2}
 
     it "errores ausente es lo mismo que ilegible: no sabemos si cierra" $
       leer (object ["participantesEnRepartija" .= (1 :: Int)])
-        `shouldBe` Just ResumenGuardado{errores = sinCalcular, participantesEnRepartija = Just 1}
+        `shouldBe` Just ResumenGuardado{errores = erroresDeErroresFaltantes, participantesEnRepartija = Just 1}
 
     it "un campo que ya no usamos se ignora" $
       leer (object ["errores" .= ([] :: [ErrorResumen]), "unCampoViejo" .= ("algo" :: Text)])

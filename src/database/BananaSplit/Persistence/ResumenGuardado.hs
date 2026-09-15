@@ -1,5 +1,6 @@
 {-# LANGUAGE DeriveAnyClass #-}
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 
 -- | El jsonb donde se guarda la parte del resumen de un gasto que no son
 -- números por participante, y que por eso no vive en @pago_netos@: no se puede
@@ -12,11 +13,20 @@
 -- 'BananaSplit.Persistence'.
 module BananaSplit.Persistence.ResumenGuardado (
   ResumenGuardado (..),
-  sinCalcular,
+  erroresDeErroresFaltantes,
+  resumen2Guardado,
+  esValido_,
 ) where
 
-import Data.Aeson qualified as Aeson
-import Data.Aeson.KeyMap qualified as Aeson.KeyMap
+import Data.Aeson
+import Data.Coerce (coerce)
+import Database.Beam ((==.))
+import Database.Beam qualified as Beam
+import Database.Beam.Backend.SQL (HasSqlValueSyntax)
+import Database.Beam.Backend.SQL.Row (FromBackendRow)
+import Database.Beam.Postgres (PgJSONB (..), Postgres, (->$))
+import Database.Beam.Postgres.Syntax (PgValueSyntax)
+import Database.Beam.Query.Internal (QGenExpr)
 
 import BananaSplit qualified as M
 import Preludat
@@ -26,35 +36,31 @@ data ResumenGuardado = ResumenGuardado
   , participantesEnRepartija :: Maybe Int
   }
   deriving stock (Generic, Show, Eq)
-  deriving anyclass (Aeson.ToJSON)
+  deriving anyclass (ToJSON)
+  deriving (HasSqlValueSyntax PgValueSyntax, FromBackendRow Postgres) via (PgJSONB ResumenGuardado)
 
--- | Lo que dice el resumen de un gasto cuando no lo pudimos leer: no sabemos si
--- cierra. Una lista vacía diría que es válido, que es justo lo que no sabemos.
-sinCalcular :: [M.ErrorResumen]
-sinCalcular = [M.ErrorResumen{M.objeto = [], M.tipo = M.ErrorNoCalculado}]
+erroresDeErroresFaltantes :: [M.ErrorResumen]
+erroresDeErroresFaltantes = [M.ErrorResumen{M.objeto = [], M.tipo = M.ErrorNoCalculado}]
 
--- | Decodifica campo por campo en vez de todo o nada.
---
--- El derivado genérico de Aeson falla entero si un campo no matchea, y eso
--- haría perder los campos que sí se entienden: un cambio de forma de
--- 'M.ErrorResumen' se llevaría puesto el contador de la repartija, que no tiene
--- nada que ver. Acá cada campo que no se puede leer cae por separado a "no
--- sabemos".
---
--- Falla entero sólo si el blob no es un objeto, porque ahí no hay nada que
--- rescatar.
-instance Aeson.FromJSON ResumenGuardado where
-  parseJSON = Aeson.withObject "ResumenGuardado" $ \o ->
-    pure
-      ResumenGuardado
-        { errores = campoLaxo o "errores" sinCalcular
-        , participantesEnRepartija = campoLaxo o "participantesEnRepartija" Nothing
-        }
+instance FromJSON ResumenGuardado where
+  parseJSON = withObject "ResumenGuardado" $ \o ->
+    ResumenGuardado
+      <$> optional (o .: "errores")
+      .!= erroresDeErroresFaltantes
+      <*> optional (o .: "participantesEnRepartija")
 
--- | El valor del campo, o el default si falta o no se puede decodificar.
-campoLaxo :: (Aeson.FromJSON a) => Aeson.Object -> Aeson.Key -> a -> a
-campoLaxo o clave porDefecto =
-  case Aeson.KeyMap.lookup clave o of
-    Just value
-      | Aeson.Success x <- Aeson.fromJSON value -> x
-    _ -> porDefecto
+resumen2Guardado :: M.ResumenGasto -> ResumenGuardado
+resumen2Guardado resumen =
+  ResumenGuardado
+    { errores = resumen.errores
+    , participantesEnRepartija = resumen.participantesEnRepartija
+    }
+
+esValido_ ::
+  QGenExpr ctxt Postgres s ResumenGuardado
+  -> QGenExpr ctxt Postgres s Bool
+esValido_ resumen =
+  (comoJson resumen ->$ Beam.val_ "errores") ==. Beam.val_ (PgJSONB (Array mempty))
+  where
+    comoJson :: QGenExpr ctxt Postgres s a -> QGenExpr ctxt Postgres s (PgJSONB a)
+    comoJson = coerce
