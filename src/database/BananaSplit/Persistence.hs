@@ -431,22 +431,6 @@ contarGastos grupoId = do
     Just (cantidad, malos) ->
       ConteoDeGastos{total = fromIntegral cantidad, invalidos = fromIntegral malos}
 
--- | Escribe el resumen de un gasto: los errores en la fila del pago y una fila
--- por participante en 'pagado_y_consumido_en_gasto'. Un gasto inválido deja cero filas.
---
--- Para un gasto que ya existe. 'savePago' no pasa por acá porque puede escribir
--- el jsonb en el insert y ahorrarse este update.
-guardarResumenDeGasto :: ULID -> M.Pago -> Pg M.ResumenGasto
-guardarResumenDeGasto grupoId pago = do
-  let resumen = M.getResumenGasto pago
-  runUpdate
-    $ update
-      db.pagos
-      (\p -> p.resumen <-. val_ (ResumenGuardado.resumen2Guardado resumen))
-      (\p -> p.pagoId ==. val_ pago.pagoId)
-  escribirPagadoYConsumido grupoId pago resumen
-  pure resumen
-
 escribirPagadoYConsumido :: ULID -> M.Pago -> M.ResumenGasto -> Pg ()
 escribirPagadoYConsumido grupoId pago resumen = do
   let M.Netos pagado = resumen.pagado
@@ -1231,16 +1215,16 @@ deleteRepartijaClaim claimId = do
 -- | Recalcula y guarda el resumen de un gasto. Llamalo desde cualquier mutación
 -- que pueda cambiar el reparto sin pasar por 'savePago' (editar los claims de
 -- una repartija, por ejemplo).
---
--- Recalcula acá y no en la próxima lectura a propósito: al terminar la
--- transacción el cache tiene que estar bien. Si sólo se invalidara, entre la
--- escritura y la primera lectura las filas de 'pagado_y_consumido_en_gasto' quedarían viejas, y
--- cualquiera que las sume sin pasar por 'fetchShallowPagos' —hoy nadie, pero
--- eso es una convención, no una garantía— leería datos incorrectos.
 recalcularResumenGasto :: ULID -> ULID -> Pg ()
 recalcularResumenGasto grupoId pagoId = do
   pago <- fetchPago grupoId pagoId
-  void $ guardarResumenDeGasto grupoId pago
+  let resumen = M.getResumenGasto pago
+  runUpdate
+    $ update
+      db.pagos
+      (\p -> p.resumen <-. val_ (ResumenGuardado.resumen2Guardado resumen))
+      (\p -> p.pagoId ==. val_ pago.pagoId)
+  escribirPagadoYConsumido grupoId pago resumen
 
 -- | Query fragment: the pago that owns a given repartija row, following
 -- distribución → pago (one repartija belongs to one distribución, which is
