@@ -11,18 +11,20 @@ import Protolude
 import Test.Hspec
 
 import BananaSplit.Persistence qualified as Persistence
-import BaseDePrueba (prepararBase)
+import BananaSplit.PgRoll qualified as PgRoll
 import Site.Config qualified as Config
 
 hook :: SpecWith RunDb -> Spec
 hook =
-  beforeAll_ prepararBase . aroundAll setupDb . aroundWith withTestDbConn
+  aroundAll setupDb . aroundWith withTestDbConn
 
 newtype RunDb = RunDb (forall a. Pg a -> IO a)
 
 setupDb :: ActionWith Pg.Connection -> IO ()
 setupDb action = do
   config <- Config.createConfig "test"
+  PgRoll.init config
+  PgRoll.startAndComplete config
   pool <- Persistence.makePool config
   Pool.withResource pool $ \conn -> do
     action conn

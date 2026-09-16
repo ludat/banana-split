@@ -11,7 +11,6 @@ module BananaSplit.Persistence (
   deleteOldLoginAttempts,
   Aislamiento (..),
   conTransaccion,
-  crearBaseSiNoExiste,
   makePool,
   openConnection,
   runMigration,
@@ -65,14 +64,14 @@ import Conferer qualified
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
-import Data.String (String, fromString)
+import Data.String (String)
 import Data.Text qualified as Text
 import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
 import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full hiding (insert)
-import Database.PostgreSQL.Simple (Only (..), execute, execute_, query)
+import Database.PostgreSQL.Simple (Only (..), execute, query)
 import Database.PostgreSQL.Simple.Errors (isSerializationError)
 import Database.PostgreSQL.Simple.Transaction qualified as Transaction
 
@@ -85,28 +84,6 @@ import BananaSplit.PgRoll qualified as PgRoll
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
 import Preludat
-
--- | Crea la base si no existe. 'PgRoll.init' es idempotente pero necesita que
--- la base ya esté, así que el suite de tests no puede arrancar de cero sin
--- esto.
-crearBaseSiNoExiste :: Conferer.Config -> IO ()
-crearBaseSiNoExiste config = do
-  url <- Conferer.fetchFromConfig "database.url" config
-  -- La misma URL apuntando a 'postgres', que es la base de mantenimiento: no se
-  -- puede crear una base estando conectado a ella.
-  let (servidor, nombre) = Text.breakOnEnd "/" url
-  bracket (connectPostgreSQL (encodeUtf8 (servidor <> "postgres"))) close $ \conn -> do
-    existentes :: [Only Int] <- query conn "SELECT 1 FROM pg_database WHERE datname = ?" (Only nombre)
-    when (null existentes)
-      -- El nombre no puede ir como parámetro, y 'CREATE DATABASE' tampoco puede
-      -- ir adentro de una transacción. Sale de la config, no de un usuario.
-      $ void
-      $ execute_ conn
-      $ fromString
-      $ toS
-      $ "CREATE DATABASE \""
-      <> Text.replace "\"" "\"\"" nombre
-      <> "\""
 
 -- | Una conexión suelta, con el @search_path@ apuntando al esquema que pgroll
 -- tiene activo. Para los comandos de línea que no levantan el server.

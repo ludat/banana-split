@@ -11,7 +11,7 @@ module Site.Handler.Repartijas (
 import Protolude
 import Servant (err404)
 
-import BananaSplit (RepartijaClaim (..), RepartijaForFrontend (..), ShallowGrupo (..), estaCongelado)
+import BananaSplit (RepartijaClaim (..), RepartijaForFrontend (..), estaCongelado)
 import BananaSplit.Persistence
 import BananaSplit.ULID (ULID)
 import Site.Handler.Utils

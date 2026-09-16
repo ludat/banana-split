@@ -110,7 +110,6 @@ library database
     BananaSplit.Persistence.ResumenGuardado
     BananaSplit.Persistence.Schema
     BananaSplit.PgRoll
-    BananaSplit.Seed
 
   build-depends:
     banana-split
@@ -197,9 +196,7 @@ test-suite spec
     BananaSplit.ResumenGuardadoSpec
     BananaSplit.TasaDeCambioSpec
     BananaSplitSpec
-    BaseDePrueba
     Integracion.ConcurrenciaSpec
-    Integracion.SpecHook
     Site.AuthSpec
     Site.Handler.InboundEmailSpec
 
