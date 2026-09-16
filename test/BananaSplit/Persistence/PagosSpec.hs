@@ -77,7 +77,7 @@ spec =
     it "Pago roundtrips from the db" $ \(RunDb runDb) -> property $ \pago -> do
       grupo <- runDb $ createGrupo "Test Grupo" "alguien"
       savedPago <- runDb $ savePago grupo.id pago
-      fetchedPago <- runDb $ fetchPago savedPago.pagoId
+      fetchedPago <- runDb $ fetchPago grupo.id savedPago.pagoId
       fetchedPago `shouldBe` savedPago
 
     it "adding a claim turns an invalid repartija pago valid, and the stored flag reflects it" $ \(RunDb runDb) -> do
@@ -343,7 +343,7 @@ distribucionVacia = distribucionDe []
 netosRecalculados :: Grupo -> Pg (PorMoneda (Netos Monto))
 netosRecalculados grupo = do
   shallowPagos <- fetchShallowPagos grupo.id Nothing
-  pagos <- traverse (fetchPago . (.pagoId)) shallowPagos
+  pagos <- traverse (fetchPago grupo.id . (.pagoId)) shallowPagos
   pure $ calcularNetosTotales grupo{pagos = pagos}
 
 contarFilasDe :: ULID -> Pg Int

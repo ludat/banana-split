@@ -34,8 +34,8 @@ handlePagosGet grupoId participanteId = do
   runBeamFastRead $ fetchShallowPagos grupoId (fmap ParticipanteId participanteId)
 
 handlePagoGet :: ULID -> ULID -> AppHandler Pago
-handlePagoGet _grupoId pagoId = do
-  runBeamFastRead (fetchPago pagoId)
+handlePagoGet grupoId pagoId = do
+  runBeamFastRead (fetchPago grupoId pagoId)
 
 handlePagoPost :: ULID -> Pago -> AppHandler Pago
 handlePagoPost grupoId pago = do

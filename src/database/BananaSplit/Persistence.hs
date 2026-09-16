@@ -374,19 +374,21 @@ fetchGruposForUser userId = do
             }
       )
 
-fetchPago :: ULID -> Pg M.Pago
-fetchPago pagoId = do
+fetchPago :: ULID -> ULID -> Pg M.Pago
+fetchPago grupoId pagoId = do
   (dbPago :: Pago) <-
     fromMaybe (panic "Pago not found")
       <$> runSelectReturningOne
         ( select $ do
             pago <- all_ db.pagos
             guard_ (pago.pagoId ==. val_ pagoId)
+            guard_ (pago.pagoGrupo ==. val_ (GrupoId grupoId))
             pure pago
         )
 
   (pagadores :: M.Distribucion) <- fromMaybe (panic "Pagadores not found") <$> fetchDistribucion dbPago.pagoMoneda (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
   (deudores :: M.Distribucion) <- fromMaybe (panic "deudores not found") <$> fetchDistribucion dbPago.pagoMoneda (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
+
   pure
     M.Pago
       { M.pagoId = dbPago.pagoId
@@ -908,7 +910,7 @@ recomputePagos conn = go 0 nullUlid
           Nothing -> pure Nothing
           Just loteNE -> do
             forM_ loteNE $ \(pagoId, GrupoId grupoId) -> do
-              pago <- fetchPago pagoId
+              pago <- fetchPago grupoId pagoId
               void $ savePago grupoId pago
             pure $ Just (NE.length loteNE, fst $ NE.last loteNE)
       case resultado of
@@ -1199,6 +1201,9 @@ saveRepartijaClaim repartijaId repartijaClaim = do
       then liftIO ULID.getULID
       else pure repartijaClaim.id
   let claim' = repartijaClaim{M.id = claimId} :: M.RepartijaClaim
+  grupoId <-
+    fetchGrupoIdFromRepartija repartijaId
+      `orElseMay` panic "grupoId not found"
   runInsert
     $ insertOnConflict
       db.repartija_claims
@@ -1207,18 +1212,21 @@ saveRepartijaClaim repartijaId repartijaClaim = do
       onConflictUpdateAll
   -- (onConflictUpdateSet (\fields _oldValues ->
   --   repartijaClaimCantidad fields <-. val_ (fromIntegral <$> M.repartijaClaimCantidad claim')))
-  fetchPagoIdFromRepartija repartijaId >>= traverse_ recalcularResumenGasto
+  fetchPagoIdFromRepartija repartijaId >>= traverse_ (recalcularResumenGasto grupoId)
   pure claim'
 
 deleteRepartijaClaim :: ULID -> Pg ()
 deleteRepartijaClaim claimId = do
   -- Resolve the owning pago before deleting, since we navigate through the claim.
   pagoId <- fetchPagoIdFromClaim claimId
+  grupoId <-
+    fetchGrupoIdFromClaim claimId
+      `orElseMay` panic "grupoId not found"
   runDelete
     $ delete
       db.repartija_claims
       (\c -> c.repartijaclaimId ==. val_ claimId)
-  forM_ pagoId recalcularResumenGasto
+  forM_ pagoId $ recalcularResumenGasto grupoId
 
 -- | Recalcula y guarda el resumen de un gasto. Llamalo desde cualquier mutación
 -- que pueda cambiar el reparto sin pasar por 'savePago' (editar los claims de
@@ -1229,26 +1237,10 @@ deleteRepartijaClaim claimId = do
 -- escritura y la primera lectura las filas de 'pagado_y_consumido_en_gasto' quedarían viejas, y
 -- cualquiera que las sume sin pasar por 'fetchShallowPagos' —hoy nadie, pero
 -- eso es una convención, no una garantía— leería datos incorrectos.
---
--- No hay lock explícito: lo que impide que dos recálculos simultáneos se pisen
--- es el nivel de aislamiento de la transacción (ver 'conTransaccionDeEscritura'). El
--- precio es que N claims simultáneos sobre la misma repartija hacen N
--- recálculos, y los que pierdan se reintentan.
-recalcularResumenGasto :: ULID -> Pg ()
-recalcularResumenGasto pagoId =
-  filaDelGasto pagoId >>= \case
-    -- El gasto se borró; el cascade ya se llevó sus filas.
-    Nothing -> pure ()
-    Just pago -> do
-      completo <- fetchPago pagoId
-      void $ guardarResumenDeGasto (case pago.pagoGrupo of GrupoId g -> g) completo
-
-filaDelGasto :: ULID -> Pg (Maybe Pago)
-filaDelGasto pagoId =
-  runSelectReturningOne $ select $ do
-    pago <- all_ db.pagos
-    guard_ (pago.pagoId ==. val_ pagoId)
-    pure pago
+recalcularResumenGasto :: ULID -> ULID -> Pg ()
+recalcularResumenGasto grupoId pagoId = do
+  pago <- fetchPago grupoId pagoId
+  void $ guardarResumenDeGasto grupoId pago
 
 -- | Query fragment: the pago that owns a given repartija row, following
 -- distribución → pago (one repartija belongs to one distribución, which is

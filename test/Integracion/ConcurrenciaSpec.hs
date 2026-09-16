@@ -38,19 +38,19 @@ spec =
     -- El oráculo no sabe nada de estas carreras en particular: compara el cache
     -- contra recalcular desde las distribuciones, así que también atraparía
     -- otras formas de dejarlo inconsistente.
-    describe "dos personas reclamando en la misma repartija" $
-      it "dejan el cache consistente con lo que dicen las distribuciones" $
-        \(connA, connB, escenario) ->
-          replicateM_ vueltas $ do
-            (desdeCache, recalculado) <- correrVueltaDeClaims connA connB escenario
-            desdeCache `shouldBe` recalculado
+    describe "dos personas reclamando en la misma repartija"
+      $ it "dejan el cache consistente con lo que dicen las distribuciones"
+      $ \(connA, connB, escenario) ->
+        replicateM_ vueltas $ do
+          (desdeCache, recalculado) <- correrVueltaDeClaims connA connB escenario
+          desdeCache `shouldBe` recalculado
 
-    describe "alguien editando el gasto mientras otro reclama" $
-      it "dejan el cache consistente con lo que dicen las distribuciones" $
-        \(connA, connB, escenario) ->
-          replicateM_ vueltas $ do
-            (desdeCache, recalculado) <- correrVueltaDeGuardarYClaim connA connB escenario
-            desdeCache `shouldBe` recalculado
+    describe "alguien editando el gasto mientras otro reclama"
+      $ it "dejan el cache consistente con lo que dicen las distribuciones"
+      $ \(connA, connB, escenario) ->
+        replicateM_ vueltas $ do
+          (desdeCache, recalculado) <- correrVueltaDeGuardarYClaim connA connB escenario
+          desdeCache `shouldBe` recalculado
 
 conConexiones :: ((Connection, Connection, Escenario) -> IO ()) -> IO ()
 conConexiones correr = do
@@ -143,7 +143,7 @@ correrVueltaDeClaims connA connB escenario = do
 
   desdeCache <- conTransaccionDeLecturaRapida connA $ netosDeGrupo escenario.grupoId
   recalculado <- conTransaccionDeLecturaRapida connA $ do
-    pago <- fetchPago escenario.pagoId
+    pago <- fetchPago escenario.grupoId escenario.pagoId
     pure $ M.calcularNetosPago pago `M.enMoneda` pago.moneda
   pure (desdeCache, recalculado)
 
@@ -172,7 +172,7 @@ correrVueltaDeGuardarYClaim connA connB escenario = do
 
   -- El gasto como lo tiene el front antes de mandar la edición. Los claims no
   -- viajan con él, así que da igual cuáles trae: 'savePago' los relee.
-  pago <- conTransaccionDeLecturaRapida connA $ fetchPago escenario.pagoId
+  pago <- conTransaccionDeLecturaRapida connA $ fetchPago escenario.grupoId escenario.pagoId
 
   listoA <- newEmptyMVar
   listoB <- newEmptyMVar
@@ -183,7 +183,7 @@ correrVueltaDeGuardarYClaim connA connB escenario = do
 
   desdeCache <- conTransaccionDeLecturaRapida connA $ netosDeGrupo escenario.grupoId
   recalculado <- conTransaccionDeLecturaRapida connA $ do
-    guardado <- fetchPago escenario.pagoId
+    guardado <- fetchPago escenario.grupoId escenario.pagoId
     pure $ M.calcularNetosPago guardado `M.enMoneda` guardado.moneda
   pure (desdeCache, recalculado)
 
@@ -194,6 +194,7 @@ reguardar conn unGrupoId pago =
   conTransaccionDeEscritura conn
     $ void
     $ savePago unGrupoId pago{M.nombre = "Cena editada"}
+
 -- | Una transacción como la del handler: reclamar un item.
 reclamar :: Connection -> ULID -> ULID -> M.ParticipanteId -> IO ()
 reclamar conn unaRepartijaId unItemId participante =
@@ -212,7 +213,7 @@ limpiarClaims conn escenario =
             claim.repartijaclaimRepartijaItem
               `in_` [val_ (RepartijaItemId escenario.itemA), val_ (RepartijaItemId escenario.itemB)]
         )
-    recalcularResumenGasto escenario.pagoId
+    recalcularResumenGasto escenario.grupoId escenario.pagoId
 
 prepararEscenario :: Connection -> IO Escenario
 prepararEscenario conn = conTransaccionDeEscritura conn $ do
