@@ -39,10 +39,10 @@ handlePagoGet grupoId pagoId = do
 
 handlePagoPost :: ULID -> Pago -> AppHandler Pago
 handlePagoPost grupoId pago = do
-  shallowGrupo <-
+  grupo <-
     runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
+  when (estaCongelado grupo) $ throwJsonError err423 "El grupo está congelado"
   runBeamWrite (savePago grupoId pago)
 
 handlePagoResumenPost :: Pago -> AppHandler ResumenPago
@@ -56,17 +56,17 @@ handlePagoResumenPost pago = do
 
 handleDeletePago :: ULID -> ULID -> AppHandler ULID
 handleDeletePago grupoId pagoId = do
-  shallowGrupo <-
+  grupo <-
     runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
+  when (estaCongelado grupo) $ throwJsonError err423 "El grupo está congelado"
   runBeamWrite (deletePago pagoId)
   pure pagoId
 
 handlePagoUpdate :: ULID -> ULID -> Pago -> AppHandler Pago
 handlePagoUpdate grupoId pagoId pago = do
-  shallowGrupo <-
+  grupo <-
     runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
+  when (estaCongelado grupo) $ throwJsonError err423 "El grupo está congelado"
   runBeamWrite $ updatePago grupoId pagoId pago

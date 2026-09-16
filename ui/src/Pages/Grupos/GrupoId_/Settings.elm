@@ -7,7 +7,7 @@ import Form.Error as FormError
 import Form.Field
 import Form.Init as Form
 import Form.Validate as V exposing (Validation)
-import Generated.Api as Api exposing (Moneda, Monto, ResumenGrupo, ShallowGrupo, TasaDeCambio, ULID, UpdateGrupoParams, User)
+import Generated.Api as Api exposing (Grupo, Moneda, Monto, ResumenGrupo, TasaDeCambio, ULID, UpdateGrupoParams, User)
 import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, a, button, div, i, input, label, option, select, span, text)
 import Html.Attributes as Attr exposing (class, classList, disabled, for, id, selected, type_, value)
@@ -49,6 +49,9 @@ type alias Model =
     , ajustesForm : Maybe (Form CustomFormError UpdateGrupoParams)
     , moneda : EstadoDeLaMoneda
     , tasasForm : Maybe (Form CustomFormError (List (Maybe TasaDeCambio)))
+    , -- Congelar calcula las transferencias mínimas en el backend y puede
+      -- tardar unos segundos, así que la pantalla avisa mientras tanto.
+      congelamiento : WebData Grupo
     }
 
 
@@ -72,11 +75,11 @@ esperandoConfirmacion estado =
 
 type Msg
     = FreezeGrupo
-    | FreezeGrupoResponse (Result Http.Error ShallowGrupo)
+    | FreezeGrupoResponse (Result Http.Error Grupo)
     | UnfreezeGrupo
-    | UnfreezeGrupoResponse (Result Http.Error ShallowGrupo)
+    | UnfreezeGrupoResponse (Result Http.Error Grupo)
     | AjustesForm Form.Msg
-    | UpdateGrupoResponse (Result Http.Error ShallowGrupo)
+    | UpdateGrupoResponse (Result Http.Error Grupo)
     | EditarAjustes
     | CancelarEdicionAjustes
     | CopyEmailAddress String
@@ -85,7 +88,7 @@ type Msg
     | CancelarEdicionTasas
     | TasasForm Form.Msg
     | TasasGuardadas (Result Http.Error (List TasaDeCambio))
-    | MonedaGuardada (Result Http.Error ShallowGrupo)
+    | MonedaGuardada (Result Http.Error Grupo)
     | VaciarTasa Int
 
 
@@ -95,6 +98,7 @@ init store grupoId =
       , ajustesForm = Nothing
       , moneda = MonedaDelGrupo
       , tasasForm = Nothing
+      , congelamiento = NotAsked
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -112,7 +116,7 @@ validateUpdateGrupoParams =
         |> V.andMap (V.field "moneda" Moneda.validate)
 
 
-seedAjustesForm : ShallowGrupo -> Form CustomFormError UpdateGrupoParams
+seedAjustesForm : Grupo -> Form CustomFormError UpdateGrupoParams
 seedAjustesForm grupo =
     Form.initial
         [ Form.setString "nombre" grupo.nombre
@@ -125,15 +129,15 @@ update : Store -> Msg -> Model -> ( Model, Effect Msg )
 update store msg model =
     case msg of
         FreezeGrupo ->
-            ( model
+            ( { model | congelamiento = Loading }
             , Effect.sendCmd <|
                 Api.postGrupoByIdFreeze
                     model.grupoId
                     FreezeGrupoResponse
             )
 
-        FreezeGrupoResponse (Ok _) ->
-            ( model
+        FreezeGrupoResponse (Ok grupo) ->
+            ( { model | congelamiento = Success grupo }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshGrupo model.grupoId
@@ -141,11 +145,11 @@ update store msg model =
                 ]
             )
 
-        FreezeGrupoResponse (Err _) ->
-            ( model
+        FreezeGrupoResponse (Err error) ->
+            ( { model | congelamiento = Failure error }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Toasts.pushToast Toasts.ToastDanger "No se pudo congelar el grupo. Revisá que estén cargadas las tasas de cambio de todas las monedas con deuda."
+                , Toasts.pushToast Toasts.ToastDanger "No se pudo congelar el grupo. Revisá que no queden gastos inválidos y que estén cargadas las tasas de cambio de todas las monedas con deuda."
                 ]
             )
 
@@ -158,7 +162,8 @@ update store msg model =
             )
 
         UnfreezeGrupoResponse (Ok _) ->
-            ( model
+            -- El congelamiento anterior ya no dice nada del grupo de ahora.
+            ( { model | congelamiento = NotAsked }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshGrupo model.grupoId
@@ -379,7 +384,7 @@ view origin currentUser store model =
                             [ viewAjustesSection grupo model.ajustesForm
                             , viewTasasSection grupo model
                             , viewEmailSection origin currentUser grupo
-                            , viewFreezeSection grupo (Store.getResumen model.grupoId store)
+                            , viewFreezeSection grupo (Store.getResumen model.grupoId store) model.congelamiento
                             ]
                         ]
                     ]
@@ -387,7 +392,7 @@ view origin currentUser store model =
             }
 
 
-viewAjustesSection : ShallowGrupo -> Maybe (Form CustomFormError UpdateGrupoParams) -> Html Msg
+viewAjustesSection : Grupo -> Maybe (Form CustomFormError UpdateGrupoParams) -> Html Msg
 viewAjustesSection grupo edicion =
     div [ class "card mb-4" ]
         [ div [ class "card-header" ] [ text "Ajustes generales" ]
@@ -402,7 +407,7 @@ viewAjustesSection grupo edicion =
         ]
 
 
-viewAjustesGuardados : ShallowGrupo -> Html Msg
+viewAjustesGuardados : Grupo -> Html Msg
 viewAjustesGuardados grupo =
     div []
         [ div [ class "list-group mb-3" ]
@@ -421,7 +426,7 @@ viewDatoGuardado etiqueta valor =
         ]
 
 
-viewAjustesEditando : ShallowGrupo -> Form CustomFormError UpdateGrupoParams -> Html Msg
+viewAjustesEditando : Grupo -> Form CustomFormError UpdateGrupoParams -> Html Msg
 viewAjustesEditando grupo form =
     let
         dirty =
@@ -464,7 +469,7 @@ contextoDeTasas store model =
         |> Maybe.map armarContexto
 
 
-armarContexto : ShallowGrupo -> ContextoDeTasas
+armarContexto : Grupo -> ContextoDeTasas
 armarContexto grupo =
     { monedaPorDefecto = grupo.monedaPorDefecto
     , conPagos = grupo.monedasConPagos
@@ -638,7 +643,7 @@ filaAFormGroup fila =
         ]
 
 
-viewTasasSection : ShallowGrupo -> Model -> Html Msg
+viewTasasSection : Grupo -> Model -> Html Msg
 viewTasasSection grupo model =
     let
         contexto =
@@ -911,7 +916,7 @@ emailDomain origin =
         |> Maybe.withDefault origin
 
 
-viewEmailSection : String -> WebData User -> ShallowGrupo -> Html Msg
+viewEmailSection : String -> WebData User -> Grupo -> Html Msg
 viewEmailSection origin currentUser grupo =
     let
         address =
@@ -985,8 +990,8 @@ viewEmailSection origin currentUser grupo =
         ]
 
 
-viewFreezeSection : ShallowGrupo -> WebData ResumenGrupo -> Html Msg
-viewFreezeSection grupo resumen =
+viewFreezeSection : Grupo -> WebData ResumenGrupo -> WebData Grupo -> Html Msg
+viewFreezeSection grupo resumen congelamiento =
     let
         -- Congelar consolida todo a la moneda del grupo, así que sin la tasa de
         -- alguna de las monedas con deuda no hay nada que congelar. Es la misma
@@ -1001,6 +1006,17 @@ viewFreezeSection grupo resumen =
 
                 _ ->
                     []
+
+        -- Un gasto inválido no entra en los netos, así que congelar así dejaría
+        -- las deudas fijas sin esa plata. También lo chequea el backend.
+        gastosInvalidos : Int
+        gastosInvalidos =
+            case RemoteData.toMaybe resumen of
+                Just (Api.GrupoAbierto r) ->
+                    r.cantidadPagosInvalidos
+
+                _ ->
+                    0
     in
     div [ class "card" ]
         [ div [ class "card-header" ] [ text "Congelar grupo" ]
@@ -1033,13 +1049,30 @@ viewFreezeSection grupo resumen =
                             ++ (monedasSinTasa |> List.map Moneda.nombre |> String.join ", ")
                             ++ ". Cargalas más arriba."
                     ]
-            , viewFreezeButton grupo (List.isEmpty monedasSinTasa)
+            , if estaCongelado grupo || gastosInvalidos == 0 then
+                text ""
+
+              else
+                Bs.alert Bs.AlertWarning
+                    [ class "mb-3" ]
+                    [ text <|
+                        if gastosInvalidos == 1 then
+                            "Para congelar hay que arreglar 1 gasto inválido: no se cuenta para las deudas."
+
+                        else
+                            "Para congelar hay que arreglar "
+                                ++ String.fromInt gastosInvalidos
+                                ++ " gastos inválidos: no se cuentan para las deudas."
+                    ]
+            , viewFreezeButton grupo
+                (List.isEmpty monedasSinTasa && gastosInvalidos == 0)
+                congelamiento
             ]
         ]
 
 
-viewFreezeButton : ShallowGrupo -> Bool -> Html Msg
-viewFreezeButton grupo sePuedeCongelar =
+viewFreezeButton : Grupo -> Bool -> WebData Grupo -> Html Msg
+viewFreezeButton grupo sePuedeCongelar congelamiento =
     if estaCongelado grupo then
         button
             [ type_ "button"
@@ -1049,11 +1082,41 @@ viewFreezeButton grupo sePuedeCongelar =
             [ text "Descongelar" ]
 
     else
-        Bs.btn Bs.Primary
-            [ onClick FreezeGrupo
-            , disabled (not sePuedeCongelar)
+        let
+            congelando : Bool
+            congelando =
+                RemoteData.isLoading congelamiento
+        in
+        div [ class "d-flex gap-2 align-items-center" ]
+            [ Bs.btn Bs.Primary
+                [ onClick FreezeGrupo
+                , disabled (not sePuedeCongelar || congelando)
+                ]
+                [ text <|
+                    if congelando then
+                        "Congelando..."
+
+                    else
+                        "Congelar"
+                ]
+
+            -- Calcular las transferencias mínimas puede tardar unos segundos.
+            , if congelando then
+                div [ class "d-flex gap-2 align-items-center" ]
+                    [ Bs.spinner
+                        [ Attr.style "width" "1.25rem"
+                        , Attr.style "height" "1.25rem"
+                        , Attr.style "border-width" "0.2em"
+                        , Attr.style "flex" "0 0 auto"
+                        , Attr.attribute "aria-hidden" "true"
+                        ]
+                    , span [ class "text-body-secondary small" ]
+                        [ text "Calculando las transferencias para saldar el grupo..." ]
+                    ]
+
+              else
+                text ""
             ]
-            [ text "Congelar" ]
 
 
 viewTextFormItem : String -> Bool -> Form.FieldState CustomFormError String -> Html Form.Msg

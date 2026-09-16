@@ -569,35 +569,6 @@ jsonEncErrorResumen  val =
 type alias Grupo  =
    { id: ULID
    , nombre: String
-   , pagos: (List Pago)
-   , participantes: (List Participante)
-   , monedaPorDefecto: Moneda
-   }
-
-jsonDecGrupo : Json.Decode.Decoder ( Grupo )
-jsonDecGrupo =
-   Json.Decode.succeed (\pid pnombre ppagos pparticipantes pmonedaPorDefecto -> {id = pid, nombre = pnombre, pagos = ppagos, participantes = pparticipantes, monedaPorDefecto = pmonedaPorDefecto})
-   |> required "id" (jsonDecULID)
-   |> required "nombre" (Json.Decode.string)
-   |> required "pagos" (Json.Decode.list (jsonDecPago))
-   |> required "participantes" (Json.Decode.list (jsonDecParticipante))
-   |> required "monedaPorDefecto" (jsonDecMoneda)
-
-jsonEncGrupo : Grupo -> Value
-jsonEncGrupo  val =
-   Json.Encode.object
-   [ ("id", jsonEncULID val.id)
-   , ("nombre", Json.Encode.string val.nombre)
-   , ("pagos", (Json.Encode.list jsonEncPago) val.pagos)
-   , ("participantes", (Json.Encode.list jsonEncParticipante) val.participantes)
-   , ("monedaPorDefecto", jsonEncMoneda val.monedaPorDefecto)
-   ]
-
-
-
-type alias ShallowGrupo  =
-   { id: ULID
-   , nombre: String
    , participantes: (List Participante)
    , congeladoAt: (Maybe Posix)
    , monedaPorDefecto: Moneda
@@ -605,8 +576,8 @@ type alias ShallowGrupo  =
    , monedasConPagos: (List Moneda)
    }
 
-jsonDecShallowGrupo : Json.Decode.Decoder ( ShallowGrupo )
-jsonDecShallowGrupo =
+jsonDecGrupo : Json.Decode.Decoder ( Grupo )
+jsonDecGrupo =
    Json.Decode.succeed (\pid pnombre pparticipantes pcongeladoAt pmonedaPorDefecto ptasasDeCambio pmonedasConPagos -> {id = pid, nombre = pnombre, participantes = pparticipantes, congeladoAt = pcongeladoAt, monedaPorDefecto = pmonedaPorDefecto, tasasDeCambio = ptasasDeCambio, monedasConPagos = pmonedasConPagos})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
@@ -616,8 +587,8 @@ jsonDecShallowGrupo =
    |> required "tasasDeCambio" (Json.Decode.list (jsonDecTasaDeCambio))
    |> required "monedasConPagos" (Json.Decode.list (jsonDecMoneda))
 
-jsonEncShallowGrupo : ShallowGrupo -> Value
-jsonEncShallowGrupo  val =
+jsonEncGrupo : Grupo -> Value
+jsonEncGrupo  val =
    Json.Encode.object
    [ ("id", jsonEncULID val.id)
    , ("nombre", Json.Encode.string val.nombre)
@@ -1139,7 +1110,36 @@ postGrupo body toMsg =
                 Nothing
             }
 
-getGrupoById : ULID -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
+postMeGrupos : CreateGrupoAsUserParams -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
+postMeGrupos body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "me"
+                    , "grupos"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncCreateGrupoAsUserParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecGrupo
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+getGrupoById : ULID -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
 getGrupoById capture_id toMsg =
     let
         params =
@@ -1161,7 +1161,7 @@ getGrupoById capture_id toMsg =
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg jsonDecShallowGrupo
+                Http.expectJson toMsg jsonDecGrupo
             , timeout =
                 Nothing
             , tracker =
@@ -1198,7 +1198,7 @@ getGrupoByIdResumen capture_id toMsg =
                 Nothing
             }
 
-putGrupoById : ULID -> UpdateGrupoParams -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
+putGrupoById : ULID -> UpdateGrupoParams -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
 putGrupoById capture_id body toMsg =
     let
         params =
@@ -1220,7 +1220,7 @@ putGrupoById capture_id body toMsg =
             , body =
                 Http.jsonBody (jsonEncUpdateGrupoParams body)
             , expect =
-                Http.expectJson toMsg jsonDecShallowGrupo
+                Http.expectJson toMsg jsonDecGrupo
             , timeout =
                 Nothing
             , tracker =
@@ -1560,7 +1560,7 @@ deleteRepartijasClaimsByClaimId capture_claimId toMsg =
                 Nothing
             }
 
-postGrupoByIdFreeze : ULID -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
+postGrupoByIdFreeze : ULID -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
 postGrupoByIdFreeze capture_id toMsg =
     let
         params =
@@ -1583,14 +1583,14 @@ postGrupoByIdFreeze capture_id toMsg =
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg jsonDecShallowGrupo
+                Http.expectJson toMsg jsonDecGrupo
             , timeout =
                 Nothing
             , tracker =
                 Nothing
             }
 
-deleteGrupoByIdFreeze : ULID -> (Result Http.Error  (ShallowGrupo)  -> msg) -> Cmd msg
+deleteGrupoByIdFreeze : ULID -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
 deleteGrupoByIdFreeze capture_id toMsg =
     let
         params =
@@ -1613,7 +1613,7 @@ deleteGrupoByIdFreeze capture_id toMsg =
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg jsonDecShallowGrupo
+                Http.expectJson toMsg jsonDecGrupo
             , timeout =
                 Nothing
             , tracker =
@@ -2001,35 +2001,6 @@ putMe body toMsg =
                 Http.jsonBody (jsonEncUpdateMeParams body)
             , expect =
                 Http.expectJson toMsg jsonDecUser
-            , timeout =
-                Nothing
-            , tracker =
-                Nothing
-            }
-
-postMeGrupos : CreateGrupoAsUserParams -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
-postMeGrupos body toMsg =
-    let
-        params =
-            List.filterMap identity
-            (List.concat
-                [])
-    in
-        Http.request
-            { method =
-                "POST"
-            , headers =
-                []
-            , url =
-                Url.Builder.crossOrigin "/api"
-                    [ "me"
-                    , "grupos"
-                    ]
-                    params
-            , body =
-                Http.jsonBody (jsonEncCreateGrupoAsUserParams body)
-            , expect =
-                Http.expectJson toMsg jsonDecGrupo
             , timeout =
                 Nothing
             , tracker =

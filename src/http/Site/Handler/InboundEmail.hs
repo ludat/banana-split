@@ -208,7 +208,7 @@ processInbound host payload = do
 
 -- | The authenticated pipeline (steps 3–7). Errors thrown here are user-facing
 -- Spanish strings, because they are emailed back to the sender.
-processPago :: MailerooInbound -> Email -> ExceptT Text AppHandler (ShallowGrupo, Pago)
+processPago :: MailerooInbound -> Email -> ExceptT Text AppHandler (Grupo, Pago)
 processPago payload fromEmail = do
   config <- lift $ asks (.receipts)
 
@@ -262,7 +262,7 @@ sendReply mailer recipient payload (subject, body) = do
 -- | (subject, HTML body) confirming the pago we saved. Includes the parsed
 -- distribución (pagadores / deudores) so the sender can verify the part most
 -- likely to be wrong, plus a link back to the pago in the app.
-successEmail :: Maybe Text -> ShallowGrupo -> Pago -> (Text, Text)
+successEmail :: Maybe Text -> Grupo -> Pago -> (Text, Text)
 successEmail host grupo pago =
   ( "Registré tu pago en " <> grupo.nombre
   , Text.unlines
@@ -342,7 +342,7 @@ failureEmail reason =
   )
 
 -- | The one-line summary written to the drop/outcome log.
-savedLog :: Email -> ShallowGrupo -> Pago -> Text
+savedLog :: Email -> Grupo -> Pago -> Text
 savedLog recipient grupo pago =
   "saved pago "
     <> show pago.pagoId
@@ -363,7 +363,7 @@ savedLog recipient grupo pago =
 -- nombre), the default currency, and the set of accepted currency codes. The
 -- participante linked to @sender@ is flagged @esRemitente@ so the model can
 -- resolve first-person references in the email to a real id.
-mkPagoContext :: User -> ShallowGrupo -> EmailPagoContext
+mkPagoContext :: User -> Grupo -> EmailPagoContext
 mkPagoContext sender grupo =
   EmailPagoContext
     { grupoNombre = grupo.nombre
@@ -384,7 +384,7 @@ mkPagoContext sender grupo =
 -- grupo) is dropped rather than rejected, so we always produce /some/ pago. A
 -- partial result simply surfaces to the user as an invalid pago to finish
 -- editing: validity is derived from the distributions, never stated here.
-resolvePago :: ShallowGrupo -> Day -> ParsedEmailPago -> Pago
+resolvePago :: Grupo -> Day -> ParsedEmailPago -> Pago
 resolvePago grupo today parsed =
   let validIds = Set.fromList $ fmap (.id) grupo.participantes
   in Pago

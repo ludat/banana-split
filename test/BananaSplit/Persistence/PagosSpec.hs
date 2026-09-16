@@ -344,7 +344,7 @@ netosRecalculados :: Grupo -> Pg (PorMoneda (Netos Monto))
 netosRecalculados grupo = do
   shallowPagos <- fetchShallowPagos grupo.id Nothing
   pagos <- traverse (fetchPago grupo.id . (.pagoId)) shallowPagos
-  pure $ calcularNetosTotales grupo{pagos = pagos}
+  pure $ calcularNetosTotales pagos
 
 contarFilasDe :: ULID -> Pg Int
 contarFilasDe pagoId =

@@ -13,7 +13,7 @@ module BananaSplit.Deudas (
   filterNetos,
   getNetosResumen,
   HasResumen (..),
-  minimizeTransactions,
+  minimizeTransferencias,
   mkDeuda,
   netosDeTransferencia,
   Netos (..),
@@ -205,8 +205,8 @@ instance HasResumen Repartija where
       netosReclamados = calcularNetosRepartija repartija
       totalReclamado = totalNetos netosReclamados
 
-minimizeTransactions :: Netos Monto -> [Transferencia]
-minimizeTransactions deudas =
+minimizeTransferencias :: Netos Monto -> [Transferencia]
+minimizeTransferencias deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
     Left _err -> resolverNetosNaif deudas

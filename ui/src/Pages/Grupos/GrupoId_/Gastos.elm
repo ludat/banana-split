@@ -5,7 +5,7 @@ import Components.PagoDetalleModal as PagoDetalleModal
 import Components.ResumenGasto as ResumenGasto
 import Date
 import Effect exposing (Effect)
-import Generated.Api exposing (Moneda, ShallowGrupo, ShallowPago, ULID)
+import Generated.Api exposing (Grupo, Moneda, ShallowPago, ULID)
 import Html exposing (Html, a, div, text)
 import Html.Attributes exposing (class, style)
 import Html.Events exposing (onClick)
@@ -111,7 +111,7 @@ view participanteId store model =
             }
 
 
-viewPagos : Maybe ULID -> Store -> Model -> ShallowGrupo -> Html Msg
+viewPagos : Maybe ULID -> Store -> Model -> Grupo -> Html Msg
 viewPagos participanteId store model grupo =
     case store |> Store.getPagos model.grupoId of
         NotAsked ->

@@ -2,6 +2,7 @@ module BananaSplit.Persistence.TransferenciasSpec (
   spec,
 ) where
 
+import Data.Time (fromGregorian)
 import Database.Beam.Postgres (Pg)
 import Protolude
 import Test.Hspec
@@ -9,6 +10,7 @@ import Test.Hspec
 import BananaSplit.Core
 import BananaSplit.Deudas
 import BananaSplit.Moneda
+import BananaSplit.Monto (Monto)
 import BananaSplit.Participante
 import BananaSplit.Persistence
 import BananaSplit.Persistence.SpecHook
@@ -26,39 +28,57 @@ spec = do
 
     montosDeHechas = fmap (fmap (sinId . (.transferencia)))
 
-  describe "freezeGrupo" $ do
-    it "deja las transferencias pendientes en la moneda que se le pasa" $ \(RunDb runDb) -> do
+  describe "congelarGrupo" $ do
+    it "deja pendientes las transferencias que saldan las deudas de los gastos" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 una otra
 
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 100]
+      congelado <- runDb (congelarGrupo grupo.id) >>= either (panic . show) pure
+      congelado.congeladoAt `shouldSatisfy` isJust
 
       guardadas <- runDb $ fetchTransferencias grupo.id
       montosDe (transferenciasPendientes guardadas)
         `shouldBe` [transferenciaEntre otra una 100 & sinId] `enMoneda` ARS
       transferenciasHechas guardadas `shouldBe` mempty
 
-    it "marca el grupo como congelado" $ \(RunDb runDb) -> do
-      (grupo, una, otra) <- grupoDeDos (RunDb runDb)
-
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 100]
-
-      congelado <- runDb $ fetchGrupo grupo.id
-      (congelado >>= (.congeladoAt)) `shouldSatisfy` isJust
-
     it "pisa las pendientes del congelamiento anterior" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+      congelarConDeuda runDb grupo una otra 100
 
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 100]
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 250]
+      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 150 una otra
+      _ <- runDb (congelarGrupo grupo.id) >>= either (panic . show) pure
 
       guardadas <- runDb $ fetchTransferencias grupo.id
       montosDe (transferenciasPendientes guardadas)
         `shouldBe` [transferenciaEntre otra una 250 & sinId] `enMoneda` ARS
 
+    it "no congela si hay un gasto inválido" $ \(RunDb runDb) -> do
+      (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 una otra
+      -- Un gasto sin deudores no entra en los netos: congelar así fijaría una
+      -- deuda a la que le falta plata.
+      _ <- runDb $ savePago grupo.id $ (gastoEntre ARS 70 una otra){deudores = distribucionVacia}
+
+      runDb (congelarGrupo grupo.id) `shouldReturn` Left (HayGastosInvalidos 1)
+
+      sigueAbierto <- runDb $ fetchGrupo grupo.id
+      (sigueAbierto >>= (.congeladoAt)) `shouldBe` Nothing
+      guardadas <- runDb $ fetchTransferencias grupo.id
+      transferenciasPendientes guardadas `shouldBe` mempty
+
+    it "no congela si falta la tasa de cambio de una moneda con deuda" $ \(RunDb runDb) -> do
+      (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+      _ <- runDb $ savePago grupo.id $ gastoEntre USD 50 una otra
+
+      runDb (congelarGrupo grupo.id) `shouldReturn` Left (FaltanTasasDeCambio [USD])
+
+      sigueAbierto <- runDb $ fetchGrupo grupo.id
+      (sigueAbierto >>= (.congeladoAt)) `shouldBe` Nothing
+
   describe "marcarTransferenciaSaldada" $ do
     it "pasa la transferencia de pendiente a hecha" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 100]
+      congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
 
       runDb $ marcarTransferenciaSaldada grupo.id pendiente
@@ -71,7 +91,7 @@ spec = do
     it "no toca las transferencias de otro grupo" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
       (ajeno, _, _) <- grupoDeDos (RunDb runDb)
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 100]
+      congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
 
       runDb $ marcarTransferenciaSaldada ajeno.id pendiente
@@ -82,7 +102,7 @@ spec = do
   describe "desmarcarTransferenciaSaldada" $ do
     it "la vuelve a dejar pendiente" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 100]
+      congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
       runDb $ marcarTransferenciaSaldada grupo.id pendiente
 
@@ -96,7 +116,7 @@ spec = do
     it "no toca las transferencias de otro grupo" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
       (ajeno, _, _) <- grupoDeDos (RunDb runDb)
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 100]
+      congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
       runDb $ marcarTransferenciaSaldada grupo.id pendiente
 
@@ -108,11 +128,13 @@ spec = do
   describe "unfreezeGrupo" $ do
     it "borra las pendientes pero deja las hechas" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 100]
+      congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
       runDb $ marcarTransferenciaSaldada grupo.id pendiente
-      -- Se congela de nuevo para que quede una pendiente al lado de la hecha.
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre una otra 40]
+      -- Otro gasto y otro congelamiento para que quede una pendiente al lado de
+      -- la hecha: la deuda vieja ya la saldó la transferencia de arriba.
+      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 40 una otra
+      _ <- runDb (congelarGrupo grupo.id) >>= either (panic . show) pure
 
       runDb $ unfreezeGrupo grupo.id
 
@@ -123,7 +145,7 @@ spec = do
 
     it "deja el grupo descongelado y sin fecha de congelamiento" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
-      runDb $ freezeGrupo grupo.id ARS [transferenciaEntre otra una 100]
+      congelarConDeuda runDb grupo una otra 100
 
       runDb $ unfreezeGrupo grupo.id
 
@@ -141,6 +163,40 @@ spec = do
       transferenciasPendientes guardadas `shouldBe` mempty
       montosDeHechas (transferenciasHechas guardadas)
         `shouldBe` [transferenciaEntre otra una 20 & sinId] `enMoneda` USD
+
+-- | Un gasto donde uno pone todo y el otro consume todo.
+gastoEntre :: Moneda -> Monto -> ParticipanteId -> ParticipanteId -> Pago
+gastoEntre moneda monto pagador deudor =
+  Pago
+    { pagoId = nullUlid
+    , monto = monto
+    , moneda = moneda
+    , nombre = "Gasto"
+    , fecha = fromGregorian 2025 1 1
+    , pagadores = distribucionDe [MontoFijo monto pagador]
+    , deudores = distribucionDe [MontoFijo monto deudor]
+    }
+
+distribucionDe :: [Parte] -> Distribucion
+distribucionDe partes =
+  Distribucion nullUlid $ TipoDistribucionPartes $ DistribucionPartes nullUlid partes
+
+distribucionVacia :: Distribucion
+distribucionVacia = distribucionDe []
+
+-- | Deja el grupo congelado con una sola transferencia pendiente: el gasto lo
+-- pone @pagador@ y lo consume @deudor@, así que queda debiendo el monto entero.
+congelarConDeuda ::
+  (forall a. Pg a -> IO a)
+  -> Grupo
+  -> ParticipanteId
+  -> ParticipanteId
+  -> Monto
+  -> IO ()
+congelarConDeuda runDb grupo pagador deudor monto = do
+  _ <- runDb $ savePago grupo.id $ gastoEntre ARS monto pagador deudor
+  _ <- runDb (congelarGrupo grupo.id) >>= either (panic . show) pure
+  pure ()
 
 -- | Un grupo con dos participantes, que es todo lo que hace falta para mirar el
 -- ciclo congelar/marcar/descongelar.

@@ -27,12 +27,14 @@ data Api routes
   = Api
   { _routeGrupoPost ::
       routes :- "grupo" :> ReqBody '[JSON] CreateGrupoParams :> Post '[JSON] Grupo
+  , _routeMeGrupoPost ::
+      routes :- AuthProtect User :> "me" :> "grupos" :> ReqBody '[JSON] CreateGrupoAsUserParams :> Post '[JSON] Grupo
   , _routeGrupoGet ::
-      routes :- "grupo" :> Capture "id" ULID :> Get '[JSON] ShallowGrupo
+      routes :- "grupo" :> Capture "id" ULID :> Get '[JSON] Grupo
   , _routeGrupoGetNetos ::
       routes :- "grupo" :> Capture "id" ULID :> "resumen" :> Get '[JSON] ResumenGrupo
   , _routeGrupoUpdate ::
-      routes :- "grupo" :> Capture "id" ULID :> ReqBody '[JSON] UpdateGrupoParams :> Put '[JSON] ShallowGrupo
+      routes :- "grupo" :> Capture "id" ULID :> ReqBody '[JSON] UpdateGrupoParams :> Put '[JSON] Grupo
   , _routeGrupoParticipanteAdd ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
   , _routePagoPost ::
@@ -69,9 +71,9 @@ data Api routes
   , -- , _routeRepartijaToPago ::
     --   routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
     _routeGrupoFreeze ::
-      routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Post '[JSON] ShallowGrupo
+      routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Post '[JSON] Grupo
   , _routeGrupoUnfreeze ::
-      routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] ShallowGrupo
+      routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] Grupo
   , _routeGrupoTasasDeCambioPut ::
       routes :- "grupo" :> Capture "id" ULID :> "tasas-de-cambio" :> Capture "moneda" Moneda :> ReqBody '[JSON] [TasaDeCambio] :> Put '[JSON] [TasaDeCambio]
   , _routeTransferenciaSaldar ::
@@ -102,10 +104,6 @@ data Api routes
       routes :- AuthProtect User :> "me" :> Get '[JSON] User
   , _routeMeUpdate ::
       routes :- AuthProtect User :> "me" :> ReqBody '[JSON] UpdateMeParams :> Put '[JSON] User
-  , -- Like '_routeGrupoPost' but for a signed-in creator: instead of naming the
-    -- first participante, it is derived from the account and born claimed.
-    _routeMeGrupoPost ::
-      routes :- AuthProtect User :> "me" :> "grupos" :> ReqBody '[JSON] CreateGrupoAsUserParams :> Post '[JSON] Grupo
   , -- The grupos where the signed-in user has claimed a participante, i.e.
     -- "my groups" for the home screen.
     _routeMeGruposGet ::

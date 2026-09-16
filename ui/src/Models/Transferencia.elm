@@ -1,6 +1,6 @@
 module Models.Transferencia exposing (Estado(..), frase, monto, participante)
 
-import Generated.Api exposing (Moneda, ParticipanteId, ShallowGrupo, Transferencia)
+import Generated.Api exposing (Grupo, Moneda, ParticipanteId, Transferencia)
 import Html exposing (Html, span, text)
 import Html.Attributes exposing (class)
 import Models.Grupo exposing (lookupNombreParticipante)
@@ -14,7 +14,7 @@ type Estado
     | Hecha Posix
 
 
-frase : ShallowGrupo -> Moneda -> Transferencia -> List (Html msg)
+frase : Grupo -> Moneda -> Transferencia -> List (Html msg)
 frase grupo moneda t =
     [ participante grupo t.from
     , text " le transfiere "
@@ -24,7 +24,7 @@ frase grupo moneda t =
     ]
 
 
-participante : ShallowGrupo -> ParticipanteId -> Html msg
+participante : Grupo -> ParticipanteId -> Html msg
 participante grupo participanteId =
     span [ class "fw-semibold" ]
         [ text <| lookupNombreParticipante grupo participanteId ]

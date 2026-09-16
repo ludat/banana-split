@@ -5,7 +5,7 @@ import Components.Bootstrap as Bs
 import Components.GraficoTorta as GraficoTorta
 import Dict
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (ErrorResumen, Moneda, Monto, Pago, Parte(..), Repartija, ResumenPago, ShallowGrupo, TipoDistribucion(..), ULID)
+import Generated.Api as Api exposing (ErrorResumen, Grupo, Moneda, Monto, Pago, Parte(..), Repartija, ResumenPago, TipoDistribucion(..), ULID)
 import Html exposing (Html, a, button, div, h4, i, li, p, span, table, tbody, td, text, th, thead, tr, ul)
 import Html.Attributes exposing (attribute, class, disabled, id, style, tabindex, type_)
 import Html.Events exposing (on, onClick)
@@ -261,7 +261,7 @@ update ctx store msg model =
 -- VIEW
 
 
-view : Store -> ShallowGrupo -> Model -> Html Msg
+view : Store -> Grupo -> Model -> Html Msg
 view store grupo model =
     if not model.isOpen then
         text ""
@@ -373,7 +373,7 @@ closeOverlayOnBackdropClick =
         (Decode.at [ "currentTarget", "id" ] Decode.string)
 
 
-viewOverlay : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
+viewOverlay : Grupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewOverlay grupo pago resumen model =
     case model.activeOverlay of
         Nothing ->
@@ -425,7 +425,7 @@ viewOverlay grupo pago resumen model =
                 ]
 
 
-viewHeader : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
+viewHeader : Grupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewHeader grupo pago resumen model =
     div [ class "modal-header flex-column align-items-stretch border-bottom-0 pb-0" ]
         [ div [ class "d-flex justify-content-between align-items-start" ]
@@ -449,7 +449,7 @@ viewHeader grupo pago resumen model =
         ]
 
 
-viewActions : ShallowGrupo -> Pago -> Model -> Html Msg
+viewActions : Grupo -> Pago -> Model -> Html Msg
 viewActions grupo pago model =
     div [ class "d-flex align-items-center gap-2 mt-3" ]
         [ a
@@ -502,7 +502,7 @@ viewActionsMenu model =
         ]
 
 
-viewContent : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
+viewContent : Grupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewContent grupo pago resumen model =
     div []
         [ viewInfo grupo pago resumen
@@ -546,7 +546,7 @@ errorList key expanded errores =
         text ""
 
 
-viewInfo : ShallowGrupo -> Pago -> ResumenPago -> Html Msg
+viewInfo : Grupo -> Pago -> ResumenPago -> Html Msg
 viewInfo grupo pago resumen =
     div [ class "d-flex justify-content-between align-items-start gap-3 flex-wrap mb-2" ]
         [ div []
@@ -566,7 +566,7 @@ viewInfo grupo pago resumen =
         ]
 
 
-viewBalance : ShallowGrupo -> ResumenPago -> Html Msg
+viewBalance : Grupo -> ResumenPago -> Html Msg
 viewBalance grupo resumen =
     case getDeudasFromResumen resumen.resumen of
         Just netos ->
@@ -576,7 +576,7 @@ viewBalance grupo resumen =
             div [ class "text-muted small" ] [ text "Sin balance para mostrar." ]
 
 
-viewReparto : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
+viewReparto : Grupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewReparto grupo pago resumen model =
     Bs.card [ class "mt-3" ]
         [ Bs.cardBody []
@@ -624,7 +624,7 @@ parteData parte =
             { participanteId = p, monto = m, division = n }
 
 
-viewRepartoClasico : ShallowGrupo -> Moneda -> List Parte -> Html Msg
+viewRepartoClasico : Grupo -> Moneda -> List Parte -> Html Msg
 viewRepartoClasico grupo moneda partes =
     div []
         [ div [ class "d-flex align-items-center gap-2 mb-3" ]
@@ -635,7 +635,7 @@ viewRepartoClasico grupo moneda partes =
         ]
 
 
-viewPartesTabla : ShallowGrupo -> Moneda -> String -> List Parte -> Html Msg
+viewPartesTabla : Grupo -> Moneda -> String -> List Parte -> Html Msg
 viewPartesTabla grupo moneda vacioMsg partes =
     let
         parsed =
@@ -663,7 +663,7 @@ viewPartesTabla grupo moneda vacioMsg partes =
             viewClasicoTabla grupo moneda hayMontos hayDivisiones parsed
 
 
-viewPartesIguales : ShallowGrupo -> List ParteData -> Html Msg
+viewPartesIguales : Grupo -> List ParteData -> Html Msg
 viewPartesIguales grupo parsed =
     table [ class "table mb-0 align-middle" ]
         [ thead []
@@ -685,7 +685,7 @@ viewPartesIguales grupo parsed =
         ]
 
 
-viewClasicoTabla : ShallowGrupo -> Moneda -> Bool -> Bool -> List ParteData -> Html Msg
+viewClasicoTabla : Grupo -> Moneda -> Bool -> Bool -> List ParteData -> Html Msg
 viewClasicoTabla grupo moneda hayMontos hayDivisiones parsed =
     let
         cuandoMontos cell =
@@ -730,7 +730,7 @@ viewClasicoTabla grupo moneda hayMontos hayDivisiones parsed =
         ]
 
 
-viewRepartoRepartija : ShallowGrupo -> Repartija -> Html Msg
+viewRepartoRepartija : Grupo -> Repartija -> Html Msg
 viewRepartoRepartija grupo repartija =
     let
         claimants =
@@ -799,7 +799,7 @@ viewRepartoRepartija grupo repartija =
         ]
 
 
-viewPago : ShallowGrupo -> Pago -> ResumenPago -> Model -> Html Msg
+viewPago : Grupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewPago grupo pago resumen model =
     Bs.card [ class "mt-3" ]
         [ Bs.cardBody []

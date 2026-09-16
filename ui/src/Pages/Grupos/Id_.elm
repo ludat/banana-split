@@ -6,7 +6,7 @@ import Components.PagoDetalleModal as PagoDetalleModal
 import Components.ResumenGasto as ResumenGasto
 import Date
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Moneda, Netos, ShallowGrupo, ShallowPago, ULID)
+import Generated.Api as Api exposing (Grupo, Moneda, Netos, ShallowPago, ULID)
 import Html exposing (Html, a, button, div, i, li, p, span, text, ul)
 import Html.Attributes as Attr exposing (class, classList, style, type_)
 import Html.Events exposing (onClick)
@@ -202,7 +202,7 @@ view store zone ahora userId model =
             }
 
 
-viewLeftColumn : Store -> Zone -> Posix -> Maybe String -> Model -> ShallowGrupo -> Html Msg
+viewLeftColumn : Store -> Zone -> Posix -> Maybe String -> Model -> Grupo -> Html Msg
 viewLeftColumn store zone ahora userId model grupo =
     case store |> Store.getResumen model.grupoId of
         NotAsked ->
@@ -325,7 +325,7 @@ viewLeftColumn store zone ahora userId model grupo =
 netos no se mueven más, así que lo único que importa es qué transferencias
 faltan: primero las tuyas, después las del resto.
 -}
-viewGrupoCongelado : Zone -> Posix -> Maybe String -> ShallowGrupo -> Api.ResumenCongelado -> Html Msg
+viewGrupoCongelado : Zone -> Posix -> Maybe String -> Grupo -> Api.ResumenCongelado -> Html Msg
 viewGrupoCongelado zone ahora userId grupo resumen =
     let
         pendientes : List ( Moneda, Api.Transferencia )
@@ -411,7 +411,7 @@ viewGrupoCongelado zone ahora userId grupo resumen =
 lo ve como hecho, así que primero se relee en voz alta quién le transfirió qué a
 quién.
 -}
-viewConfirmacionModal : Maybe String -> ShallowGrupo -> Maybe ( Moneda, Api.Transferencia ) -> Html Msg
+viewConfirmacionModal : Maybe String -> Grupo -> Maybe ( Moneda, Api.Transferencia ) -> Html Msg
 viewConfirmacionModal userId grupo confirmando =
     let
         ( pregunta, accion ) =
@@ -463,7 +463,7 @@ pendiente se confirma acá mismo, pasando por un modal porque dice que la plata
 ya se movió. Deshacerla vive en la pantalla de transferencias, así el resumen no
 se convierte en un editor.
 -}
-viewTransferenciaCard : Zone -> Posix -> Transferencia.Estado -> String -> ShallowGrupo -> ( Moneda, Api.Transferencia ) -> Html Msg
+viewTransferenciaCard : Zone -> Posix -> Transferencia.Estado -> String -> Grupo -> ( Moneda, Api.Transferencia ) -> Html Msg
 viewTransferenciaCard zone ahora estado userId grupo ( moneda, t ) =
     let
         salgoYo =
@@ -549,7 +549,7 @@ viewTransferenciaCard zone ahora estado userId grupo ( moneda, t ) =
         ]
 
 
-viewTransferenciaAjena : ShallowGrupo -> ( Moneda, Api.Transferencia ) -> Html Msg
+viewTransferenciaAjena : Grupo -> ( Moneda, Api.Transferencia ) -> Html Msg
 viewTransferenciaAjena grupo ( moneda, t ) =
     div [ class "list-group-item" ]
         [ span [ class "text-muted small" ]
@@ -557,7 +557,7 @@ viewTransferenciaAjena grupo ( moneda, t ) =
         ]
 
 
-viewProgresoCongelado : ShallowGrupo -> Int -> Int -> Html Msg
+viewProgresoCongelado : Grupo -> Int -> Int -> Html Msg
 viewProgresoCongelado grupo pendientes hechas =
     let
         total =
@@ -604,7 +604,7 @@ viewMontoDelta simbolo monto =
         ]
 
 
-viewAvisoMonedasSinTasa : ShallowGrupo -> Api.ResumenAbierto -> Html Msg
+viewAvisoMonedasSinTasa : Grupo -> Api.ResumenAbierto -> Html Msg
 viewAvisoMonedasSinTasa grupo resumen =
     case resumen.consolidado.monedasSinTasa of
         [] ->
@@ -687,7 +687,7 @@ viewTab tab tabActual etiqueta simbolo netoUsuario =
         ]
 
 
-viewUltimosPagosCard : Maybe ULID -> Store -> Model -> ShallowGrupo -> Html Msg
+viewUltimosPagosCard : Maybe ULID -> Store -> Model -> Grupo -> Html Msg
 viewUltimosPagosCard participanteId store model grupo =
     case store |> Store.getPagos model.grupoId of
         Success pagos ->

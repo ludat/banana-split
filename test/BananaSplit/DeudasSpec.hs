@@ -296,14 +296,14 @@ spec = do
 
   describe "simplify transactions" $ do
     it "simplifica ningun transferencia trivialmente" $ do
-      minimizeTransactions mempty `shouldBe` []
+      minimizeTransferencias mempty `shouldBe` []
 
     it "simplifica una sola transferencia trivialmente" $ do
       let transferencias = netos [(participante 1, 10), (participante 2, -10)]
 
-      minimizeTransactions transferencias `shouldBe` [Transferencia Nothing (participante 2) (participante 1) 10]
+      minimizeTransferencias transferencias `shouldBe` [Transferencia Nothing (participante 2) (participante 1) 10]
     it "simplifica un caso en el que el algoritmo greedy falla" $ do
-      minimizeTransactions
+      minimizeTransferencias
         ( netos
             [ (u1, 10)
             , (u2, -5)
@@ -315,9 +315,9 @@ spec = do
         )
         `shouldSatisfy` ((== 4) . length)
     it "devuelve vacio si se le pasa vacio" $ do
-      minimizeTransactions (netos []) `shouldBe` []
+      minimizeTransferencias (netos []) `shouldBe` []
     it "simplifica un caso con numeros con coma" $ do
-      minimizeTransactions
+      minimizeTransferencias
         ( netos
             [ (u1, mkMonto 2 66)
             , (u2, mkMonto 2 -33)
@@ -328,7 +328,7 @@ spec = do
     context "con netos no coherentes (no suman 0 en total)" $ do
       it "con una deuda simple que esta desbalanceada" $ do
         evaluate
-          ( minimizeTransactions
+          ( minimizeTransferencias
               ( netos
                   [ (u1, Monto $ Decimal.Decimal 0 10)
                   , (u2, Monto $ Decimal.Decimal 0 -11)
@@ -339,7 +339,7 @@ spec = do
 
       it "con una deuda compleja no crashea" $ do
         evaluate
-          ( minimizeTransactions
+          ( minimizeTransferencias
               ( netos
                   [ (u1, 10)
                   , (u2, -5)
@@ -355,7 +355,7 @@ spec = do
       it "cuando una sola persona tiene plata a favor" $ do
         pendingWith "this crashes the solver"
         evaluate
-          ( minimizeTransactions
+          ( minimizeTransferencias
               ( netos
                   [ (u3, Monto $ Decimal.Decimal 2 -3)
                   ]
@@ -364,7 +364,7 @@ spec = do
           `shouldThrow` errorCall "Balanace is not 0, instead is: -1.0"
     context "cuando hay muchos participantes" $ do
       it "simplifica en un tiempo razonable algo que mas o menos esta bien" $ do
-        minimizeTransactions
+        minimizeTransferencias
           ( netos
               [ (participante 1, mkMonto 2 -3200525)
               , (participante 2, mkMonto 2 4300475)
@@ -397,10 +397,10 @@ spec = do
     --           Success x -> x
     --           Error _ -> error "no json"
 
-    --   minimizeTransactions (calcularNetosTotales grupo) `shouldBe` []
+    --   minimizeTransferencias (calcularNetosTotales grupo) `shouldBe` []
     context "cuando hay netos con coma y numeros decimales extraños" $ do
       it "una deuda simple con montos con mas de dos decimales" $ do
-        minimizeTransactions
+        minimizeTransferencias
           ( netos
               [ (u1, mkMonto 10 5)
               , (u2, mkMonto 10 -5)
@@ -410,7 +410,7 @@ spec = do
                      ]
 
       it "una deuda simple con montos heterogeneos" $ do
-        minimizeTransactions
+        minimizeTransferencias
           ( netos
               [ (u1, mkMonto 10 5)
               , (u2, mkMonto 10 -5)

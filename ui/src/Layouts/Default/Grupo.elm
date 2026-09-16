@@ -3,7 +3,7 @@ module Layouts.Default.Grupo exposing (Model, Msg, Props, layout)
 import Components.Bootstrap as Bs
 import Css
 import Effect exposing (Effect)
-import Generated.Api exposing (ShallowGrupo, ULID, User)
+import Generated.Api exposing (Grupo, ULID, User)
 import Html exposing (Html, a, button, div, h2, i, label, li, node, ol, option, p, select, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
 import Html.Events exposing (on, onClick, preventDefaultOn)
@@ -164,7 +164,7 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
     }
 
 
-viewGroupHeader : String -> Path.Path -> Maybe ULID -> WebData User -> Store -> ShallowGrupo -> Html Msg
+viewGroupHeader : String -> Path.Path -> Maybe ULID -> WebData User -> Store -> Grupo -> Html Msg
 viewGroupHeader origin currentPath activeUser currentUser store grupo =
     let
         info =
@@ -221,7 +221,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
 acting as a participante that isn't theirs. If that participante is unclaimed we
 offer a quick "reclamar"; if it's taken by someone else we just warn.
 -}
-viewVerComoWarning : WebData User -> Maybe ULID -> ShallowGrupo -> Html Msg
+viewVerComoWarning : WebData User -> Maybe ULID -> Grupo -> Html Msg
 viewVerComoWarning currentUser activeUser grupo =
     case ( currentUser, activeUser ) of
         ( Success u, Just uid ) ->
@@ -283,7 +283,7 @@ data is still loading.
 headerInfo :
     Path.Path
     -> Store
-    -> ShallowGrupo
+    -> Grupo
     -> { crumbs : List Crumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
 headerInfo currentPath store grupo =
     let
@@ -471,7 +471,7 @@ viewBreadcrumb crumbs =
         ]
 
 
-viewTabNav : Path.Path -> ShallowGrupo -> Html Msg
+viewTabNav : Path.Path -> Grupo -> Html Msg
 viewTabNav currentPath grupo =
     Bs.navTabs [ class "border-0 mb-0" ]
         [ Bs.navTab
@@ -509,7 +509,7 @@ for the sections that don't fit on the bar. Hidden on `md+` via the
 -}
 viewBottomNav :
     Path.Path
-    -> ShallowGrupo
+    -> Grupo
     -> Html Msg
 viewBottomNav currentPath grupo =
     let

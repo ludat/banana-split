@@ -2,7 +2,7 @@ module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensur
 
 import Dict
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Pago, RepartijaForFrontend, ResumenGrupo, ShallowGrupo, ShallowPago, ULID)
+import Generated.Api as Api exposing (Grupo, Pago, RepartijaForFrontend, ResumenGrupo, ShallowPago, ULID)
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
@@ -83,7 +83,7 @@ saveResumen grupoId resumen store =
     }
 
 
-saveGrupo : ULID -> WebData ShallowGrupo -> Store -> Store
+saveGrupo : ULID -> WebData Grupo -> Store -> Store
 saveGrupo grupoId grupo store =
     { store
         | grupos =
@@ -110,7 +110,7 @@ savePago pagoId pago store =
     }
 
 
-setGrupo : ULID -> ShallowGrupo -> Effect msg
+setGrupo : ULID -> Grupo -> Effect msg
 setGrupo grupoId grupo =
     Effect.sendStoreMsg <| GrupoFetched grupoId (Success grupo)
 
@@ -250,7 +250,7 @@ invalidatePagos grupoId =
     Effect.sendStoreMsg <| InvalidatePagos grupoId
 
 
-getGrupo : ULID -> Store -> WebData ShallowGrupo
+getGrupo : ULID -> Store -> WebData Grupo
 getGrupo grupoId store =
     store.grupos
         |> Dict.get grupoId

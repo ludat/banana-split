@@ -12,6 +12,7 @@ import Test.Hspec
 import BananaSplit (
   Distribucion (..),
   DistribucionPartes (..),
+  Grupo (..),
   Moneda (..),
   Pago (..),
   Parte (..),
@@ -19,7 +20,6 @@ import BananaSplit (
   ParticipanteId (..),
   Repartija (..),
   RepartijaItem (..),
-  ShallowGrupo (..),
   TipoDistribucion (..),
   ULID,
   gastoEsValido,
@@ -236,9 +236,9 @@ p2 = mkUlid p2Text
 today :: Day
 today = fromGregorian 2026 7 22
 
-testGrupo :: ShallowGrupo
+testGrupo :: Grupo
 testGrupo =
-  ShallowGrupo
+  Grupo
     { id = nullUlid
     , nombre = "Viaje"
     , participantes =

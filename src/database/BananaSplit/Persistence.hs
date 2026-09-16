@@ -41,7 +41,8 @@ module BananaSplit.Persistence (
   fetchTasasDeCambio,
   fetchTransferencias,
   netosDeGrupo,
-  freezeGrupo,
+  CongelamientoRechazado (..),
+  congelarGrupo,
   guardarTasasDeCambio,
   borrarTransferencia,
   crearTransferenciaSaldada,
@@ -222,9 +223,11 @@ createGrupoWith nombre participantes = do
     $ M.Grupo
       { M.id = newId
       , M.nombre = nombre
-      , M.pagos = []
       , M.participantes = savedParticipantes
       , M.monedaPorDefecto = M.ARS
+      , M.congeladoAt = Nothing
+      , M.tasasDeCambio = mempty
+      , M.monedasConPagos = mempty
       }
 
 updateUser :: ULID -> Text -> Pg M.User
@@ -326,7 +329,7 @@ deleteOldLoginAttempts = do
       db.login_attempts
       (\a -> a.created_at <. val_ cutoff)
 
-fetchGrupo :: ULID -> Pg (Maybe M.ShallowGrupo)
+fetchGrupo :: ULID -> Pg (Maybe M.Grupo)
 fetchGrupo aGrupoId = do
   maybeGrupo <- runSelectReturningOne $ select $ do
     g <- all_ db.grupos
@@ -341,7 +344,7 @@ fetchGrupo aGrupoId = do
       monedasConPagos <- fetchMonedasConPagos aGrupoId
       pure
         $ Just
-        $ M.ShallowGrupo
+        $ M.Grupo
           { M.id = grupo.id
           , M.nombre = grupo.nombre
           , M.participantes = participantes
@@ -1318,24 +1321,74 @@ claimToRow claim =
     , repartijaclaimCantidad = fromIntegral <$> claim.cantidad
     }
 
--- | Deja las transferencias que hay que hacer para saldar el grupo. Vienen todas
--- en una sola moneda porque congelar consolida los netos con las tasas.
-freezeGrupo :: ULID -> M.Moneda -> [M.Transferencia] -> Pg ()
-freezeGrupo grupoId moneda transferencias = do
-  ahora <- liftIO getCurrentTime
-  borrarTransferenciasPendientes grupoId
-  runUpdate
-    $ update
-      db.grupos
-      (\g -> g.congelado_at <-. val_ (Just ahora))
-      (\g -> g.id ==. val_ grupoId)
-  filas <- liftIO $ forM transferencias $ \t -> do
-    tid <- ULID.getULID
-    pure $ transferenciaRow tid grupoId moneda t Nothing
-  unless (null filas)
-    $ runInsert
-    $ insert db.transferencias
-    $ insertValues filas
+data CongelamientoRechazado
+  = GrupoNoExiste
+  | HayGastosInvalidos Int
+  | FaltanTasasDeCambio [M.Moneda]
+  deriving stock (Show, Eq)
+
+congelarGrupo :: ULID -> Pg (Either CongelamientoRechazado M.Grupo)
+congelarGrupo grupoId = runExceptT $ do
+  grupo <- buscarElGrupo
+  verificarGastosValidos
+
+  netosPorMoneda <- fetchNetosEnCadaMoneda
+  netosConsolidados <- consolidarNetos grupo netosPorMoneda
+
+  let transferenciasMinimas = M.minimizeTransferencias netosConsolidados
+
+  lift $ saveTransferenciasPendientes grupo.monedaPorDefecto transferenciasMinimas
+
+  lift $ marcarGrupoComoCongelado grupo
+  where
+    buscarElGrupo =
+      lift (fetchGrupo grupoId)
+        `orElseMay` (throwError GrupoNoExiste)
+
+    verificarGastosValidos = do
+      conteo <- lift $ contarGastos grupoId
+      when (conteo.invalidos > 0)
+        $ throwError (HayGastosInvalidos conteo.invalidos)
+
+    fetchNetosEnCadaMoneda = do
+      netosDeGastos <- lift $ netosDeGrupo grupoId
+      transferencias <- lift $ fetchTransferencias grupoId
+      pure
+        $ M.netosConSaldo
+        $ M.netosPendientes netosDeGastos (transferenciasHechas transferencias <&> fmap (.transferencia))
+
+    consolidarNetos grupo netosPorMoneda = do
+      tasasDeCambio <- lift $ fetchTasasDeCambio grupoId
+
+      let consolidado =
+            M.consolidarNetos
+              (M.tablaDeTasas grupo.monedaPorDefecto tasasDeCambio)
+              netosPorMoneda
+
+      unless (null consolidado.monedasSinTasa)
+        $ throwError
+        $ FaltanTasasDeCambio consolidado.monedasSinTasa
+
+      pure consolidado.netos
+
+    saveTransferenciasPendientes moneda transferencias = do
+      borrarTransferenciasPendientes grupoId
+      filas <- liftIO $ forM transferencias $ \t -> do
+        tid <- ULID.getULID
+        pure $ transferenciaRow tid grupoId moneda t Nothing
+      unless (null filas)
+        $ runInsert
+        $ insert db.transferencias
+        $ insertValues filas
+
+    marcarGrupoComoCongelado grupo = do
+      ahora <- liftIO getCurrentTime
+      runUpdate
+        $ update
+          db.grupos
+          (\g -> g.congelado_at <-. val_ (Just ahora))
+          (\g -> g.id ==. val_ grupoId)
+      pure $ grupo{M.congeladoAt = Just ahora}
 
 unfreezeGrupo :: ULID -> Pg ()
 unfreezeGrupo grupoId = do

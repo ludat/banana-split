@@ -33,10 +33,10 @@ handleSaldarTransferencia grupoId transferenciaId = do
 
 handleDesmarcarTransferencia :: ULID -> ULID -> AppHandler ULID
 handleDesmarcarTransferencia grupoId transferenciaId = do
-  shallowGrupo <-
+  grupo <-
     runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  unless (estaCongelado shallowGrupo) $
+  unless (estaCongelado grupo) $
     throwJsonError err423 "El grupo no está congelado"
 
   runBeamWrite $ desmarcarTransferenciaSaldada grupoId transferenciaId
@@ -44,10 +44,10 @@ handleDesmarcarTransferencia grupoId transferenciaId = do
 
 handleCrearTransferencia :: ULID -> NuevaTransferenciaParams -> AppHandler Transferencia
 handleCrearTransferencia grupoId params = do
-  shallowGrupo <-
+  grupo <-
     runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when (estaCongelado shallowGrupo) $
+  when (estaCongelado grupo) $
     throwJsonError err423 "El grupo está congelado"
 
   runBeamWrite $
@@ -63,10 +63,10 @@ handleCrearTransferencia grupoId params = do
 
 handleBorrarTransferencia :: ULID -> ULID -> AppHandler ULID
 handleBorrarTransferencia grupoId transferenciaId = do
-  shallowGrupo <-
+  grupo <-
     runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when (estaCongelado shallowGrupo) $
+  when (estaCongelado grupo) $
     throwJsonError err423 "El grupo está congelado"
 
   runBeamWrite $ borrarTransferencia grupoId transferenciaId

@@ -27,10 +27,10 @@ handleRepartijaClaimPut repartijaId repartijaClaim = do
   case maybeGrupoId of
     Nothing -> throwJsonError err404 "Repartija no encontrada"
     Just grupoId -> do
-      shallowGrupo <-
+      grupo <-
         runBeamFastRead (fetchGrupo grupoId)
           `orElseMay` throwJsonError err404 "Grupo no encontrado"
-      when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
+      when (estaCongelado grupo) $ throwJsonError err423 "El grupo está congelado"
   runBeamWrite (saveRepartijaClaim repartijaId repartijaClaim)
 
 handleRepartijaClaimDelete :: ULID -> AppHandler Text
@@ -39,9 +39,9 @@ handleRepartijaClaimDelete claimId = do
   case maybeGrupoId of
     Nothing -> throwJsonError err404 "Claim no encontrado"
     Just grupoId -> do
-      shallowGrupo <-
+      grupo <-
         runBeamFastRead (fetchGrupo grupoId)
           `orElseMay` throwJsonError err404 "Grupo no encontrado"
-      when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
+      when (estaCongelado grupo) $ throwJsonError err423 "El grupo está congelado"
   void $ runBeamWrite (deleteRepartijaClaim claimId)
   pure "ok"

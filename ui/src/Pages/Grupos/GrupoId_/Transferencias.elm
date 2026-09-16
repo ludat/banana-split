@@ -5,7 +5,7 @@ import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Init as Form
 import Form.Validate as V exposing (Validation)
-import Generated.Api as Api exposing (Moneda, NuevaTransferenciaParams, ShallowGrupo, Transferencia, ULID)
+import Generated.Api as Api exposing (Grupo, Moneda, NuevaTransferenciaParams, Transferencia, ULID)
 import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, div, label, p, span, text)
 import Html.Attributes as Attr exposing (class)
@@ -252,7 +252,7 @@ view store zone ahora yo model =
             }
 
 
-viewContent : Store -> Zone -> Posix -> Maybe ULID -> Model -> ShallowGrupo -> Html Msg
+viewContent : Store -> Zone -> Posix -> Maybe ULID -> Model -> Grupo -> Html Msg
 viewContent store zone ahora yo model grupo =
     case store |> Store.getResumen model.grupoId of
         NotAsked ->
@@ -390,7 +390,7 @@ viewResumenDeEstados todas =
 acción que lo cambia. Sin distinguir entre "tuyas" y "ajenas": esta pantalla es
 para ver y corregir el congelamiento entero.
 -}
-viewTransferencia : Zone -> Posix -> ShallowGrupo -> AccionDeFila -> ( Transferencia.Estado, ( Moneda, Transferencia ) ) -> Html Msg
+viewTransferencia : Zone -> Posix -> Grupo -> AccionDeFila -> ( Transferencia.Estado, ( Moneda, Transferencia ) ) -> Html Msg
 viewTransferencia zone ahora grupo accion ( estado, ( moneda, t ) ) =
     div [ class "list-group-item d-flex align-items-center gap-3 flex-wrap" ]
         [ case estado of
@@ -454,7 +454,7 @@ viewTransferencia zone ahora grupo accion ( estado, ( moneda, t ) ) =
 {-| El cambio de estado se relee antes de aplicarlo. El texto sale del estado
 actual: se confirma pasar a hecha, o volver a pendiente.
 -}
-viewConfirmacionModal : ShallowGrupo -> Maybe ( Confirmacion, ( Transferencia.Estado, ( Moneda, Transferencia ) ) ) -> Html Msg
+viewConfirmacionModal : Grupo -> Maybe ( Confirmacion, ( Transferencia.Estado, ( Moneda, Transferencia ) ) ) -> Html Msg
 viewConfirmacionModal grupo confirmando =
     let
         ( titulo, cuerpo, accion ) =
@@ -511,7 +511,7 @@ está decidido y una que no esté en él lo invalidaría. Y solo si sabemos qui�
 sos en el grupo, porque vos sos el `from`.
 
 -}
-viewNuevaTransferencia : Maybe ULID -> ShallowGrupo -> Model -> Html Msg
+viewNuevaTransferencia : Maybe ULID -> Grupo -> Model -> Html Msg
 viewNuevaTransferencia yo grupo model =
     case yo of
         Nothing ->
@@ -528,7 +528,7 @@ viewNuevaTransferencia yo grupo model =
                 ]
 
 
-viewNuevaTransferenciaModal : ULID -> ShallowGrupo -> Maybe (Form CustomFormError NuevaTransferenciaParams) -> Html Msg
+viewNuevaTransferenciaModal : ULID -> Grupo -> Maybe (Form CustomFormError NuevaTransferenciaParams) -> Html Msg
 viewNuevaTransferenciaModal from grupo nuevaForm =
     let
         campos =

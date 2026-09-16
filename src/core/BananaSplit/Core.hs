@@ -10,7 +10,6 @@
 
 module BananaSplit.Core (
   Grupo (..),
-  ShallowGrupo (..),
   GrupoParaUsuario (..),
   estaCongelado,
   nullUlid,
@@ -26,6 +25,8 @@ module BananaSplit.Core (
   getResumenGasto,
   netosDeResumenGasto,
   netosDeTransferencias,
+  netosPendientes,
+  netosConSaldo,
   ResumenGasto (..),
   resumenGastos2ResumenNetos,
 ) where
@@ -42,7 +43,7 @@ import Elm.TyRep (
  )
 
 import BananaSplit.Deudas
-import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
+import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda, filterPorMoneda)
 import BananaSplit.Monto (Monto)
 import BananaSplit.Participante (Participante)
 import BananaSplit.Repartija (RepartijaClaim (..))
@@ -53,29 +54,15 @@ import Preludat
 data Grupo = Grupo
   { id :: ULID
   , nombre :: Text
-  , pagos :: [Pago]
-  , participantes :: [Participante]
-  , monedaPorDefecto :: Moneda
-  }
-  deriving (Show, Eq, Generic)
-
-data ShallowGrupo = ShallowGrupo
-  { id :: ULID
-  , nombre :: Text
   , participantes :: [Participante]
   , congeladoAt :: Maybe UTCTime
-  -- ^ Cuándo se congeló el grupo, o 'Nothing' si está descongelado. La fecha
-  -- también distingue las transferencias hechas durante este congelamiento de
-  -- las que arrastra de los anteriores.
   , monedaPorDefecto :: Moneda
   , tasasDeCambio :: [TasaDeCambio]
   , monedasConPagos :: [Moneda]
-  -- ^ Las monedas en las que hay pagos cargados. Junto con las tasas dice qué
-  -- monedas tiene que cubrir el grupo, sin depender del resumen.
   }
   deriving (Show, Eq, Generic)
 
-estaCongelado :: ShallowGrupo -> Bool
+estaCongelado :: Grupo -> Bool
 estaCongelado grupo = isJust grupo.congeladoAt
 
 -- | Un grupo en la lista de "mis grupos". Alcanza con el nombre del grupo y con
@@ -108,9 +95,11 @@ data ShallowPago = ShallowPago
   }
   deriving (Show, Eq, Generic)
 
-calcularNetosTotales :: Grupo -> PorMoneda (Netos Monto)
-calcularNetosTotales grupo =
-  grupo.pagos
+-- | Los netos que dejan todos los gastos de un grupo, por moneda. Los
+-- inválidos no cuentan: no se sabe quién puso ni quién consumió.
+calcularNetosTotales :: [Pago] -> PorMoneda (Netos Monto)
+calcularNetosTotales pagos =
+  pagos
     & filter gastoEsValido
     & fmap (\pago -> (calcularNetosPago pago) `enMoneda` pago.moneda)
     & mconcat
@@ -122,6 +111,17 @@ calcularNetosTotales grupo =
 netosDeTransferencias :: PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
 netosDeTransferencias =
   fmap (foldMap netosDeTransferencia)
+
+-- | Lo que el grupo todavía se debe: los netos de los gastos menos lo que ya se
+-- saldó con transferencias hechas.
+netosPendientes :: PorMoneda (Netos Monto) -> PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
+netosPendientes netosDeGastos hechas =
+  netosDeGastos <> netosDeTransferencias hechas
+
+-- | Saca las monedas en las que ya nadie le debe nada a nadie: no hay deuda que
+-- consolidar ni transferencia que sugerir.
+netosConSaldo :: PorMoneda (Netos Monto) -> PorMoneda (Netos Monto)
+netosConSaldo = filterPorMoneda ((> 0) . deudoresNoNulos)
 
 calcularNetosPago :: Pago -> Netos Monto
 calcularNetosPago gasto =
@@ -193,6 +193,5 @@ Elm.deriveBoth Elm.defaultOptions ''Pago
 Elm.deriveBoth Elm.defaultOptions ''ResumenGasto
 Elm.deriveBoth Elm.defaultOptions ''ShallowPago
 Elm.deriveBoth Elm.defaultOptions ''Grupo
-Elm.deriveBoth Elm.defaultOptions ''ShallowGrupo
 
 Elm.deriveBoth Elm.defaultOptions ''GrupoParaUsuario
