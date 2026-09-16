@@ -27,6 +27,6 @@ type StoreMsg
     | FetchPagos ULID (Maybe ULID)
     | InvalidatePagos ULID
     | PagoFetched ULID (WebData Pago)
-    | FetchPago ULID
+    | FetchPago ULID ULID
     | RepartijaFetched ULID (WebData RepartijaForFrontend)
     | FetchRepartija ULID

@@ -77,7 +77,7 @@ init route =
     case Dict.get "gasto" route.query of
         Just pagoId ->
             ( forPago True pagoId
-            , loadPago pagoId
+            , loadPago (grupoIdFromPath route.path |> Maybe.withDefault "") pagoId
             )
 
         Nothing ->
@@ -90,7 +90,7 @@ open : Context -> ULID -> ( Model, Effect Msg )
 open ctx pagoId =
     ( forPago True pagoId
     , Effect.batch
-        [ loadPago pagoId
+        [ loadPago ctx.grupoId pagoId
         , syncUrl ctx.path (Just pagoId)
         ]
     )
@@ -121,10 +121,10 @@ forPago isOpen pagoId =
     }
 
 
-loadPago : ULID -> Effect Msg
-loadPago pagoId =
+loadPago : ULID -> ULID -> Effect Msg
+loadPago grupoId pagoId =
     Effect.batch
-        [ Store.refreshPago pagoId
+        [ Store.refreshPago grupoId pagoId
         , waitForPago
         ]
 
@@ -183,7 +183,7 @@ update ctx store msg model =
                         ( model, Effect.none )
 
                     else
-                        ( forPago True pagoId, loadPago pagoId )
+                        ( forPago True pagoId, loadPago ctx.grupoId pagoId )
 
                 Nothing ->
                     ( { model | isOpen = False }, Effect.none )
