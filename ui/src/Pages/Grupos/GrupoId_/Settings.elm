@@ -79,7 +79,7 @@ type Msg
     | UpdateGrupoResponse (Result Http.Error ShallowGrupo)
     | EditarAjustes
     | CancelarEdicionAjustes
-    | ShareEmailAddress String
+    | CopyEmailAddress String
     | SeleccionarMoneda Moneda
     | EditarTasas
     | CancelarEdicionTasas
@@ -232,9 +232,9 @@ update store msg model =
             , Toasts.pushToast Toasts.ToastDanger "No se pudo actualizar el grupo"
             )
 
-        ShareEmailAddress address ->
+        CopyEmailAddress address ->
             ( model
-            , Effect.share { title = "Cargar gastos por email", url = address }
+            , Effect.copy address
             )
 
         SeleccionarMoneda moneda ->
@@ -959,7 +959,7 @@ viewEmailSection origin currentUser grupo =
                     [ type_ "button"
                     , class "btn btn-outline-secondary"
                     , disabled (not canUseEmail)
-                    , onClick (ShareEmailAddress address)
+                    , onClick (CopyEmailAddress address)
                     ]
                     [ text "Copiar" ]
                 ]

@@ -336,5 +336,8 @@ decodeIncomingPortMessage { tag, data } =
         "SHARE_LINK_COPIED" ->
             Just <| AddToast { level = ToastSuccess, content = "Link copiado al portapapeles" }
 
+        "TEXT_COPIED" ->
+            Just <| AddToast { level = ToastSuccess, content = "Copiado al portapapeles" }
+
         _ ->
             Nothing

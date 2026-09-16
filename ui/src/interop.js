@@ -145,6 +145,22 @@ export const onReady = ({ app, env }) => {
           }
           break;
 
+        case "COPY":
+          // data: { text: string }
+          {
+            if (navigator.clipboard) {
+              navigator.clipboard.writeText(data.text).then(
+                () =>
+                  app.ports.incoming.send({
+                    tag: "TEXT_COPIED",
+                    data: null,
+                  }),
+                (err) => console.warn("Clipboard write failed:", err),
+              );
+            }
+          }
+          break;
+
         default:
           console.warn("Unknown port message tag:", tag);
       }

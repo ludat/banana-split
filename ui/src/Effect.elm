@@ -4,6 +4,7 @@ port module Effect exposing
     , back
     , batch
     , clearCurrentUser
+    , copy
     , getCurrentUser
     , incoming
     , loadExternalUrl
@@ -258,6 +259,21 @@ share { title, url } =
                 Json.Encode.object
                     [ ( "title", Json.Encode.string title )
                     , ( "url", Json.Encode.string url )
+                    ]
+            }
+
+
+{-| Copiar texto al portapapeles, sin pasar por la hoja de compartir. Para
+contenido que no es un link (una dirección de email, por ejemplo).
+-}
+copy : String -> Effect msg
+copy text =
+    SendCmd <|
+        outgoing
+            { tag = "COPY"
+            , data =
+                Json.Encode.object
+                    [ ( "text", Json.Encode.string text )
                     ]
             }
 
