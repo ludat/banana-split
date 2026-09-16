@@ -50,7 +50,7 @@ import Site.Auth (
   shouldRefreshSession,
   verifyRegistrationToken,
  )
-import Site.Handler.Utils (runBeam, throwJsonError)
+import Site.Handler.Utils (runBeamFastRead, runBeamWrite, throwJsonError)
 import Site.Mailer (Mailer (..))
 import Site.Types
 
@@ -76,7 +76,7 @@ handleRequestCode params = do
   mailer <- asks (.mailer)
   -- Throttle login events for this address, so the endpoint can't be used to
   -- email-bomb a victim or run up SMTP costs.
-  attempts <- runBeam $ countRecentAttempts email
+  attempts <- runBeamFastRead $ countRecentAttempts email
   when (attempts >= maxLoginAttempts)
     $ throwJsonError err429 "Pediste demasiados códigos. Esperá unos minutos y volvé a intentar."
   code <- liftIO generateLoginCode
@@ -84,7 +84,7 @@ handleRequestCode params = do
     liftIO
       $ issueLoginChallenge key pepper email code
       `orElse` (throwIO . SessionTokenError . ("Could not sign login challenge: " <>) . show)
-  runBeam $ recordAttempt email CodeSent
+  runBeamWrite $ recordAttempt email CodeSent
   liftIO $ mailer.sendLoginCode email code
   pure $ LoginChallenge challenge
 
@@ -101,15 +101,15 @@ handleVerify params = do
     liftIO (openChallenge key params.challenge)
       `orElseMay` throwJsonError err401 "Código inválido o vencido"
   let email = payload.email
-  attempts <- runBeam $ countRecentAttempts email
+  attempts <- runBeamFastRead $ countRecentAttempts email
   when (attempts >= maxLoginAttempts)
     $ throwJsonError err429 "Demasiados intentos. Esperá unos minutos y volvé a intentar."
   unless (checkChallengeCode pepper payload params.code) $ do
-    runBeam $ recordAttempt email VerifyFailure
+    runBeamWrite $ recordAttempt email VerifyFailure
     throwJsonError err401 "Código inválido o vencido"
   -- Ownership proven: drop this email's attempts so a legit fumble doesn't count.
-  runBeam $ clearAttempts email
-  existing <- runBeam $ fetchUserByEmail email
+  runBeamWrite $ clearAttempts email
+  existing <- runBeamFastRead $ fetchUserByEmail email
   case existing of
     Just user -> do
       token <-
@@ -137,10 +137,10 @@ handleRegister params = do
   email <-
     liftIO (verifyRegistrationToken key params.registrationToken)
       `orElseMay` throwJsonError err401 "Tu registro venció. Volvé a empezar."
-  existing <- runBeam $ fetchUserByEmail email
+  existing <- runBeamFastRead $ fetchUserByEmail email
   when (isJust existing)
     $ throwJsonError err409 "Ya existe una cuenta con ese email. Iniciá sesión."
-  user <- runBeam $ createUser email nombre
+  user <- runBeamWrite $ createUser email nombre
   token <-
     liftIO
       $ issueToken key user
@@ -154,7 +154,7 @@ handleLogout = do
 
 handleMe :: User -> AppHandler User
 handleMe sessionUser = do
-  runBeam (fetchUserById sessionUser.id)
+  runBeamFastRead (fetchUserById sessionUser.id)
     `orElseMay` throwJsonError err401 "user not found"
 
 -- | Sliding session: re-issue the cookie once the token is past half its life,
@@ -164,7 +164,7 @@ handleMe sessionUser = do
 handleRefresh :: Session -> AppHandler (Headers '[Header "Set-Cookie" Text] User)
 handleRefresh session = do
   user <-
-    runBeam (fetchUserById session.user.id)
+    runBeamFastRead (fetchUserById session.user.id)
       `orElseMay` throwJsonError err401 "user not found"
   now <- liftIO getCurrentTime
   if shouldRefreshSession now session.expiresAt
@@ -183,4 +183,4 @@ handleUpdateMe sessionUser params = do
   let nombre = Text.strip params.nombre
   when (Text.null nombre)
     $ throwJsonError err400 "Ingresá tu nombre"
-  runBeam $ updateUser sessionUser.id nombre
+  runBeamWrite $ updateUser sessionUser.id nombre

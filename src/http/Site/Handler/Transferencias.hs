@@ -17,7 +17,7 @@ import BananaSplit.Persistence (
   marcarTransferenciaSaldada,
  )
 import Site.Api
-import Site.Handler.Utils (err423, orElseMay, runBeam, throwJsonError)
+import Site.Handler.Utils (err423, orElseMay, runBeamFastRead, runBeamWrite, throwJsonError)
 import Site.Types
 
 -- | Marca como hecha una de las transferencias que dejó el congelamiento. No
@@ -26,31 +26,31 @@ import Site.Types
 handleSaldarTransferencia :: ULID -> ULID -> AppHandler ULID
 handleSaldarTransferencia grupoId transferenciaId = do
   _ <-
-    runBeam (fetchGrupo grupoId)
+    runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  runBeam $ marcarTransferenciaSaldada grupoId transferenciaId
+  runBeamWrite $ marcarTransferenciaSaldada grupoId transferenciaId
   pure transferenciaId
 
 handleDesmarcarTransferencia :: ULID -> ULID -> AppHandler ULID
 handleDesmarcarTransferencia grupoId transferenciaId = do
   shallowGrupo <-
-    runBeam (fetchGrupo grupoId)
+    runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
   unless (estaCongelado shallowGrupo) $
     throwJsonError err423 "El grupo no está congelado"
 
-  runBeam $ desmarcarTransferenciaSaldada grupoId transferenciaId
+  runBeamWrite $ desmarcarTransferenciaSaldada grupoId transferenciaId
   pure transferenciaId
 
 handleCrearTransferencia :: ULID -> NuevaTransferenciaParams -> AppHandler Transferencia
 handleCrearTransferencia grupoId params = do
   shallowGrupo <-
-    runBeam (fetchGrupo grupoId)
+    runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
   when (estaCongelado shallowGrupo) $
     throwJsonError err423 "El grupo está congelado"
 
-  runBeam $
+  runBeamWrite $
     crearTransferenciaSaldada
       grupoId
       params.moneda
@@ -64,10 +64,10 @@ handleCrearTransferencia grupoId params = do
 handleBorrarTransferencia :: ULID -> ULID -> AppHandler ULID
 handleBorrarTransferencia grupoId transferenciaId = do
   shallowGrupo <-
-    runBeam (fetchGrupo grupoId)
+    runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
   when (estaCongelado shallowGrupo) $
     throwJsonError err423 "El grupo está congelado"
 
-  runBeam $ borrarTransferencia grupoId transferenciaId
+  runBeamWrite $ borrarTransferencia grupoId transferenciaId
   pure transferenciaId

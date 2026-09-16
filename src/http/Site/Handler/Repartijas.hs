@@ -19,29 +19,29 @@ import Site.Types
 
 handleRepartijaGet :: ULID -> AppHandler RepartijaForFrontend
 handleRepartijaGet repartijaId = do
-  runBeam (fetchRepartija repartijaId)
+  runBeamFastRead (fetchRepartija repartijaId)
 
 handleRepartijaClaimPut :: ULID -> RepartijaClaim -> AppHandler RepartijaClaim
 handleRepartijaClaimPut repartijaId repartijaClaim = do
-  maybeGrupoId <- runBeam (fetchGrupoIdFromRepartija repartijaId)
+  maybeGrupoId <- runBeamFastRead (fetchGrupoIdFromRepartija repartijaId)
   case maybeGrupoId of
     Nothing -> throwJsonError err404 "Repartija no encontrada"
     Just grupoId -> do
       shallowGrupo <-
-        runBeam (fetchGrupo grupoId)
+        runBeamFastRead (fetchGrupo grupoId)
           `orElseMay` throwJsonError err404 "Grupo no encontrado"
       when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
-  runBeam (saveRepartijaClaim repartijaId repartijaClaim)
+  runBeamWrite (saveRepartijaClaim repartijaId repartijaClaim)
 
 handleRepartijaClaimDelete :: ULID -> AppHandler Text
 handleRepartijaClaimDelete claimId = do
-  maybeGrupoId <- runBeam (fetchGrupoIdFromClaim claimId)
+  maybeGrupoId <- runBeamFastRead (fetchGrupoIdFromClaim claimId)
   case maybeGrupoId of
     Nothing -> throwJsonError err404 "Claim no encontrado"
     Just grupoId -> do
       shallowGrupo <-
-        runBeam (fetchGrupo grupoId)
+        runBeamFastRead (fetchGrupo grupoId)
           `orElseMay` throwJsonError err404 "Grupo no encontrado"
       when (estaCongelado shallowGrupo) $ throwJsonError err423 "El grupo está congelado"
-  void $ runBeam (deleteRepartijaClaim claimId)
+  void $ runBeamWrite (deleteRepartijaClaim claimId)
   pure "ok"

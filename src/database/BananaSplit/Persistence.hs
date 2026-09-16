@@ -9,8 +9,8 @@ module BananaSplit.Persistence (
   recordAttempt,
   clearAttempts,
   deleteOldLoginAttempts,
-  Aislamiento (..),
-  conTransaccion,
+  conTransaccionDeEscritura,
+  conTransaccionDeLecturaRapida,
   makePool,
   openConnection,
   runMigration,
@@ -95,52 +95,41 @@ openConnection config = do
   _ <- execute conn "SET search_path TO ?" (Only schema)
   pure conn
 
--- | Con cuánto aislamiento corre una transacción.
+-- | La transacción de cualquier cosa que escriba.
 --
--- Elegirlo es una decisión por operación, no una global: SERIALIZABLE cuesta
--- (predicate locks, y abortos que hay que reintentar) y no todo lo que toca la
--- base lo necesita.
-data Aislamiento
-  = -- | SERIALIZABLE con reintento. Es lo que necesita cualquier cosa que
-    -- escriba el cache del resumen de un gasto: se calcula leyendo cosas que
-    -- otra transacción puede estar cambiando al mismo tiempo (los claims de una
-    -- repartija, sobre todo). Con READ COMMITTED cada statement ve un snapshot
-    -- nuevo, así que dos escrituras pueden leer los mismos insumos y pisarse;
-    -- en SERIALIZABLE el resultado tiene que ser equivalente a haberlas corrido
-    -- una después de la otra, y si no lo es Postgres aborta una.
-    --
-    -- De ahí el reintento: fallar con @40001@ es parte del protocolo, no un
-    -- error. La transacción que aborta no dejó nada escrito, así que volver a
-    -- correr el bloque entero es seguro.
-    Serializable
-  | -- | READ COMMITTED de sólo lectura, que es lo más barato que hay: no toma
-    -- predicate locks, no puede abortar por conflicto y no le agrega trabajo a
-    -- las escrituras que corren en paralelo.
-    --
-    -- Sirve para leer y mostrar. Lo que se resigna es que cada statement ve un
-    -- snapshot distinto, así que dos queries de la misma transacción pueden ver
-    -- estados distintos de la base. Para un endpoint que ya hace varias
-    -- transacciones seguidas eso no cambia nada, pero no lo uses para decidir
-    -- algo que después vas a escribir.
-    SoloLectura
-  deriving stock (Show, Eq)
+-- Va en SERIALIZABLE porque el cache del resumen de un gasto se calcula leyendo
+-- cosas que otra transacción puede estar cambiando al mismo tiempo (los claims
+-- de una repartija, sobre todo). Con READ COMMITTED cada statement ve un
+-- snapshot nuevo, así que dos escrituras pueden leer los mismos insumos y
+-- pisarse; en SERIALIZABLE el resultado tiene que ser equivalente a haberlas
+-- corrido una después de la otra, y si no lo es Postgres aborta una.
+--
+-- De ahí el reintento: fallar con @40001@ es parte del protocolo, no un error.
+-- La transacción que aborta no dejó nada escrito, así que volver a correr el
+-- bloque entero es seguro.
+conTransaccionDeEscritura :: Connection -> Pg a -> IO a
+conTransaccionDeEscritura conn accion =
+  Transaction.withTransactionSerializable conn (runBeamPostgres conn accion)
 
--- | Corre el bloque dentro de una transacción con el aislamiento pedido.
-conTransaccion :: Aislamiento -> Connection -> IO a -> IO a
-conTransaccion aislamiento = case aislamiento of
-  Serializable ->
-    Transaction.withTransactionModeRetry
-      Transaction.TransactionMode
-        { Transaction.isolationLevel = Transaction.Serializable
-        , Transaction.readWriteMode = Transaction.DefaultReadWriteMode
-        }
-      isSerializationError
-  SoloLectura ->
-    Transaction.withTransactionMode
-      Transaction.TransactionMode
-        { Transaction.isolationLevel = Transaction.ReadCommitted
-        , Transaction.readWriteMode = Transaction.ReadOnly
-        }
+-- | La transacción de leer para mostrar, que es lo más barato que hay: no toma
+-- predicate locks, no puede abortar por conflicto y no le agrega trabajo a las
+-- escrituras que corren en paralelo.
+--
+-- El @READ ONLY@ no es sólo una pista: Postgres rechaza cualquier escritura que
+-- entre por acá, así que una que se cuele rompe en el momento en vez de perder
+-- en silencio las garantías de arriba.
+--
+-- Lo que se resigna es que cada statement ve un snapshot distinto, así que dos
+-- queries de la misma transacción pueden ver estados distintos de la base.
+conTransaccionDeLecturaRapida :: Connection -> Pg a -> IO a
+conTransaccionDeLecturaRapida conn accion =
+  Transaction.withTransactionMode
+    Transaction.TransactionMode
+      { Transaction.isolationLevel = Transaction.ReadCommitted
+      , Transaction.readWriteMode = Transaction.ReadOnly
+      }
+    conn
+    (runBeamPostgres conn accion)
 
 runMigration :: Conferer.Config -> [String] -> IO ()
 runMigration config args = do
@@ -1235,7 +1224,7 @@ deleteRepartijaClaim claimId = do
 -- eso es una convención, no una garantía— leería datos incorrectos.
 --
 -- No hay lock explícito: lo que impide que dos recálculos simultáneos se pisen
--- es el nivel de aislamiento de la transacción (ver 'conTransaccion'). El
+-- es el nivel de aislamiento de la transacción (ver 'conTransaccionDeEscritura'). El
 -- precio es que N claims simultáneos sobre la misma repartija hacen N
 -- recálculos, y los que pierdan se reintentan.
 recalcularResumenGasto :: ULID -> Pg ()

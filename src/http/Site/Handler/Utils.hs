@@ -5,8 +5,8 @@ module Site.Handler.Utils (
   orElseMay,
   orElse_,
   redirect,
-  runBeam,
-  runBeamCon,
+  runBeamFastRead,
+  runBeamWrite,
   throwJsonError,
 ) where
 
@@ -53,15 +53,20 @@ throwJsonError serverError errorMessage =
       , errHeaders = errHeaders serverError ++ [("Content-Type", "application/json")]
       }
 
--- | El default, que es el seguro: cualquier cosa que escriba tiene que ir por
--- acá. Para una lectura que no necesita tanto está 'runBeamCon'
--- 'Persistence.SoloLectura'.
-runBeam :: Beam.Pg a -> AppHandler a
-runBeam = runBeamCon Persistence.Serializable
-
-runBeamCon :: Persistence.Aislamiento -> Beam.Pg a -> AppHandler a
-runBeamCon aislamiento dbAction = do
+-- | Para cualquier handler que escriba. Ver 'Persistence.conTransaccionDeEscritura'.
+runBeamWrite :: Beam.Pg a -> AppHandler a
+runBeamWrite dbAction = do
   pool <- asks (.beamConnectionPool)
 
   liftIO $ Pool.withResource pool $ \conn -> do
-    Persistence.conTransaccion aislamiento conn (Beam.runBeamPostgres conn dbAction)
+    Persistence.conTransaccionDeEscritura conn dbAction
+
+-- | Para un handler que sólo lee y muestra. Es más barato y no le estorba a las
+-- escrituras en paralelo, a cambio de no poder decidir con lo leído algo que
+-- después se vaya a escribir. Ante la duda, 'runBeamWrite'.
+runBeamFastRead :: Beam.Pg a -> AppHandler a
+runBeamFastRead dbAction = do
+  pool <- asks (.beamConnectionPool)
+
+  liftIO $ Pool.withResource pool $ \conn -> do
+    Persistence.conTransaccionDeLecturaRapida conn dbAction

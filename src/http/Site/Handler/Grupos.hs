@@ -21,7 +21,6 @@ import Servant
 
 import BananaSplit
 import BananaSplit.Persistence (
-  Aislamiento (..),
   ConteoDeGastos (..),
   addParticipante,
   claimParticipante,
@@ -48,11 +47,11 @@ import Site.Types
 
 handleCreateGrupo :: CreateGrupoParams -> AppHandler Grupo
 handleCreateGrupo CreateGrupoParams{grupoName, grupoParticipante} = do
-  runBeam $ createGrupo grupoName grupoParticipante
+  runBeamWrite $ createGrupo grupoName grupoParticipante
 
 handleCreateGrupoAsUser :: User -> CreateGrupoAsUserParams -> AppHandler Grupo
 handleCreateGrupoAsUser user CreateGrupoAsUserParams{grupoName} = do
-  runBeam $ createGrupoForUser grupoName user
+  runBeamWrite $ createGrupoForUser grupoName user
 
 netosPendientes :: PorMoneda (Netos Monto) -> PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
 netosPendientes netosDeGastos hechas =
@@ -68,12 +67,12 @@ netosConSaldo = filterPorMoneda ((> 0) . deudoresNoNulos)
 handleGetNetos :: ULID -> AppHandler ResumenGrupo
 handleGetNetos grupoId = do
   shallowGrupo <-
-    runBeamCon SoloLectura (fetchGrupo grupoId)
+    runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   case shallowGrupo.congeladoAt of
     Just _ -> do
-      guardadas <- runBeamCon SoloLectura $ fetchTransferencias grupoId
+      guardadas <- runBeamFastRead $ fetchTransferencias grupoId
       pure $
         GrupoCongelado
           ResumenCongelado
@@ -81,9 +80,9 @@ handleGetNetos grupoId = do
             , transferenciasHechas = transferenciasHechas guardadas
             }
     Nothing -> do
-      guardadas <- runBeamCon SoloLectura $ fetchTransferencias grupoId
-      netosDeGastos <- runBeamCon SoloLectura $ netosDeGrupo grupoId
-      conteo <- runBeamCon SoloLectura $ contarGastos grupoId
+      guardadas <- runBeamFastRead $ fetchTransferencias grupoId
+      netosDeGastos <- runBeamFastRead $ netosDeGrupo grupoId
+      conteo <- runBeamFastRead $ contarGastos grupoId
 
       let netos =
             netosPendientes netosDeGastos (transferenciasHechas guardadas & fmap (fmap (.transferencia)))
@@ -101,43 +100,43 @@ handleGetNetos grupoId = do
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
 handleDeleteParticipante grupoId participanteId = do
-  _ <- runBeam (deleteShallowParticipante grupoId participanteId)
+  _ <- runBeamWrite (deleteShallowParticipante grupoId participanteId)
   pure participanteId
 
 handleShowGrupo :: ULID -> AppHandler ShallowGrupo
 handleShowGrupo grupoId = do
-  runBeam (fetchGrupo grupoId)
+  runBeamFastRead (fetchGrupo grupoId)
     `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
 handleCreateParticipante :: ULID -> ParticipanteAddParams -> AppHandler Participante
 handleCreateParticipante grupoId ParticipanteAddParams{name} = do
-  runBeam (addParticipante grupoId name)
+  runBeamWrite (addParticipante grupoId name)
     `Site.Handler.Utils.orElse` (\_e -> throwJsonError err400 "falle")
 
 handleGetMisGrupos :: User -> AppHandler [GrupoParaUsuario]
 handleGetMisGrupos user = do
-  runBeam $ fetchGruposForUser user.id
+  runBeamFastRead $ fetchGruposForUser user.id
 
 handleClaimParticipante :: User -> ULID -> ULID -> AppHandler ClaimParticipanteResult
 handleClaimParticipante user grupoId participanteId = do
-  result <- runBeam $ claimParticipante grupoId participanteId user.id
+  result <- runBeamWrite $ claimParticipante grupoId participanteId user.id
   pure $ case result of
     Left rejection -> ClaimRejected rejection
     Right participante -> ClaimAccepted participante
 
 handleUnclaimParticipante :: User -> ULID -> ULID -> AppHandler Participante
 handleUnclaimParticipante user grupoId participanteId = do
-  runBeam $ unclaimParticipante grupoId participanteId user.id
+  runBeamWrite $ unclaimParticipante grupoId participanteId user.id
 
 handleFreezeGrupo :: ULID -> AppHandler ShallowGrupo
 handleFreezeGrupo grupoId = do
   shallowGrupo <-
-    runBeam (fetchGrupo grupoId)
+    runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
-  netosDeGastos <- runBeam $ netosDeGrupo grupoId
-  guardadas <- runBeam $ fetchTransferencias grupoId
-  tasasDeCambio <- runBeam $ fetchTasasDeCambio grupoId
+  netosDeGastos <- runBeamFastRead $ netosDeGrupo grupoId
+  guardadas <- runBeamFastRead $ fetchTransferencias grupoId
+  tasasDeCambio <- runBeamFastRead $ fetchTasasDeCambio grupoId
 
   let netos = netosPendientes netosDeGastos (transferenciasHechas guardadas <&> fmap (.transferencia))
   let consolidado =
@@ -153,7 +152,7 @@ handleFreezeGrupo grupoId = do
       "Faltan las tasas de cambio de: "
         <> Text.intercalate ", " (fmap show consolidado.monedasSinTasa)
 
-  runBeam
+  runBeamWrite
     ( do
         freezeGrupo grupoId shallowGrupo.monedaPorDefecto (minimizeTransactions consolidado.netos)
         fetchGrupo grupoId
@@ -162,7 +161,7 @@ handleFreezeGrupo grupoId = do
 
 handleUnfreezeGrupo :: ULID -> AppHandler ShallowGrupo
 handleUnfreezeGrupo grupoId = do
-  runBeam
+  runBeamWrite
     ( do
         unfreezeGrupo grupoId
         fetchGrupo grupoId
@@ -172,7 +171,7 @@ handleUnfreezeGrupo grupoId = do
 handleUpdateGrupo :: ULID -> UpdateGrupoParams -> AppHandler ShallowGrupo
 handleUpdateGrupo grupoId params = do
   shallowGrupo <-
-    runBeam (fetchGrupo grupoId)
+    runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   -- Las transferencias congeladas están en la moneda por defecto de cuando se
@@ -181,7 +180,7 @@ handleUpdateGrupo grupoId params = do
   when (estaCongelado shallowGrupo && params.monedaPorDefecto /= shallowGrupo.monedaPorDefecto) $
     throwJsonError err423 "El grupo está congelado"
 
-  runBeam
+  runBeamWrite
     ( do
         updateGrupo grupoId params.nombre params.monedaPorDefecto
         fetchGrupo grupoId
@@ -191,7 +190,7 @@ handleUpdateGrupo grupoId params = do
 handleGuardarTasasDeCambio :: ULID -> Moneda -> [TasaDeCambio] -> AppHandler [TasaDeCambio]
 handleGuardarTasasDeCambio grupoId moneda tasas = do
   shallowGrupo <-
-    runBeam (fetchGrupo grupoId)
+    runBeamFastRead (fetchGrupo grupoId)
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   -- La tasa es lo que fija las deudas al congelar, así que cambiarla después
@@ -206,4 +205,4 @@ handleGuardarTasasDeCambio grupoId moneda tasas = do
   unless (cantidadDeTasas (tablaDeTasas moneda tasas) == length tasas) $
     throwJsonError err400 "Alguna de las tasas de cambio no es válida"
 
-  runBeam $ guardarTasasDeCambio grupoId moneda tasas
+  runBeamWrite $ guardarTasasDeCambio grupoId moneda tasas

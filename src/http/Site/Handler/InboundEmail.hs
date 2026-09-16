@@ -55,7 +55,7 @@ import BananaSplit.Receipts (
   analyzePagoFromEmail,
  )
 import Preludat
-import Site.Handler.Utils (runBeam)
+import Site.Handler.Utils (runBeamFastRead, runBeamWrite)
 import Site.Mailer (Mailer (..))
 import Site.Types
 
@@ -213,7 +213,7 @@ processPago payload fromEmail = do
   config <- lift $ asks (.receipts)
 
   -- 3. Resolve the From address to a user.
-  maybeUser <- lift $ runBeam $ fetchUserByEmail fromEmail
+  maybeUser <- lift $ runBeamFastRead $ fetchUserByEmail fromEmail
   user <-
     maybe (throwError $ "No hay ninguna cuenta asociada a la dirección " <> unEmail fromEmail <> ".") pure maybeUser
 
@@ -223,11 +223,11 @@ processPago payload fromEmail = do
       (const $ throwError "No pude identificar el grupo en la dirección de destino.")
       pure
       (extractGrupoId payload)
-  grupos <- lift $ runBeam $ fetchGruposForUser user.id
+  grupos <- lift $ runBeamFastRead $ fetchGruposForUser user.id
   unless (any (\g -> g.id == grupoId) grupos)
     $ throwError "No perteneces a ese grupo, o el grupo no existe."
   grupo <-
-    lift (runBeam $ fetchGrupo grupoId)
+    lift (runBeamFastRead $ fetchGrupo grupoId)
       `orElseMay` throwError "No perteneces a ese grupo, o el grupo no existe."
 
   -- 5. Ask the AI to parse exactly one pago within this grupo (text only for
@@ -242,7 +242,7 @@ processPago payload fromEmail = do
   -- invalid for the user to fix) than reject the whole message over an
   -- unrecognised person, currency or date. 7. Persist it.
   today <- liftIO $ utctDay <$> getCurrentTime
-  saved <- lift $ runBeam $ savePago grupo.id (resolvePago grupo today parsed)
+  saved <- lift $ runBeamWrite $ savePago grupo.id (resolvePago grupo today parsed)
   pure (grupo, saved)
 
 -- | Email the sender an outcome, threading onto the original subject when there

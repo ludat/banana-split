@@ -14,7 +14,7 @@ import Data.String (fromString)
 import Data.Text qualified as Text
 import Data.Time (fromGregorian)
 import Database.Beam
-import Database.Beam.Postgres (Connection, runBeamPostgres)
+import Database.Beam.Postgres (Connection)
 import Database.PostgreSQL.Simple qualified as Simple
 import Test.Hspec
 
@@ -141,8 +141,8 @@ correrVueltaDeClaims connA connB escenario = do
   takeMVar listoA
   takeMVar listoB
 
-  desdeCache <- runBeamPostgres connA $ netosDeGrupo escenario.grupoId
-  recalculado <- runBeamPostgres connA $ do
+  desdeCache <- conTransaccionDeLecturaRapida connA $ netosDeGrupo escenario.grupoId
+  recalculado <- conTransaccionDeLecturaRapida connA $ do
     pago <- fetchPago escenario.pagoId
     pure $ M.calcularNetosPago pago `M.enMoneda` pago.moneda
   pure (desdeCache, recalculado)
@@ -172,7 +172,7 @@ correrVueltaDeGuardarYClaim connA connB escenario = do
 
   -- El gasto como lo tiene el front antes de mandar la edición. Los claims no
   -- viajan con él, así que da igual cuáles trae: 'savePago' los relee.
-  pago <- runBeamPostgres connA $ fetchPago escenario.pagoId
+  pago <- conTransaccionDeLecturaRapida connA $ fetchPago escenario.pagoId
 
   listoA <- newEmptyMVar
   listoB <- newEmptyMVar
@@ -181,8 +181,8 @@ correrVueltaDeGuardarYClaim connA connB escenario = do
   takeMVar listoA
   takeMVar listoB
 
-  desdeCache <- runBeamPostgres connA $ netosDeGrupo escenario.grupoId
-  recalculado <- runBeamPostgres connA $ do
+  desdeCache <- conTransaccionDeLecturaRapida connA $ netosDeGrupo escenario.grupoId
+  recalculado <- conTransaccionDeLecturaRapida connA $ do
     guardado <- fetchPago escenario.pagoId
     pure $ M.calcularNetosPago guardado `M.enMoneda` guardado.moneda
   pure (desdeCache, recalculado)
@@ -191,22 +191,20 @@ correrVueltaDeGuardarYClaim connA connB escenario = do
 -- con un cambio que no toca el reparto.
 reguardar :: Connection -> ULID -> M.Pago -> IO ()
 reguardar conn unGrupoId pago =
-  conTransaccion Serializable conn
-    $ runBeamPostgres conn
+  conTransaccionDeEscritura conn
     $ void
     $ savePago unGrupoId pago{M.nombre = "Cena editada"}
 -- | Una transacción como la del handler: reclamar un item.
 reclamar :: Connection -> ULID -> ULID -> M.ParticipanteId -> IO ()
 reclamar conn unaRepartijaId unItemId participante =
-  conTransaccion Serializable conn
-    $ runBeamPostgres conn
+  conTransaccionDeEscritura conn
     $ void
     $ saveRepartijaClaim unaRepartijaId (M.RepartijaClaim nullUlid participante unItemId Nothing)
 
 -- | Vuelve al estado sin claims, con el cache al día.
 limpiarClaims :: Connection -> Escenario -> IO ()
 limpiarClaims conn escenario =
-  conTransaccion Serializable conn $ runBeamPostgres conn $ do
+  conTransaccionDeEscritura conn $ do
     runDelete
       $ delete
         db.repartija_claims
@@ -217,7 +215,7 @@ limpiarClaims conn escenario =
     recalcularResumenGasto escenario.pagoId
 
 prepararEscenario :: Connection -> IO Escenario
-prepararEscenario conn = conTransaccion Serializable conn $ runBeamPostgres conn $ do
+prepararEscenario conn = conTransaccionDeEscritura conn $ do
   grupo <- createGrupo "Concurrencia" "uno"
   otro <-
     addParticipante grupo.id "otro" >>= \case
