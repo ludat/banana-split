@@ -21,7 +21,7 @@ handleRepartijaGet :: ULID -> AppHandler RepartijaForFrontend
 handleRepartijaGet repartijaId = do
   runBeamFastRead (fetchRepartija repartijaId)
 
-handleRepartijaClaimPut :: ULID -> RepartijaClaim -> AppHandler RepartijaClaim
+handleRepartijaClaimPut :: ULID -> RepartijaClaim -> AppHandler RepartijaForFrontend
 handleRepartijaClaimPut repartijaId repartijaClaim = do
   maybeGrupoId <- runBeamFastRead (fetchGrupoIdFromRepartija repartijaId)
   case maybeGrupoId of

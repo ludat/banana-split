@@ -213,7 +213,7 @@ limpiarClaims conn escenario =
             claim.repartijaclaimRepartijaItem
               `in_` [val_ (RepartijaItemId escenario.itemA), val_ (RepartijaItemId escenario.itemB)]
         )
-    recalcularResumenGasto escenario.grupoId escenario.pagoId
+    void $ recalcularResumenGasto escenario.grupoId escenario.pagoId
 
 prepararEscenario :: Connection -> IO Escenario
 prepararEscenario conn = conTransaccionDeEscritura conn $ do

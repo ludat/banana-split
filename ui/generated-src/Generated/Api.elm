@@ -1501,7 +1501,7 @@ getRepartijasByRepartijaId capture_repartijaId toMsg =
                 Nothing
             }
 
-putRepartijasByRepartijaId : ULID -> RepartijaClaim -> (Result Http.Error  (RepartijaClaim)  -> msg) -> Cmd msg
+putRepartijasByRepartijaId : ULID -> RepartijaClaim -> (Result Http.Error  (RepartijaForFrontend)  -> msg) -> Cmd msg
 putRepartijasByRepartijaId capture_repartijaId body toMsg =
     let
         params =
@@ -1523,7 +1523,7 @@ putRepartijasByRepartijaId capture_repartijaId body toMsg =
             , body =
                 Http.jsonBody (jsonEncRepartijaClaim body)
             , expect =
-                Http.expectJson toMsg jsonDecRepartijaClaim
+                Http.expectJson toMsg jsonDecRepartijaForFrontend
             , timeout =
                 Nothing
             , tracker =

@@ -102,11 +102,11 @@ spec =
       pago <- runDb $ saveInvalidRepartijaPago grupo
       let repartija = repartijaDe pago
 
-      claim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
+      repartijaConClaim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
       shallowValid <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido shallowValid `shouldBe` [True]
 
-      runDb $ deleteRepartijaClaim claim.id
+      runDb $ deleteRepartijaClaim (primerClaim repartijaConClaim).id
       shallowInvalid <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido shallowInvalid `shouldBe` [False]
 
@@ -132,10 +132,10 @@ spec =
       pago <- runDb $ saveInvalidRepartijaPago grupo
       let repartija = repartijaDe pago
 
-      claim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
+      repartijaConClaim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
       runDb (contarFilasDe pago.pagoId) `shouldReturn` 1
 
-      runDb $ deleteRepartijaClaim claim.id
+      runDb $ deleteRepartijaClaim (primerClaim repartijaConClaim).id
       -- Vuelve a ser inválido, y el cache lo dice ya mismo.
       runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Just sinCalcularCrudo
       runDb (contarFilasDe pago.pagoId) `shouldReturn` 0
@@ -459,6 +459,12 @@ primerItem :: Repartija -> RepartijaItem
 primerItem repartija = case repartija.items of
   (item : _) -> item
   [] -> panic "la repartija deberia tener un item"
+
+-- | El único claim de la repartija que devolvió 'saveRepartijaClaim'.
+primerClaim :: RepartijaForFrontend -> RepartijaClaim
+primerClaim repartijaPage = case repartijaPage.repartija.claims of
+  (claim : _) -> claim
+  [] -> panic "la repartija deberia tener un claim"
 
 instance Arbitrary DistribucionDeSobras where
   arbitrary = elements [SobrasNoDistribuir, SobrasProporcional]

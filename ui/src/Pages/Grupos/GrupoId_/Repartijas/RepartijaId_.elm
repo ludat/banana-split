@@ -93,7 +93,7 @@ type Msg
     | ChangeCurrentClaim RepartijaItem Int
     | JoinCurrentClaim RepartijaItem
     | LeaveCurrentClaim RepartijaClaim
-    | CreateRepartijaClaimResponded (WebData RepartijaClaim)
+    | CreateRepartijaClaimResponded (WebData Api.RepartijaForFrontend)
     | DeleteRepartijaClaimResponded ULID (WebData String)
 
 
@@ -115,27 +115,14 @@ update maybeParticipanteId store msg model =
             , Effect.none
             )
 
-        CreateRepartijaClaimResponded webDataClaim ->
-            case ( webDataClaim, Store.getRepartija model.repartijaId store ) of
-                ( Success newClaim, Success repartijaPage ) ->
-                    let
-                        repartija =
-                            repartijaPage.repartija
-
-                        updatedRepartija =
-                            { repartija
-                                | claims =
-                                    repartija.claims
-                                        |> List.filter (\c -> not (c.itemId == newClaim.itemId && c.participante == newClaim.participante))
-                                        |> (::) newClaim
-                            }
-                    in
+        CreateRepartijaClaimResponded webDataRepartija ->
+            case webDataRepartija of
+                Success repartija ->
                     ( { model | pendingItemOperation = Nothing }
                     , Effect.batch
-                        [ Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
+                        [ Store.updateRepartijaForFrontend model.repartijaId repartija
                         , Store.invalidateResumen model.grupoId
                         , Store.invalidatePagos model.grupoId
-                        , Store.refreshRepartija model.repartijaId
                         ]
                     )
 

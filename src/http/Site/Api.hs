@@ -63,7 +63,7 @@ data Api routes
     _routeRepartijaGet ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> Get '[JSON] RepartijaForFrontend
   , _routeRepartijaClaimPut ::
-      routes :- "repartijas" :> Capture "repartijaId" ULID :> ReqBody '[JSON] RepartijaClaim :> Put '[JSON] RepartijaClaim
+      routes :- "repartijas" :> Capture "repartijaId" ULID :> ReqBody '[JSON] RepartijaClaim :> Put '[JSON] RepartijaForFrontend
   , _routeRepartijaClaimDelete ::
       routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] Text
   , -- , _routeRepartijaToPago ::

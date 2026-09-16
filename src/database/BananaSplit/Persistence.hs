@@ -1178,7 +1178,12 @@ claimsDeItems itemIds = do
     pure claim
   pure $ fmap claimDesdeFila claims
 
-saveRepartijaClaim :: ULID -> M.RepartijaClaim -> Pg M.RepartijaClaim
+-- | Guarda (o pisa) un claim y devuelve la repartija entera ya actualizada.
+--
+-- Recalcular el resumen del gasto obliga a leer el gasto completo, y ahí adentro
+-- viene la repartija con todos sus claims: devolverla sale gratis y le ahorra al
+-- frontend un GET extra después de cada click.
+saveRepartijaClaim :: ULID -> M.RepartijaClaim -> Pg M.RepartijaForFrontend
 saveRepartijaClaim repartijaId repartijaClaim = do
   claimId <-
     if repartijaClaim.id == nullUlid
@@ -1196,8 +1201,33 @@ saveRepartijaClaim repartijaId repartijaClaim = do
       onConflictUpdateAll
   -- (onConflictUpdateSet (\fields _oldValues ->
   --   repartijaClaimCantidad fields <-. val_ (fromIntegral <$> M.repartijaClaimCantidad claim')))
-  fetchPagoIdFromRepartija repartijaId >>= traverse_ (recalcularResumenGasto grupoId)
-  pure claim'
+  maybePagoId <- fetchPagoIdFromRepartija repartijaId
+  case maybePagoId of
+    Nothing -> fetchRepartija repartijaId
+    Just pagoId -> do
+      pago <- recalcularResumenGasto grupoId pagoId
+      case repartijaDePago repartijaId pago of
+        Nothing -> fetchRepartija repartijaId
+        Just repartija ->
+          pure
+            $ M.RepartijaForFrontend
+              { repartija = repartija
+              , pagoId = pago.pagoId
+              , pagoNombre = pago.nombre
+              }
+
+-- | La repartija de un gasto, buscándola en las dos distribuciones (puede estar
+-- tanto del lado de los pagadores como del de los deudores).
+repartijaDePago :: ULID -> M.Pago -> Maybe M.Repartija
+repartijaDePago repartijaId pago =
+  [pago.pagadores, pago.deudores]
+    & mapMaybe
+      ( \distribucion -> case distribucion.tipo of
+          M.TipoDistribucionRepartija repartija
+            | repartija.id == repartijaId -> Just repartija
+          _ -> Nothing
+      )
+    & head
 
 deleteRepartijaClaim :: ULID -> Pg ()
 deleteRepartijaClaim claimId = do
@@ -1210,12 +1240,14 @@ deleteRepartijaClaim claimId = do
     $ delete
       db.repartija_claims
       (\c -> c.repartijaclaimId ==. val_ claimId)
-  forM_ pagoId $ recalcularResumenGasto grupoId
+  forM_ pagoId $ void . recalcularResumenGasto grupoId
 
 -- | Recalcula y guarda el resumen de un gasto. Llamalo desde cualquier mutación
 -- que pueda cambiar el reparto sin pasar por 'savePago' (editar los claims de
 -- una repartija, por ejemplo).
-recalcularResumenGasto :: ULID -> ULID -> Pg ()
+-- Devuelve el gasto que leyó para recalcular, así quien la llama no lo tiene que
+-- volver a pedir.
+recalcularResumenGasto :: ULID -> ULID -> Pg M.Pago
 recalcularResumenGasto grupoId pagoId = do
   pago <- fetchPago grupoId pagoId
   let resumen = M.getResumenGasto pago
@@ -1225,6 +1257,7 @@ recalcularResumenGasto grupoId pagoId = do
       (\p -> p.resumen <-. val_ (ResumenGuardado.resumen2Guardado resumen))
       (\p -> p.pagoId ==. val_ pago.pagoId)
   escribirPagadoYConsumido grupoId pago resumen
+  pure pago
 
 -- | Query fragment: the pago that owns a given repartija row, following
 -- distribución → pago (one repartija belongs to one distribución, which is
