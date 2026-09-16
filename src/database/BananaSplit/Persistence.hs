@@ -109,7 +109,14 @@ openConnection config = do
 -- bloque entero es seguro.
 conTransaccionDeEscritura :: Connection -> Pg a -> IO a
 conTransaccionDeEscritura conn accion =
-  Transaction.withTransactionSerializable conn (runBeamPostgres conn accion)
+  Transaction.withTransactionModeRetry
+    Transaction.TransactionMode
+      { Transaction.isolationLevel = Transaction.RepeatableRead
+      , Transaction.readWriteMode = Transaction.ReadWrite
+      }
+    isSerializationError
+    conn
+    (runBeamPostgres conn accion)
 
 -- | La transacción de leer para mostrar, que es lo más barato que hay: no toma
 -- predicate locks, no puede abortar por conflicto y no le agrega trabajo a las
