@@ -162,7 +162,6 @@ validatePagoInSection section participantes =
                             V.maybe (V.field "monto" (Monto.validateMonto moneda)) |> V.map (Maybe.withDefault Monto.zero)
                         )
                     |> V.andMap (V.succeed moneda)
-                    |> V.andMap (V.succeed False)
                     |> V.andMap
                         (if section == BasicPagoData then
                             V.field "nombre" (V.string |> V.andThen nonEmpty)
@@ -197,7 +196,6 @@ validatePago participantes =
                     |> V.andMap (V.field "id" validateId)
                     |> V.andMap (V.field "monto" (Monto.validateMonto moneda))
                     |> V.andMap (V.succeed moneda)
-                    |> V.andMap (V.succeed False)
                     |> V.andMap (V.field "nombre" (V.string |> V.andThen nonEmpty))
                     |> V.andMap (V.field "fecha" validateDay)
                     |> V.andMap (V.field "distribucion_pagadores" <| validateDistribucion moneda participantes)
@@ -392,7 +390,7 @@ update shared msg model =
             ( { newModel | hasUnsavedChanges = False }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Store.refreshPagos model.grupoId
+                , Store.refreshPagos model.grupoId (Shared.currentParticipante shared model.grupoId)
                 , Store.setPago pago.pagoId pago
                 , Toasts.pushToast Toasts.ToastSuccess "Se creó el gasto"
                 , irAlPagoEnLista model.grupoId pago.pagoId
@@ -404,7 +402,7 @@ update shared msg model =
             ( model
             , Effect.batch
                 [ Toasts.pushToast Toasts.ToastDanger "Falló la creación del gasto"
-                , Store.refreshPagos model.grupoId
+                , Store.refreshPagos model.grupoId (Shared.currentParticipante shared model.grupoId)
                 ]
             )
 
@@ -416,7 +414,7 @@ update shared msg model =
             ( newModel
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Store.refreshPagos model.grupoId
+                , Store.refreshPagos model.grupoId (Shared.currentParticipante shared model.grupoId)
                 , Store.setPago pago.pagoId pago
                 , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el gasto"
                 , irAlPagoEnLista model.grupoId pago.pagoId
@@ -1554,9 +1552,10 @@ viewDeudoresSection grupo model =
                                     "Actualizar gasto"
                       in
                       Bs.btn Bs.Primary
-                        [ -- Se permite enviar aunque el gasto sea inválido; queda
-                          -- guardado con `isValid = False`. Se bloquea si el form no
-                          -- es construible o si no hay cambios para guardar.
+                        [ -- Se permite enviar aunque el gasto sea inválido; el
+                          -- backend lo guarda igual y deja los motivos en su
+                          -- resumen. Se bloquea si el form no es construible o
+                          -- si no hay cambios para guardar.
                           disabled (Form.getOutput model.pagoForm == Nothing || not model.hasUnsavedChanges)
                         , onClick (PagoForm Form.Submit)
                         , Attr.id "pago-submit-button"

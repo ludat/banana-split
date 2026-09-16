@@ -22,6 +22,7 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Set
+import Shared
 import Shared.Model
 import Task
 import Utils.Day as Day
@@ -52,6 +53,7 @@ type Overlay
 
 type alias Context =
     { grupoId : ULID
+    , participanteId : Maybe ULID
     , path : Path.Path
     , origin : String
     }
@@ -59,7 +61,12 @@ type alias Context =
 
 context : Shared.Model.Model -> Route routeParams -> Context
 context shared route =
-    { grupoId = grupoIdFromPath route.path |> Maybe.withDefault ""
+    let
+        grupoId =
+            grupoIdFromPath route.path |> Maybe.withDefault ""
+    in
+    { grupoId = grupoId
+    , participanteId = Shared.currentParticipante shared grupoId
     , path = route.path
     , origin = shared.origin
     }
@@ -70,7 +77,7 @@ init route =
     case Dict.get "gasto" route.query of
         Just pagoId ->
             ( forPago True pagoId
-            , loadPago pagoId
+            , loadPago (grupoIdFromPath route.path |> Maybe.withDefault "") pagoId
             )
 
         Nothing ->
@@ -83,7 +90,7 @@ open : Context -> ULID -> ( Model, Effect Msg )
 open ctx pagoId =
     ( forPago True pagoId
     , Effect.batch
-        [ loadPago pagoId
+        [ loadPago ctx.grupoId pagoId
         , syncUrl ctx.path (Just pagoId)
         ]
     )
@@ -114,10 +121,10 @@ forPago isOpen pagoId =
     }
 
 
-loadPago : ULID -> Effect Msg
-loadPago pagoId =
+loadPago : ULID -> ULID -> Effect Msg
+loadPago grupoId pagoId =
     Effect.batch
-        [ Store.refreshPago pagoId
+        [ Store.refreshPago grupoId pagoId
         , waitForPago
         ]
 
@@ -176,7 +183,7 @@ update ctx store msg model =
                         ( model, Effect.none )
 
                     else
-                        ( forPago True pagoId, loadPago pagoId )
+                        ( forPago True pagoId, loadPago ctx.grupoId pagoId )
 
                 Nothing ->
                     ( { model | isOpen = False }, Effect.none )
@@ -238,7 +245,7 @@ update ctx store msg model =
             , Effect.batch
                 [ Store.refreshGrupo ctx.grupoId
                 , Store.refreshResumen ctx.grupoId
-                , Store.refreshPagos ctx.grupoId
+                , Store.refreshPagos ctx.grupoId ctx.participanteId
                 , Toasts.pushToast Toasts.ToastSuccess "Gasto borrado"
                 , syncUrl ctx.path Nothing
                 ]

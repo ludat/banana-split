@@ -5,7 +5,8 @@ module Site.Handler.Utils (
   orElseMay,
   orElse_,
   redirect,
-  runBeam,
+  runBeamFastRead,
+  runBeamWrite,
   throwJsonError,
 ) where
 
@@ -15,9 +16,9 @@ import Control.Monad.Reader.Class
 import Data.Aeson
 import Data.Pool qualified as Pool
 import Database.Beam.Postgres qualified as Beam
-import Database.PostgreSQL.Simple qualified as Simple
 import Servant
 
+import BananaSplit.Persistence qualified as Persistence
 import Preludat
 import Site.Types
 
@@ -52,9 +53,20 @@ throwJsonError serverError errorMessage =
       , errHeaders = errHeaders serverError ++ [("Content-Type", "application/json")]
       }
 
-runBeam :: Beam.Pg a -> AppHandler a
-runBeam dbAction = do
+-- | Para cualquier handler que escriba. Ver 'Persistence.conTransaccionDeEscritura'.
+runBeamWrite :: Beam.Pg a -> AppHandler a
+runBeamWrite dbAction = do
   pool <- asks (.beamConnectionPool)
 
   liftIO $ Pool.withResource pool $ \conn -> do
-    Simple.withTransaction conn (Beam.runBeamPostgres conn dbAction)
+    Persistence.conTransaccionDeEscritura conn dbAction
+
+-- | Para un handler que sólo lee y muestra. Es más barato y no le estorba a las
+-- escrituras en paralelo, a cambio de no poder decidir con lo leído algo que
+-- después se vaya a escribir. Ante la duda, 'runBeamWrite'.
+runBeamFastRead :: Beam.Pg a -> AppHandler a
+runBeamFastRead dbAction = do
+  pool <- asks (.beamConnectionPool)
+
+  liftIO $ Pool.withResource pool $ \conn -> do
+    Persistence.conTransaccionDeLecturaRapida conn dbAction

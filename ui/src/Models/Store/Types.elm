@@ -21,9 +21,12 @@ type StoreMsg
     | FetchResumen ULID
     | InvalidateResumen ULID
     | PagosFetched ULID (WebData (List ShallowPago))
-    | FetchPagos ULID
+      -- El segundo campo es el participante que está mirando: el backend
+      -- recorta el resumen de cada gasto a esa persona. 'Nothing' trae el de
+      -- todos, que es lo que hay que pedir si todavía no se sabe quién es.
+    | FetchPagos ULID (Maybe ULID)
     | InvalidatePagos ULID
     | PagoFetched ULID (WebData Pago)
-    | FetchPago ULID
+    | FetchPago ULID ULID
     | RepartijaFetched ULID (WebData RepartijaForFrontend)
     | FetchRepartija ULID

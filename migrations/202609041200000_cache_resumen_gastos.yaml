@@ -1,0 +1,73 @@
+operations:
+  - create_table:
+      name: pagado_y_consumido_en_gasto
+      constraints:
+        - name: pagado_y_consumido_en_gasto__gasto_participante
+          type: primary_key
+          columns:
+            - gasto__id
+            - participante__id
+      columns:
+        - name: gasto__id
+          type: text
+          nullable: false
+          references:
+            table: pagos
+            column: id
+            name: fk_pagado_y_consumido_gasto__id
+            on_delete: CASCADE
+        - name: grupo__id
+          type: text
+          nullable: false
+          references:
+            table: grupos
+            column: id
+            name: fk_pagado_y_consumido_grupo__id
+            on_delete: CASCADE
+        - name: participante__id
+          type: text
+          nullable: false
+          references:
+            table: participantes
+            column: id
+            name: fk_pagado_y_consumido_participante__id
+            on_delete: CASCADE
+        - name: moneda
+          type: text
+          nullable: false
+        - name: pagado_en_unidades_minimas
+          type: bigint
+          nullable: false
+        - name: consumido_en_unidades_minimas
+          type: bigint
+          nullable: false
+
+  # TODO: El orden de las columnas puede salir invertido: pgroll las toma como
+  # un map y no es determinista. Si queda '(participante__id, grupo__id)' no le
+  # sirve a 'netosDeGrupo', que filtra por grupo. Recrear el índice cuando
+  # pgroll respete el orden.
+  - create_index:
+      name: idx_pagado_y_consumido_grupo_participante
+      table: pagado_y_consumido_en_gasto
+      columns:
+        grupo__id: {}
+        participante__id: {}
+
+  - create_index:
+      name: idx_pagado_y_consumido_participante
+      table: pagado_y_consumido_en_gasto
+      columns:
+        participante__id: {}
+
+  - add_column:
+      table: pagos
+      up: "'{}'::jsonb"
+      column:
+        name: resumen
+        type: jsonb
+        nullable: false
+
+  - drop_column:
+      table: pagos
+      column: is_valid
+      down: "coalesce(resumen -> 'errores' = '[]'::jsonb, false)"

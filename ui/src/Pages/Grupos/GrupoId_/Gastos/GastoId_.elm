@@ -72,7 +72,7 @@ init grupoId pagoId store =
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
-        , Store.ensurePago pagoId store
+        , Store.ensurePago grupoId pagoId store
         , Effect.getCurrentUser grupoId
         , waitAndCheckNecessaryData
         ]

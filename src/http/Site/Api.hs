@@ -37,8 +37,16 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
   , _routePagoPost ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
-  , _routePagosGet ::
-      routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Get '[JSON] [ShallowPago]
+  , -- Con @participante@ el resumen de cada gasto viene recortado a esa
+    -- persona. La lista sólo muestra lo propio, así que es la diferencia entre
+    -- mandar un par de netos por gasto o los de todo el grupo.
+    _routePagosGet ::
+      routes
+        :- "grupo"
+          :> Capture "id" ULID
+          :> "pagos"
+          :> QueryParam "participante" ULID
+          :> Get '[JSON] [ShallowPago]
   , _routePagoGet ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> Get '[JSON] Pago
   , _routePagoResumenPost ::

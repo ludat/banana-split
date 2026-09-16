@@ -19,12 +19,15 @@ module BananaSplit.Core (
   Pago (..),
   ShallowPago (..),
   TipoDistribucion (..),
-  addIsValidPago,
   calcularNetosPago,
   calcularNetosTotales,
-  getResumenPago,
-  isValid,
+  gastoEsValido,
+  resumenGastoEsValido,
+  getResumenGasto,
+  netosDeResumenGasto,
   netosDeTransferencias,
+  ResumenGasto (..),
+  resumenGastos2ResumenNetos,
 ) where
 
 import Data.Time (Day, UTCTime)
@@ -42,6 +45,7 @@ import BananaSplit.Deudas
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
 import BananaSplit.Monto (Monto)
 import BananaSplit.Participante (Participante)
+import BananaSplit.Repartija (RepartijaClaim (..))
 import BananaSplit.TasaDeCambio (TasaDeCambio)
 import BananaSplit.ULID
 import Preludat
@@ -87,7 +91,6 @@ data Pago = Pago
   { pagoId :: ULID
   , monto :: Monto
   , moneda :: Moneda
-  , isValid :: Bool
   , nombre :: Text
   , fecha :: Day
   , pagadores :: Distribucion
@@ -97,18 +100,18 @@ data Pago = Pago
 
 data ShallowPago = ShallowPago
   { pagoId :: ULID
-  , isValid :: Bool
   , nombre :: Text
   , monto :: Monto
   , moneda :: Moneda
   , fecha :: Day
+  , resumen :: ResumenGasto
   }
   deriving (Show, Eq, Generic)
 
 calcularNetosTotales :: Grupo -> PorMoneda (Netos Monto)
 calcularNetosTotales grupo =
   grupo.pagos
-    & filter isValid
+    & filter gastoEsValido
     & fmap (\pago -> (calcularNetosPago pago) `enMoneda` pago.moneda)
     & mconcat
 
@@ -121,32 +124,62 @@ netosDeTransferencias =
   fmap (foldMap netosDeTransferencia)
 
 calcularNetosPago :: Pago -> Netos Monto
-calcularNetosPago pago =
-  fromMaybe mempty $ getNetosResumen $ getResumenPago pago
+calcularNetosPago gasto =
+  gasto
+    & getResumenGasto
+    & netosDeResumenGasto
 
-getResumenPago :: Pago -> ResumenNetos
-getResumenPago pago =
+data ResumenGasto = ResumenGasto
+  { pagado :: Netos Monto
+  , consumido :: Netos Monto
+  , errores :: [ErrorResumen]
+  , participantesEnRepartija :: Maybe Int
+  }
+  deriving (Show, Eq, Generic)
+
+resumenGastos2ResumenNetos :: ResumenGasto -> ResumenNetos
+resumenGastos2ResumenNetos resumen =
+  ResumenNetos
+    { netos = resumen.pagado <> fmap negate resumen.consumido
+    , total = totalNetos resumen.pagado
+    , errores = resumen.errores
+    }
+
+getResumenGasto :: Pago -> ResumenGasto
+getResumenGasto pago =
   let
     resumenPagadores = getResumen pago.monto pago.pagadores
     resumenDeudores = getResumen pago.monto pago.deudores
-    netos = resumenPagadores.netos <> fmap negate resumenDeudores.netos
-    extraErrors = []
   in
-    ResumenNetos pago.monto netos
-      $ fmap (relabelError "pagadores") resumenPagadores.errores
-      <> fmap (relabelError "deudores") resumenDeudores.errores
-      <> extraErrors
+    ResumenGasto
+      { pagado = resumenPagadores.netos
+      , consumido = resumenDeudores.netos
+      , errores =
+          fmap (relabelError "pagadores") resumenPagadores.errores
+            <> fmap (relabelError "deudores") resumenDeudores.errores
+      , participantesEnRepartija = case pago.deudores.tipo of
+          TipoDistribucionRepartija repartija ->
+            repartija.claims
+              & fmap (.participante)
+              & ordNub
+              & length
+              & Just
+          _ -> Nothing
+      }
 
-isValid :: Pago -> Bool
-isValid pago =
+netosDeResumenGasto :: ResumenGasto -> Netos Monto
+netosDeResumenGasto resumen =
+  resumen.pagado <> fmap negate resumen.consumido
+
+gastoEsValido :: Pago -> Bool
+gastoEsValido pago =
   pago
-    & getResumenPago
-    & getNetosResumen
-    & isJust
+    & getResumenGasto
+    & resumenGastoEsValido
 
-addIsValidPago :: Pago -> Pago
-addIsValidPago pago =
-  pago{isValid = isValid pago}
+resumenGastoEsValido :: ResumenGasto -> Bool
+resumenGastoEsValido resumen =
+  null resumen.errores
 
 instance IsElmDefinition UTCTime where
   compileElmDef _ =
@@ -157,6 +190,7 @@ instance IsElmDefinition Day where
     ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "Day", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
 
 Elm.deriveBoth Elm.defaultOptions ''Pago
+Elm.deriveBoth Elm.defaultOptions ''ResumenGasto
 Elm.deriveBoth Elm.defaultOptions ''ShallowPago
 Elm.deriveBoth Elm.defaultOptions ''Grupo
 Elm.deriveBoth Elm.defaultOptions ''ShallowGrupo

@@ -55,7 +55,7 @@ import BananaSplit.Receipts (
   analyzePagoFromEmail,
  )
 import Preludat
-import Site.Handler.Utils (runBeam)
+import Site.Handler.Utils (runBeamFastRead, runBeamWrite)
 import Site.Mailer (Mailer (..))
 import Site.Types
 
@@ -213,7 +213,7 @@ processPago payload fromEmail = do
   config <- lift $ asks (.receipts)
 
   -- 3. Resolve the From address to a user.
-  maybeUser <- lift $ runBeam $ fetchUserByEmail fromEmail
+  maybeUser <- lift $ runBeamFastRead $ fetchUserByEmail fromEmail
   user <-
     maybe (throwError $ "No hay ninguna cuenta asociada a la dirección " <> unEmail fromEmail <> ".") pure maybeUser
 
@@ -223,11 +223,11 @@ processPago payload fromEmail = do
       (const $ throwError "No pude identificar el grupo en la dirección de destino.")
       pure
       (extractGrupoId payload)
-  grupos <- lift $ runBeam $ fetchGruposForUser user.id
-  unless (any (\g -> g.id == grupoId) grupos) $
-    throwError "No perteneces a ese grupo, o el grupo no existe."
+  grupos <- lift $ runBeamFastRead $ fetchGruposForUser user.id
+  unless (any (\g -> g.id == grupoId) grupos)
+    $ throwError "No perteneces a ese grupo, o el grupo no existe."
   grupo <-
-    lift (runBeam $ fetchGrupo grupoId)
+    lift (runBeamFastRead $ fetchGrupo grupoId)
       `orElseMay` throwError "No perteneces a ese grupo, o el grupo no existe."
 
   -- 5. Ask the AI to parse exactly one pago within this grupo (text only for
@@ -242,7 +242,7 @@ processPago payload fromEmail = do
   -- invalid for the user to fix) than reject the whole message over an
   -- unrecognised person, currency or date. 7. Persist it.
   today <- liftIO $ utctDay <$> getCurrentTime
-  saved <- lift $ runBeam $ savePago grupo.id (resolvePago grupo today parsed)
+  saved <- lift $ runBeamWrite $ savePago grupo.id (resolvePago grupo today parsed)
   pure (grupo, saved)
 
 -- | Email the sender an outcome, threading onto the original subject when there
@@ -278,7 +278,7 @@ successEmail host grupo pago =
         , "<p><strong>Deben:</strong></p>"
         , "<ul>" <> renderDistribucion names pago.deudores <> "</ul>"
         ]
-      <> [ if pago.isValid
+      <> [ if gastoEsValido pago
              then "<p>Quedó todo listo.</p>"
              else "<p>Quedó marcado como <strong>inválido</strong> porque falta o no cierra alguna información (por ejemplo quién pagó o quiénes deben). Abrilo en la app para completarlo.</p>"
          ]
@@ -352,7 +352,7 @@ savedLog recipient grupo pago =
     <> monto2Text pago.monto
     <> " "
     <> show pago.moneda
-    <> (if pago.isValid then "" else ", INVALID")
+    <> (if gastoEsValido pago then "" else ", INVALID")
     <> ") for "
     <> unEmail recipient
     <> " in grupo \""
@@ -381,9 +381,9 @@ mkPagoContext sender grupo =
 
 -- | Turn the AI's parsed pago into a real 'Pago'. This never fails: anything the
 -- model got wrong (an unknown currency or date, a person that isn't in the
--- grupo) is dropped rather than rejected, so we always produce /some/ pago. It
--- is born invalid ('isValid' is recomputed by savePago), so a partial result
--- simply surfaces to the user as an invalid pago to finish editing.
+-- grupo) is dropped rather than rejected, so we always produce /some/ pago. A
+-- partial result simply surfaces to the user as an invalid pago to finish
+-- editing: validity is derived from the distributions, never stated here.
 resolvePago :: ShallowGrupo -> Day -> ParsedEmailPago -> Pago
 resolvePago grupo today parsed =
   let validIds = Set.fromList $ fmap (.id) grupo.participantes
@@ -391,7 +391,6 @@ resolvePago grupo today parsed =
        { pagoId = nullUlid
        , monto = scientificToMonto parsed.monto
        , moneda = resolveMoneda grupo.monedaPorDefecto parsed.moneda
-       , isValid = False -- recomputed by savePago via addIsValidPago
        , nombre = parsed.nombre
        , fecha = resolveFecha today parsed.fecha
        , pagadores = resolvePartes validIds parsed.pagadores

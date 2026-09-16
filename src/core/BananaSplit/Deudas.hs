@@ -29,12 +29,12 @@ module BananaSplit.Deudas (
 ) where
 
 import Data.Decimal (Decimal)
-import Data.Time (UTCTime)
 import Data.Decimal qualified as Decimal
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific)
 import Data.Scientific qualified as Scientific
+import Data.Time (UTCTime)
 import Elm.Derive qualified as Elm
 import Numeric.Optimization.MIP qualified as MIP
 import Numeric.Optimization.MIP.Solver qualified as MIP
@@ -94,6 +94,14 @@ data TipoErrorResumen
     ErrorPartesMontoFijoSuperaTotal Monto Monto
   | -- | totalFijos, totalPago
     ErrorPartesTotalNoCoincide Monto Monto
+  | -- | El resumen guardado del gasto no se pudo leer: o todavía no se calculó,
+    -- o quedó con un formato que ya no entendemos. Pasa mientras corre el
+    -- backfill de un cambio de formato.
+    --
+    -- No lo produce el dominio, sólo la lectura del cache. Existe porque no
+    -- saber si un gasto cierra es, para el usuario, una razón más por la que no
+    -- está bien — y así la UI no tiene que aprender un concepto nuevo.
+    ErrorNoCalculado
   deriving (Show, Eq, Generic)
 
 data ErrorResumen = ErrorResumen
@@ -267,10 +275,6 @@ data TransferenciaHecha = TransferenciaHecha
   }
   deriving (Show, Eq, Generic)
 
--- | Lo que una transferencia ya hecha le hace a los netos: el que la mandó
--- salda lo que debía y el que la recibió cobra lo suyo. Los signos son los
--- mismos que los de un pago donde 'from' es el único pagador y 'to' el único
--- deudor, que es lo que esta transferencia reemplaza.
 netosDeTransferencia :: Transferencia -> Netos Monto
 netosDeTransferencia transferencia =
   mkDeuda transferencia.from transferencia.monto

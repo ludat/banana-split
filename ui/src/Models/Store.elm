@@ -39,10 +39,10 @@ update msg store =
             , Effect.none
             )
 
-        FetchPagos grupoId ->
+        FetchPagos grupoId participanteId ->
             ( store
             , Effect.batch
-                [ Effect.sendCmd <| Api.getGrupoByIdPagos grupoId (RemoteData.fromResult >> PagosFetched grupoId >> StoreMsg)
+                [ Effect.sendCmd <| Api.getGrupoByIdPagos grupoId participanteId (RemoteData.fromResult >> PagosFetched grupoId >> StoreMsg)
                 ]
             )
 
@@ -54,11 +54,10 @@ update msg store =
             , Effect.none
             )
 
-        FetchPago pagoId ->
+        FetchPago grupoId pagoId ->
             ( store
             , Effect.batch
-                -- TODO This should be a grupo id instead of pagoId
-                [ Effect.sendCmd <| Api.getGrupoByIdPagosByPagoId pagoId pagoId (RemoteData.fromResult >> PagoFetched pagoId >> StoreMsg)
+                [ Effect.sendCmd <| Api.getGrupoByIdPagosByPagoId grupoId pagoId (RemoteData.fromResult >> PagoFetched pagoId >> StoreMsg)
                 ]
             )
 
@@ -145,14 +144,14 @@ updateRepartijaForFrontend repartijaId repartijaPage =
     Effect.sendStoreMsg <| RepartijaFetched repartijaId (Success repartijaPage)
 
 
-refreshPagos : ULID -> Effect msg
-refreshPagos grupoId =
-    Effect.sendStoreMsg <| FetchPagos grupoId
+refreshPagos : ULID -> Maybe ULID -> Effect msg
+refreshPagos grupoId participanteId =
+    Effect.sendStoreMsg <| FetchPagos grupoId participanteId
 
 
-refreshPago : ULID -> Effect msg
-refreshPago pagoId =
-    Effect.sendStoreMsg <| FetchPago pagoId
+refreshPago : ULID -> ULID -> Effect msg
+refreshPago grupoId pagoId =
+    Effect.sendStoreMsg <| FetchPago grupoId pagoId
 
 
 refreshRepartija : ULID -> Effect msg
@@ -176,11 +175,11 @@ ensureGrupo grupoId store =
             Effect.none
 
 
-ensurePagos : ULID -> Store -> Effect msg
-ensurePagos grupoId store =
+ensurePagos : ULID -> Maybe ULID -> Store -> Effect msg
+ensurePagos grupoId participanteId store =
     case getPagos grupoId store of
         NotAsked ->
-            Effect.sendStoreMsg <| FetchPagos grupoId
+            Effect.sendStoreMsg <| FetchPagos grupoId participanteId
 
         Loading ->
             Effect.none
@@ -192,11 +191,11 @@ ensurePagos grupoId store =
             Effect.none
 
 
-ensurePago : ULID -> Store -> Effect msg
-ensurePago pagoId store =
-    case getPagos pagoId store of
+ensurePago : ULID -> ULID -> Store -> Effect msg
+ensurePago grupoId pagoId store =
+    case getPago pagoId store of
         NotAsked ->
-            Effect.sendStoreMsg <| FetchPago pagoId
+            Effect.sendStoreMsg <| FetchPago grupoId pagoId
 
         Loading ->
             Effect.none

@@ -107,6 +107,7 @@ library database
   exposed-modules:
     BananaSplit.Persistence
     BananaSplit.Persistence.Migration_2026_05_26_FixDates
+    BananaSplit.Persistence.ResumenGuardado
     BananaSplit.Persistence.Schema
     BananaSplit.PgRoll
 
@@ -192,8 +193,10 @@ test-suite spec
     BananaSplit.Persistence.TasasDeCambioSpec
     BananaSplit.Persistence.TransferenciasSpec
     BananaSplit.RepartijaSpec
+    BananaSplit.ResumenGuardadoSpec
     BananaSplit.TasaDeCambioSpec
     BananaSplitSpec
+    Integracion.ConcurrenciaSpec
     Site.AuthSpec
     Site.Handler.InboundEmailSpec
 

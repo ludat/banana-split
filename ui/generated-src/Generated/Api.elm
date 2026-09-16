@@ -515,6 +515,7 @@ type TipoErrorResumen  =
     | ErrorPartesVacias 
     | ErrorPartesMontoFijoSuperaTotal Monto Monto
     | ErrorPartesTotalNoCoincide Monto Monto
+    | ErrorNoCalculado 
 
 jsonDecTipoErrorResumen : Json.Decode.Decoder ( TipoErrorResumen )
 jsonDecTipoErrorResumen =
@@ -526,6 +527,7 @@ jsonDecTipoErrorResumen =
             , ("ErrorPartesVacias", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorPartesVacias))
             , ("ErrorPartesMontoFijoSuperaTotal", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorPartesMontoFijoSuperaTotal (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
             , ("ErrorPartesTotalNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorPartesTotalNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
+            , ("ErrorNoCalculado", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorNoCalculado))
             ]
     in  decodeSumObjectWithSingleField  "TipoErrorResumen" jsonDecDictTipoErrorResumen
 
@@ -539,6 +541,7 @@ jsonEncTipoErrorResumen  val =
                     ErrorPartesVacias  -> ("ErrorPartesVacias", encodeValue (Json.Encode.list identity []))
                     ErrorPartesMontoFijoSuperaTotal v1 v2 -> ("ErrorPartesMontoFijoSuperaTotal", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
                     ErrorPartesTotalNoCoincide v1 v2 -> ("ErrorPartesTotalNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
+                    ErrorNoCalculado  -> ("ErrorNoCalculado", encodeValue (Json.Encode.list identity []))
     in encodeSumObjectWithSingleField keyval val
 
 
@@ -749,7 +752,6 @@ type alias Pago  =
    { pagoId: ULID
    , monto: Monto
    , moneda: Moneda
-   , isValid: Bool
    , nombre: String
    , fecha: Day
    , pagadores: Distribucion
@@ -758,11 +760,10 @@ type alias Pago  =
 
 jsonDecPago : Json.Decode.Decoder ( Pago )
 jsonDecPago =
-   Json.Decode.succeed (\ppagoId pmonto pmoneda pisValid pnombre pfecha ppagadores pdeudores -> {pagoId = ppagoId, monto = pmonto, moneda = pmoneda, isValid = pisValid, nombre = pnombre, fecha = pfecha, pagadores = ppagadores, deudores = pdeudores})
+   Json.Decode.succeed (\ppagoId pmonto pmoneda pnombre pfecha ppagadores pdeudores -> {pagoId = ppagoId, monto = pmonto, moneda = pmoneda, nombre = pnombre, fecha = pfecha, pagadores = ppagadores, deudores = pdeudores})
    |> required "pagoId" (jsonDecULID)
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
-   |> required "isValid" (Json.Decode.bool)
    |> required "nombre" (Json.Decode.string)
    |> required "fecha" (jsonDecDay)
    |> required "pagadores" (jsonDecDistribucion)
@@ -774,7 +775,6 @@ jsonEncPago  val =
    [ ("pagoId", jsonEncULID val.pagoId)
    , ("monto", jsonEncMonto val.monto)
    , ("moneda", jsonEncMoneda val.moneda)
-   , ("isValid", Json.Encode.bool val.isValid)
    , ("nombre", Json.Encode.string val.nombre)
    , ("fecha", jsonEncDay val.fecha)
    , ("pagadores", jsonEncDistribucion val.pagadores)
@@ -783,34 +783,60 @@ jsonEncPago  val =
 
 
 
+type alias ResumenGasto  =
+   { pagado: (Netos Monto)
+   , consumido: (Netos Monto)
+   , errores: (List ErrorResumen)
+   , participantesEnRepartija: (Maybe Int)
+   }
+
+jsonDecResumenGasto : Json.Decode.Decoder ( ResumenGasto )
+jsonDecResumenGasto =
+   Json.Decode.succeed (\ppagado pconsumido perrores pparticipantesEnRepartija -> {pagado = ppagado, consumido = pconsumido, errores = perrores, participantesEnRepartija = pparticipantesEnRepartija})
+   |> required "pagado" (jsonDecNetos (jsonDecMonto))
+   |> required "consumido" (jsonDecNetos (jsonDecMonto))
+   |> required "errores" (Json.Decode.list (jsonDecErrorResumen))
+   |> fnullable "participantesEnRepartija" (Json.Decode.int)
+
+jsonEncResumenGasto : ResumenGasto -> Value
+jsonEncResumenGasto  val =
+   Json.Encode.object
+   [ ("pagado", (jsonEncNetos (jsonEncMonto)) val.pagado)
+   , ("consumido", (jsonEncNetos (jsonEncMonto)) val.consumido)
+   , ("errores", (Json.Encode.list jsonEncErrorResumen) val.errores)
+   , ("participantesEnRepartija", (maybeEncode (Json.Encode.int)) val.participantesEnRepartija)
+   ]
+
+
+
 type alias ShallowPago  =
    { pagoId: ULID
-   , isValid: Bool
    , nombre: String
    , monto: Monto
    , moneda: Moneda
    , fecha: Day
+   , resumen: ResumenGasto
    }
 
 jsonDecShallowPago : Json.Decode.Decoder ( ShallowPago )
 jsonDecShallowPago =
-   Json.Decode.succeed (\ppagoId pisValid pnombre pmonto pmoneda pfecha -> {pagoId = ppagoId, isValid = pisValid, nombre = pnombre, monto = pmonto, moneda = pmoneda, fecha = pfecha})
+   Json.Decode.succeed (\ppagoId pnombre pmonto pmoneda pfecha presumen -> {pagoId = ppagoId, nombre = pnombre, monto = pmonto, moneda = pmoneda, fecha = pfecha, resumen = presumen})
    |> required "pagoId" (jsonDecULID)
-   |> required "isValid" (Json.Decode.bool)
    |> required "nombre" (Json.Decode.string)
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
    |> required "fecha" (jsonDecDay)
+   |> required "resumen" (jsonDecResumenGasto)
 
 jsonEncShallowPago : ShallowPago -> Value
 jsonEncShallowPago  val =
    Json.Encode.object
    [ ("pagoId", jsonEncULID val.pagoId)
-   , ("isValid", Json.Encode.bool val.isValid)
    , ("nombre", Json.Encode.string val.nombre)
    , ("monto", jsonEncMonto val.monto)
    , ("moneda", jsonEncMoneda val.moneda)
    , ("fecha", jsonEncDay val.fecha)
+   , ("resumen", jsonEncResumenGasto val.resumen)
    ]
 
 
@@ -1261,13 +1287,15 @@ postGrupoByIdPagos capture_id body toMsg =
                 Nothing
             }
 
-getGrupoByIdPagos : ULID -> (Result Http.Error  ((List ShallowPago))  -> msg) -> Cmd msg
-getGrupoByIdPagos capture_id toMsg =
+getGrupoByIdPagos : ULID -> (Maybe ULID) -> (Result Http.Error  ((List ShallowPago))  -> msg) -> Cmd msg
+getGrupoByIdPagos capture_id query_participante toMsg =
     let
         params =
             List.filterMap identity
             (List.concat
-                [])
+                [ [ query_participante
+                    |> Maybe.map (Url.Builder.string "participante") ]
+                ])
     in
         Http.request
             { method =

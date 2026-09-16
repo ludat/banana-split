@@ -9,7 +9,10 @@ module BananaSplit.Persistence (
   recordAttempt,
   clearAttempts,
   deleteOldLoginAttempts,
+  conTransaccionDeEscritura,
+  conTransaccionDeLecturaRapida,
   makePool,
+  openConnection,
   runMigration,
   recomputePagos,
   addParticipante,
@@ -32,9 +35,12 @@ module BananaSplit.Persistence (
   fetchGrupoIdFromRepartija,
   fetchPago,
   fetchRepartija,
+  ConteoDeGastos (..),
+  contarGastos,
   fetchShallowPagos,
   fetchTasasDeCambio,
   fetchTransferencias,
+  netosDeGrupo,
   freezeGrupo,
   guardarTasasDeCambio,
   borrarTransferencia,
@@ -45,17 +51,18 @@ module BananaSplit.Persistence (
   TransferenciaGuardada (..),
   transferenciasHechas,
   transferenciasPendientes,
+  recalcularResumenGasto,
   savePago,
   saveRepartija,
   saveRepartijaClaim,
   unfreezeGrupo,
   updateGrupo,
-  updateIsValidPago,
   updatePago,
 ) where
 
 import Conferer qualified
 import Data.List.NonEmpty qualified as NE
+import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
 import Data.String (String)
 import Data.Text qualified as Text
@@ -65,21 +72,75 @@ import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Full hiding (insert)
 import Database.PostgreSQL.Simple (Only (..), execute, query)
+import Database.PostgreSQL.Simple.Errors (isSerializationError)
+import Database.PostgreSQL.Simple.Transaction qualified as Transaction
 
 import BananaSplit qualified as M
 import BananaSplit.Persistence.Migration_2026_05_26_FixDates qualified as FixDates
+import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..))
+import BananaSplit.Persistence.ResumenGuardado qualified as ResumenGuardado
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
 import Preludat
 
-runMigration :: Conferer.Config -> [String] -> IO ()
-runMigration config args = do
+-- | Una conexión suelta, con el @search_path@ apuntando al esquema que pgroll
+-- tiene activo. Para los comandos de línea que no levantan el server.
+openConnection :: Conferer.Config -> IO Connection
+openConnection config = do
   connString <- Conferer.fetchFromConfig "database.url" config
   schema <- PgRoll.getLatestSchema
   conn <- connectPostgreSQL connString
   _ <- execute conn "SET search_path TO ?" (Only schema)
+  pure conn
+
+-- | La transacción de cualquier cosa que escriba.
+--
+-- Va en SERIALIZABLE porque el cache del resumen de un gasto se calcula leyendo
+-- cosas que otra transacción puede estar cambiando al mismo tiempo (los claims
+-- de una repartija, sobre todo). Con READ COMMITTED cada statement ve un
+-- snapshot nuevo, así que dos escrituras pueden leer los mismos insumos y
+-- pisarse; en SERIALIZABLE el resultado tiene que ser equivalente a haberlas
+-- corrido una después de la otra, y si no lo es Postgres aborta una.
+--
+-- De ahí el reintento: fallar con @40001@ es parte del protocolo, no un error.
+-- La transacción que aborta no dejó nada escrito, así que volver a correr el
+-- bloque entero es seguro.
+conTransaccionDeEscritura :: Connection -> Pg a -> IO a
+conTransaccionDeEscritura conn accion =
+  Transaction.withTransactionModeRetry
+    Transaction.TransactionMode
+      { Transaction.isolationLevel = Transaction.RepeatableRead
+      , Transaction.readWriteMode = Transaction.ReadWrite
+      }
+    isSerializationError
+    conn
+    (runBeamPostgres conn accion)
+
+-- | La transacción de leer para mostrar, que es lo más barato que hay: no toma
+-- predicate locks, no puede abortar por conflicto y no le agrega trabajo a las
+-- escrituras que corren en paralelo.
+--
+-- El @READ ONLY@ no es sólo una pista: Postgres rechaza cualquier escritura que
+-- entre por acá, así que una que se cuele rompe en el momento en vez de perder
+-- en silencio las garantías de arriba.
+--
+-- Lo que se resigna es que cada statement ve un snapshot distinto, así que dos
+-- queries de la misma transacción pueden ver estados distintos de la base.
+conTransaccionDeLecturaRapida :: Connection -> Pg a -> IO a
+conTransaccionDeLecturaRapida conn accion =
+  Transaction.withTransactionMode
+    Transaction.TransactionMode
+      { Transaction.isolationLevel = Transaction.ReadCommitted
+      , Transaction.readWriteMode = Transaction.ReadOnly
+      }
+    conn
+    (runBeamPostgres conn accion)
+
+runMigration :: Conferer.Config -> [String] -> IO ()
+runMigration config args = do
+  conn <- openConnection config
   case args of
     ["fix-pagos-fecha"] -> do
       runBeamPostgres conn FixDates.run
@@ -313,47 +374,115 @@ fetchGruposForUser userId = do
             }
       )
 
-fetchPago :: ULID -> Pg M.Pago
-fetchPago pagoId = do
+fetchPago :: ULID -> ULID -> Pg M.Pago
+fetchPago grupoId pagoId = do
   (dbPago :: Pago) <-
     fromMaybe (panic "Pago not found")
       <$> runSelectReturningOne
         ( select $ do
             pago <- all_ db.pagos
             guard_ (pago.pagoId ==. val_ pagoId)
+            guard_ (pago.pagoGrupo ==. val_ (GrupoId grupoId))
             pure pago
         )
 
   (pagadores :: M.Distribucion) <- fromMaybe (panic "Pagadores not found") <$> fetchDistribucion dbPago.pagoMoneda (case dbPago.distribucion_pagadores of DistribucionId ulid -> ulid)
   (deudores :: M.Distribucion) <- fromMaybe (panic "deudores not found") <$> fetchDistribucion dbPago.pagoMoneda (case dbPago.distribucion_deudores of DistribucionId ulid -> ulid)
-  dbPago
-    & ( \p ->
-          M.Pago
-            { M.pagoId = p.pagoId
-            , M.monto = desdeUnidadesMinimas dbPago.pagoMoneda p.pagoMontoEnUnidadesMinimas
-            , M.moneda = dbPago.pagoMoneda
-            , M.nombre = p.pagoNombre
-            , M.isValid = p.pagoIsValid
-            , M.fecha = p.fecha
-            , M.pagadores = pagadores
-            , M.deudores = deudores
-            }
-            & M.addIsValidPago
-      )
-    & pure
 
-updateIsValidPago :: M.Pago -> Pg M.Pago
-updateIsValidPago pago = do
-  runUpdate
-    $ update
-      db.pagos
-      (\p -> p.pagoIsValid <-. val_ pago.isValid)
-      (\p -> p.pagoId ==. val_ pago.pagoId)
-  pure pago
+  pure
+    M.Pago
+      { M.pagoId = dbPago.pagoId
+      , M.monto = desdeUnidadesMinimas dbPago.pagoMoneda dbPago.pagoMontoEnUnidadesMinimas
+      , M.moneda = dbPago.pagoMoneda
+      , M.nombre = dbPago.pagoNombre
+      , M.fecha = dbPago.fecha
+      , M.pagadores = pagadores
+      , M.deudores = deudores
+      }
+
+-- | Cuántos gastos tiene un grupo y cuántos de ellos no están bien.
+data ConteoDeGastos = ConteoDeGastos
+  { total :: Int
+  , invalidos :: Int
+  }
+  deriving stock (Show, Eq)
+
+-- | Los dos conteos de un grupo.
+--
+-- Se cuenta en la base: para dos enteros no hace falta traer los gastos ni sus
+-- filas de 'pagado_y_consumido_en_gasto'. Y van juntos porque salen de la misma pasada.
+--
+-- Qué cuenta como válido lo decide 'esValido_', al lado del decoder del blob.
+contarGastos :: ULID -> Pg ConteoDeGastos
+contarGastos grupoId = do
+  resultado <- runSelectReturningOne $ select $ do
+    aggregate_
+      ( \pago ->
+          ( as_ @Int32 countAll_
+          , fromMaybe_ 0 $ sum_ $ ifThenElse_ (ResumenGuardado.esValido_ pago.resumen) (val_ 0) (val_ (1 :: Int32))
+          )
+      )
+      $ do
+        pago <- all_ db.pagos
+        guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
+        pure pago
+  pure $ case resultado of
+    Nothing -> ConteoDeGastos{total = 0, invalidos = 0}
+    Just (cantidad, malos) ->
+      ConteoDeGastos{total = fromIntegral cantidad, invalidos = fromIntegral malos}
+
+escribirPagadoYConsumido :: ULID -> M.Pago -> M.ResumenGasto -> Pg ()
+escribirPagadoYConsumido grupoId pago resumen = do
+  let M.Netos pagado = resumen.pagado
+      M.Netos consumido = resumen.consumido
+      filas
+        | not (M.resumenGastoEsValido resumen) = []
+        | otherwise =
+            Map.union pagado consumido
+              & Map.keys
+              & fmap
+                ( \participante ->
+                    PagadoYConsumidoEnGasto
+                      { gasto = PagoId pago.pagoId
+                      , participante = participanteId2Persistent participante
+                      , grupo = GrupoId grupoId
+                      , moneda = pago.moneda
+                      , pagado_en_unidades_minimas =
+                          aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante pagado
+                      , consumido_en_unidades_minimas =
+                          aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante consumido
+                      }
+                )
+
+  runDelete
+    $ delete
+      db.pagado_y_consumido_en_gasto
+      ( \pn ->
+          pn.gasto
+            ==. val_ (PagoId pago.pagoId)
+            &&. not_ (pn.participante `in_` fmap (val_ . (.participante)) filas)
+      )
+  unless (null filas)
+    $ runInsert
+    $ insertOnConflict
+      db.pagado_y_consumido_en_gasto
+      (insertValues filas)
+      (conflictingFields primaryKey)
+      onConflictUpdateAll
 
 aUnidadesMinimas :: M.Moneda -> M.Monto -> UnidadesMinimas
-aUnidadesMinimas moneda monto =
-  fromIntegral $ M.mantisaEn (M.escalaDe moneda) monto
+aUnidadesMinimas moneda monto
+  | M.getLugaresDespuesDeLaComa monto > escala =
+      panic
+        $ "monto con más precisión que "
+        <> show moneda
+        <> ", que tiene "
+        <> show escala
+        <> " decimales: "
+        <> show monto
+  | otherwise = fromIntegral $ M.mantisaEn escala monto
+  where
+    escala = M.escalaDe moneda
 
 aUnidadesMinimasMaybe :: M.Moneda -> Maybe M.Monto -> Maybe UnidadesMinimas
 aUnidadesMinimasMaybe moneda = fmap (aUnidadesMinimas moneda)
@@ -488,8 +617,11 @@ fetchDistribucion moneda distribucionId = do
           }
     _ -> pure Nothing
 
-fetchShallowPagos :: ULID -> Pg [M.ShallowPago]
-fetchShallowPagos grupoId = do
+-- | Los gastos de un grupo con su resumen. Con un participante, el resumen de
+-- cada gasto viene recortado a esa persona: las filas de los demás no se leen
+-- ni se serializan.
+fetchShallowPagos :: ULID -> Maybe M.ParticipanteId -> Pg [M.ShallowPago]
+fetchShallowPagos grupoId participanteId = do
   dbPagos <- runSelectReturningList $ select $ do
     pago <-
       all_ db.pagos
@@ -497,16 +629,89 @@ fetchShallowPagos grupoId = do
     guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
     pure pago
 
-  forM dbPagos $ \pago -> do
-    pure
-      M.ShallowPago
-        { M.pagoId = pago.pagoId
-        , M.isValid = pago.pagoIsValid
-        , M.nombre = pago.pagoNombre
-        , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
-        , M.moneda = pago.pagoMoneda
-        , M.fecha = pago.fecha
-        }
+  -- Todas las filas del cache del grupo de una, no una query por gasto. Sin
+  -- joinear 'pagos': la fila sabe de qué grupo es.
+  filas <- runSelectReturningList $ select $ do
+    fila <- all_ db.pagado_y_consumido_en_gasto
+    guard_ (fila.grupo ==. GrupoId (val_ grupoId))
+    forM_ participanteId $ \unParticipante ->
+      guard_ (fila.participante ==. ParticipanteId (val_ (M.participanteId2ULID unParticipante)))
+    pure fila
+
+  let netosPorPago =
+        filas
+          & fmap (\fila -> (case fila.gasto of PagoId p -> p, [fila]))
+          & Map.fromListWith (<>)
+
+  -- Leer nunca calcula: el resumen de un gasto queda escrito por la misma
+  -- transacción que lo modifica ('guardarResumenDeGasto'), así que acá siempre
+  -- tiene que estar. Si falta es que algo lo dejó a medias, y eso se arregla
+  -- corriendo el backfill, no disimulándolo en cada lectura.
+  pure $ dbPagos & fmap (\pago -> toShallowPago pago (Map.findWithDefault [] pago.pagoId netosPorPago))
+
+toShallowPago :: Pago -> [PagadoYConsumidoEnGasto] -> M.ShallowPago
+toShallowPago pago filas =
+  M.ShallowPago
+    { M.pagoId = pago.pagoId
+    , M.resumen = resumenDesde filas pago.resumen
+    , M.nombre = pago.pagoNombre
+    , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
+    , M.moneda = pago.pagoMoneda
+    , M.fecha = pago.fecha
+    }
+
+-- | Rearma el resumen de un gasto juntando sus dos mitades guardadas: los
+-- números por participante salen de 'pagado_y_consumido_en_gasto' y el resto del jsonb.
+resumenDesde :: [PagadoYConsumidoEnGasto] -> ResumenGuardado -> M.ResumenGasto
+resumenDesde netos guardado =
+  M.ResumenGasto
+    { -- Los netos salen de las filas, que un cambio de formato del blob no toca:
+      -- siguen siendo correctos aunque el resto venga en default.
+      M.pagado = lado (.pagado_en_unidades_minimas) netos
+    , M.consumido = lado (.consumido_en_unidades_minimas) netos
+    , M.errores = guardado.errores
+    , M.participantesEnRepartija = guardado.participantesEnRepartija
+    }
+  where
+    lado columna =
+      foldMap
+        ( \fila ->
+            M.mkDeuda
+              (M.ParticipanteId $ case fila.participante of ParticipanteId p -> p)
+              (desdeUnidadesMinimas fila.moneda (columna fila))
+        )
+
+-- | Los netos de un grupo sumados en la base, sin traer ningún gasto.
+--
+-- No filtra por el resumen guardado porque un gasto inválido no tiene filas: el
+-- filtro vive en la escritura.
+netosDeGrupo :: ULID -> Pg (M.PorMoneda (M.Netos M.Monto))
+netosDeGrupo grupoId = do
+  filas <- runSelectReturningList $ select $ do
+    aggregate_
+      -- El cast es necesario: en Postgres SUM(bigint) devuelve numeric, y sin
+      -- él la fila no decodifica.
+      ( \(participante, moneda, neto) ->
+          (group_ participante, group_ moneda, cast_ (fromMaybe_ 0 (sum_ neto)) bigint)
+      )
+      $ do
+        -- Una sola tabla: la fila del cache sabe de qué grupo es, así que la
+        -- suma no toca 'pagos' para nada.
+        fila <- all_ db.pagado_y_consumido_en_gasto
+        guard_ (fila.grupo ==. GrupoId (val_ grupoId))
+        let ParticipanteId participante = fila.participante
+        pure
+          ( participante
+          , fila.moneda
+          , fila.pagado_en_unidades_minimas - fila.consumido_en_unidades_minimas
+          )
+  pure
+    $ filas
+    & foldMap
+      ( \(participante, moneda, neto) ->
+          M.mkDeuda (M.ParticipanteId participante) (desdeUnidadesMinimas moneda neto)
+            `M.enMoneda` moneda
+      )
 
 fetchParticipantes :: ULID -> Pg [M.Participante]
 fetchParticipantes grupoId = do
@@ -626,7 +831,7 @@ savePago grupoId pagoWithoutId = do
     if pagoWithoutId.pagoId == nullUlid
       then liftIO ULID.getULID
       else pure pagoWithoutId.pagoId
-  let pago = (pagoWithoutId{M.pagoId = pagoId} :: M.Pago) & M.addIsValidPago
+  let pago = pagoWithoutId{M.pagoId = pagoId} :: M.Pago
 
   distribucionesViejas <- runSelectReturningOne $ select $ do
     p <- all_ db.pagos
@@ -635,19 +840,28 @@ savePago grupoId pagoWithoutId = do
 
   distribucionPagadores <- saveDistribucion pago.moneda pago.pagadores
   distribucionDeudores <- saveDistribucion pago.moneda pago.deudores
+
+  let pagoNuevo =
+        pago
+          { M.pagadores = distribucionPagadores
+          , M.deudores = distribucionDeudores
+          }
+
+  let resumen = M.getResumenGasto pagoNuevo
+
   runInsert
     $ insertOnConflict
       db.pagos
       ( insertValues
           [ Pago
               { pagoId = pago.pagoId
-              , pagoIsValid = pago.isValid
               , pagoGrupo = GrupoId grupoId
               , pagoNombre = pago.nombre
               , pagoMontoEnUnidadesMinimas = aUnidadesMinimas pago.moneda pago.monto
               , pagoMoneda = pago.moneda
               , distribucion_pagadores = DistribucionId distribucionPagadores.id
               , distribucion_deudores = DistribucionId distribucionDeudores.id
+              , resumen = ResumenGuardado.resumen2Guardado resumen
               , fecha = pago.fecha
               }
           ]
@@ -659,7 +873,8 @@ savePago grupoId pagoWithoutId = do
     when (viejaPagadores /= distribucionPagadores.id) $ deleteDistribucion viejaPagadores
     when (viejaDeudores /= distribucionDeudores.id) $ deleteDistribucion viejaDeudores
 
-  pure pago{M.pagadores = distribucionPagadores, M.deudores = distribucionDeudores}
+  escribirPagadoYConsumido grupoId pagoNuevo resumen
+  pure pagoNuevo
 
 recomputePagos :: Connection -> IO ()
 recomputePagos conn = go 0 nullUlid
@@ -679,7 +894,7 @@ recomputePagos conn = go 0 nullUlid
           Nothing -> pure Nothing
           Just loteNE -> do
             forM_ loteNE $ \(pagoId, GrupoId grupoId) -> do
-              pago <- fetchPago pagoId
+              pago <- fetchPago grupoId pagoId
               void $ savePago grupoId pago
             pure $ Just (NE.length loteNE, fst $ NE.last loteNE)
       case resultado of
@@ -863,9 +1078,12 @@ saveRepartija moneda distribucionId repartijaSinId = do
       (conflictingFields (\r -> r.id))
       onConflictUpdateAll
   items <- saveRepartijaItems moneda repartijaId repartija.items
+
+  claims <- claimsDeItems (fmap (RepartijaItemId . (.id)) items)
   pure
     repartija
       { M.items = items
+      , M.claims = claims
       }
 
 saveRepartijaItems :: M.Moneda -> ULID -> [M.RepartijaItem] -> Pg [M.RepartijaItem]
@@ -916,10 +1134,7 @@ fetchRepartija unRepartijaId = do
     item <- all_ db.repartija_items
     guard_ $ item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartija.id)
     pure item
-  claims :: [RepartijaClaim] <- runSelectReturningList $ select $ do
-    claim <- all_ db.repartija_claims
-    guard_ $ claim.repartijaclaimRepartijaItem `in_` fmap (val_ . RepartijaItemId . (.repartijaitemId)) items
-    pure claim
+  claims <- claimsDeItems (fmap (RepartijaItemId . (.repartijaitemId)) items)
 
   pure
     $ M.RepartijaForFrontend
@@ -929,17 +1144,7 @@ fetchRepartija unRepartijaId = do
             , nombre = pagoNombre
             , extra = desdeUnidadesMinimas moneda repartija.extra_en_unidades_minimas
             , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
-            , claims =
-                claims
-                  & fmap
-                    ( \r ->
-                        M.RepartijaClaim
-                          { M.id = r.repartijaclaimId
-                          , M.cantidad = fromIntegral <$> r.repartijaclaimCantidad
-                          , M.participante = M.ParticipanteId $ case r.repartijaclaimParticipante of ParticipanteId ulid -> ulid
-                          , M.itemId = case r.repartijaclaimRepartijaItem of RepartijaItemId ulid -> ulid
-                          }
-                    )
+            , claims = claims
             , items =
                 items
                   & fmap
@@ -956,6 +1161,23 @@ fetchRepartija unRepartijaId = do
       , pagoNombre = pagoNombre
       }
 
+claimDesdeFila :: RepartijaClaim -> M.RepartijaClaim
+claimDesdeFila r =
+  M.RepartijaClaim
+    { M.id = r.repartijaclaimId
+    , M.cantidad = fromIntegral <$> r.repartijaclaimCantidad
+    , M.participante = M.ParticipanteId $ case r.repartijaclaimParticipante of ParticipanteId ulid -> ulid
+    , M.itemId = case r.repartijaclaimRepartijaItem of RepartijaItemId ulid -> ulid
+    }
+
+claimsDeItems :: [RepartijaItemId] -> Pg [M.RepartijaClaim]
+claimsDeItems itemIds = do
+  claims <- runSelectReturningList $ select $ do
+    claim <- all_ db.repartija_claims
+    guard_ (claim.repartijaclaimRepartijaItem `in_` fmap (val_) itemIds)
+    pure claim
+  pure $ fmap claimDesdeFila claims
+
 saveRepartijaClaim :: ULID -> M.RepartijaClaim -> Pg M.RepartijaClaim
 saveRepartijaClaim repartijaId repartijaClaim = do
   claimId <-
@@ -963,6 +1185,9 @@ saveRepartijaClaim repartijaId repartijaClaim = do
       then liftIO ULID.getULID
       else pure repartijaClaim.id
   let claim' = repartijaClaim{M.id = claimId} :: M.RepartijaClaim
+  grupoId <-
+    fetchGrupoIdFromRepartija repartijaId
+      `orElseMay` panic "grupoId not found"
   runInsert
     $ insertOnConflict
       db.repartija_claims
@@ -971,26 +1196,35 @@ saveRepartijaClaim repartijaId repartijaClaim = do
       onConflictUpdateAll
   -- (onConflictUpdateSet (\fields _oldValues ->
   --   repartijaClaimCantidad fields <-. val_ (fromIntegral <$> M.repartijaClaimCantidad claim')))
-  fetchPagoIdFromRepartija repartijaId >>= traverse_ recalcValidezPago
+  fetchPagoIdFromRepartija repartijaId >>= traverse_ (recalcularResumenGasto grupoId)
   pure claim'
 
 deleteRepartijaClaim :: ULID -> Pg ()
 deleteRepartijaClaim claimId = do
   -- Resolve the owning pago before deleting, since we navigate through the claim.
   pagoId <- fetchPagoIdFromClaim claimId
+  grupoId <-
+    fetchGrupoIdFromClaim claimId
+      `orElseMay` panic "grupoId not found"
   runDelete
     $ delete
       db.repartija_claims
       (\c -> c.repartijaclaimId ==. val_ claimId)
-  forM_ pagoId recalcValidezPago
+  forM_ pagoId $ recalcularResumenGasto grupoId
 
--- | Recompute and persist a pago's @isValid@ flag. Call this from any mutation
--- that can affect a pago's validity without going through 'savePago' (e.g.
--- editing repartija claims), so the stored flag never goes stale.
-recalcValidezPago :: ULID -> Pg ()
-recalcValidezPago pagoId = do
-  pago <- fetchPago pagoId
-  void $ updateIsValidPago (pago & M.addIsValidPago)
+-- | Recalcula y guarda el resumen de un gasto. Llamalo desde cualquier mutación
+-- que pueda cambiar el reparto sin pasar por 'savePago' (editar los claims de
+-- una repartija, por ejemplo).
+recalcularResumenGasto :: ULID -> ULID -> Pg ()
+recalcularResumenGasto grupoId pagoId = do
+  pago <- fetchPago grupoId pagoId
+  let resumen = M.getResumenGasto pago
+  runUpdate
+    $ update
+      db.pagos
+      (\p -> p.resumen <-. val_ (ResumenGuardado.resumen2Guardado resumen))
+      (\p -> p.pagoId ==. val_ pago.pagoId)
+  escribirPagadoYConsumido grupoId pago resumen
 
 -- | Query fragment: the pago that owns a given repartija row, following
 -- distribución → pago (one repartija belongs to one distribución, which is

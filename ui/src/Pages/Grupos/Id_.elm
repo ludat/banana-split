@@ -3,6 +3,7 @@ module Pages.Grupos.Id_ exposing (Model, Msg, Tab, page)
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
 import Components.PagoDetalleModal as PagoDetalleModal
+import Components.ResumenGasto as ResumenGasto
 import Date
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Moneda, Netos, ShallowGrupo, ShallowPago, ULID)
@@ -67,8 +68,9 @@ init route store =
     , Effect.batch
         [ Store.ensureResumen grupoId store
         , Store.ensureGrupo grupoId store
-        , Store.ensurePagos grupoId store
-        , Effect.getCurrentUser grupoId
+        , -- Los gastos los pide Shared cuando resuelve el participante, que es
+          -- lo que este mensaje dispara.
+          Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
         , Effect.map PagoModalMsg modalEffect
         ]
@@ -191,7 +193,7 @@ view store zone ahora userId model =
                             [ div [ class "col-lg-8" ]
                                 [ viewLeftColumn store zone ahora userId model grupo ]
                             , div [ class "col-lg-4" ]
-                                [ viewUltimosPagosCard store model grupo ]
+                                [ viewUltimosPagosCard userId store model grupo ]
                             ]
                         ]
                 , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
@@ -685,8 +687,8 @@ viewTab tab tabActual etiqueta simbolo netoUsuario =
         ]
 
 
-viewUltimosPagosCard : Store -> Model -> ShallowGrupo -> Html Msg
-viewUltimosPagosCard store model grupo =
+viewUltimosPagosCard : Maybe ULID -> Store -> Model -> ShallowGrupo -> Html Msg
+viewUltimosPagosCard participanteId store model grupo =
     case store |> Store.getPagos model.grupoId of
         Success pagos ->
             let
@@ -698,15 +700,15 @@ viewUltimosPagosCard store model grupo =
             Bs.card []
                 [ Bs.cardHeader [] [ text "Ultimos gastos" ]
                 , Bs.listGroup [ class "list-group-flush" ]
-                    (ultimosPagos |> List.map (viewUltimoPago grupo.monedaPorDefecto))
+                    (ultimosPagos |> List.map (viewUltimoPago participanteId grupo.monedaPorDefecto))
                 ]
 
         _ ->
             text ""
 
 
-viewUltimoPago : Moneda -> ShallowPago -> Html Msg
-viewUltimoPago monedaPorDefecto pago =
+viewUltimoPago : Maybe ULID -> Moneda -> ShallowPago -> Html Msg
+viewUltimoPago participanteId monedaPorDefecto pago =
     Bs.listGroupItem
         [ class "list-group-item-action"
         , style "cursor" "pointer"
@@ -722,14 +724,9 @@ viewUltimoPago monedaPorDefecto pago =
                     [ text (Utils.Day.mesAbreviado pago.fecha) ]
                 , div [ class "fw-bold lh-1" ] [ text (String.fromInt (Date.day pago.fecha)) ]
                 ]
-            , if not pago.isValid then
-                i [ class "bi bi-exclamation-triangle-fill text-warning flex-shrink-0" ] []
-
-              else
-                text ""
-            , div [ class "flex-grow-1 text-truncate" ] [ text pago.nombre ]
-            , div [ class "text-nowrap text-muted small" ]
-                [ text (Moneda.simbolo monedaPorDefecto pago.moneda ++ " " ++ Monto.toString pago.monto) ]
+            , ResumenGasto.viewFila participanteId monedaPorDefecto pago
+            , ResumenGasto.viewIconoInvalido pago
+            , ResumenGasto.viewBadgeRepartija pago
             ]
         ]
 

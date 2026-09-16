@@ -18,6 +18,7 @@ import Database.Beam.Postgres
 import Database.Beam.Postgres.Syntax
 
 import BananaSplit qualified as M
+import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado)
 import BananaSplit.ULID (ULID)
 import Preludat
 
@@ -27,6 +28,7 @@ data BananaSplitDb f = BananaSplitDb
   , login_attempts :: f (TableEntity LoginAttemptT)
   , participantes :: f (TableEntity ParticipanteT)
   , pagos :: f (TableEntity PagoT)
+  , pagado_y_consumido_en_gasto :: f (TableEntity PagadoYConsumidoEnGastoT)
   , distribuciones :: f (TableEntity DistribucionT)
   , distribuciones_monto_equitativo :: f (TableEntity DistribucionMontoEquitativoT)
   , distribuciones_monto_equitativo_items :: f (TableEntity DistribucionMontoEquitativoItemT)
@@ -150,13 +152,13 @@ instance Table ParticipanteT where
 
 data PagoT f = Pago
   { pagoId :: Columnar f ULID
-  , pagoIsValid :: Columnar f Bool
   , pagoGrupo :: PrimaryKey GrupoT f
   , pagoNombre :: Columnar f Text
   , pagoMontoEnUnidadesMinimas :: Columnar f UnidadesMinimas
   , pagoMoneda :: Columnar f M.Moneda
   , distribucion_pagadores :: PrimaryKey DistribucionT f
   , distribucion_deudores :: PrimaryKey DistribucionT f
+  , resumen :: Columnar f ResumenGuardado
   , fecha :: Columnar f Day
   }
   deriving (Generic, Beamable)
@@ -185,6 +187,41 @@ instance Table PagoT where
 -- sale de 'M.escalaDe' aplicado a la moneda de la fila, así que para volver a
 -- un 'M.Monto' hace falta tener esa moneda a mano.
 type UnidadesMinimas = Int64
+
+-- | Cache de cuánto puso y cuánto consumió cada participante en cada gasto.
+-- Es derivado de las distribuciones del pago: existe para poder sumar netos con
+-- un @SUM@ en vez de reconstruir cada gasto entero.
+--
+-- Un gasto inválido no tiene filas. Uno válido siempre tiene al menos una, así
+-- que "válido y sin filas" significa que el cache todavía no se calculó.
+data PagadoYConsumidoEnGastoT f = PagadoYConsumidoEnGasto
+  { gasto :: PrimaryKey PagoT f
+  , participante :: PrimaryKey ParticipanteT f
+  , grupo :: PrimaryKey GrupoT f
+  -- ^ Se repite acá para que sumar los netos de un grupo no tenga que
+  -- joinear 'pagos' sólo para filtrar.
+  , moneda :: Columnar f M.Moneda
+  -- ^ Se repite acá porque sin ella la fila no se puede interpretar: las
+  -- unidades mínimas dependen de la moneda. La escribe el mismo 'savePago'
+  -- que escribe el gasto, así que no puede desincronizarse.
+  , pagado_en_unidades_minimas :: Columnar f UnidadesMinimas
+  , consumido_en_unidades_minimas :: Columnar f UnidadesMinimas
+  }
+  deriving (Generic, Beamable)
+
+type PagadoYConsumidoEnGasto = PagadoYConsumidoEnGastoT Identity
+
+deriving instance Show PagadoYConsumidoEnGasto
+
+deriving instance Eq PagadoYConsumidoEnGasto
+
+instance Table PagadoYConsumidoEnGastoT where
+  -- No tiene id propio: la identidad de la fila es de qué gasto y de qué
+  -- participante habla.
+  data PrimaryKey PagadoYConsumidoEnGastoT f
+    = PagadoYConsumidoEnGastoId (PrimaryKey PagoT f) (PrimaryKey ParticipanteT f)
+    deriving (Generic, Beamable)
+  primaryKey fila = PagadoYConsumidoEnGastoId fila.gasto fila.participante
 
 data DistribucionT f = Distribucion
   { id :: Columnar f ULID

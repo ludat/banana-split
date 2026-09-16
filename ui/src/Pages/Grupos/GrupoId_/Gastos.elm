@@ -2,15 +2,14 @@ module Pages.Grupos.GrupoId_.Gastos exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
 import Components.PagoDetalleModal as PagoDetalleModal
+import Components.ResumenGasto as ResumenGasto
 import Date
 import Effect exposing (Effect)
 import Generated.Api exposing (Moneda, ShallowGrupo, ShallowPago, ULID)
-import Html exposing (Html, a, div, i, text)
+import Html exposing (Html, a, div, text)
 import Html.Attributes exposing (class, style)
 import Html.Events exposing (onClick)
 import Layouts
-import Models.Moneda as Moneda
-import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
@@ -28,7 +27,7 @@ page shared route =
         { init = \() -> init route shared.store
         , update = update (PagoDetalleModal.context shared route) shared.store
         , subscriptions = subscriptions
-        , view = view shared.store
+        , view = view (Shared.currentParticipante shared route.params.grupoId) shared.store
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
         |> Page.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
@@ -52,8 +51,9 @@ init route store =
     ( { grupoId = grupoId, pagoModal = pagoModal }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
-        , Store.ensurePagos grupoId store
-        , Effect.getCurrentUser grupoId
+        , -- Los gastos los pide Shared cuando resuelve el participante, que
+          -- es lo que este mensaje dispara.
+          Effect.getCurrentUser grupoId
         , Effect.map PagoModalMsg modalEffect
         ]
     )
@@ -87,8 +87,8 @@ subscriptions _ =
     Sub.none
 
 
-view : Store -> Model -> View Msg
-view store model =
+view : Maybe ULID -> Store -> Model -> View Msg
+view participanteId store model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Loading...", body = [] }
@@ -105,14 +105,14 @@ view store model =
             { title = grupo.nombre
             , body =
                 [ div [ class "container-fluid py-3" ]
-                    [ viewPagos store model grupo ]
+                    [ viewPagos participanteId store model grupo ]
                 , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
                 ]
             }
 
 
-viewPagos : Store -> Model -> ShallowGrupo -> Html Msg
-viewPagos store model grupo =
+viewPagos : Maybe ULID -> Store -> Model -> ShallowGrupo -> Html Msg
+viewPagos participanteId store model grupo =
     case store |> Store.getPagos model.grupoId of
         NotAsked ->
             div [ class "text-muted" ] [ text "Cargando..." ]
@@ -134,16 +134,19 @@ viewPagos store model grupo =
 
             else
                 Bs.card []
-                    [ Bs.listGroup [ class "list-group-flush" ]
+                    [ Bs.listGroupKeyed [ class "list-group-flush" ]
                         (pagos
                             |> List.sortWith (\a b -> Date.compare b.fecha a.fecha)
-                            |> List.map (viewPago grupo.monedaPorDefecto)
+                            |> List.map
+                                (\pago ->
+                                    ( pago.pagoId, viewPago participanteId grupo.monedaPorDefecto pago )
+                                )
                         )
                     ]
 
 
-viewPago : Moneda -> ShallowPago -> Html Msg
-viewPago monedaPorDefecto pago =
+viewPago : Maybe ULID -> Moneda -> ShallowPago -> Html Msg
+viewPago participanteId monedaPorDefecto pago =
     Bs.listGroupItem
         [ class "list-group-item-action"
         , style "cursor" "pointer"
@@ -159,13 +162,8 @@ viewPago monedaPorDefecto pago =
                     [ text (Utils.Day.mesAbreviado pago.fecha) ]
                 , div [ class "fw-bold lh-1" ] [ text (String.fromInt (Date.day pago.fecha)) ]
                 ]
-            , if not pago.isValid then
-                i [ class "bi bi-exclamation-triangle-fill text-warning flex-shrink-0" ] []
-
-              else
-                text ""
-            , div [ class "flex-grow-1 text-truncate" ] [ text pago.nombre ]
-            , div [ class "text-nowrap text-muted small" ]
-                [ text (Moneda.simbolo monedaPorDefecto pago.moneda ++ " " ++ Monto.toString pago.monto) ]
+            , ResumenGasto.viewFila participanteId monedaPorDefecto pago
+            , ResumenGasto.viewIconoInvalido pago
+            , ResumenGasto.viewBadgeRepartija pago
             ]
         ]
