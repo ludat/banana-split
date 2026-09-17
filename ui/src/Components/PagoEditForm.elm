@@ -1,15 +1,14 @@
 module Components.PagoEditForm exposing (Model, Msg, Outcome(..), ReceiptReadingState, init, update, view)
 
-{-| El formulario de edición de un gasto, pero embebido en el popup de detalle
-en vez de en una pantalla propia.
+{-| El formulario de un gasto (crearlo o editarlo) embebido en el popup, en vez
+de en una pantalla propia.
 
-Es una copia del formulario de `Pages.Grupos.GrupoId_.Gastos.New` (de ahí se
-importan sólo las validaciones, que no dependen de la vista) con las
-adaptaciones mínimas para vivir adentro de un modal:
+Es una copia del formulario de `Pages.Grupos.GrupoId_.Gastos.New` (las
+validaciones, que no dependen de la vista, las comparten vía
+`Models.PagoForm`) con las adaptaciones mínimas para vivir adentro de un modal:
 
-  - siempre edita un gasto que ya existe, así que no hay polling esperando que
-    el store traiga el gasto ni rama de creación: el pago y los participantes
-    llegan por parámetro;
+  - el gasto y los participantes llegan por parámetro, así que no hay polling
+    esperando que el store los traiga;
   - el pie de acciones no es la barra fija de abajo de la pantalla;
   - los gráficos de torta se muestran directo en chiquito en vez de detrás de
     un modal de Bootstrap (no se pueden anidar modales);
@@ -23,13 +22,13 @@ import Browser.Dom
 import Bytes exposing (Bytes)
 import Components.Bootstrap as Bs
 import Components.GraficoTorta as GraficoTorta
-import Date
+import Date exposing (Date)
 import Effect exposing (Effect)
 import File exposing (File)
 import Form exposing (Form)
 import Form.Field as FormField
 import Form.Init as Form
-import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), Monto, Pago, Participante, ParticipanteId, Repartija, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
+import Generated.Api as Api exposing (Distribucion, DistribucionDeSobras(..), Moneda, Monto, Pago, Participante, ParticipanteId, Repartija, ResumenNetos, ResumenPago, TipoDistribucion(..), ULID)
 import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, a, button, div, i, li, p, span, text)
 import Html.Attributes as Attr exposing (accept, class, classList, disabled, placeholder, style, target, type_)
@@ -40,10 +39,10 @@ import Models.Grupo exposing (GrupoLike)
 import Models.LugarAccionable exposing (LugarParaAccionar(..))
 import Models.Moneda as Moneda
 import Models.Monto as Monto
+import Models.PagoForm exposing (ModoPartes, Section(..), distribucionDeSobrasToString, mostrarMontoFijoField, mostrarPartesField, validatePago, validatePagoInSection)
 import Models.Parte as Parte
 import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje)
 import Models.Store as Store
-import Pages.Grupos.GrupoId_.Gastos.New exposing (Section(..), validatePago, validatePagoInSection)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route.Path as Path
 import Task
@@ -59,8 +58,12 @@ import Utils.Ulid exposing (emptyUlid)
 
 type alias Model =
     { grupoId : ULID
-    , pagoId : ULID
+
+    -- `Nothing` es un gasto que todavía no existe: se crea con POST en vez de
+    -- actualizarse con PUT.
+    , pagoId : Maybe ULID
     , participanteId : Maybe ParticipanteId
+    , monedaPorDefecto : Moneda
     , currentSection : Section
     , pagoBasicoForm : Form CustomFormError Pago
     , pagadoresForm : Form CustomFormError Pago
@@ -90,13 +93,25 @@ type Outcome
     | Guardado Pago
 
 
-init : ULID -> List Participante -> Maybe ParticipanteId -> Pago -> ( Model, Effect Msg )
-init grupoId participantes participanteId pago =
+{-| Con `pago = Nothing` el formulario arranca vacío para crear un gasto nuevo:
+la fecha de hoy y el creador como único pagador.
+-}
+init :
+    { grupoId : ULID
+    , participantes : List Participante
+    , participanteId : Maybe ParticipanteId
+    , monedaPorDefecto : Moneda
+    , today : Date
+    , pago : Maybe Pago
+    }
+    -> ( Model, Effect Msg )
+init { grupoId, participantes, participanteId, monedaPorDefecto, today, pago } =
     let
         vacio =
             { grupoId = grupoId
-            , pagoId = pago.pagoId
+            , pagoId = pago |> Maybe.map .pagoId
             , participanteId = participanteId
+            , monedaPorDefecto = monedaPorDefecto
             , currentSection = BasicPagoData
             , pagoBasicoForm = Form.initial [] (validatePagoInSection BasicPagoData participantes)
             , pagadoresForm = Form.initial [] (validatePagoInSection PagadoresSection participantes)
@@ -112,23 +127,25 @@ init grupoId participantes participanteId pago =
     in
     -- Los resúmenes se piden comparando contra el modelo con los forms todavía
     -- vacíos, así arrancan calculados sobre el gasto que se está editando.
-    ( initializePagoForms participantes participanteId pago vacio, Effect.none )
+    ( initializePagoForms participantes participanteId today pago vacio, Effect.none )
         |> andThenUpdateResumenesFromForms vacio
 
 
-initializePagoForms : List Participante -> Maybe ParticipanteId -> Pago -> Model -> Model
-initializePagoForms participantes creadorId pago model =
+initializePagoForms : List Participante -> Maybe ParticipanteId -> Date -> Maybe Pago -> Model -> Model
+initializePagoForms participantes creadorId today pago model =
     let
         initialFormValues =
-            [ Form.setString "id" pago.pagoId
-            , Form.setString "nombre" pago.nombre
-            , Form.setString "monto" (Monto.toRawString pago.monto)
-            , Form.setString "moneda" (Moneda.toString pago.moneda)
-            , Form.setString "fecha" (Date.toIsoString pago.fecha)
+            [ Form.setString "id" (pago |> Maybe.map .pagoId |> Maybe.withDefault "")
+            , Form.setString "nombre" (pago |> Maybe.map .nombre |> Maybe.withDefault "")
+            , Form.setString "monto" (pago |> Maybe.map (.monto >> Monto.toRawString) |> Maybe.withDefault "")
+            , Form.setString "moneda"
+                (Moneda.toString (pago |> Maybe.map .moneda |> Maybe.withDefault model.monedaPorDefecto))
+            , Form.setString "fecha"
+                (pago |> Maybe.map .fecha |> Maybe.withDefault today |> Date.toIsoString)
             , Form.setGroup "distribucion_pagadores" <|
-                pagadoresToForm participantes creadorId (Just pago.pagadores)
+                pagadoresToForm participantes creadorId (Maybe.map .pagadores pago)
             , Form.setGroup "distribucion_deudores" <|
-                deudoresToForm participantes (Just pago.deudores)
+                deudoresToForm participantes (Maybe.map .deudores pago)
             ]
     in
     { model
@@ -137,48 +154,19 @@ initializePagoForms participantes creadorId pago model =
         , deudoresForm = Form.initial initialFormValues (validatePagoInSection DeudoresSection participantes)
         , pagoBasicoForm = Form.initial initialFormValues (validatePagoInSection BasicPagoData participantes)
         , storedClaims =
-            Just
-                { pagadores = extractClaimsFromDistribucion pago.pagadores
-                , deudores = extractClaimsFromDistribucion pago.deudores
-                }
+            pago
+                |> Maybe.map
+                    (\p ->
+                        { pagadores = extractClaimsFromDistribucion p.pagadores
+                        , deudores = extractClaimsFromDistribucion p.deudores
+                        }
+                    )
         , hasUnsavedChanges = False
     }
 
 
 
 -- FORM <-> PAGO
-
-
-distribucionDeSobrasToString : DistribucionDeSobras -> String
-distribucionDeSobrasToString distribucionDeSobras =
-    case distribucionDeSobras of
-        SobrasNoDistribuir ->
-            "SobrasNoDistribuir"
-
-        SobrasProporcional ->
-            "SobrasProporcional"
-
-
-{-| Qué columnas del reparto por partes se tienen en cuenta. Los flags viven
-dentro del propio formulario (`mostrar_partes` / `mostrar_monto_fijo`), así que
-los valores de partes y monto fijo siempre quedan guardados; estos flags sólo
-deciden cuáles se ignoran al construir las `Parte`. Con ambos en `False` el
-gasto se reparte en partes iguales.
--}
-type alias ModoPartes =
-    { mostrarPartes : Bool
-    , mostrarMontoFijo : Bool
-    }
-
-
-mostrarPartesField : String
-mostrarPartesField =
-    "mostrar_partes"
-
-
-mostrarMontoFijoField : String
-mostrarMontoFijoField =
-    "mostrar_monto_fijo"
 
 
 extractClaimsFromDistribucion : Distribucion -> List Api.RepartijaClaim
@@ -439,7 +427,7 @@ receiptItemsFormMsgs prefix items form =
 type Msg
     = NoOp
     | PagoForm Form.Msg
-    | UpdatedPagoResponse (Result Http.Error Pago)
+    | GuardadoPagoResponse (Result Http.Error Pago)
     | SelectSection Section
     | SubmitCurrentSection
     | ResumenPagoUpdated (WebData ResumenPago)
@@ -488,34 +476,52 @@ updateInterno participantes msg model =
         Cancel ->
             ( model, Effect.none, Cancelado )
 
-        UpdatedPagoResponse (Ok pago) ->
-            ( initializePagoForms participantes model.participanteId pago model
+        GuardadoPagoResponse (Ok pago) ->
+            ( { model | pagoId = Just pago.pagoId }
+                |> initializePagoForms participantes model.participanteId pago.fecha (Just pago)
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
                 , Store.refreshPagos model.grupoId model.participanteId
                 , Store.setPago pago.pagoId pago
-                , Toasts.pushToast Toasts.ToastSuccess "Se actualizó el gasto"
+                , Toasts.pushToast Toasts.ToastSuccess <|
+                    case model.pagoId of
+                        Just _ ->
+                            "Se actualizó el gasto"
+
+                        Nothing ->
+                            "Se creó el gasto"
                 ]
             , Guardado pago
             )
 
-        UpdatedPagoResponse (Err _) ->
+        GuardadoPagoResponse (Err _) ->
             ( model
-            , Toasts.pushToast Toasts.ToastDanger "Falló la actualización del gasto"
+            , Toasts.pushToast Toasts.ToastDanger <|
+                case model.pagoId of
+                    Just _ ->
+                        "Falló la actualización del gasto"
+
+                    Nothing ->
+                        "Falló la creación del gasto"
             , SigueEditando
             )
 
         PagoForm Form.Submit ->
             case Form.getOutput model.pagoForm of
                 Just pago ->
+                    let
+                        pagoConClaims =
+                            mergeClaimsIntoPago model.storedClaims pago
+                    in
                     sigue
                         ( { model | pagoForm = Form.update (validatePago participantes) Form.Submit model.pagoForm }
                         , Effect.sendCmd <|
-                            Api.putGrupoByIdPagosByPagoId
-                                model.grupoId
-                                model.pagoId
-                                (mergeClaimsIntoPago model.storedClaims pago)
-                                UpdatedPagoResponse
+                            case model.pagoId of
+                                Just pagoId ->
+                                    Api.putGrupoByIdPagosByPagoId model.grupoId pagoId pagoConClaims GuardadoPagoResponse
+
+                                Nothing ->
+                                    Api.postGrupoByIdPagos model.grupoId pagoConClaims GuardadoPagoResponse
                         )
 
                 Nothing ->
@@ -1077,7 +1083,14 @@ viewDeudoresSection grupo model =
                     , Attr.id "pago-submit-button"
                     , class "flex-grow-1"
                     ]
-                    [ text "Actualizar gasto" ]
+                    [ text <|
+                        case model.pagoId of
+                            Just _ ->
+                                "Actualizar gasto"
+
+                            Nothing ->
+                                "Crear"
+                    ]
                 ]
             ]
         ]

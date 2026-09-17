@@ -1,9 +1,10 @@
-module Components.PagoDetalleModal exposing (Context, Model, Msg, Overlay, context, init, linkAlPago, onUrlChanged, open, update, view)
+module Components.PagoDetalleModal exposing (Context, Model, Modo, Msg, Overlay, context, hrefNuevoGasto, init, linkAlPago, onUrlChanged, open, update, view)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras, viewNetosBarrasMini)
 import Components.Bootstrap as Bs
 import Components.GraficoTorta as GraficoTorta
 import Components.PagoEditForm as PagoEditForm
+import Date exposing (Date)
 import Dict
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (ErrorResumen, Grupo, Moneda, Monto, Pago, Parte(..), Repartija, ResumenPago, TipoDistribucion(..), ULID)
@@ -48,7 +49,17 @@ type alias Model =
     -- vez del detalle.
     , edicion : Maybe PagoEditForm.Model
     , confirmingDiscard : Bool
+    , modo : Modo
     }
+
+
+{-| El popup se abre para ver un gasto que ya existe o para crear uno nuevo. En
+`Nuevo` no hay detalle atrás del formulario: cancelar cierra todo, y al crearlo
+pasa a `VerDetalle` mostrando el gasto recién hecho.
+-}
+type Modo
+    = VerDetalle
+    | Nuevo
 
 
 type Overlay
@@ -62,6 +73,7 @@ type alias Context =
     , participanteId : Maybe ULID
     , path : Path.Path
     , origin : String
+    , today : Date
     }
 
 
@@ -75,21 +87,42 @@ context shared route =
     , participanteId = Shared.currentParticipante shared grupoId
     , path = route.path
     , origin = shared.origin
+    , today = shared.today
     }
 
 
 init : Route routeParams -> ( Model, Effect Msg )
 init route =
     case Dict.get "gasto" route.query of
-        Just pagoId ->
-            ( forPago True pagoId
-            , loadPago (grupoIdFromPath route.path |> Maybe.withDefault "") pagoId
-            )
+        Just param ->
+            if param == queryGastoNuevo then
+                ( forNuevo, esperarGrupo )
+
+            else
+                ( forPago True param
+                , loadPago (grupoIdFromPath route.path |> Maybe.withDefault "") param
+                )
 
         Nothing ->
             ( forPago False ""
             , Effect.none
             )
+
+
+{-| El valor de `?gasto=` que abre el popup en modo creación. No puede chocar
+con un id porque los ULID son mayúsculas y dígitos.
+-}
+queryGastoNuevo : String
+queryGastoNuevo =
+    "nuevo"
+
+
+{-| Link para crear un gasto: abre el popup vacío sobre la página que se le
+pase. Al ser un link de verdad, ctrl+click y "abrir en otra pestaña" funcionan.
+-}
+hrefNuevoGasto : Path.Path -> Html.Attribute msg
+hrefNuevoGasto path =
+    href (Path.toString path ++ "?gasto=" ++ queryGastoNuevo)
 
 
 open : Context -> ULID -> ( Model, Effect Msg )
@@ -126,7 +159,59 @@ forPago isOpen pagoId =
     , expandedErrors = Set.empty
     , edicion = Nothing
     , confirmingDiscard = False
+    , modo = VerDetalle
     }
+
+
+{-| El popup abierto para crear: el formulario se arma recién cuando el grupo
+está en el store (hacen falta los participantes), así que hasta entonces
+muestra el spinner.
+-}
+forNuevo : Model
+forNuevo =
+    let
+        modelo =
+            forPago True ""
+    in
+    { modelo | modo = Nuevo }
+
+
+esperarGrupo : Effect Msg
+esperarGrupo =
+    Effect.sendCmd <| Task.perform (\_ -> CheckGrupoPresent) (Process.sleep 100)
+
+
+{-| Salir del formulario sin guardar. Editando un gasto que existe se vuelve a
+su detalle; creando uno nuevo no hay nada atrás, así que se cierra el popup.
+-}
+salirDeLaEdicion : Context -> Model -> Effect Msg -> ( Model, Effect Msg )
+salirDeLaEdicion ctx model effect =
+    case model.modo of
+        Nuevo ->
+            ( cerrado model, Effect.batch [ effect, syncUrl ctx.path Nothing ] )
+
+        VerDetalle ->
+            ( { model | edicion = Nothing }, effect )
+
+
+{-| Arma el formulario sobre el gasto dado, o vacío si es uno nuevo.
+-}
+abrirFormulario : Context -> Grupo -> Maybe Pago -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
+abrirFormulario ctx grupo pago ( model, effect ) =
+    let
+        ( edicion, eff ) =
+            PagoEditForm.init
+                { grupoId = ctx.grupoId
+                , participantes = grupo.participantes
+                , participanteId = ctx.participanteId
+                , monedaPorDefecto = grupo.monedaPorDefecto
+                , today = ctx.today
+                , pago = pago
+                }
+    in
+    ( { model | edicion = Just edicion }
+    , Effect.batch [ effect, Effect.map EditFormMsg eff ]
+    )
 
 
 hayCambiosSinGuardar : Model -> Bool
@@ -148,8 +233,20 @@ descartar puede hacer falta más de un "atrás" para salir de la lista.
 volverAlGastoEnEdicion : Context -> Model -> ( Model, Effect Msg )
 volverAlGastoEnEdicion ctx model =
     ( { model | confirmingDiscard = True }
-    , syncUrl ctx.path (Just model.pagoId)
+    , syncUrl ctx.path (Just (paramDeLaUrl model))
     )
+
+
+{-| El valor de `?gasto=` que corresponde a lo que el popup está mostrando.
+-}
+paramDeLaUrl : Model -> String
+paramDeLaUrl model =
+    case model.modo of
+        Nuevo ->
+            queryGastoNuevo
+
+        VerDetalle ->
+            model.pagoId
 
 
 {-| El popup cerrado no conserva la edición: si se vuelve a abrir, arranca
@@ -234,6 +331,7 @@ type Msg
     | ConfirmDelete
     | DeleteResponse (Result Http.Error ULID)
     | StartEdit
+    | CheckGrupoPresent
     | EditFormMsg PagoEditForm.Msg
     | AskDiscardEdit
     | CancelDiscardEdit
@@ -270,8 +368,15 @@ updateInterno ctx store msg model =
 
         QueryChanged maybePagoId ->
             case maybePagoId of
-                Just pagoId ->
-                    if model.isOpen && pagoId == model.pagoId then
+                Just param ->
+                    if param == queryGastoNuevo then
+                        if model.isOpen && model.modo == Nuevo then
+                            ( model, Effect.none )
+
+                        else
+                            ( forNuevo, esperarGrupo )
+
+                    else if model.isOpen && param == model.pagoId && model.modo == VerDetalle then
                         -- Already showing this pago (e.g. we just pushed the URL ourselves)
                         ( model, Effect.none )
 
@@ -279,7 +384,7 @@ updateInterno ctx store msg model =
                         volverAlGastoEnEdicion ctx model
 
                     else
-                        ( forPago True pagoId, loadPago ctx.grupoId pagoId )
+                        ( forPago True param, loadPago ctx.grupoId param )
 
                 Nothing ->
                     if hayCambiosSinGuardar model then
@@ -359,13 +464,24 @@ updateInterno ctx store msg model =
         StartEdit ->
             case ( Store.getPago model.pagoId store, Store.getGrupo ctx.grupoId store ) of
                 ( Success pago, Success grupo ) ->
-                    let
-                        ( edicion, eff ) =
-                            PagoEditForm.init ctx.grupoId grupo.participantes ctx.participanteId pago
-                    in
-                    ( { model | edicion = Just edicion, confirmingDelete = False }
-                    , Effect.map EditFormMsg eff
+                    ( { model | confirmingDelete = False }
+                    , Effect.none
                     )
+                        |> abrirFormulario ctx grupo (Just pago)
+
+                _ ->
+                    ( model, Effect.none )
+
+        CheckGrupoPresent ->
+            case ( model.modo, model.edicion, Store.getGrupo ctx.grupoId store ) of
+                ( Nuevo, Nothing, Success grupo ) ->
+                    ( model, Effect.none ) |> abrirFormulario ctx grupo Nothing
+
+                ( Nuevo, Nothing, Failure _ ) ->
+                    ( cerrado model, Effect.none )
+
+                ( Nuevo, Nothing, _ ) ->
+                    ( model, esperarGrupo )
 
                 _ ->
                     ( model, Effect.none )
@@ -390,15 +506,27 @@ updateInterno ctx store msg model =
                                 )
 
                             else
-                                ( { model | edicion = Nothing }, Effect.map EditFormMsg eff )
+                                salirDeLaEdicion ctx model (Effect.map EditFormMsg eff)
 
                         PagoEditForm.Guardado pago ->
-                            -- Volvemos al detalle con el resumen recalculado
-                            -- sobre el gasto que quedó guardado.
-                            ( { model | edicion = Nothing, confirmingDiscard = False, resumen = Loading }
+                            -- Al gasto recién creado lo empezamos a mostrar como
+                            -- cualquier otro: su id pasa a la URL y el detalle
+                            -- queda con el resumen recalculado.
+                            ( { model
+                                | edicion = Nothing
+                                , confirmingDiscard = False
+                                , resumen = Loading
+                                , modo = VerDetalle
+                                , pagoId = pago.pagoId
+                              }
                             , Effect.batch
                                 [ Effect.map EditFormMsg eff
                                 , Effect.sendCmd <| Api.postPagosResumen pago ResumenFetched
+                                , if model.modo == Nuevo then
+                                    syncUrl ctx.path (Just pago.pagoId)
+
+                                  else
+                                    Effect.none
                                 ]
                             )
 
@@ -421,9 +549,7 @@ updateInterno ctx store msg model =
             ( { model | confirmingDiscard = False }, Effect.none )
 
         ConfirmDiscardEdit ->
-            ( { model | edicion = Nothing, confirmingDiscard = False }
-            , Effect.setUnsavedChangesWarning False
-            )
+            salirDeLaEdicion ctx { model | confirmingDiscard = False } Effect.none
 
 
 
@@ -437,37 +563,46 @@ view store grupo model =
 
     else
         let
+            cargando =
+                ( text ""
+                , div [ class "text-center py-3" ] [ Bs.spinner [] ]
+                , text ""
+                )
+
             ( header, content, overlays ) =
-                case ( model.edicion, ( Store.getPago model.pagoId store, model.resumen ) ) of
+                case ( model.edicion, model.modo ) of
                     ( Just edicion, _ ) ->
                         ( viewHeaderEdicion model
                         , Html.map EditFormMsg (PagoEditForm.view grupo edicion)
                         , text ""
                         )
 
-                    ( Nothing, ( Success pago, Success resumen ) ) ->
-                        ( viewHeader grupo pago resumen model
-                        , viewContent grupo pago resumen model
-                        , viewOverlay grupo pago resumen model
-                        )
+                    ( Nothing, Nuevo ) ->
+                        -- Todavía armando el formulario (falta el grupo).
+                        cargando
 
-                    ( Nothing, ( Failure _, _ ) ) ->
-                        viewEstado
-                            "bi bi-receipt-cutoff"
-                            "No encontramos este gasto"
-                            "Puede que lo hayan eliminado o que el enlace ya no sea válido."
+                    ( Nothing, VerDetalle ) ->
+                        case ( Store.getPago model.pagoId store, model.resumen ) of
+                            ( Success pago, Success resumen ) ->
+                                ( viewHeader grupo pago resumen model
+                                , viewContent grupo pago resumen model
+                                , viewOverlay grupo pago resumen model
+                                )
 
-                    ( Nothing, ( _, Failure _ ) ) ->
-                        viewEstado
-                            "bi bi-exclamation-triangle"
-                            "No pudimos cargar los detalles"
-                            "Hubo un problema al calcular el reparto. Probá de nuevo en un momento."
+                            ( Failure _, _ ) ->
+                                viewEstado
+                                    "bi bi-receipt-cutoff"
+                                    "No encontramos este gasto"
+                                    "Puede que lo hayan eliminado o que el enlace ya no sea válido."
 
-                    _ ->
-                        ( text ""
-                        , div [ class "text-center py-3" ] [ Bs.spinner [] ]
-                        , text ""
-                        )
+                            ( _, Failure _ ) ->
+                                viewEstado
+                                    "bi bi-exclamation-triangle"
+                                    "No pudimos cargar los detalles"
+                                    "Hubo un problema al calcular el reparto. Probá de nuevo en un momento."
+
+                            _ ->
+                                cargando
         in
         div []
             [ div
@@ -514,7 +649,15 @@ viewHeaderEdicion : Model -> Html Msg
 viewHeaderEdicion model =
     div [ class "modal-header flex-column align-items-stretch border-bottom-0" ]
         [ div [ class "d-flex justify-content-between align-items-start" ]
-            [ h4 [ class "modal-title fw-bold" ] [ text "Editar gasto" ]
+            [ h4 [ class "modal-title fw-bold" ]
+                [ text <|
+                    case model.modo of
+                        Nuevo ->
+                            "Nuevo gasto"
+
+                        VerDetalle ->
+                            "Editar gasto"
+                ]
             , button
                 [ type_ "button"
                 , class "btn-close"

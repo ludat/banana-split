@@ -4,10 +4,11 @@ import Effect exposing (Effect)
 import Form
 import Generated.Api exposing (ULID)
 import Layouts
+import Models.PagoForm exposing (Section(..), validatePago, validatePagoInSection)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import Pages.Grupos.GrupoId_.Gastos.New as P exposing (Model, Section(..), andThenSendWarningOnExit, subscriptions, update, validatePago, validatePagoInSection, view, waitAndCheckNecessaryData)
+import Pages.Grupos.GrupoId_.Gastos.New as P exposing (Model, andThenSendWarningOnExit, subscriptions, update, view, waitAndCheckNecessaryData)
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Shared

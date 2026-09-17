@@ -1,6 +1,7 @@
 module Layouts.Default.Grupo exposing (Model, Msg, Props, layout)
 
 import Components.Bootstrap as Bs
+import Components.PagoDetalleModal as PagoDetalleModal
 import Css
 import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, ULID, User)
@@ -188,13 +189,9 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                             { title = info.share.title
                             , url = origin ++ Path.toString info.share.path
                             }
-                        , Bs.btn Bs.Primary
-                            [ class "d-none d-md-inline-flex"
-                            , onClick
-                                (ForwardSharedMessage <|
-                                    Shared.NavigateTo <|
-                                        Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id }
-                                )
+                        , a
+                            [ class "btn btn-primary d-none d-md-inline-flex align-items-center"
+                            , PagoDetalleModal.hrefNuevoGasto (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
                             ]
                             [ i [ class "bi bi-plus-lg me-1" ] []
                             , text "Agregar gasto"
@@ -531,7 +528,7 @@ viewBottomNav currentPath grupo =
         , item "bi-card-list" "Gastos" (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
         , a
             [ Css.navbar_item
-            , Path.href (Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id })
+            , PagoDetalleModal.hrefNuevoGasto (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
             ]
             [ Html.span [ Css.navbar_big_button ]
                 [ i [ class "bi bi-plus-lg" ] [] ]

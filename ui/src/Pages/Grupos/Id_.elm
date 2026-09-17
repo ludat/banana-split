@@ -245,7 +245,7 @@ viewLeftColumn store zone userId model grupo =
                 Bs.alert Bs.AlertInfo
                     []
                     [ text "Todavía no hay gastos registrados. "
-                    , a [ Path.href <| Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id } ]
+                    , a [ PagoDetalleModal.hrefNuevoGasto <| Path.Grupos_Id_ { id = grupo.id } ]
                         [ text "¡Agregá el primer gasto para empezar a dividir!" ]
                     ]
 
