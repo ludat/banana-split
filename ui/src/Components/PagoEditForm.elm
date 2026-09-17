@@ -1,4 +1,4 @@
-module Components.PagoEditForm exposing (Model, Msg, Outcome(..), ReceiptReadingState, init, update, view)
+module Components.PagoEditForm exposing (Model, Msg, Outcome(..), ReceiptReadingState, Torta, init, update, view)
 
 {-| El formulario de un gasto (crearlo o editarlo) embebido en el popup, en vez
 de en una pantalla propia.
@@ -75,7 +75,19 @@ type alias Model =
     , receiptParseState : Maybe ReceiptReadingState
     , storedClaims : Maybe { pagadores : List Api.RepartijaClaim, deudores : List Api.RepartijaClaim }
     , hasUnsavedChanges : Bool
+
+    -- El selector de participantes de mobile, con el prefijo del form que está
+    -- eligiendo (pagadores o deudores).
+    , selectorAbierto : Maybe { titulo : String, prefix : String }
+    , tortaAbierta : Maybe Torta
     }
+
+
+{-| Cuál de los dos gráficos se está mirando en grande.
+-}
+type Torta
+    = TortaPagadores
+    | TortaDeudores
 
 
 type ReceiptReadingState
@@ -123,6 +135,8 @@ init { grupoId, participantes, participanteId, monedaPorDefecto, today, pago } =
             , receiptParseState = Nothing
             , storedClaims = Nothing
             , hasUnsavedChanges = False
+            , selectorAbierto = Nothing
+            , tortaAbierta = Nothing
             }
     in
     -- Los resúmenes se piden comparando contra el modelo con los forms todavía
@@ -437,6 +451,10 @@ type Msg
     | ReceiptImageBytes File Bytes
     | ReceiptParseResponse (Result Http.Error Api.ReceiptImageResponse)
     | ClearReceiptError
+    | AbrirSelector { titulo : String, prefix : String }
+    | CerrarSelector
+    | AbrirTorta Torta
+    | CerrarTorta
     | Cancel
 
 
@@ -561,6 +579,18 @@ updateInterno participantes msg model =
         ClearReceiptError ->
             sigue ( { model | receiptParseState = Nothing }, Effect.none )
 
+        AbrirSelector selector ->
+            sigue ( { model | selectorAbierto = Just selector }, Effect.none )
+
+        CerrarSelector ->
+            sigue ( { model | selectorAbierto = Nothing }, Effect.none )
+
+        AbrirTorta torta ->
+            sigue ( { model | tortaAbierta = Just torta }, Effect.none )
+
+        CerrarTorta ->
+            sigue ( { model | tortaAbierta = Nothing }, Effect.none )
+
         ReceiptImageSelected file ->
             if List.member (File.mime file) allowedMimeTypesForReceiptUpload then
                 sigue
@@ -609,8 +639,9 @@ updateInterno participantes msg model =
                     sigue ( { model | receiptParseState = Just (ErrorProcessing "Error al enviar la imagen") }, Effect.none )
 
         SelectSection section ->
+            -- Cambiar de paso cierra el selector: es de la sección que se deja.
             sigue
-                (( { model | currentSection = section }, Effect.none )
+                (( { model | currentSection = section, selectorAbierto = Nothing }, Effect.none )
                     |> andThenFocusFieldIfSectionChanged model.currentSection
                     |> andThenUpdateResumenesFromForms model
                 )
@@ -622,6 +653,7 @@ updateInterno participantes msg model =
                         (( { model
                             | pagoBasicoForm = Form.update (validatePagoInSection BasicPagoData participantes) Form.Submit model.pagoBasicoForm
                             , currentSection = PagadoresSection
+                            , selectorAbierto = Nothing
                            }
                          , Effect.none
                          )
@@ -634,6 +666,7 @@ updateInterno participantes msg model =
                         (( { model
                             | pagadoresForm = Form.update (validatePagoInSection PagadoresSection participantes) Form.Submit model.pagadoresForm
                             , currentSection = DeudoresSection
+                            , selectorAbierto = Nothing
                            }
                          , Effect.none
                          )
@@ -745,6 +778,8 @@ view grupo model =
 
             DeudoresSection ->
                 viewDeudoresSection grupo model
+        , viewSelectorOverlay grupo.participantes model
+        , viewTortaOverlay grupo model
         ]
 
 
@@ -826,13 +861,68 @@ porcionesTorta grupo totalPago resumenData accessor =
             []
 
 
-{-| La torta del paso. Adentro del modal se muestra directamente en chiquito: no
-se puede abrir otro modal de Bootstrap arriba de este.
+{-| La torta del paso, en chiquito y clickeable para verla grande. El grande no
+es un modal de Bootstrap (no se pueden anidar) sino `viewTortaOverlay`.
 -}
-viewTortaFooter : GrupoLike g -> Maybe Monto -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> Html Msg
-viewTortaFooter grupo totalPago resumenData accessor =
-    div [ class "flex-shrink-0 d-flex align-items-center" ]
+viewTortaFooter : GrupoLike g -> Maybe Monto -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> Torta -> Html Msg
+viewTortaFooter grupo totalPago resumenData accessor torta =
+    button
+        [ type_ "button"
+        , class "btn p-0 border-0 flex-shrink-0 d-flex align-items-center"
+        , Attr.attribute "aria-label" "Ver el gráfico en grande"
+        , onClick (AbrirTorta torta)
+        ]
         [ GraficoTorta.viewTortaMini (porcionesTorta grupo totalPago resumenData accessor) ]
+
+
+{-| El gráfico en grande, encima del popup. Las porciones se recalculan al
+dibujarlo, así sigue los cambios del formulario mientras está abierto.
+-}
+viewTortaOverlay : GrupoLike g -> Model -> Html Msg
+viewTortaOverlay grupo model =
+    case model.tortaAbierta of
+        Nothing ->
+            text ""
+
+        Just torta ->
+            let
+                totalPago =
+                    Form.getOutput model.pagoBasicoForm |> Maybe.map .monto
+
+                ( titulo, porciones ) =
+                    case torta of
+                        TortaPagadores ->
+                            ( "Pago", porcionesTorta grupo totalPago model.resumenPagadores .resumenPagadores )
+
+                        TortaDeudores ->
+                            ( "Reparto", porcionesTorta grupo totalPago model.resumenDeudores .resumenDeudores )
+            in
+            div []
+                [ div
+                    [ class "modal d-block"
+                    , style "z-index" "1070"
+                    , Attr.tabindex -1
+                    , Attr.attribute "aria-modal" "true"
+                    , Attr.attribute "role" "dialog"
+                    ]
+                    [ div [ class "modal-dialog modal-dialog-centered modal-dialog-scrollable" ]
+                        [ div [ class "modal-content" ]
+                            [ div [ class "modal-header" ]
+                                [ Html.h5 [ class "modal-title" ] [ text titulo ]
+                                , button
+                                    [ type_ "button"
+                                    , class "btn-close"
+                                    , Attr.attribute "aria-label" "Cerrar"
+                                    , onClick CerrarTorta
+                                    ]
+                                    []
+                                ]
+                            , div [ class "modal-body" ] [ GraficoTorta.viewTortaGrande porciones ]
+                            ]
+                        ]
+                    ]
+                , div [ class "modal-backdrop show", style "z-index" "1065" ] []
+                ]
 
 
 {-| Wizard de pasos como tabs por defecto de Bootstrap (`nav-tabs`). Marca el
@@ -869,13 +959,33 @@ viewStepTabs model =
                     )
                 ]
     in
-    div [ class "d-flex align-items-end mb-4" ]
+    div [ class "d-flex align-items-end gap-3 mb-4" ]
         [ Html.ul [ class "nav nav-tabs flex-grow-1" ]
             [ tab BasicPagoData "Gasto"
             , tab PagadoresSection "Pago"
             , tab DeudoresSection "Reparto"
             ]
+        , viewMontoChip model
         ]
+
+
+{-| El total del gasto, para tenerlo a la vista mientras se reparte. En el paso
+"Gasto" no hace falta: el monto se está editando ahí mismo.
+-}
+viewMontoChip : Model -> Html Msg
+viewMontoChip model =
+    case ( model.currentSection, Form.getOutput model.pagoBasicoForm ) of
+        ( BasicPagoData, _ ) ->
+            text ""
+
+        ( _, Nothing ) ->
+            text ""
+
+        ( _, Just pago ) ->
+            div [ class "text-end flex-shrink-0 mb-1" ]
+                [ div [ class "text-body-secondary text-uppercase", style "font-size" "0.75rem" ] [ text "Monto" ]
+                , div [ class "fw-bold" ] [ text (Moneda.simboloUnico pago.moneda ++ " " ++ Monto.toString pago.monto) ]
+                ]
 
 
 {-| Un paso está incompleto cuando su form todavía no produce un valor válido.
@@ -1020,7 +1130,11 @@ viewPagadoresSection grupo model =
     Html.form [ onSubmit SubmitCurrentSection ]
         [ div [ class "d-flex flex-wrap align-items-center gap-2 mb-2" ]
             [ Html.h5 [ class "mb-0" ] [ text "Quienes pagaron" ] ]
-        , viewSeleccionarParticipantes grupo.participantes prefix form
+        , viewSeleccionarParticipantes
+            { titulo = "Quienes pagaron", id = "pagadores-seleccionar" }
+            grupo.participantes
+            prefix
+            form
         , Html.hr [ class "my-4" ] []
         , div [ class "d-flex flex-wrap gap-2 mb-3" ]
             [ viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
@@ -1030,7 +1144,7 @@ viewPagadoresSection grupo model =
         , viewActionFooter
             [ viewErrorFromResumenData model.resumenPagadores .resumenPagadores
             , viewBotonera
-                [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenPagadores .resumenPagadores
+                [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenPagadores .resumenPagadores TortaPagadores
                 , Bs.btn Bs.Primary
                     [ disabled (Form.getOutput form == Nothing)
                     , onClick SubmitCurrentSection
@@ -1072,7 +1186,7 @@ viewDeudoresSection grupo model =
               -- que `.resumen` agrega al combinar pagadores y deudores.
               viewErrorFromResumenData model.resumenDeudores .resumenDeudores
             , viewBotonera
-                [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenDeudores .resumenDeudores
+                [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenDeudores .resumenDeudores TortaDeudores
                 , Bs.btn Bs.Primary
                     [ -- Se permite enviar aunque el gasto sea inválido; el
                       -- backend lo guarda igual y deja los motivos en su
@@ -1259,7 +1373,11 @@ viewPartesForm grupo prefix form =
     div [ class "mb-4" ]
         [ div [ class "d-flex flex-wrap align-items-center gap-2 mb-2" ]
             [ Html.h5 [ class "mb-0" ] [ text "Quienes participan" ] ]
-        , viewSeleccionarParticipantes grupo.participantes prefix form
+        , viewSeleccionarParticipantes
+            { titulo = "Quienes participan", id = "deudores-seleccionar" }
+            grupo.participantes
+            prefix
+            form
         , Html.hr [ class "my-4" ] []
         , div [ class "d-flex flex-wrap gap-2 mb-3" ]
             [ viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
@@ -1309,14 +1427,98 @@ viewModoChip path active label =
         ]
 
 
-{-| Selector de participantes como grupo de pills. La pantalla completa las
-esconde en mobile detrás de otro modal; acá ya estamos adentro de uno, así que
-se muestran siempre.
+{-| Selector de participantes como grupo de pills. En desktop se muestran
+directamente; en mobile se esconden detrás de un botón que abre el selector.
+
+A diferencia de la pantalla completa, el selector no es un modal de Bootstrap
+(no se pueden anidar) sino el overlay de `viewSelectorOverlay`, que se dibuja
+por encima del popup y lo maneja el `Model`.
+
 -}
-viewSeleccionarParticipantes : List Participante -> String -> Form CustomFormError Pago -> Html Msg
-viewSeleccionarParticipantes participantes prefix form =
+viewSeleccionarParticipantes : { titulo : String, id : String } -> List Participante -> String -> Form CustomFormError Pago -> Html Msg
+viewSeleccionarParticipantes selector participantes prefix form =
+    div []
+        [ div [ class "d-none d-md-block" ] [ viewPills participantes prefix form ]
+        , div [ class "d-md-none" ]
+            [ button
+                [ type_ "button"
+                , class "btn btn-light rounded-pill d-inline-flex align-items-center gap-2"
+                , Attr.id selector.id
+                , onClick (AbrirSelector { titulo = selector.titulo, prefix = prefix })
+                ]
+                [ i [ class "bi bi-person-fill" ] [], text "Seleccionar" ]
+            ]
+        ]
+
+
+viewPills : List Participante -> String -> Form CustomFormError Pago -> Html Msg
+viewPills participantes prefix form =
     div [ class "d-flex flex-wrap gap-2" ]
         (participantes |> List.map (\participante -> viewParticipantePill participante prefix form))
+
+
+{-| El selector de participantes de mobile, encima del popup. Los z-index son
+los mismos que usa el popup para los gráficos, así queda por arriba de su
+diálogo y de su backdrop.
+-}
+viewSelectorOverlay : List Participante -> Model -> Html Msg
+viewSelectorOverlay participantes model =
+    case model.selectorAbierto of
+        Nothing ->
+            text ""
+
+        Just { titulo, prefix } ->
+            let
+                form =
+                    formDeLaSeccion model
+            in
+            div []
+                [ div
+                    [ class "modal d-block"
+                    , style "z-index" "1070"
+                    , Attr.tabindex -1
+                    , Attr.attribute "aria-modal" "true"
+                    , Attr.attribute "role" "dialog"
+                    ]
+                    [ div [ class "modal-dialog modal-dialog-scrollable modal-fullscreen-sm-down" ]
+                        [ div [ class "modal-content" ]
+                            [ div [ class "modal-header" ]
+                                [ Html.h5 [ class "modal-title" ] [ text titulo ]
+                                , button
+                                    [ type_ "button"
+                                    , class "btn-close"
+                                    , Attr.attribute "aria-label" "Cerrar"
+                                    , onClick CerrarSelector
+                                    ]
+                                    []
+                                ]
+                            , div [ class "modal-body" ] [ viewPills participantes prefix form ]
+                            , div [ class "modal-footer" ]
+                                [ Bs.btn Bs.Primary
+                                    [ class "w-100", onClick CerrarSelector ]
+                                    [ text "Listo" ]
+                                ]
+                            ]
+                        ]
+                    ]
+                , div [ class "modal-backdrop show", style "z-index" "1065" ] []
+                ]
+
+
+{-| El form del paso que se está mostrando, que es de donde el selector tiene
+que leer quién participa.
+-}
+formDeLaSeccion : Model -> Form CustomFormError Pago
+formDeLaSeccion model =
+    case model.currentSection of
+        BasicPagoData ->
+            model.pagoBasicoForm
+
+        PagadoresSection ->
+            model.pagadoresForm
+
+        DeudoresSection ->
+            model.deudoresForm
 
 
 viewParticipantePill : Participante -> String -> Form CustomFormError Pago -> Html Msg
