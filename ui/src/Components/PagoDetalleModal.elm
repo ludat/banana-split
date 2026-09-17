@@ -540,10 +540,12 @@ updateInterno ctx store msg model =
                         ( { model | confirmingDiscard = True }, Effect.none )
 
                     else
-                        ( { model | edicion = Nothing }, Effect.none )
+                        salirDeLaEdicion ctx model Effect.none
 
                 Nothing ->
-                    ( model, Effect.none )
+                    -- Todavía no se armó el formulario del gasto nuevo: no hay
+                    -- nada que descartar, se cierra y listo.
+                    ( cerrado model, syncUrl ctx.path Nothing )
 
         CancelDiscardEdit ->
             ( { model | confirmingDiscard = False }, Effect.none )
