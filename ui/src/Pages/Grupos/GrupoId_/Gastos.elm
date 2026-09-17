@@ -59,24 +59,12 @@ init route store =
 
 
 type Msg
-    = NoOp
-    | OpenPago ULID
-    | PagoModalMsg PagoDetalleModal.Msg
+    = PagoModalMsg PagoDetalleModal.Msg
 
 
 update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
 update ctx store msg model =
     case msg of
-        NoOp ->
-            ( model, Effect.none )
-
-        OpenPago pagoId ->
-            let
-                ( pagoModal, eff ) =
-                    PagoDetalleModal.open ctx pagoId
-            in
-            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
-
         PagoModalMsg subMsg ->
             let
                 ( pagoModal, eff ) =
@@ -153,12 +141,9 @@ viewPago participanteId grupoId monedaPorDefecto pago =
     Bs.listGroupItem
         [ class "list-group-item-action p-0" ]
         [ a
-            (class "d-flex align-items-center gap-3 p-3 text-reset text-decoration-none"
-                :: PagoDetalleModal.linkAlPago
-                    (Path.Grupos_GrupoId__Gastos { grupoId = grupoId })
-                    pago.pagoId
-                    { abrir = OpenPago pago.pagoId, ignorar = NoOp }
-            )
+            [ class "d-flex align-items-center gap-3 p-3 text-reset text-decoration-none"
+            , PagoDetalleModal.hrefPago (Path.Grupos_GrupoId__Gastos { grupoId = grupoId }) pago.pagoId
+            ]
             [ div
                 [ class "text-center border rounded px-2 py-1 flex-shrink-0"
                 , style "min-width" "2.5rem"

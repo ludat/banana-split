@@ -1,15 +1,15 @@
-module Components.PagoDetalleModal exposing (Context, Model, Modo, Msg, Overlay, context, hrefNuevoGasto, init, linkAlPago, onUrlChanged, open, update, view)
+module Components.PagoDetalleModal exposing (Context, Model, Modo, Msg, Overlay, context, hrefNuevoGasto, hrefPago, init, onUrlChanged, update, view)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras, viewNetosBarrasMini)
 import Components.Bootstrap as Bs
 import Components.GraficoTorta as GraficoTorta
 import Components.PagoEditForm as PagoEditForm
 import Date exposing (Date)
-import Dict
+import Dict exposing (Dict)
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (ErrorResumen, Grupo, Moneda, Monto, Pago, Parte(..), Repartija, ResumenPago, TipoDistribucion(..), ULID)
 import Html exposing (Html, a, button, div, h4, i, li, p, span, table, tbody, td, text, th, thead, tr, ul)
-import Html.Attributes exposing (attribute, class, disabled, href, id, style, tabindex, type_)
+import Html.Attributes exposing (attribute, class, disabled, id, style, tabindex, type_)
 import Html.Events exposing (on, onClick)
 import Http
 import Json.Decode as Decode
@@ -93,7 +93,7 @@ context shared route =
 
 init : Route routeParams -> ( Model, Effect Msg )
 init route =
-    case Dict.get "gasto" route.query of
+    case Dict.get queryGasto route.query of
         Just param ->
             if param == queryGastoNuevo then
                 ( forNuevo, esperarGrupo )
@@ -109,6 +109,13 @@ init route =
             )
 
 
+{-| El parámetro de la query que dice qué muestra el popup.
+-}
+queryGasto : String
+queryGasto =
+    "gasto"
+
+
 {-| El valor de `?gasto=` que abre el popup en modo creación. No puede chocar
 con un id porque los ULID son mayúsculas y dígitos.
 -}
@@ -122,24 +129,14 @@ pase. Al ser un link de verdad, ctrl+click y "abrir en otra pestaña" funcionan.
 -}
 hrefNuevoGasto : Path.Path -> Html.Attribute msg
 hrefNuevoGasto path =
-    href (Path.toString path ++ "?gasto=" ++ queryGastoNuevo)
-
-
-open : Context -> ULID -> ( Model, Effect Msg )
-open ctx pagoId =
-    ( forPago True pagoId
-    , Effect.batch
-        [ loadPago ctx.grupoId pagoId
-        , syncUrl ctx.path (Just pagoId)
-        ]
-    )
+    Route.href (rutaDelPopup path (Just queryGastoNuevo))
 
 
 onUrlChanged : { from : Route (), to : Route () } -> Msg
 onUrlChanged { from, to } =
     let
         gastoParam route =
-            Dict.get "gasto" route.query
+            Dict.get queryGasto route.query
     in
     if gastoParam from == gastoParam to then
         NoOp
@@ -270,46 +267,38 @@ waitForPago =
     Effect.sendCmd <| Task.perform (\_ -> CheckPagoPresent) (Process.sleep 100)
 
 
-{-| Atributos para que la fila de un gasto sea un link posta y no un `div` con
-`onClick`: el `href` es la misma URL que el popup deja en la barra (`?gasto=`),
-así ctrl+click, el botón del medio y "abrir en otra pestaña" funcionan solos.
+{-| Link a un gasto: la misma URL que el popup deja en la barra (`?gasto=`), así
+ctrl+click, el botón del medio y "abrir en otra pestaña" funcionan solos.
 
-El click común lo seguimos manejando nosotros (abre el popup sin recargar); si
-viene con una tecla modificadora o con otro botón del mouse lo dejamos pasar
-para que el navegador haga lo suyo, y ahí `ignorar` es un mensaje que no hace
-nada.
+No hace falta manejar el click: el link navega (sin recargar, como cualquier
+link interno) y el popup se abre desde `onUrlChanged`. Manejarlo además por
+nuestra cuenta dejaba dos entradas en el historial por cada gasto abierto,
+porque Elm intercepta el click igual aunque le hagamos `preventDefault`.
 
 -}
-linkAlPago : Path.Path -> ULID -> { abrir : msg, ignorar : msg } -> List (Html.Attribute msg)
-linkAlPago path pagoId msgs =
-    [ href (Path.toString path ++ "?gasto=" ++ pagoId)
-    , Html.Events.preventDefaultOn "click"
-        (Decode.map4
-            (\ctrl meta shift boton ->
-                if ctrl || meta || shift || boton /= 0 then
-                    ( msgs.ignorar, False )
-
-                else
-                    ( msgs.abrir, True )
-            )
-            (Decode.field "ctrlKey" Decode.bool)
-            (Decode.field "metaKey" Decode.bool)
-            (Decode.field "shiftKey" Decode.bool)
-            (Decode.field "button" Decode.int)
-        )
-    ]
+hrefPago : Path.Path -> ULID -> Html.Attribute msg
+hrefPago path pagoId =
+    Route.href (rutaDelPopup path (Just pagoId))
 
 
-syncUrl : Path.Path -> Maybe ULID -> Effect Msg
-syncUrl path maybePagoId =
-    Effect.pushRoute
-        { path = path
-        , query =
-            maybePagoId
-                |> Maybe.map (Dict.singleton "gasto")
-                |> Maybe.withDefault Dict.empty
-        , hash = Nothing
-        }
+{-| La ruta de una página con el popup abierto en lo que diga el parámetro (un
+id de gasto o `nuevo`), o cerrado si no hay ninguno. Es el único lugar donde se
+arma el `?gasto=`, así los links y los `pushRoute` no se pueden desincronizar.
+-}
+rutaDelPopup : Path.Path -> Maybe String -> { path : Path.Path, query : Dict String String, hash : Maybe String }
+rutaDelPopup path param =
+    { path = path
+    , query =
+        param
+            |> Maybe.map (Dict.singleton queryGasto)
+            |> Maybe.withDefault Dict.empty
+    , hash = Nothing
+    }
+
+
+syncUrl : Path.Path -> Maybe String -> Effect Msg
+syncUrl path param =
+    Effect.pushRoute (rutaDelPopup path param)
 
 
 

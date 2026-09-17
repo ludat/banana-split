@@ -90,9 +90,7 @@ tabActivo seleccionado =
 
 
 type Msg
-    = NoOp
-    | SelectTab Tab
-    | OpenPago ULID
+    = SelectTab Tab
     | PagoModalMsg PagoDetalleModal.Msg
     | PedirConfirmacion Api.Transferencia
     | CancelarConfirmacion
@@ -142,16 +140,6 @@ update store ctx msg model =
                 , Toasts.pushToast Toasts.ToastDanger "No se pudo cambiar el estado de la transferencia"
                 ]
             )
-
-        NoOp ->
-            ( model, Effect.none )
-
-        OpenPago pagoId ->
-            let
-                ( pagoModal, eff ) =
-                    PagoDetalleModal.open ctx pagoId
-            in
-            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
         PagoModalMsg subMsg ->
             let
@@ -888,12 +876,9 @@ viewUltimoPago participanteId grupoId monedaPorDefecto pago =
     Bs.listGroupItem
         [ class "list-group-item-action p-0" ]
         [ a
-            (class "d-flex align-items-center gap-3 p-3 text-reset text-decoration-none"
-                :: PagoDetalleModal.linkAlPago
-                    (Path.Grupos_Id_ { id = grupoId })
-                    pago.pagoId
-                    { abrir = OpenPago pago.pagoId, ignorar = NoOp }
-            )
+            [ class "d-flex align-items-center gap-3 p-3 text-reset text-decoration-none"
+            , PagoDetalleModal.hrefPago (Path.Grupos_Id_ { id = grupoId }) pago.pagoId
+            ]
             [ div
                 [ class "text-center border rounded px-2 py-1 flex-shrink-0"
                 , style "min-width" "2.5rem"
