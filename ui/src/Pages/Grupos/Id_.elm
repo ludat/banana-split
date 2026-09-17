@@ -23,6 +23,8 @@ import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
+import Svg
+import Svg.Attributes as SvgAttr
 import Time exposing (Zone)
 import Utils.Day
 import Utils.Posix as Posix exposing (Posix)
@@ -470,12 +472,24 @@ viewSaldoPendiente grupo aCobrar aPagar =
 
     else
         div [ class "card border-2 border-dark-subtle" ]
-            [ div [ class "card-body d-flex align-items-center gap-3 py-3" ]
-                [ i [ class "bi bi-arrow-left-right fs-4 text-body-secondary" ] []
-                , div [ class "flex-grow-1 text-center" ]
-                    (lineas |> List.map (viewLineaSaldo grupo))
+            [ div [ class "card-body d-flex justify-content-center py-3" ]
+                [ div [ class "position-relative text-center" ]
+                    (viewIconoTransferencia
+                        :: (lineas |> List.map (viewLineaSaldo grupo))
+                    )
                 ]
             ]
+
+
+viewIconoTransferencia : Html Msg
+viewIconoTransferencia =
+    Svg.svg
+        [ SvgAttr.class "position-absolute top-50 end-100 translate-middle-y me-3 text-body-secondary"
+        , SvgAttr.width "25"
+        , SvgAttr.height "24"
+        , Attr.attribute "aria-hidden" "true"
+        ]
+        [ Svg.use [ SvgAttr.xlinkHref "/transferencia.svg#transferencia" ] [] ]
 
 
 viewLineaSaldo : Grupo -> ( Rol, List ( Moneda, Api.Monto ) ) -> Html Msg
