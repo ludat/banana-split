@@ -90,7 +90,8 @@ tabActivo seleccionado =
 
 
 type Msg
-    = SelectTab Tab
+    = NoOp
+    | SelectTab Tab
     | OpenPago ULID
     | PagoModalMsg PagoDetalleModal.Msg
     | PedirConfirmacion Api.Transferencia
@@ -141,6 +142,9 @@ update store ctx msg model =
                 , Toasts.pushToast Toasts.ToastDanger "No se pudo cambiar el estado de la transferencia"
                 ]
             )
+
+        NoOp ->
+            ( model, Effect.none )
 
         OpenPago pagoId ->
             let
@@ -872,22 +876,24 @@ viewUltimosPagosCard participanteId store model grupo =
             Bs.card []
                 [ Bs.cardHeader [] [ text "Ultimos gastos" ]
                 , Bs.listGroup [ class "list-group-flush" ]
-                    (ultimosPagos |> List.map (viewUltimoPago participanteId grupo.monedaPorDefecto))
+                    (ultimosPagos |> List.map (viewUltimoPago participanteId grupo.id grupo.monedaPorDefecto))
                 ]
 
         _ ->
             text ""
 
 
-viewUltimoPago : Maybe ULID -> Moneda -> ShallowPago -> Html Msg
-viewUltimoPago participanteId monedaPorDefecto pago =
+viewUltimoPago : Maybe ULID -> ULID -> Moneda -> ShallowPago -> Html Msg
+viewUltimoPago participanteId grupoId monedaPorDefecto pago =
     Bs.listGroupItem
-        [ class "list-group-item-action"
-        , style "cursor" "pointer"
-        , Attr.attribute "role" "button"
-        , onClick (OpenPago pago.pagoId)
-        ]
-        [ div [ class "d-flex align-items-center gap-3" ]
+        [ class "list-group-item-action p-0" ]
+        [ a
+            (class "d-flex align-items-center gap-3 p-3 text-reset text-decoration-none"
+                :: PagoDetalleModal.linkAlPago
+                    (Path.Grupos_Id_ { id = grupoId })
+                    pago.pagoId
+                    { abrir = OpenPago pago.pagoId, ignorar = NoOp }
+            )
             [ div
                 [ class "text-center border rounded px-2 py-1 flex-shrink-0"
                 , style "min-width" "2.5rem"

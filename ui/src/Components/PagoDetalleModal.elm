@@ -1,4 +1,4 @@
-module Components.PagoDetalleModal exposing (Context, Model, Msg, Overlay, context, init, onUrlChanged, open, update, view)
+module Components.PagoDetalleModal exposing (Context, Model, Msg, Overlay, context, init, linkAlPago, onUrlChanged, open, update, view)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras, viewNetosBarrasMini)
 import Components.Bootstrap as Bs
@@ -8,7 +8,7 @@ import Dict
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (ErrorResumen, Grupo, Moneda, Monto, Pago, Parte(..), Repartija, ResumenPago, TipoDistribucion(..), ULID)
 import Html exposing (Html, a, button, div, h4, i, li, p, span, table, tbody, td, text, th, thead, tr, ul)
-import Html.Attributes exposing (attribute, class, disabled, id, style, tabindex, type_)
+import Html.Attributes exposing (attribute, class, disabled, href, id, style, tabindex, type_)
 import Html.Events exposing (on, onClick)
 import Http
 import Json.Decode as Decode
@@ -171,6 +171,36 @@ loadPago grupoId pagoId =
 waitForPago : Effect Msg
 waitForPago =
     Effect.sendCmd <| Task.perform (\_ -> CheckPagoPresent) (Process.sleep 100)
+
+
+{-| Atributos para que la fila de un gasto sea un link posta y no un `div` con
+`onClick`: el `href` es la misma URL que el popup deja en la barra (`?gasto=`),
+así ctrl+click, el botón del medio y "abrir en otra pestaña" funcionan solos.
+
+El click común lo seguimos manejando nosotros (abre el popup sin recargar); si
+viene con una tecla modificadora o con otro botón del mouse lo dejamos pasar
+para que el navegador haga lo suyo, y ahí `ignorar` es un mensaje que no hace
+nada.
+
+-}
+linkAlPago : Path.Path -> ULID -> { abrir : msg, ignorar : msg } -> List (Html.Attribute msg)
+linkAlPago path pagoId msgs =
+    [ href (Path.toString path ++ "?gasto=" ++ pagoId)
+    , Html.Events.preventDefaultOn "click"
+        (Decode.map4
+            (\ctrl meta shift boton ->
+                if ctrl || meta || shift || boton /= 0 then
+                    ( msgs.ignorar, False )
+
+                else
+                    ( msgs.abrir, True )
+            )
+            (Decode.field "ctrlKey" Decode.bool)
+            (Decode.field "metaKey" Decode.bool)
+            (Decode.field "shiftKey" Decode.bool)
+            (Decode.field "button" Decode.int)
+        )
+    ]
 
 
 syncUrl : Path.Path -> Maybe ULID -> Effect Msg

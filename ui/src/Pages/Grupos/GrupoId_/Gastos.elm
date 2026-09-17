@@ -8,7 +8,6 @@ import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, Moneda, ShallowPago, ULID)
 import Html exposing (Html, a, div, text)
 import Html.Attributes exposing (class, style)
-import Html.Events exposing (onClick)
 import Layouts
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -60,13 +59,17 @@ init route store =
 
 
 type Msg
-    = OpenPago ULID
+    = NoOp
+    | OpenPago ULID
     | PagoModalMsg PagoDetalleModal.Msg
 
 
 update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
 update ctx store msg model =
     case msg of
+        NoOp ->
+            ( model, Effect.none )
+
         OpenPago pagoId ->
             let
                 ( pagoModal, eff ) =
@@ -139,21 +142,23 @@ viewPagos participanteId store model grupo =
                             |> List.sortWith (\a b -> Date.compare b.fecha a.fecha)
                             |> List.map
                                 (\pago ->
-                                    ( pago.pagoId, viewPago participanteId grupo.monedaPorDefecto pago )
+                                    ( pago.pagoId, viewPago participanteId grupo.id grupo.monedaPorDefecto pago )
                                 )
                         )
                     ]
 
 
-viewPago : Maybe ULID -> Moneda -> ShallowPago -> Html Msg
-viewPago participanteId monedaPorDefecto pago =
+viewPago : Maybe ULID -> ULID -> Moneda -> ShallowPago -> Html Msg
+viewPago participanteId grupoId monedaPorDefecto pago =
     Bs.listGroupItem
-        [ class "list-group-item-action"
-        , style "cursor" "pointer"
-        , Html.Attributes.attribute "role" "button"
-        , onClick (OpenPago pago.pagoId)
-        ]
-        [ div [ class "d-flex align-items-center gap-3" ]
+        [ class "list-group-item-action p-0" ]
+        [ a
+            (class "d-flex align-items-center gap-3 p-3 text-reset text-decoration-none"
+                :: PagoDetalleModal.linkAlPago
+                    (Path.Grupos_GrupoId__Gastos { grupoId = grupoId })
+                    pago.pagoId
+                    { abrir = OpenPago pago.pagoId, ignorar = NoOp }
+            )
             [ div
                 [ class "text-center border rounded px-2 py-1 flex-shrink-0"
                 , style "min-width" "2.5rem"
