@@ -2,7 +2,7 @@ services:
   backend:
     image:
       repository: ghcr.io/ludat/banana-split
-      tag: 20260916-185032@sha256:90c181c4ee17e0316659683814a1238024411f5b78e1b5de70c50e31560e6e6a
+      tag: 20260917-013519@sha256:5642f4db30051d574d3f1473a155d9d3d8928b3cc0661c4f3de674b780790ba5
       source:
         type: lexical
         pattern: '^\d{8}-\d{6}$'
