@@ -3,6 +3,7 @@ module Components.PagoDetalleModal exposing (Context, Model, Msg, Overlay, conte
 import Components.BarrasDeNetos exposing (viewNetosBarras, viewNetosBarrasMini)
 import Components.Bootstrap as Bs
 import Components.GraficoTorta as GraficoTorta
+import Components.PagoEditForm as PagoEditForm
 import Dict
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (ErrorResumen, Grupo, Moneda, Monto, Pago, Parte(..), Repartija, ResumenPago, TipoDistribucion(..), ULID)
@@ -42,6 +43,11 @@ type alias Model =
     , deleting : Bool
     , activeOverlay : Maybe Overlay
     , expandedErrors : Set.Set String
+
+    -- Mientras se edita el gasto, el popup muestra el formulario completo en
+    -- vez del detalle.
+    , edicion : Maybe PagoEditForm.Model
+    , confirmingDiscard : Bool
     }
 
 
@@ -118,7 +124,40 @@ forPago isOpen pagoId =
     , deleting = False
     , activeOverlay = Nothing
     , expandedErrors = Set.empty
+    , edicion = Nothing
+    , confirmingDiscard = False
     }
+
+
+hayCambiosSinGuardar : Model -> Bool
+hayCambiosSinGuardar model =
+    case model.edicion of
+        Just edicion ->
+            edicion.hasUnsavedChanges
+
+        Nothing ->
+            False
+
+
+{-| El botón atrás del navegador saca el `?gasto=` de la URL y con eso cerraría
+la edición sin preguntar. Como la navegación ya pasó, la única forma de
+frenarla es volver a poner la URL del gasto y mostrar la misma confirmación que
+la X. Cada "atrás" agrega una entrada al historial, así que después de
+descartar puede hacer falta más de un "atrás" para salir de la lista.
+-}
+volverAlGastoEnEdicion : Context -> Model -> ( Model, Effect Msg )
+volverAlGastoEnEdicion ctx model =
+    ( { model | confirmingDiscard = True }
+    , syncUrl ctx.path (Just model.pagoId)
+    )
+
+
+{-| El popup cerrado no conserva la edición: si se vuelve a abrir, arranca
+mostrando el detalle.
+-}
+cerrado : Model -> Model
+cerrado model =
+    { model | isOpen = False, edicion = Nothing, confirmingDiscard = False }
 
 
 loadPago : ULID -> ULID -> Effect Msg
@@ -164,16 +203,40 @@ type Msg
     | CancelDelete
     | ConfirmDelete
     | DeleteResponse (Result Http.Error ULID)
+    | StartEdit
+    | EditFormMsg PagoEditForm.Msg
+    | AskDiscardEdit
+    | CancelDiscardEdit
+    | ConfirmDiscardEdit
 
 
 update : Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
 update ctx store msg model =
+    updateInterno ctx store msg model
+        |> apagarAvisoSiSeCerroLaEdicion model
+
+
+{-| El aviso del browser ("tenés cambios sin guardar") lo prende el formulario,
+así que cuando el popup lo desmonta por su cuenta —el botón atrás, un borrado—
+hay que apagarlo acá o queda pegado en el resto de la navegación.
+-}
+apagarAvisoSiSeCerroLaEdicion : Model -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
+apagarAvisoSiSeCerroLaEdicion modelAnterior ( model, effect ) =
+    if estaEditando modelAnterior && not (estaEditando model) then
+        ( model, Effect.batch [ effect, Effect.setUnsavedChangesWarning False ] )
+
+    else
+        ( model, effect )
+
+
+updateInterno : Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
+updateInterno ctx store msg model =
     case msg of
         NoOp ->
             ( model, Effect.none )
 
         Close ->
-            ( { model | isOpen = False }, syncUrl ctx.path Nothing )
+            ( cerrado model, syncUrl ctx.path Nothing )
 
         QueryChanged maybePagoId ->
             case maybePagoId of
@@ -182,11 +245,18 @@ update ctx store msg model =
                         -- Already showing this pago (e.g. we just pushed the URL ourselves)
                         ( model, Effect.none )
 
+                    else if hayCambiosSinGuardar model then
+                        volverAlGastoEnEdicion ctx model
+
                     else
                         ( forPago True pagoId, loadPago ctx.grupoId pagoId )
 
                 Nothing ->
-                    ( { model | isOpen = False }, Effect.none )
+                    if hayCambiosSinGuardar model then
+                        volverAlGastoEnEdicion ctx model
+
+                    else
+                        ( cerrado model, Effect.none )
 
         Share { title, path } ->
             ( model
@@ -241,7 +311,7 @@ update ctx store msg model =
             )
 
         DeleteResponse (Ok _) ->
-            ( { model | isOpen = False }
+            ( cerrado model
             , Effect.batch
                 [ Store.refreshGrupo ctx.grupoId
                 , Store.refreshResumen ctx.grupoId
@@ -254,6 +324,75 @@ update ctx store msg model =
         DeleteResponse (Err _) ->
             ( { model | deleting = False, confirmingDelete = False }
             , Toasts.pushToast Toasts.ToastDanger "Falló al borrar el gasto"
+            )
+
+        StartEdit ->
+            case ( Store.getPago model.pagoId store, Store.getGrupo ctx.grupoId store ) of
+                ( Success pago, Success grupo ) ->
+                    let
+                        ( edicion, eff ) =
+                            PagoEditForm.init ctx.grupoId grupo.participantes ctx.participanteId pago
+                    in
+                    ( { model | edicion = Just edicion, confirmingDelete = False }
+                    , Effect.map EditFormMsg eff
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
+        EditFormMsg subMsg ->
+            case ( model.edicion, Store.getGrupo ctx.grupoId store ) of
+                ( Just edicion, Success grupo ) ->
+                    let
+                        ( nuevaEdicion, eff, outcome ) =
+                            PagoEditForm.update grupo.participantes subMsg edicion
+                    in
+                    case outcome of
+                        PagoEditForm.SigueEditando ->
+                            ( { model | edicion = Just nuevaEdicion }, Effect.map EditFormMsg eff )
+
+                        PagoEditForm.Cancelado ->
+                            -- Cancelar con cambios sin guardar pregunta igual
+                            -- que cerrar el popup.
+                            if nuevaEdicion.hasUnsavedChanges then
+                                ( { model | edicion = Just nuevaEdicion, confirmingDiscard = True }
+                                , Effect.map EditFormMsg eff
+                                )
+
+                            else
+                                ( { model | edicion = Nothing }, Effect.map EditFormMsg eff )
+
+                        PagoEditForm.Guardado pago ->
+                            -- Volvemos al detalle con el resumen recalculado
+                            -- sobre el gasto que quedó guardado.
+                            ( { model | edicion = Nothing, confirmingDiscard = False, resumen = Loading }
+                            , Effect.batch
+                                [ Effect.map EditFormMsg eff
+                                , Effect.sendCmd <| Api.postPagosResumen pago ResumenFetched
+                                ]
+                            )
+
+                _ ->
+                    ( model, Effect.none )
+
+        AskDiscardEdit ->
+            case model.edicion of
+                Just edicion ->
+                    if edicion.hasUnsavedChanges then
+                        ( { model | confirmingDiscard = True }, Effect.none )
+
+                    else
+                        ( { model | edicion = Nothing }, Effect.none )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        CancelDiscardEdit ->
+            ( { model | confirmingDiscard = False }, Effect.none )
+
+        ConfirmDiscardEdit ->
+            ( { model | edicion = Nothing, confirmingDiscard = False }
+            , Effect.setUnsavedChangesWarning False
             )
 
 
@@ -269,20 +408,26 @@ view store grupo model =
     else
         let
             ( header, content, overlays ) =
-                case ( Store.getPago model.pagoId store, model.resumen ) of
-                    ( Success pago, Success resumen ) ->
+                case ( model.edicion, ( Store.getPago model.pagoId store, model.resumen ) ) of
+                    ( Just edicion, _ ) ->
+                        ( viewHeaderEdicion model
+                        , Html.map EditFormMsg (PagoEditForm.view grupo edicion)
+                        , text ""
+                        )
+
+                    ( Nothing, ( Success pago, Success resumen ) ) ->
                         ( viewHeader grupo pago resumen model
                         , viewContent grupo pago resumen model
                         , viewOverlay grupo pago resumen model
                         )
 
-                    ( Failure _, _ ) ->
+                    ( Nothing, ( Failure _, _ ) ) ->
                         viewEstado
                             "bi bi-receipt-cutoff"
                             "No encontramos este gasto"
                             "Puede que lo hayan eliminado o que el enlace ya no sea válido."
 
-                    ( _, Failure _ ) ->
+                    ( Nothing, ( _, Failure _ ) ) ->
                         viewEstado
                             "bi bi-exclamation-triangle"
                             "No pudimos cargar los detalles"
@@ -301,9 +446,12 @@ view store grupo model =
                 , tabindex -1
                 , attribute "aria-modal" "true"
                 , attribute "role" "dialog"
-                , on "click" closeOnOverlayClick
+                , on "click" (closeOnOverlayClick (estaEditando model))
                 ]
-                [ div [ class "modal-dialog modal-dialog-scrollable" ]
+                [ -- `modal-lg` en los dos modos: el formulario necesita el ancho
+                  -- para sus tablas y el popup no cambia de tamaño al pasar de
+                  -- ver a editar.
+                  div [ class "modal-dialog modal-dialog-scrollable modal-lg" ]
                     [ div [ class "modal-content" ]
                         [ header
                         , div [ class "modal-body" ] [ content ]
@@ -313,6 +461,53 @@ view store grupo model =
             , div [ class "modal-backdrop show" ] []
             , overlays
             ]
+
+
+{-| Los `Form` guardan funciones adentro, así que el modelo de la edición no se
+puede comparar con `==`: hay que mirar el constructor.
+-}
+estaEditando : Model -> Bool
+estaEditando model =
+    case model.edicion of
+        Just _ ->
+            True
+
+        Nothing ->
+            False
+
+
+{-| Mientras se edita, el header es sólo el título: los botones (cancelar,
+siguiente, actualizar) los pone el propio formulario al final. La X no cierra el
+popup de una: si hay cambios sin guardar primero pregunta.
+-}
+viewHeaderEdicion : Model -> Html Msg
+viewHeaderEdicion model =
+    div [ class "modal-header flex-column align-items-stretch border-bottom-0" ]
+        [ div [ class "d-flex justify-content-between align-items-start" ]
+            [ h4 [ class "modal-title fw-bold" ] [ text "Editar gasto" ]
+            , button
+                [ type_ "button"
+                , class "btn-close"
+                , attribute "aria-label" "Cerrar"
+                , onClick AskDiscardEdit
+                ]
+                []
+            ]
+        , if model.confirmingDiscard then
+            Bs.alert Bs.AlertWarning
+                [ class "d-flex flex-wrap align-items-center gap-2 mt-3 mb-0 py-2" ]
+                [ span [ class "flex-grow-1 small" ] [ text "Hay cambios sin guardar. ¿Descartarlos?" ]
+                , Bs.btn Bs.Transparent
+                    [ class "btn-sm", onClick CancelDiscardEdit ]
+                    [ text "Seguir editando" ]
+                , Bs.btn Bs.Danger
+                    [ class "btn-sm", onClick ConfirmDiscardEdit ]
+                    [ text "Descartar" ]
+                ]
+
+          else
+            text ""
+        ]
 
 
 viewEstado : String -> String -> String -> ( Html Msg, Html Msg, Html Msg )
@@ -340,11 +535,15 @@ modalOverlayId =
     "pago-detalle-modal"
 
 
-closeOnOverlayClick : Decode.Decoder Msg
-closeOnOverlayClick =
+{-| Click afuera del diálogo. Mientras se edita el gasto no cierra nada: perder
+el formulario por un click al costado sería bastante peor que tener que apuntarle
+a la X.
+-}
+closeOnOverlayClick : Bool -> Decode.Decoder Msg
+closeOnOverlayClick editando =
     Decode.map2
         (\targetId currentId ->
-            if targetId == currentId then
+            if targetId == currentId && not editando then
                 Close
 
             else
@@ -452,17 +651,15 @@ viewHeader grupo pago resumen model =
 viewActions : Grupo -> Pago -> Model -> Html Msg
 viewActions grupo pago model =
     div [ class "d-flex align-items-center gap-2 mt-3" ]
-        [ a
-            [ Path.href <| Path.Grupos_GrupoId__Gastos_GastoId_ { grupoId = grupo.id, gastoId = pago.pagoId }
-            , class "btn btn-secondary rounded-pill px-4"
-            ]
+        [ Bs.btn Bs.SecondarySolid
+            [ class "rounded-pill px-4", onClick StartEdit ]
             [ text "Editar" ]
-        , viewActionsMenu model
+        , viewActionsMenu grupo pago model
         ]
 
 
-viewActionsMenu : Model -> Html Msg
-viewActionsMenu model =
+viewActionsMenu : Grupo -> Pago -> Model -> Html Msg
+viewActionsMenu grupo pago model =
     div [ class "dropdown" ]
         [ button
             [ type_ "button"
@@ -491,7 +688,12 @@ viewActionsMenu model =
                 ]
 
              else
-                [ button
+                [ a
+                    [ Path.href <| Path.Grupos_GrupoId__Gastos_GastoId_ { grupoId = grupo.id, gastoId = pago.pagoId }
+                    , class "dropdown-item"
+                    ]
+                    [ i [ class "bi bi-arrows-fullscreen me-2" ] [], text "Editar en pantalla completa" ]
+                , button
                     [ type_ "button"
                     , class "dropdown-item text-danger"
                     , onClick AskDelete
