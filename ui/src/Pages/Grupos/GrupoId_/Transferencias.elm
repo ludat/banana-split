@@ -271,9 +271,9 @@ viewContent store zone ahora yo model grupo =
         Success (Api.GrupoAbierto resumen) ->
             let
                 hechas =
-                    aplanar resumen.transferenciasHechas
-                        |> List.map (\( moneda, h ) -> ( Transferencia.Hecha h.saldadaAt, ( moneda, h.transferencia ) ))
-                        |> List.sortBy (\( _, ( _, t ) ) -> t.id |> Maybe.withDefault "")
+                    resumen.transferencias
+                        |> List.filter Transferencia.estaHecha
+                        |> List.sortBy .id
                         |> List.reverse
             in
             div []
@@ -293,20 +293,14 @@ viewContent store zone ahora yo model grupo =
 
         Success (Api.GrupoCongelado resumen) ->
             let
-                todas : List ( Transferencia.Estado, ( Moneda, Transferencia ) )
+                todas : List Transferencia
                 todas =
-                    (aplanar resumen.transferenciasParaSaldar
-                        |> List.map (Tuple.pair Transferencia.Pendiente)
-                    )
-                        ++ (aplanar resumen.transferenciasHechas
-                                |> List.map
-                                    (\( moneda, h ) -> ( Transferencia.Hecha h.saldadaAt, ( moneda, h.transferencia ) ))
-                           )
+                    resumen.transferencias
                         -- Más nueva primero. El id es el orden en que se
                         -- crearon y no cambia al marcarlas, así que una fila no
                         -- se mueve de lugar por debajo de quien la está
                         -- tocando.
-                        |> List.sortBy (\( _, ( _, t ) ) -> t.id |> Maybe.withDefault "")
+                        |> List.sortBy .id
                         |> List.reverse
             in
             if List.isEmpty todas then
@@ -335,41 +329,25 @@ type AccionDeFila
 
 buscarConfirmacion :
     Maybe Confirmacion
-    -> List ( Transferencia.Estado, ( Moneda, Transferencia ) )
-    -> Maybe ( Confirmacion, ( Transferencia.Estado, ( Moneda, Transferencia ) ) )
+    -> List Transferencia
+    -> Maybe ( Confirmacion, Transferencia )
 buscarConfirmacion confirmando filas =
     confirmando
         |> Maybe.andThen
             (\confirmacion ->
                 filas
-                    |> List.filter (\( _, ( _, t ) ) -> t.id == Just (idConfirmado confirmacion))
+                    |> List.filter (\t -> t.id == idConfirmado confirmacion)
                     |> List.head
                     |> Maybe.map (Tuple.pair confirmacion)
             )
 
 
-{-| 'PorMoneda' agrupa por moneda, pero acá las filas van todas juntas y en
-orden, así que conviene la lista plana con la moneda pegada a cada una.
--}
-aplanar : Api.PorMoneda (List a) -> List ( Moneda, a )
-aplanar =
-    List.concatMap (\( moneda, ts ) -> ts |> List.map (\t -> ( moneda, t )))
-
-
-viewResumenDeEstados : List ( Transferencia.Estado, ( Moneda, Transferencia ) ) -> Html Msg
+viewResumenDeEstados : List Transferencia -> Html Msg
 viewResumenDeEstados todas =
     let
         hechas =
             todas
-                |> List.filter
-                    (\( estado, _ ) ->
-                        case estado of
-                            Transferencia.Hecha _ ->
-                                True
-
-                            Transferencia.Pendiente ->
-                                False
-                    )
+                |> List.filter Transferencia.estaHecha
                 |> List.length
     in
     div [ class "text-muted small mb-3" ]
@@ -390,8 +368,12 @@ viewResumenDeEstados todas =
 acción que lo cambia. Sin distinguir entre "tuyas" y "ajenas": esta pantalla es
 para ver y corregir el congelamiento entero.
 -}
-viewTransferencia : Zone -> Posix -> Grupo -> AccionDeFila -> ( Transferencia.Estado, ( Moneda, Transferencia ) ) -> Html Msg
-viewTransferencia zone ahora grupo accion ( estado, ( moneda, t ) ) =
+viewTransferencia : Zone -> Posix -> Grupo -> AccionDeFila -> Transferencia -> Html Msg
+viewTransferencia zone ahora grupo accion t =
+    let
+        estado =
+            Transferencia.estado t
+    in
     div [ class "list-group-item d-flex align-items-center gap-3 flex-wrap" ]
         [ case estado of
             Transferencia.Pendiente ->
@@ -410,7 +392,7 @@ viewTransferencia zone ahora grupo accion ( estado, ( moneda, t ) ) =
                         "text-muted"
                 )
             ]
-            (Transferencia.frase grupo moneda t
+            (Transferencia.frase grupo t
                 ++ (case estado of
                         Transferencia.Pendiente ->
                             []
@@ -424,57 +406,54 @@ viewTransferencia zone ahora grupo accion ( estado, ( moneda, t ) ) =
                             ]
                    )
             )
-        , case ( accion, estado, t.id ) of
-            ( CambiarEstado, Transferencia.Pendiente, Just transferenciaId ) ->
+        , case ( accion, estado ) of
+            ( CambiarEstado, Transferencia.Pendiente ) ->
                 Bs.btn Bs.Secondary
                     [ class "btn-sm text-nowrap"
-                    , onClick (PedirConfirmacion (CambiarEstadoDe transferenciaId))
+                    , onClick (PedirConfirmacion (CambiarEstadoDe t.id))
                     ]
                     [ text "Marcar como hecha" ]
 
-            ( CambiarEstado, Transferencia.Hecha _, Just transferenciaId ) ->
+            ( CambiarEstado, Transferencia.Hecha _ ) ->
                 Bs.btn Bs.Secondary
                     [ class "btn-sm text-nowrap"
-                    , onClick (PedirConfirmacion (CambiarEstadoDe transferenciaId))
+                    , onClick (PedirConfirmacion (CambiarEstadoDe t.id))
                     ]
                     [ text "Volver a pendiente" ]
 
-            ( Borrar, _, Just transferenciaId ) ->
+            ( Borrar, _ ) ->
                 Bs.btn Bs.Danger
                     [ class "btn-sm text-nowrap"
-                    , onClick (PedirConfirmacion (BorrarA transferenciaId))
+                    , onClick (PedirConfirmacion (BorrarA t.id))
                     ]
                     [ text "Borrar" ]
-
-            ( _, _, Nothing ) ->
-                text ""
         ]
 
 
 {-| El cambio de estado se relee antes de aplicarlo. El texto sale del estado
 actual: se confirma pasar a hecha, o volver a pendiente.
 -}
-viewConfirmacionModal : Grupo -> Maybe ( Confirmacion, ( Transferencia.Estado, ( Moneda, Transferencia ) ) ) -> Html Msg
+viewConfirmacionModal : Grupo -> Maybe ( Confirmacion, Transferencia ) -> Html Msg
 viewConfirmacionModal grupo confirmando =
     let
         ( titulo, cuerpo, accion ) =
-            case confirmando of
-                Just ( CambiarEstadoDe transferenciaId, ( Transferencia.Pendiente, ( moneda, t ) ) ) ->
+            case confirmando |> Maybe.map (\( c, t ) -> ( c, Transferencia.estado t, t )) of
+                Just ( CambiarEstadoDe transferenciaId, Transferencia.Pendiente, t ) ->
                     ( "Marcar como hecha"
-                    , Transferencia.frase grupo moneda t ++ [ text ". ¿Ya pasó?" ]
+                    , Transferencia.frase grupo t ++ [ text ". ¿Ya pasó?" ]
                     , Just ( Bs.Primary, SaldarTransferencia transferenciaId )
                     )
 
-                Just ( CambiarEstadoDe transferenciaId, ( Transferencia.Hecha _, ( moneda, t ) ) ) ->
+                Just ( CambiarEstadoDe transferenciaId, Transferencia.Hecha _, t ) ->
                     ( "Volver a pendiente"
-                    , Transferencia.frase grupo moneda t
+                    , Transferencia.frase grupo t
                         ++ [ text ". Vuelve a la lista como pendiente." ]
                     , Just ( Bs.Primary, DesmarcarTransferencia transferenciaId )
                     )
 
-                Just ( BorrarA transferenciaId, ( _, ( moneda, t ) ) ) ->
+                Just ( BorrarA transferenciaId, _, t ) ->
                     ( "Borrar la transferencia"
-                    , Transferencia.frase grupo moneda t
+                    , Transferencia.frase grupo t
                         ++ [ text ". Se borra para siempre y deja de contar en los netos del grupo." ]
                     , Just ( Bs.Danger, BorrarTransferencia transferenciaId )
                     )

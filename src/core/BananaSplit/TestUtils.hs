@@ -9,9 +9,11 @@ module BananaSplit.TestUtils (
   getNetos,
   fatalError,
   tasaEntre,
+  transferenciaHecha,
 ) where
 
 import Data.Maybe (fromJust)
+import Data.Time (UTCTime (..), fromGregorian)
 import Protolude
 
 import BananaSplit
@@ -32,6 +34,17 @@ tasaEntre una monto otra otroDeLosMontos =
     , otraMoneda = otra
     , unMonto = monto
     , otroMonto = otroDeLosMontos
+    }
+
+transferenciaHecha :: ParticipanteId -> ParticipanteId -> Monto -> Transferencia
+transferenciaHecha participanteFrom participanteTo monto =
+  Transferencia
+    { id = nullUlid
+    , from = participanteFrom
+    , to = participanteTo
+    , monto = monto
+    , moneda = ARS
+    , saldadaAt = Just $ UTCTime (fromGregorian 2025 1 1) 0
     }
 
 fakeUlid :: Integer -> ULID

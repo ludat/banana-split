@@ -25,7 +25,8 @@ module BananaSplit.Deudas (
   TipoErrorResumen (..),
   totalNetos,
   Transferencia (..),
-  TransferenciaHecha (..),
+  transferenciaEstaHecha,
+  TransferenciaSugerida (..),
 ) where
 
 import Data.Decimal (Decimal)
@@ -39,14 +40,15 @@ import Elm.Derive qualified as Elm
 import Numeric.Optimization.MIP qualified as MIP
 import Numeric.Optimization.MIP.Solver qualified as MIP
 import Numeric.Optimization.MIP.Solver.CBC qualified as CBC
-import Protolude
 import System.IO.Unsafe (unsafePerformIO)
 
+import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
 import BananaSplit.Monto
 import BananaSplit.Monto qualified as Monto
 import BananaSplit.Participante
 import BananaSplit.Repartija
 import BananaSplit.ULID
+import Preludat
 
 data Distribucion = Distribucion
   { id :: ULID
@@ -205,19 +207,19 @@ instance HasResumen Repartija where
       netosReclamados = calcularNetosRepartija repartija
       totalReclamado = totalNetos netosReclamados
 
-minimizeTransferencias :: Netos Monto -> [Transferencia]
+minimizeTransferencias :: Netos Monto -> [TransferenciaSugerida]
 minimizeTransferencias deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
     Left _err -> resolverNetosNaif deudas
 
-solveOptimalTransactions :: Netos Monto -> [Transferencia]
+solveOptimalTransactions :: Netos Monto -> [TransferenciaSugerida]
 solveOptimalTransactions deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
     Left err -> panic err
 
-resolverNetosRecursivo :: Netos Monto -> [Transferencia]
+resolverNetosRecursivo :: Netos Monto -> [TransferenciaSugerida]
 resolverNetosRecursivo netBalances =
   let allValidSettlements = settleDebts $ deudasToPairs netBalances
   in allValidSettlements
@@ -225,7 +227,7 @@ resolverNetosRecursivo netBalances =
          [] -> []
          _ -> minimumBy (comparing length) allValidSettlements
   where
-    settleDebts :: [(ParticipanteId, Monto)] -> [[Transferencia]]
+    settleDebts :: [(ParticipanteId, Monto)] -> [[TransferenciaSugerida]]
     settleDebts [] = [[]]
     settleDebts [_] = [[]]
     settleDebts ((personOwing, balance) : others)
@@ -234,7 +236,7 @@ resolverNetosRecursivo netBalances =
       where
         possiblePartners = [(partner, partnerBalance) | (partner, partnerBalance) <- others, balance * partnerBalance < 0]
 
-        attemptSettlement :: (ParticipanteId, Monto) -> [[Transferencia]]
+        attemptSettlement :: (ParticipanteId, Monto) -> [[TransferenciaSugerida]]
         attemptSettlement (partner, partnerBalance) =
           let paymentAmount = min (abs balance) (abs partnerBalance)
               newBalanceOwing = balance + signum partnerBalance * paymentAmount
@@ -250,8 +252,8 @@ resolverNetosRecursivo netBalances =
 
               transaction =
                 if balance > 0
-                  then Transferencia Nothing partner personOwing paymentAmount
-                  else Transferencia Nothing personOwing partner paymentAmount
+                  then TransferenciaSugerida partner personOwing paymentAmount
+                  else TransferenciaSugerida personOwing partner paymentAmount
           in fmap (transaction :) (settleDebts nextBalances)
     -- Helper to insert updated balances (or remove if settled)
     insertOrRemove :: (ParticipanteId, Monto) -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
@@ -261,24 +263,33 @@ resolverNetosRecursivo netBalances =
     deleteByPerson :: ParticipanteId -> [(ParticipanteId, Monto)] -> [(ParticipanteId, Monto)]
     deleteByPerson name = filter ((/= name) . fst)
 
-data Transferencia = Transferencia
-  { id :: Maybe ULID
-  , from :: ParticipanteId
+data TransferenciaSugerida = TransferenciaSugerida
+  { from :: ParticipanteId
   , to :: ParticipanteId
   , monto :: Monto
   }
   deriving (Show, Eq, Generic)
 
-data TransferenciaHecha = TransferenciaHecha
-  { transferencia :: Transferencia
-  , saldadaAt :: UTCTime
+data Transferencia = Transferencia
+  { id :: ULID
+  , from :: ParticipanteId
+  , to :: ParticipanteId
+  , monto :: Monto
+  , moneda :: Moneda
+  , saldadaAt :: Maybe UTCTime
   }
   deriving (Show, Eq, Generic)
 
-netosDeTransferencia :: Transferencia -> Netos Monto
+transferenciaEstaHecha :: Transferencia -> Bool
+transferenciaEstaHecha transferencia =
+  isJust transferencia.saldadaAt
+
+netosDeTransferencia :: Transferencia -> PorMoneda (Netos Monto)
 netosDeTransferencia transferencia =
-  mkDeuda transferencia.from transferencia.monto
-    <> mkDeuda transferencia.to (negate transferencia.monto)
+  ( mkDeuda transferencia.from transferencia.monto
+      <> mkDeuda transferencia.to (negate transferencia.monto)
+  )
+    `enMoneda` transferencia.moneda
 
 deudoresNoNulos :: Netos Monto -> Int
 deudoresNoNulos (Netos deudasMap) =
@@ -359,7 +370,7 @@ removerDeudor :: ParticipanteId -> Netos m -> Netos m
 removerDeudor participanteId (Netos deudasMap) =
   Netos $ Map.delete participanteId deudasMap
 
-resolverNetosNaif :: Netos Monto -> [Transferencia]
+resolverNetosNaif :: Netos Monto -> [TransferenciaSugerida]
 resolverNetosNaif deudas
   | deudoresNoNulos deudas == 0 = []
   | deudoresNoNulos deudas == 1 = panic $ show deudas
@@ -370,16 +381,16 @@ resolverNetosNaif deudas
           deudas'' = removerDeudor mayorPagador deudas'
       in case compare mayorDeuda mayorPagado of
            LT ->
-             Transferencia Nothing mayorDeudor mayorPagador mayorDeuda
+             TransferenciaSugerida mayorDeudor mayorPagador mayorDeuda
                : resolverNetosNaif (deudas'' <> mkDeuda mayorPagador (mayorPagado - mayorDeuda))
            GT ->
-             Transferencia Nothing mayorDeudor mayorPagador mayorPagado
+             TransferenciaSugerida mayorDeudor mayorPagador mayorPagado
                : resolverNetosNaif (deudas'' <> mkDeuda mayorDeudor (-mayorDeuda + mayorPagado))
            EQ ->
-             Transferencia Nothing mayorDeudor mayorPagador mayorPagado
+             TransferenciaSugerida mayorDeudor mayorPagador mayorPagado
                : resolverNetosNaif deudas''
 
-solveOptimalTransactions' :: Netos Monto -> Either Text [Transferencia]
+solveOptimalTransactions' :: Netos Monto -> Either Text [TransferenciaSugerida]
 solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
   let maxPrecision =
         oldBalances
@@ -418,12 +429,13 @@ solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
 
         -- Build variable domains
         let varDomains =
-              Map.fromList $
+              Map.fromList
+                $
                 -- Transaction variables (continuous, >= 0)
                 [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.PosInf))) | v <- allTVars]
-                  ++
-                  -- Binary edge variables (represented as integer variables with bounds 0 and 1)
-                  [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.Finite 1))) | v <- allEVars]
+                ++
+                -- Binary edge variables (represented as integer variables with bounds 0 and 1)
+                [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.Finite 1))) | v <- allEVars]
 
         -- Build objective: minimize sum of binary edge variables
         let objective =
@@ -489,9 +501,8 @@ solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
                               & mfilter (/= 0)
                               & fmap
                                 ( \v ->
-                                    Transferencia
-                                      { id = Nothing
-                                      , from = d
+                                    TransferenciaSugerida
+                                      { from = d
                                       , to = c
                                       , monto = Monto $ Decimal.Decimal maxPrecision (round $ Scientific.toRealFloat @Double v)
                                       }
@@ -583,7 +594,6 @@ calcularNetosRepartija repartija =
 
 Elm.deriveBoth Elm.defaultOptions ''Transferencia
 
-Elm.deriveBoth Elm.defaultOptions ''TransferenciaHecha
 Elm.deriveBoth Elm.defaultOptions ''Netos
 Elm.deriveBoth Elm.defaultOptions ''Parte
 Elm.deriveBoth Elm.defaultOptions ''DistribucionPartes

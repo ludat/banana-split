@@ -241,10 +241,12 @@ spec = do
                 [ (u2, 500)
                 ]
           }
-        `shouldBe` netos
-          [ (u1, 500)
-          , (u2, -500)
-          ]
+        `shouldBe` ( netos
+                       [ (u1, 500)
+                       , (u2, -500)
+                       ]
+                       `enMoneda` ARS
+                   )
 
   describe "calcularNetosMontoEquitativo" $ do
     it "entre varias personas devuelve equitativo" $ do
@@ -275,18 +277,18 @@ spec = do
 
   describe "netosDeTransferencia" $ do
     it "deja en cero al que transfirió lo que debía" $ do
-      let deuda = netos [(u1, 10), (u2, -10)]
-      let transferencia = Transferencia Nothing u2 u1 10
+      let deuda = netos [(u1, 10), (u2, -10)] `enMoneda` ARS
+      let transferencia = transferenciaHecha u2 u1 10
 
       (deuda <> netosDeTransferencia transferencia)
-        `shouldBe` netos [(u1, 0), (u2, 0)]
+        `shouldBe` (netos [(u1, 0), (u2, 0)] `enMoneda` ARS)
 
     it "le suma al que mandó y le resta al que recibió" $ do
-      netosDeTransferencia (Transferencia Nothing u1 u2 7)
-        `shouldBe` netos [(u1, 7), (u2, -7)]
+      netosDeTransferencia (transferenciaHecha u1 u2 7)
+        `shouldBe` (netos [(u1, 7), (u2, -7)] `enMoneda` ARS)
 
     it "mueve los netos igual que el pago que reemplaza" $ do
-      netosDeTransferencia (Transferencia Nothing u1 u2 30)
+      netosDeTransferencia (transferenciaHecha u1 u2 30)
         `shouldBe` calcularNetosPago
           pagoValido
             { monto = 30
@@ -301,7 +303,7 @@ spec = do
     it "simplifica una sola transferencia trivialmente" $ do
       let transferencias = netos [(participante 1, 10), (participante 2, -10)]
 
-      minimizeTransferencias transferencias `shouldBe` [Transferencia Nothing (participante 2) (participante 1) 10]
+      minimizeTransferencias transferencias `shouldBe` [TransferenciaSugerida (participante 2) (participante 1) 10]
     it "simplifica un caso en el que el algoritmo greedy falla" $ do
       minimizeTransferencias
         ( netos
@@ -406,7 +408,7 @@ spec = do
               , (u2, mkMonto 10 -5)
               ]
           )
-          `shouldBe` [ Transferencia Nothing u2 u1 $ mkMonto 10 5
+          `shouldBe` [ TransferenciaSugerida u2 u1 $ mkMonto 10 5
                      ]
 
       it "una deuda simple con montos heterogeneos" $ do
@@ -418,6 +420,6 @@ spec = do
               , (u4, mkMonto 0 -5)
               ]
           )
-          `shouldBe` [ Transferencia Nothing u2 u1 $ mkMonto 10 5
-                     , Transferencia Nothing u4 u3 5
+          `shouldBe` [ TransferenciaSugerida u2 u1 $ mkMonto 10 5
+                     , TransferenciaSugerida u4 u3 5
                      ]

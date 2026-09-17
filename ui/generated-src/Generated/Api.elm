@@ -313,17 +313,17 @@ type alias ResumenAbierto  =
    , consolidado: ConsolidadoNetos
    , cantidadPagos: Int
    , cantidadPagosInvalidos: Int
-   , transferenciasHechas: (PorMoneda (List TransferenciaHecha))
+   , transferencias: (List Transferencia)
    }
 
 jsonDecResumenAbierto : Json.Decode.Decoder ( ResumenAbierto )
 jsonDecResumenAbierto =
-   Json.Decode.succeed (\pnetos pconsolidado pcantidadPagos pcantidadPagosInvalidos ptransferenciasHechas -> {netos = pnetos, consolidado = pconsolidado, cantidadPagos = pcantidadPagos, cantidadPagosInvalidos = pcantidadPagosInvalidos, transferenciasHechas = ptransferenciasHechas})
+   Json.Decode.succeed (\pnetos pconsolidado pcantidadPagos pcantidadPagosInvalidos ptransferencias -> {netos = pnetos, consolidado = pconsolidado, cantidadPagos = pcantidadPagos, cantidadPagosInvalidos = pcantidadPagosInvalidos, transferencias = ptransferencias})
    |> required "netos" (jsonDecPorMoneda (jsonDecNetos (jsonDecMonto)))
    |> required "consolidado" (jsonDecConsolidadoNetos)
    |> required "cantidadPagos" (Json.Decode.int)
    |> required "cantidadPagosInvalidos" (Json.Decode.int)
-   |> required "transferenciasHechas" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransferenciaHecha)))
+   |> required "transferencias" (Json.Decode.list (jsonDecTransferencia))
 
 jsonEncResumenAbierto : ResumenAbierto -> Value
 jsonEncResumenAbierto  val =
@@ -332,29 +332,22 @@ jsonEncResumenAbierto  val =
    , ("consolidado", jsonEncConsolidadoNetos val.consolidado)
    , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
    , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
-   , ("transferenciasHechas", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransferenciaHecha))) val.transferenciasHechas)
+   , ("transferencias", (Json.Encode.list jsonEncTransferencia) val.transferencias)
    ]
 
 
 
 type alias ResumenCongelado  =
-   { transferenciasParaSaldar: (PorMoneda (List Transferencia))
-   , transferenciasHechas: (PorMoneda (List TransferenciaHecha))
+   { transferencias: (List Transferencia)
    }
 
 jsonDecResumenCongelado : Json.Decode.Decoder ( ResumenCongelado )
 jsonDecResumenCongelado =
-   Json.Decode.succeed (\ptransferenciasParaSaldar ptransferenciasHechas -> {transferenciasParaSaldar = ptransferenciasParaSaldar, transferenciasHechas = ptransferenciasHechas})
-   |> required "transferenciasParaSaldar" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransferencia)))
-   |> required "transferenciasHechas" (jsonDecPorMoneda (Json.Decode.list (jsonDecTransferenciaHecha)))
+   Json.Decode.succeed (\ptransferencias -> {transferencias = ptransferencias}) |> custom (Json.Decode.list (jsonDecTransferencia))
 
 jsonEncResumenCongelado : ResumenCongelado -> Value
 jsonEncResumenCongelado  val =
-   Json.Encode.object
-   [ ("transferenciasParaSaldar", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransferencia))) val.transferenciasParaSaldar)
-   , ("transferenciasHechas", (jsonEncPorMoneda ((Json.Encode.list jsonEncTransferenciaHecha))) val.transferenciasHechas)
-   ]
-
+   (Json.Encode.list jsonEncTransferencia) val.transferencias
 
 
 type alias Netos a = (List (ParticipanteId, a))
@@ -648,47 +641,33 @@ jsonEncParticipante  val =
 
 
 type alias Transferencia  =
-   { id: (Maybe ULID)
+   { id: ULID
    , from: ParticipanteId
    , to: ParticipanteId
    , monto: Monto
+   , moneda: Moneda
+   , saldadaAt: (Maybe Posix)
    }
 
 jsonDecTransferencia : Json.Decode.Decoder ( Transferencia )
 jsonDecTransferencia =
-   Json.Decode.succeed (\pid pfrom pto pmonto -> {id = pid, from = pfrom, to = pto, monto = pmonto})
-   |> fnullable "id" (jsonDecULID)
+   Json.Decode.succeed (\pid pfrom pto pmonto pmoneda psaldadaAt -> {id = pid, from = pfrom, to = pto, monto = pmonto, moneda = pmoneda, saldadaAt = psaldadaAt})
+   |> required "id" (jsonDecULID)
    |> required "from" (jsonDecParticipanteId)
    |> required "to" (jsonDecParticipanteId)
    |> required "monto" (jsonDecMonto)
+   |> required "moneda" (jsonDecMoneda)
+   |> fnullable "saldadaAt" (jsonDecPosix)
 
 jsonEncTransferencia : Transferencia -> Value
 jsonEncTransferencia  val =
    Json.Encode.object
-   [ ("id", (maybeEncode (jsonEncULID)) val.id)
+   [ ("id", jsonEncULID val.id)
    , ("from", jsonEncParticipanteId val.from)
    , ("to", jsonEncParticipanteId val.to)
    , ("monto", jsonEncMonto val.monto)
-   ]
-
-
-
-type alias TransferenciaHecha  =
-   { transferencia: Transferencia
-   , saldadaAt: Posix
-   }
-
-jsonDecTransferenciaHecha : Json.Decode.Decoder ( TransferenciaHecha )
-jsonDecTransferenciaHecha =
-   Json.Decode.succeed (\ptransferencia psaldadaAt -> {transferencia = ptransferencia, saldadaAt = psaldadaAt})
-   |> required "transferencia" (jsonDecTransferencia)
-   |> required "saldadaAt" (jsonDecPosix)
-
-jsonEncTransferenciaHecha : TransferenciaHecha -> Value
-jsonEncTransferenciaHecha  val =
-   Json.Encode.object
-   [ ("transferencia", jsonEncTransferencia val.transferencia)
-   , ("saldadaAt", jsonEncPosix val.saldadaAt)
+   , ("moneda", jsonEncMoneda val.moneda)
+   , ("saldadaAt", (maybeEncode (jsonEncPosix)) val.saldadaAt)
    ]
 
 

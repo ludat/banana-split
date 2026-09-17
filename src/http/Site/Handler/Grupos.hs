@@ -35,8 +35,6 @@ import BananaSplit.Persistence (
   fetchTransferencias,
   guardarTasasDeCambio,
   netosDeGrupo,
-  transferenciasHechas,
-  transferenciasPendientes,
   unclaimParticipante,
   unfreezeGrupo,
   updateGrupo,
@@ -65,20 +63,14 @@ handleGetNetos grupoId = do
 
   case grupo.congeladoAt of
     Just _ -> do
-      guardadas <- runBeamFastRead $ fetchTransferencias grupoId
-      pure $
-        GrupoCongelado
-          ResumenCongelado
-            { transferenciasParaSaldar = transferenciasPendientes guardadas
-            , transferenciasHechas = transferenciasHechas guardadas
-            }
+      transferencias <- runBeamFastRead $ fetchTransferencias grupoId
+      pure $ GrupoCongelado ResumenCongelado{transferencias = transferencias}
     Nothing -> do
-      guardadas <- runBeamFastRead $ fetchTransferencias grupoId
+      transferencias <- runBeamFastRead $ fetchTransferencias grupoId
       netosDeGastos <- runBeamFastRead $ netosDeGrupo grupoId
       conteo <- runBeamFastRead $ contarGastos grupoId
 
-      let netos =
-            netosPendientes netosDeGastos (transferenciasHechas guardadas & fmap (fmap (.transferencia)))
+      let netos = netosDeGastos <> netosDeTransferencias transferencias
       let tabla = tablaDeTasas grupo.monedaPorDefecto grupo.tasasDeCambio
 
       pure $
@@ -88,7 +80,7 @@ handleGetNetos grupoId = do
             , consolidado = consolidarNetos tabla (netosConSaldo netos)
             , cantidadPagos = conteo.total
             , cantidadPagosInvalidos = conteo.invalidos
-            , transferenciasHechas = transferenciasHechas guardadas
+            , transferencias = transferencias
             }
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID

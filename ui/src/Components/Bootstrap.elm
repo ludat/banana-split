@@ -51,6 +51,7 @@ navbarBrand attrs children =
 type BtnVariant
     = Primary
     | Secondary
+    | SecondarySolid
     | Danger
     | Transparent
 
@@ -65,6 +66,9 @@ btn variant attrs children =
 
                 Secondary ->
                     "btn-outline-secondary"
+
+                SecondarySolid ->
+                    "btn-secondary"
 
                 Danger ->
                     "btn-danger"

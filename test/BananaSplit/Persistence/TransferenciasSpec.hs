@@ -19,14 +19,15 @@ import BananaSplit.ULID (ULID)
 spec :: SpecWith RunDb
 spec = do
   let
-    transferenciaEntre desde hacia monto =
-      Transferencia{id = Nothing, from = desde, to = hacia, monto = monto}
+    -- Lo que hay para comparar de una fila: el id y la fecha los pone la db,
+    -- así que quedan afuera.
+    entre desde hacia monto moneda = (desde, hacia, monto, moneda)
 
-    sinId transferencia = (transferencia.from, transferencia.to, transferencia.monto)
+    resumir t = entre t.from t.to t.monto t.moneda
 
-    montosDe = fmap (fmap sinId)
+    pendientes = fmap resumir . filter (not . transferenciaEstaHecha)
 
-    montosDeHechas = fmap (fmap (sinId . (.transferencia)))
+    hechas = fmap resumir . filter transferenciaEstaHecha
 
   describe "congelarGrupo" $ do
     it "deja pendientes las transferencias que saldan las deudas de los gastos" $ \(RunDb runDb) -> do
@@ -37,9 +38,8 @@ spec = do
       congelado.congeladoAt `shouldSatisfy` isJust
 
       guardadas <- runDb $ fetchTransferencias grupo.id
-      montosDe (transferenciasPendientes guardadas)
-        `shouldBe` [transferenciaEntre otra una 100 & sinId] `enMoneda` ARS
-      transferenciasHechas guardadas `shouldBe` mempty
+      pendientes guardadas `shouldBe` [entre otra una 100 ARS]
+      hechas guardadas `shouldBe` []
 
     it "pisa las pendientes del congelamiento anterior" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
@@ -49,8 +49,7 @@ spec = do
       _ <- runDb (congelarGrupo grupo.id) >>= either (panic . show) pure
 
       guardadas <- runDb $ fetchTransferencias grupo.id
-      montosDe (transferenciasPendientes guardadas)
-        `shouldBe` [transferenciaEntre otra una 250 & sinId] `enMoneda` ARS
+      pendientes guardadas `shouldBe` [entre otra una 250 ARS]
 
     it "no congela si hay un gasto inválido" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
@@ -64,7 +63,7 @@ spec = do
       sigueAbierto <- runDb $ fetchGrupo grupo.id
       (sigueAbierto >>= (.congeladoAt)) `shouldBe` Nothing
       guardadas <- runDb $ fetchTransferencias grupo.id
-      transferenciasPendientes guardadas `shouldBe` mempty
+      pendientes guardadas `shouldBe` []
 
     it "no congela si falta la tasa de cambio de una moneda con deuda" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
@@ -84,9 +83,8 @@ spec = do
       runDb $ marcarTransferenciaSaldada grupo.id pendiente
 
       guardadas <- runDb $ fetchTransferencias grupo.id
-      transferenciasPendientes guardadas `shouldBe` mempty
-      montosDeHechas (transferenciasHechas guardadas)
-        `shouldBe` [transferenciaEntre otra una 100 & sinId] `enMoneda` ARS
+      pendientes guardadas `shouldBe` []
+      hechas guardadas `shouldBe` [entre otra una 100 ARS]
 
     it "no toca las transferencias de otro grupo" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
@@ -97,7 +95,7 @@ spec = do
       runDb $ marcarTransferenciaSaldada ajeno.id pendiente
 
       guardadas <- runDb $ fetchTransferencias grupo.id
-      transferenciasHechas guardadas `shouldBe` mempty
+      hechas guardadas `shouldBe` []
 
   describe "desmarcarTransferenciaSaldada" $ do
     it "la vuelve a dejar pendiente" $ \(RunDb runDb) -> do
@@ -109,9 +107,8 @@ spec = do
       runDb $ desmarcarTransferenciaSaldada grupo.id pendiente
 
       guardadas <- runDb $ fetchTransferencias grupo.id
-      transferenciasHechas guardadas `shouldBe` mempty
-      montosDe (transferenciasPendientes guardadas)
-        `shouldBe` [transferenciaEntre otra una 100 & sinId] `enMoneda` ARS
+      hechas guardadas `shouldBe` []
+      pendientes guardadas `shouldBe` [entre otra una 100 ARS]
 
     it "no toca las transferencias de otro grupo" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
@@ -123,7 +120,7 @@ spec = do
       runDb $ desmarcarTransferenciaSaldada ajeno.id pendiente
 
       guardadas <- runDb $ fetchTransferencias grupo.id
-      transferenciasPendientes guardadas `shouldBe` mempty
+      pendientes guardadas `shouldBe` []
 
   describe "unfreezeGrupo" $ do
     it "borra las pendientes pero deja las hechas" $ \(RunDb runDb) -> do
@@ -139,9 +136,8 @@ spec = do
       runDb $ unfreezeGrupo grupo.id
 
       guardadas <- runDb $ fetchTransferencias grupo.id
-      transferenciasPendientes guardadas `shouldBe` mempty
-      montosDeHechas (transferenciasHechas guardadas)
-        `shouldBe` [transferenciaEntre otra una 100 & sinId] `enMoneda` ARS
+      pendientes guardadas `shouldBe` []
+      hechas guardadas `shouldBe` [entre otra una 100 ARS]
 
     it "deja el grupo descongelado y sin fecha de congelamiento" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
@@ -156,13 +152,12 @@ spec = do
     it "nace hecha, sin pasar por un congelamiento" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
 
-      creada <- runDb $ crearTransferenciaSaldada grupo.id USD (transferenciaEntre otra una 20)
-      creada.id `shouldSatisfy` isJust
+      creada <- runDb $ crearTransferenciaSaldada grupo.id otra una 20 USD
+      creada.saldadaAt `shouldSatisfy` isJust
 
       guardadas <- runDb $ fetchTransferencias grupo.id
-      transferenciasPendientes guardadas `shouldBe` mempty
-      montosDeHechas (transferenciasHechas guardadas)
-        `shouldBe` [transferenciaEntre otra una 20 & sinId] `enMoneda` USD
+      pendientes guardadas `shouldBe` []
+      hechas guardadas `shouldBe` [entre otra una 20 USD]
 
 -- | Un gasto donde uno pone todo y el otro consume todo.
 gastoEntre :: Moneda -> Monto -> ParticipanteId -> ParticipanteId -> Pago
@@ -212,8 +207,6 @@ grupoDeDos (RunDb runDb) = do
 unaPendiente :: (forall a. Pg a -> IO a) -> ULID -> IO ULID
 unaPendiente runDb grupoId = do
   guardadas <- runDb $ fetchTransferencias grupoId
-  case guardadas & filter (isNothing . (.saldadaAt)) of
-    (primera : _) -> case primera.transferencia.id of
-      Just transferenciaId -> pure transferenciaId
-      Nothing -> panic "una transferencia guardada siempre tiene id"
+  case guardadas & filter (not . transferenciaEstaHecha) of
+    (primera : _) -> pure primera.id
     [] -> panic "se esperaba al menos una transferencia pendiente"

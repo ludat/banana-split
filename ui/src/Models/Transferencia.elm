@@ -1,4 +1,4 @@
-module Models.Transferencia exposing (Estado(..), frase, monto, participante)
+module Models.Transferencia exposing (Estado(..), estaHecha, estado, frase, monto, participante)
 
 import Generated.Api exposing (Grupo, Moneda, ParticipanteId, Transferencia)
 import Html exposing (Html, span, text)
@@ -9,16 +9,36 @@ import Models.Monto as Monto
 import Time exposing (Posix)
 
 
+{-| Una transferencia guarda `saldadaAt` —cuándo se movió la plata, si se
+movió—, que es lo que la db tiene. Para las vistas conviene el mismo dato como
+dos casos, así el `case` es exhaustivo y la fecha viene de la mano del estado
+que la tiene.
+-}
 type Estado
     = Pendiente
     | Hecha Posix
 
 
-frase : Grupo -> Moneda -> Transferencia -> List (Html msg)
-frase grupo moneda t =
+estado : Transferencia -> Estado
+estado transferencia =
+    case transferencia.saldadaAt of
+        Just saldadaAt ->
+            Hecha saldadaAt
+
+        Nothing ->
+            Pendiente
+
+
+estaHecha : Transferencia -> Bool
+estaHecha transferencia =
+    transferencia.saldadaAt /= Nothing
+
+
+frase : Grupo -> Transferencia -> List (Html msg)
+frase grupo t =
     [ participante grupo t.from
     , text " le transfiere "
-    , monto grupo.monedaPorDefecto moneda t
+    , monto grupo.monedaPorDefecto t
     , text " a "
     , participante grupo t.to
     ]
@@ -30,10 +50,10 @@ participante grupo participanteId =
         [ text <| lookupNombreParticipante grupo participanteId ]
 
 
-monto : Moneda -> Moneda -> Transferencia -> Html msg
-monto monedaPorDefecto moneda t =
+monto : Moneda -> Transferencia -> Html msg
+monto monedaPorDefecto t =
     span [ class "fw-semibold text-nowrap" ]
-        [ text <| Moneda.simbolo monedaPorDefecto moneda
+        [ text <| Moneda.simbolo monedaPorDefecto t.moneda
         , text " "
         , text <| Monto.toString t.monto
         ]

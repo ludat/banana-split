@@ -119,7 +119,7 @@ spec = describe "Pago" $ do
     -- Este es el invariante que justifica guardar los dos lados por separado:
     -- restarlos tiene que dar exactamente los netos que se calculaban antes.
     it "el neto de cada participante es lo que puso menos lo que consumio" $
-      netosDeResumenGasto (getResumenGasto pagoValido)
+      (netosDeResumenGasto (getResumenGasto pagoValido) `enMoneda` ARS)
         `shouldBe` calcularNetosPago pagoValido
 
     it "vale tambien cuando alguien paga y consume lo mismo" $ do
@@ -128,7 +128,7 @@ spec = describe "Pago" $ do
               { pagadores = distribucionMontosEspecificos [(participante 1, 200)]
               , deudores = distribucionMontosEspecificos [(participante 1, 200)]
               }
-      netosDeResumenGasto (getResumenGasto gastoPropio)
+      (netosDeResumenGasto (getResumenGasto gastoPropio) `enMoneda` ARS)
         `shouldBe` calcularNetosPago gastoPropio
       getResumenGasto gastoPropio `shouldSatisfy` resumenGastoEsValido
 

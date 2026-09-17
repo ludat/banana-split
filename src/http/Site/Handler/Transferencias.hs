@@ -51,15 +51,7 @@ handleCrearTransferencia grupoId params = do
     throwJsonError err423 "El grupo está congelado"
 
   runBeamWrite $
-    crearTransferenciaSaldada
-      grupoId
-      params.moneda
-      Transferencia
-        { id = Nothing
-        , from = params.from
-        , to = params.to
-        , monto = params.monto
-        }
+    crearTransferenciaSaldada grupoId params.from params.to params.monto params.moneda
 
 handleBorrarTransferencia :: ULID -> ULID -> AppHandler ULID
 handleBorrarTransferencia grupoId transferenciaId = do

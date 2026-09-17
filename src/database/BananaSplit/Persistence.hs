@@ -49,9 +49,6 @@ module BananaSplit.Persistence (
   desmarcarTransferenciaSaldada,
   marcarTransferenciaSaldada,
   normalizarTasa,
-  TransferenciaGuardada (..),
-  transferenciasHechas,
-  transferenciasPendientes,
   recalcularResumenGasto,
   savePago,
   saveRepartija,
@@ -1355,7 +1352,8 @@ congelarGrupo grupoId = runExceptT $ do
       transferencias <- lift $ fetchTransferencias grupoId
       pure
         $ M.netosConSaldo
-        $ M.netosPendientes netosDeGastos (transferenciasHechas transferencias <&> fmap (.transferencia))
+        $ netosDeGastos
+        <> M.netosDeTransferencias transferencias
 
     consolidarNetos grupo netosPorMoneda = do
       tasasDeCambio <- lift $ fetchTasasDeCambio grupoId
@@ -1371,11 +1369,20 @@ congelarGrupo grupoId = runExceptT $ do
 
       pure consolidado.netos
 
-    saveTransferenciasPendientes moneda transferencias = do
+    saveTransferenciasPendientes moneda sugeridas = do
       borrarTransferenciasPendientes grupoId
-      filas <- liftIO $ forM transferencias $ \t -> do
+      filas <- liftIO $ forM sugeridas $ \sugerida -> do
         tid <- ULID.getULID
-        pure $ transferenciaRow tid grupoId moneda t Nothing
+        pure
+          $ transferenciaRow grupoId
+          $ M.Transferencia
+            { M.id = tid
+            , M.from = sugerida.from
+            , M.to = sugerida.to
+            , M.monto = sugerida.monto
+            , M.moneda = moneda
+            , M.saldadaAt = Nothing
+            }
       unless (null filas)
         $ runInsert
         $ insert db.transferencias
@@ -1409,34 +1416,44 @@ borrarTransferenciasPendientes grupoId =
       db.transferencias
       (\t -> t.grupo ==. GrupoId (val_ grupoId) &&. isNothing_ t.saldada_at)
 
-transferenciaRow :: ULID -> ULID -> M.Moneda -> M.Transferencia -> Maybe UTCTime -> Transferencia
-transferenciaRow transferenciaId grupoId moneda t saldadaAt =
+transferenciaRow :: ULID -> M.Transferencia -> Transferencia
+transferenciaRow grupoId t =
   Transferencia
-    { id = transferenciaId
+    { id = t.id
     , grupo = GrupoId grupoId
     , participante_from = ParticipanteId $ M.participanteId2ULID t.from
     , participante_to = ParticipanteId $ M.participanteId2ULID t.to
-    , monto_en_unidades_minimas = aUnidadesMinimas moneda t.monto
-    , moneda = moneda
-    , saldada_at = saldadaAt
+    , monto_en_unidades_minimas = aUnidadesMinimas t.moneda t.monto
+    , moneda = t.moneda
+    , saldada_at = t.saldadaAt
     }
 
--- | Una transferencia que alguien hizo sin que el grupo estuviera congelado:
--- nace ya hecha, porque no hay un congelamiento que la haya sugerido.
-crearTransferenciaSaldada :: ULID -> M.Moneda -> M.Transferencia -> Pg M.Transferencia
-crearTransferenciaSaldada grupoId moneda transferencia = do
+crearTransferenciaSaldada ::
+  ULID
+  -> M.ParticipanteId
+  -> M.ParticipanteId
+  -> M.Monto
+  -> M.Moneda
+  -> Pg M.Transferencia
+crearTransferenciaSaldada grupoId participanteFrom participanteTo monto moneda = do
   transferenciaId <- liftIO ULID.getULID
   ahora <- liftIO getCurrentTime
+
+  let transferencia =
+        M.Transferencia
+          { M.id = transferenciaId
+          , M.from = participanteFrom
+          , M.to = participanteTo
+          , M.monto = monto
+          , M.moneda = moneda
+          , M.saldadaAt = Just ahora
+          }
+
   runInsert
     $ insert db.transferencias
-    $ insertValues [transferenciaRow transferenciaId grupoId moneda transferencia (Just ahora)]
-  pure
-    M.Transferencia
-      { M.id = Just transferenciaId
-      , M.from = transferencia.from
-      , M.to = transferencia.to
-      , M.monto = transferencia.monto
-      }
+    $ insertValues [transferenciaRow grupoId transferencia]
+
+  pure transferencia
 
 marcarTransferenciaSaldada :: ULID -> ULID -> Pg ()
 marcarTransferenciaSaldada grupoId transferenciaId = do
@@ -1479,16 +1496,7 @@ updateGrupo grupoId nombre monedaPorDefecto = do
       )
       (\g -> g.id ==. val_ grupoId)
 
--- | Una transferencia con lo que el modelo de dominio no lleva encima: en qué
--- moneda está y cuándo se hizo, si se hizo.
-data TransferenciaGuardada = TransferenciaGuardada
-  { transferencia :: M.Transferencia
-  , moneda :: M.Moneda
-  , saldadaAt :: Maybe UTCTime
-  }
-  deriving (Show, Eq)
-
-fetchTransferencias :: ULID -> Pg [TransferenciaGuardada]
+fetchTransferencias :: ULID -> Pg [M.Transferencia]
 fetchTransferencias grupoId = do
   rows <- runSelectReturningList $ select $ do
     t <-
@@ -1500,42 +1508,15 @@ fetchTransferencias grupoId = do
     $ rows
     & fmap
       ( \t ->
-          TransferenciaGuardada
-            { transferencia =
-                M.Transferencia
-                  { M.id = Just t.id
-                  , M.from = M.ParticipanteId $ case t.participante_from of ParticipanteId ulid -> ulid
-                  , M.to = M.ParticipanteId $ case t.participante_to of ParticipanteId ulid -> ulid
-                  , M.monto = desdeUnidadesMinimas t.moneda t.monto_en_unidades_minimas
-                  }
-            , moneda = t.moneda
-            , saldadaAt = t.saldada_at
+          M.Transferencia
+            { M.id = t.id
+            , M.from = M.ParticipanteId $ case t.participante_from of ParticipanteId ulid -> ulid
+            , M.to = M.ParticipanteId $ case t.participante_to of ParticipanteId ulid -> ulid
+            , M.monto = desdeUnidadesMinimas t.moneda t.monto_en_unidades_minimas
+            , M.moneda = t.moneda
+            , M.saldadaAt = t.saldada_at
             }
       )
-
--- | Lo que el grupo todavía tiene que saldar: solo existe si está congelado.
-transferenciasPendientes :: [TransferenciaGuardada] -> M.PorMoneda [M.Transferencia]
-transferenciasPendientes =
-  agruparPorMoneda . filter (isNothing . (.saldadaAt))
-
-transferenciasHechas :: [TransferenciaGuardada] -> M.PorMoneda [M.TransferenciaHecha]
-transferenciasHechas guardadas =
-  guardadas
-    & mapMaybe
-      ( \t ->
-          t.saldadaAt
-            & fmap
-              ( \saldadaAt ->
-                  ( t.moneda
-                  , M.TransferenciaHecha{M.transferencia = t.transferencia, M.saldadaAt = saldadaAt}
-                  )
-              )
-      )
-    & foldMap (\(moneda, hecha) -> [hecha] `M.enMoneda` moneda)
-
-agruparPorMoneda :: [TransferenciaGuardada] -> M.PorMoneda [M.Transferencia]
-agruparPorMoneda =
-  foldMap (\t -> [t.transferencia] `M.enMoneda` t.moneda)
 
 -- | En qué monedas hay pagos cargados. Es lo único que las pantallas de monedas
 -- necesitan saber de los pagos, así que no hace falta hidratarlos para eso.

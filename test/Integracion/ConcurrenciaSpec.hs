@@ -144,7 +144,7 @@ correrVueltaDeClaims connA connB escenario = do
   desdeCache <- conTransaccionDeLecturaRapida connA $ netosDeGrupo escenario.grupoId
   recalculado <- conTransaccionDeLecturaRapida connA $ do
     pago <- fetchPago escenario.grupoId escenario.pagoId
-    pure $ M.calcularNetosPago pago `M.enMoneda` pago.moneda
+    pure $ M.calcularNetosPago pago
   pure (desdeCache, recalculado)
 
 -- | La otra carrera: alguien edita el gasto mientras otro reclama en su
@@ -184,7 +184,7 @@ correrVueltaDeGuardarYClaim connA connB escenario = do
   desdeCache <- conTransaccionDeLecturaRapida connA $ netosDeGrupo escenario.grupoId
   recalculado <- conTransaccionDeLecturaRapida connA $ do
     guardado <- fetchPago escenario.grupoId escenario.pagoId
-    pure $ M.calcularNetosPago guardado `M.enMoneda` guardado.moneda
+    pure $ M.calcularNetosPago guardado
   pure (desdeCache, recalculado)
 
 -- | Una transacción como la del handler de editar: vuelve a guardar el gasto

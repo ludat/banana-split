@@ -202,13 +202,15 @@ data ResumenAbierto = ResumenAbierto
   , consolidado :: ConsolidadoNetos
   , cantidadPagos :: Int
   , cantidadPagosInvalidos :: Int
-  , transferenciasHechas :: PorMoneda [TransferenciaHecha]
+  , -- Sin congelar solo puede haber hechas: las pendientes las crea congelar.
+    transferencias :: [Transferencia]
   }
   deriving (Show, Eq, Generic)
 
+-- | Congelado el grupo ya no hay netos que mostrar: las deudas quedaron
+-- fijadas en estas transferencias, hechas y pendientes en la misma lista.
 data ResumenCongelado = ResumenCongelado
-  { transferenciasParaSaldar :: PorMoneda [Transferencia]
-  , transferenciasHechas :: PorMoneda [TransferenciaHecha]
+  { transferencias :: [Transferencia]
   }
   deriving (Show, Eq, Generic)
 

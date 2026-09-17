@@ -25,7 +25,6 @@ module BananaSplit.Core (
   getResumenGasto,
   netosDeResumenGasto,
   netosDeTransferencias,
-  netosPendientes,
   netosConSaldo,
   ResumenGasto (..),
   resumenGastos2ResumenNetos,
@@ -101,33 +100,24 @@ calcularNetosTotales :: [Pago] -> PorMoneda (Netos Monto)
 calcularNetosTotales pagos =
   pagos
     & filter gastoEsValido
-    & fmap (\pago -> (calcularNetosPago pago) `enMoneda` pago.moneda)
+    & fmap calcularNetosPago
     & mconcat
 
--- | Los netos que dejan las transferencias ya hechas. Se suman a los de los
--- pagos porque una transferencia hecha es plata que ya se movió, y por eso
--- sobreviven al descongelar: sin ellas un grupo que se congeló, se saldó y se
--- descongeló volvería a mostrar las deudas que ya se pagaron.
-netosDeTransferencias :: PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
-netosDeTransferencias =
-  fmap (foldMap netosDeTransferencia)
+netosDeTransferencias :: [Transferencia] -> PorMoneda (Netos Monto)
+netosDeTransferencias transferencias =
+  transferencias
+    & filter transferenciaEstaHecha
+    & foldMap netosDeTransferencia
 
--- | Lo que el grupo todavía se debe: los netos de los gastos menos lo que ya se
--- saldó con transferencias hechas.
-netosPendientes :: PorMoneda (Netos Monto) -> PorMoneda [Transferencia] -> PorMoneda (Netos Monto)
-netosPendientes netosDeGastos hechas =
-  netosDeGastos <> netosDeTransferencias hechas
-
--- | Saca las monedas en las que ya nadie le debe nada a nadie: no hay deuda que
--- consolidar ni transferencia que sugerir.
 netosConSaldo :: PorMoneda (Netos Monto) -> PorMoneda (Netos Monto)
 netosConSaldo = filterPorMoneda ((> 0) . deudoresNoNulos)
 
-calcularNetosPago :: Pago -> Netos Monto
+calcularNetosPago :: Pago -> PorMoneda (Netos Monto)
 calcularNetosPago gasto =
   gasto
     & getResumenGasto
     & netosDeResumenGasto
+    & (`enMoneda` gasto.moneda)
 
 data ResumenGasto = ResumenGasto
   { pagado :: Netos Monto
