@@ -602,7 +602,7 @@ view store grupo model =
                 , tabindex -1
                 , attribute "aria-modal" "true"
                 , attribute "role" "dialog"
-                , on "click" (closeOnOverlayClick (estaEditando model))
+                , on "click" (closeOnOverlayClick (elBackdropCierra model))
                 ]
                 [ -- `modal-lg` en los dos modos: el formulario necesita el ancho
                   -- para sus tablas y el popup no cambia de tamaño al pasar de
@@ -699,15 +699,21 @@ modalOverlayId =
     "pago-detalle-modal"
 
 
-{-| Click afuera del diálogo. Mientras se edita el gasto no cierra nada: perder
-el formulario por un click al costado sería bastante peor que tener que apuntarle
-a la X.
+{-| Si el click afuera del diálogo cierra el popup: mientras no haya nada
+tipeado sin guardar, sí, como cualquier modal. En cuanto el formulario tiene
+cambios el backdrop queda inerte y hay que pasar por la X, que pregunta antes
+de descartarlos.
 -}
+elBackdropCierra : Model -> Bool
+elBackdropCierra model =
+    not (hayCambiosSinGuardar model)
+
+
 closeOnOverlayClick : Bool -> Decode.Decoder Msg
-closeOnOverlayClick editando =
+closeOnOverlayClick cierra =
     Decode.map2
         (\targetId currentId ->
-            if targetId == currentId && not editando then
+            if targetId == currentId && cierra then
                 Close
 
             else
