@@ -616,6 +616,7 @@ view store grupo model =
                 ]
             , div [ class "modal-backdrop show" ] []
             , overlays
+            , viewDescartarOverlay model
             ]
 
 
@@ -638,40 +639,75 @@ popup de una: si hay cambios sin guardar primero pregunta.
 -}
 viewHeaderEdicion : Model -> Html Msg
 viewHeaderEdicion model =
-    div [ class "modal-header flex-column align-items-stretch border-bottom-0" ]
-        [ div [ class "d-flex justify-content-between align-items-start" ]
-            [ h4 [ class "modal-title fw-bold" ]
-                [ text <|
-                    case model.modo of
-                        Nuevo ->
-                            "Nuevo gasto"
+    div [ class "modal-header border-bottom-0" ]
+        [ h4 [ class "modal-title fw-bold" ]
+            [ text <|
+                case model.modo of
+                    Nuevo ->
+                        "Nuevo gasto"
 
-                        VerDetalle ->
-                            "Editar gasto"
-                ]
-            , button
-                [ type_ "button"
-                , class "btn-close"
-                , attribute "aria-label" "Cerrar"
-                , onClick AskDiscardEdit
-                ]
-                []
+                    VerDetalle ->
+                        "Editar gasto"
             ]
-        , if model.confirmingDiscard then
-            Bs.alert Bs.AlertWarning
-                [ class "d-flex flex-wrap align-items-center gap-2 mt-3 mb-0 py-2" ]
-                [ span [ class "flex-grow-1 small" ] [ text "Hay cambios sin guardar. ¿Descartarlos?" ]
-                , Bs.btn Bs.Transparent
-                    [ class "btn-sm", onClick CancelDiscardEdit ]
-                    [ text "Seguir editando" ]
-                , Bs.btn Bs.Danger
-                    [ class "btn-sm", onClick ConfirmDiscardEdit ]
-                    [ text "Descartar" ]
-                ]
-
-          else
-            text ""
+        , button
+            [ type_ "button"
+            , class "btn-close"
+            , attribute "aria-label" "Cerrar"
+            , onClick AskDiscardEdit
+            ]
+            []
         ]
+
+
+{-| La confirmación de descartar, por encima del formulario. Va en su propio
+diálogo y no adentro del header para que corte lo que estabas haciendo: es una
+decisión que hay que tomar antes de seguir.
+
+Como en los otros overlays del popup, no es un modal de Bootstrap; el click
+afuera equivale a "seguir editando", que es lo que no rompe nada.
+
+-}
+viewDescartarOverlay : Model -> Html Msg
+viewDescartarOverlay model =
+    if not model.confirmingDiscard then
+        text ""
+
+    else
+        div []
+            [ div
+                [ class "modal d-block"
+                , id descartarOverlayId
+                , style "z-index" "1070"
+                , tabindex -1
+                , attribute "aria-modal" "true"
+                , attribute "role" "dialog"
+                , on "click" (cerrarAlClickearAfuera descartarOverlayId CancelDiscardEdit)
+                ]
+                [ div [ class "modal-dialog modal-dialog-centered modal-sm" ]
+                    [ div [ class "modal-content" ]
+                        [ div [ class "modal-body" ]
+                            [ h4 [ class "fs-5 fw-bold mb-2" ] [ text "¿Descartar los cambios?" ]
+                            , p [ class "text-body-secondary mb-0" ]
+                                [ text "Lo que cargaste en este gasto se va a perder." ]
+                            ]
+                        , div [ class "modal-footer border-top-0" ]
+                            [ Bs.btn Bs.Transparent
+                                [ onClick CancelDiscardEdit ]
+                                [ text "Seguir editando" ]
+                            , Bs.btn Bs.Danger
+                                [ onClick ConfirmDiscardEdit ]
+                                [ text "Descartar" ]
+                            ]
+                        ]
+                    ]
+                ]
+            , div [ class "modal-backdrop show", style "z-index" "1065" ] []
+            ]
+
+
+descartarOverlayId : String
+descartarOverlayId =
+    "pago-descartar-modal"
 
 
 viewEstado : String -> String -> String -> ( Html Msg, Html Msg, Html Msg )
@@ -711,10 +747,22 @@ elBackdropCierra model =
 
 closeOnOverlayClick : Bool -> Decode.Decoder Msg
 closeOnOverlayClick cierra =
+    if cierra then
+        cerrarAlClickearAfuera modalOverlayId Close
+
+    else
+        Decode.succeed NoOp
+
+
+{-| El click en un diálogo sólo cuenta como "afuera" cuando pegó en el propio
+contenedor del modal y no en algo de adentro.
+-}
+cerrarAlClickearAfuera : String -> Msg -> Decode.Decoder Msg
+cerrarAlClickearAfuera unId alCerrar =
     Decode.map2
         (\targetId currentId ->
-            if targetId == currentId && cierra then
-                Close
+            if targetId == currentId && currentId == unId then
+                alCerrar
 
             else
                 NoOp
@@ -726,20 +774,6 @@ closeOnOverlayClick cierra =
 overlayId : String
 overlayId =
     "pago-detalle-overlay-modal"
-
-
-closeOverlayOnBackdropClick : Decode.Decoder Msg
-closeOverlayOnBackdropClick =
-    Decode.map2
-        (\targetId currentId ->
-            if targetId == currentId then
-                CloseOverlay
-
-            else
-                NoOp
-        )
-        (Decode.at [ "target", "id" ] Decode.string)
-        (Decode.at [ "currentTarget", "id" ] Decode.string)
 
 
 viewOverlay : Grupo -> Pago -> ResumenPago -> Model -> Html Msg
@@ -772,7 +806,7 @@ viewOverlay grupo pago resumen model =
                     , tabindex -1
                     , attribute "aria-modal" "true"
                     , attribute "role" "dialog"
-                    , on "click" closeOverlayOnBackdropClick
+                    , on "click" (cerrarAlClickearAfuera overlayId CloseOverlay)
                     ]
                     [ div [ class "modal-dialog modal-dialog-centered modal-dialog-scrollable" ]
                         [ div [ class "modal-content" ]
