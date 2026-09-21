@@ -1,4 +1,4 @@
-module Models.Store exposing (empty, ensureGrupo, ensurePago, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshPago, refreshPagos, refreshRepartija, refreshResumen, setGrupo, setPago, update, updateRepartijaForFrontend)
+module Models.Store exposing (empty, ensureGrupo, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshPago, refreshPagos, refreshRepartija, refreshResumen, setGrupo, setPago, update, updateRepartijaForFrontend)
 
 import Dict
 import Effect exposing (Effect)
@@ -180,22 +180,6 @@ ensurePagos grupoId participanteId store =
     case getPagos grupoId store of
         NotAsked ->
             Effect.sendStoreMsg <| FetchPagos grupoId participanteId
-
-        Loading ->
-            Effect.none
-
-        Failure _ ->
-            Effect.none
-
-        Success _ ->
-            Effect.none
-
-
-ensurePago : ULID -> ULID -> Store -> Effect msg
-ensurePago grupoId pagoId store =
-    case getPago pagoId store of
-        NotAsked ->
-            Effect.sendStoreMsg <| FetchPago grupoId pagoId
 
         Loading ->
             Effect.none

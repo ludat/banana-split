@@ -1,81 +1,45 @@
 module Pages.Grupos.GrupoId_.Gastos.GastoId_ exposing (Model, Msg, page)
 
+{-| Ver y editar un gasto dejó de ser una pantalla y pasó a ser el popup sobre
+la lista de gastos. Esta página solo existe para que los links viejos —los que
+alguien compartió o tiene en favoritos— sigan llegando al gasto, y redirige
+apenas se monta a la lista con ese gasto abierto.
+
+Reemplaza la entrada en el historial en vez de agregar una, así el botón de
+volver no rebota entre la ruta vieja y la nueva.
+
+-}
+
+import Components.PagoDetalleModal as PagoDetalleModal
 import Effect exposing (Effect)
-import Form
-import Generated.Api exposing (ULID)
-import Layouts
-import Models.PagoForm exposing (Section(..), validatePago, validatePagoInSection)
-import Models.Store as Store
-import Models.Store.Types exposing (Store)
 import Page exposing (Page)
-import Pages.Grupos.GrupoId_.Gastos.New as P exposing (Model, andThenSendWarningOnExit, subscriptions, update, view, waitAndCheckNecessaryData)
-import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
+import Route.Path as Path
 import Shared
-
-
-type alias Model =
-    P.Model
-
-
-type alias Msg =
-    P.Msg
+import View
 
 
 page : Shared.Model -> Route { grupoId : String, gastoId : String } -> Page Model Msg
-page shared route =
+page _ route =
     Page.new
-        { init = \() -> init route.params.grupoId route.params.gastoId shared.store
-        , update = update shared
-        , subscriptions = subscriptions
-        , view =
-            \m ->
-                let
-                    result =
-                        view shared.store m
-                in
-                { result
-                    | title =
-                        case
-                            ( Store.getGrupo m.grupoId shared.store |> RemoteData.toMaybe
-                            , m.currentPagoId |> Maybe.andThen (\pagoId -> Store.getPago pagoId shared.store |> RemoteData.toMaybe)
-                            )
-                        of
-                            ( Just grupo, Just pago ) ->
-                                grupo.nombre ++ ": " ++ pago.nombre
-
-                            _ ->
-                                "Cargando"
-                }
+        { init = \() -> init route.params.grupoId route.params.gastoId
+        , update = \_ model -> ( model, Effect.none )
+        , subscriptions = \_ -> Sub.none
+        , view = \_ -> View.none
         }
-        |> Page.withLayout (\_ -> Layouts.Minimal {})
 
 
+type alias Model =
+    {}
 
--- INIT
+
+type alias Msg =
+    ()
 
 
-init : ULID -> ULID -> Store -> ( Model, Effect Msg )
-init grupoId pagoId store =
-    ( { grupoId = grupoId
-      , currentPagoId = Just pagoId
-      , currentSection = BasicPagoData
-      , pagoBasicoForm = Form.initial [] (validatePagoInSection BasicPagoData [])
-      , deudoresForm = Form.initial [] (validatePagoInSection DeudoresSection [])
-      , resumenDeudores = NotAsked
-      , pagadoresForm = Form.initial [] (validatePagoInSection PagadoresSection [])
-      , resumenPagadores = NotAsked
-      , pagoForm = Form.initial [] (validatePago [])
-      , resumenPago = NotAsked
-      , receiptParseState = Nothing
-      , storedClaims = Nothing
-      , hasUnsavedChanges = False
-      }
-    , Effect.batch
-        [ Store.ensureGrupo grupoId store
-        , Store.ensurePago grupoId pagoId store
-        , Effect.getCurrentUser grupoId
-        , waitAndCheckNecessaryData
-        ]
+init : String -> String -> ( Model, Effect Msg )
+init grupoId gastoId =
+    ( {}
+    , Effect.replaceRoute <|
+        PagoDetalleModal.rutaGasto (Path.Grupos_GrupoId__Gastos { grupoId = grupoId }) gastoId
     )
-        |> andThenSendWarningOnExit

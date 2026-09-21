@@ -1,4 +1,4 @@
-module Components.PagoDetalleModal exposing (Context, Model, Modo, Msg, Overlay, context, hrefNuevoGasto, hrefPago, init, onUrlChanged, update, view)
+module Components.PagoDetalleModal exposing (Context, Model, Modo, Msg, Overlay, Ruta, context, hrefNuevoGasto, hrefPago, init, onUrlChanged, rutaGasto, rutaNuevoGasto, update, view)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras, viewNetosBarrasMini)
 import Components.Bootstrap as Bs
@@ -124,12 +124,30 @@ queryGastoNuevo =
     "nuevo"
 
 
+{-| Una ruta con su query, como la quieren `Route.href` y `Effect.pushRoute`.
+-}
+type alias Ruta =
+    { path : Path.Path, query : Dict String String, hash : Maybe String }
+
+
+{-| La página dada con el popup abierto en un gasto, o creando uno nuevo.
+-}
+rutaGasto : Path.Path -> ULID -> Ruta
+rutaGasto path pagoId =
+    rutaDelPopup path (Just pagoId)
+
+
+rutaNuevoGasto : Path.Path -> Ruta
+rutaNuevoGasto path =
+    rutaDelPopup path (Just queryGastoNuevo)
+
+
 {-| Link para crear un gasto: abre el popup vacío sobre la página que se le
 pase. Al ser un link de verdad, ctrl+click y "abrir en otra pestaña" funcionan.
 -}
 hrefNuevoGasto : Path.Path -> Html.Attribute msg
 hrefNuevoGasto path =
-    Route.href (rutaDelPopup path (Just queryGastoNuevo))
+    Route.href (rutaNuevoGasto path)
 
 
 onUrlChanged : { from : Route (), to : Route () } -> Msg
@@ -278,14 +296,14 @@ porque Elm intercepta el click igual aunque le hagamos `preventDefault`.
 -}
 hrefPago : Path.Path -> ULID -> Html.Attribute msg
 hrefPago path pagoId =
-    Route.href (rutaDelPopup path (Just pagoId))
+    Route.href (rutaGasto path pagoId)
 
 
 {-| La ruta de una página con el popup abierto en lo que diga el parámetro (un
 id de gasto o `nuevo`), o cerrado si no hay ninguno. Es el único lugar donde se
 arma el `?gasto=`, así los links y los `pushRoute` no se pueden desincronizar.
 -}
-rutaDelPopup : Path.Path -> Maybe String -> { path : Path.Path, query : Dict String String, hash : Maybe String }
+rutaDelPopup : Path.Path -> Maybe String -> Ruta
 rutaDelPopup path param =
     { path = path
     , query =
@@ -575,7 +593,7 @@ view store grupo model =
                     ( Nothing, VerDetalle ) ->
                         case ( Store.getPago model.pagoId store, model.resumen ) of
                             ( Success pago, Success resumen ) ->
-                                ( viewHeader grupo pago resumen model
+                                ( viewHeader pago resumen model
                                 , viewContent grupo pago resumen model
                                 , viewOverlay grupo pago resumen model
                                 )
@@ -828,8 +846,8 @@ viewOverlay grupo pago resumen model =
                 ]
 
 
-viewHeader : Grupo -> Pago -> ResumenPago -> Model -> Html Msg
-viewHeader grupo pago resumen model =
+viewHeader : Pago -> ResumenPago -> Model -> Html Msg
+viewHeader pago resumen model =
     div [ class "modal-header flex-column align-items-stretch border-bottom-0 pb-0" ]
         [ div [ class "d-flex justify-content-between align-items-start" ]
             [ div []
@@ -848,22 +866,22 @@ viewHeader grupo pago resumen model =
                 ]
                 []
             ]
-        , viewActions grupo pago model
+        , viewActions model
         ]
 
 
-viewActions : Grupo -> Pago -> Model -> Html Msg
-viewActions grupo pago model =
+viewActions : Model -> Html Msg
+viewActions model =
     div [ class "d-flex align-items-center gap-2 mt-3" ]
         [ Bs.btn Bs.SecondarySolid
             [ class "rounded-pill px-4", onClick StartEdit ]
             [ text "Editar" ]
-        , viewActionsMenu grupo pago model
+        , viewActionsMenu model
         ]
 
 
-viewActionsMenu : Grupo -> Pago -> Model -> Html Msg
-viewActionsMenu grupo pago model =
+viewActionsMenu : Model -> Html Msg
+viewActionsMenu model =
     div [ class "dropdown" ]
         [ button
             [ type_ "button"
@@ -892,12 +910,7 @@ viewActionsMenu grupo pago model =
                 ]
 
              else
-                [ a
-                    [ Path.href <| Path.Grupos_GrupoId__Gastos_GastoId_ { grupoId = grupo.id, gastoId = pago.pagoId }
-                    , class "dropdown-item"
-                    ]
-                    [ i [ class "bi bi-arrows-fullscreen me-2" ] [], text "Editar en pantalla completa" ]
-                , button
+                [ button
                     [ type_ "button"
                     , class "dropdown-item text-danger"
                     , onClick AskDelete

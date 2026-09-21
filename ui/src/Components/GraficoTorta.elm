@@ -5,8 +5,6 @@ module Components.GraficoTorta exposing
     , viewDot
     , viewTortaGrande
     , viewTortaMini
-    , viewTortaModal
-    , viewTortaTriggerButton
     )
 
 {-| Gráfico de torta (pie chart) reutilizable, construido con `elm-visualization`
@@ -21,7 +19,7 @@ así la torta y los puntitos de la leyenda usan el mismo color de manera estable
 import Color exposing (Color)
 import Generated.Api exposing (Monto, Participante, ParticipanteId, ResumenNetos)
 import Html exposing (Html)
-import Html.Attributes exposing (attribute, class, id, style, type_)
+import Html.Attributes exposing (class, style)
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
 import Path
@@ -220,45 +218,6 @@ viewTortaGrande porciones_ =
             [ viewTorta 240 (porcionesToSlices porciones_) ]
         , Html.ul [ class "list-unstyled mb-0" ]
             (porciones_ |> List.map viewLegendItem)
-        ]
-
-
-viewTortaTriggerButton : String -> List PorcionTorta -> Html msg
-viewTortaTriggerButton modalId porciones_ =
-    Html.button
-        [ type_ "button"
-        , class "btn p-0 border-0"
-        , attribute "data-bs-toggle" "modal"
-        , attribute "data-bs-target" ("#" ++ modalId)
-        , attribute "aria-label" "Ver gráfico del reparto"
-        ]
-        [ viewTortaMini porciones_ ]
-
-
-viewTortaModal : String -> List PorcionTorta -> Html msg
-viewTortaModal modalId porciones_ =
-    Html.div
-        [ class "modal fade"
-        , id modalId
-        , attribute "tabindex" "-1"
-        , attribute "aria-hidden" "true"
-        ]
-        [ Html.div [ class "modal-dialog modal-dialog-centered modal-dialog-scrollable" ]
-            [ Html.div [ class "modal-content" ]
-                [ Html.div [ class "modal-header" ]
-                    [ Html.h5 [ class "modal-title" ] [ Html.text "Reparto del gasto" ]
-                    , Html.button
-                        [ type_ "button"
-                        , class "btn-close"
-                        , attribute "data-bs-dismiss" "modal"
-                        , attribute "aria-label" "Cerrar"
-                        ]
-                        []
-                    ]
-                , Html.div [ class "modal-body" ]
-                    [ viewTortaGrande porciones_ ]
-                ]
-            ]
         ]
 
 

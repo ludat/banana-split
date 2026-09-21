@@ -11,9 +11,9 @@ module Models.PagoForm exposing
 {-| Las validaciones del formulario de un gasto: cómo se lee un `Pago` de los
 campos del form, y los nombres de los campos que comparten las vistas.
 
-Viven acá y no en la pantalla ni en el componente porque las usan los dos: la
-página de pantalla completa (`Pages.Grupos.GrupoId_.Gastos.New`) y el
-formulario embebido en el popup (`Components.PagoEditForm`).
+Viven en su propio módulo, separadas de la vista que las usa
+(`Components.PagoEditForm`), porque no dependen de ella: son la definición de
+qué es un gasto bien cargado.
 
 -}
 

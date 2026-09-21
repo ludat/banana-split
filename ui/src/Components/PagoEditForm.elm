@@ -1,19 +1,14 @@
 module Components.PagoEditForm exposing (Model, Msg, Outcome(..), ReceiptReadingState, Torta, init, update, view)
 
-{-| El formulario de un gasto (crearlo o editarlo) embebido en el popup, en vez
-de en una pantalla propia.
+{-| El formulario de un gasto, para crearlo o editarlo. Vive adentro del popup
+de detalle (`Components.PagoDetalleModal`), que es el único lugar desde donde se
+cargan gastos; antes esto era una pantalla completa.
 
-Es una copia del formulario de `Pages.Grupos.GrupoId_.Gastos.New` (las
-validaciones, que no dependen de la vista, las comparten vía
-`Models.PagoForm`) con las adaptaciones mínimas para vivir adentro de un modal:
-
-  - el gasto y los participantes llegan por parámetro, así que no hay polling
-    esperando que el store los traiga;
-  - el pie de acciones no es la barra fija de abajo de la pantalla;
-  - los gráficos de torta se muestran directo en chiquito en vez de detrás de
-    un modal de Bootstrap (no se pueden anidar modales);
-  - el selector de participantes muestra siempre las pills, sin el modal que
-    usa la pantalla completa en mobile.
+Como está adentro de un modal, nada de lo que abre por encima puede ser un
+modal de Bootstrap (no se pueden anidar): el selector de participantes de
+mobile y los gráficos en grande son overlays propios, manejados por el `Model`.
+El gasto y los participantes llegan por parámetro, así que tampoco hay polling
+esperando que el store los traiga.
 
 -}
 
@@ -959,33 +954,13 @@ viewStepTabs model =
                     )
                 ]
     in
-    div [ class "d-flex align-items-end gap-3 mb-4" ]
+    div [ class "d-flex align-items-end mb-4" ]
         [ Html.ul [ class "nav nav-tabs flex-grow-1" ]
             [ tab BasicPagoData "Gasto"
             , tab PagadoresSection "Pago"
             , tab DeudoresSection "Reparto"
             ]
-        , viewMontoChip model
         ]
-
-
-{-| El total del gasto, para tenerlo a la vista mientras se reparte. En el paso
-"Gasto" no hace falta: el monto se está editando ahí mismo.
--}
-viewMontoChip : Model -> Html Msg
-viewMontoChip model =
-    case ( model.currentSection, Form.getOutput model.pagoBasicoForm ) of
-        ( BasicPagoData, _ ) ->
-            text ""
-
-        ( _, Nothing ) ->
-            text ""
-
-        ( _, Just pago ) ->
-            div [ class "text-end flex-shrink-0 mb-1" ]
-                [ div [ class "text-body-secondary text-uppercase", style "font-size" "0.75rem" ] [ text "Monto" ]
-                , div [ class "fw-bold" ] [ text (Moneda.simboloUnico pago.moneda ++ " " ++ Monto.toString pago.monto) ]
-                ]
 
 
 {-| Un paso está incompleto cuando su form todavía no produce un valor válido.
