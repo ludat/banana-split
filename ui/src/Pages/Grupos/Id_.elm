@@ -860,7 +860,7 @@ viewUltimoPago participanteId grupoId monedaPorDefecto pago =
     Bs.listGroupItem
         [ class "list-group-item-action p-0" ]
         [ a
-            [ class "d-flex align-items-center gap-3 p-3 text-reset text-decoration-none"
+            [ class "d-flex align-items-center gap-3 px-3 py-2 text-reset text-decoration-none"
             , PagoDetalleModal.hrefPago (Path.Grupos_Id_ { id = grupoId }) pago.pagoId
             ]
             [ div
