@@ -142,12 +142,9 @@ rutaNuevoGasto path =
     rutaDelPopup path (Just queryGastoNuevo)
 
 
-{-| Link para crear un gasto: abre el popup vacío sobre la página que se le
-pase. Al ser un link de verdad, ctrl+click y "abrir en otra pestaña" funcionan.
--}
 hrefNuevoGasto : Path.Path -> Html.Attribute msg
-hrefNuevoGasto path =
-    Route.href (rutaNuevoGasto path)
+hrefNuevoGasto desde =
+    Route.href (rutaNuevoGasto desde)
 
 
 onUrlChanged : { from : Route (), to : Route () } -> Msg

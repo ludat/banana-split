@@ -32,12 +32,13 @@ type alias Props =
 layout : Props -> Shared.Model -> Route () -> Layout Layouts.Default.Props Model Msg contentMsg
 layout _ shared route =
     Layout.new
-        { init = \() -> init
-        , update = update
+        { init = \() -> init route
+        , update = update (PagoDetalleModal.context shared route) shared.store
         , view = view shared.store route.path shared.participanteId shared.origin shared.currentUser
         , subscriptions = subscriptions
         }
         |> Layout.withParentProps {}
+        |> Layout.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
 
 
 
@@ -46,14 +47,20 @@ layout _ shared route =
 
 type alias Model =
     { qrShare : Maybe { title : String, url : String }
+    , pagoModal : PagoDetalleModal.Model
     }
 
 
-init : ( Model, Effect Msg )
-init =
+init : Route () -> ( Model, Effect Msg )
+init route =
+    let
+        ( pagoModal, modalEffect ) =
+            PagoDetalleModal.init route
+    in
     ( { qrShare = Nothing
+      , pagoModal = pagoModal
       }
-    , Effect.none
+    , Effect.map PagoModalMsg modalEffect
     )
 
 
@@ -66,11 +73,19 @@ type Msg
     | ShareUrl { title : String, url : String }
     | OpenQrShare { title : String, url : String }
     | CloseQrShare
+    | PagoModalMsg PagoDetalleModal.Msg
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
+update ctx store msg model =
     case msg of
+        PagoModalMsg subMsg ->
+            let
+                ( pagoModal, eff ) =
+                    PagoDetalleModal.update ctx store subMsg model.pagoModal
+            in
+            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
+
         ForwardSharedMessage sharedMsg ->
             ( model
             , Effect.sendSharedMsg sharedMsg
@@ -147,6 +162,13 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
                 text ""
         , Html.map toContentMsg <|
             viewQrModal model.qrShare
+        , case remoteGrupo of
+            Success grupo ->
+                Html.map (toContentMsg << PagoModalMsg) <|
+                    PagoDetalleModal.view store grupo model.pagoModal
+
+            _ ->
+                text ""
         , case ( activeUser, remoteGrupo ) of
             ( Nothing, Success grupo ) ->
                 if List.isEmpty grupo.participantes then
@@ -192,7 +214,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                             }
                         , a
                             [ class "btn btn-primary d-none d-md-inline-flex align-items-center"
-                            , PagoDetalleModal.hrefNuevoGasto (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+                            , PagoDetalleModal.hrefNuevoGasto currentPath
                             ]
                             [ i [ class "bi bi-plus-lg me-1" ] []
                             , text "Agregar gasto"
@@ -526,7 +548,7 @@ viewBottomNav currentPath grupo =
         , item "bi-card-list" "Gastos" (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
         , a
             [ Css.navbar_item
-            , PagoDetalleModal.hrefNuevoGasto (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+            , PagoDetalleModal.hrefNuevoGasto currentPath
             ]
             [ Html.span [ Css.navbar_big_button ]
                 [ i [ class "bi bi-plus-lg" ] [] ]

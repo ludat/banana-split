@@ -37,18 +37,16 @@ page : Shared.Model -> Route { id : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route shared.store
-        , update = update shared.store (PagoDetalleModal.context shared route)
+        , update = update
         , subscriptions = subscriptions
         , view = view shared.store shared.timezone shared.now (Shared.currentParticipante shared route.params.id)
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
-        |> Page.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
 
 
 type alias Model =
     { grupoId : String
     , tabSeleccionado : Maybe Tab
-    , pagoModal : PagoDetalleModal.Model
     , confirmando : Maybe Api.Transferencia
     }
 
@@ -58,13 +56,9 @@ init route store =
     let
         grupoId =
             route.params.id
-
-        ( pagoModal, modalEffect ) =
-            PagoDetalleModal.init route
     in
     ( { grupoId = grupoId
       , tabSeleccionado = Nothing
-      , pagoModal = pagoModal
       , confirmando = Nothing
       }
     , Effect.batch
@@ -74,7 +68,6 @@ init route store =
           -- lo que este mensaje dispara.
           Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
-        , Effect.map PagoModalMsg modalEffect
         ]
     )
 
@@ -91,15 +84,14 @@ tabActivo seleccionado =
 
 type Msg
     = SelectTab Tab
-    | PagoModalMsg PagoDetalleModal.Msg
     | PedirConfirmacion Api.Transferencia
     | CancelarConfirmacion
     | SaldarTransferencia ULID
     | TransferenciaResponse String (Result Http.Error ULID)
 
 
-update : Store -> PagoDetalleModal.Context -> Msg -> Model -> ( Model, Effect Msg )
-update store ctx msg model =
+update : Msg -> Model -> ( Model, Effect Msg )
+update msg model =
     case msg of
         SelectTab tab ->
             ( { model | tabSeleccionado = Just tab }
@@ -140,13 +132,6 @@ update store ctx msg model =
                 , Toasts.pushToast Toasts.ToastDanger "No se pudo cambiar el estado de la transferencia"
                 ]
             )
-
-        PagoModalMsg subMsg ->
-            let
-                ( pagoModal, eff ) =
-                    PagoDetalleModal.update ctx store subMsg model.pagoModal
-            in
-            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
 
 subscriptions : Model -> Sub Msg
@@ -190,7 +175,6 @@ view store zone ahora userId model =
                                 [ viewRightColumn store zone ahora userId model grupo ]
                             ]
                         ]
-                , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
                 , viewConfirmacionModal userId grupo model.confirmando
                 ]
             }

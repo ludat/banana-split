@@ -24,18 +24,20 @@ page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route shared.store
-        , update = update (PagoDetalleModal.context shared route) shared.store
+        , update = \_ model -> ( model, Effect.none )
         , subscriptions = subscriptions
         , view = view (Shared.currentParticipante shared route.params.grupoId) shared.store
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
-        |> Page.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
 
 
 type alias Model =
     { grupoId : String
-    , pagoModal : PagoDetalleModal.Model
     }
+
+
+type alias Msg =
+    ()
 
 
 init : Route { grupoId : String } -> Store -> ( Model, Effect Msg )
@@ -43,34 +45,15 @@ init route store =
     let
         grupoId =
             route.params.grupoId
-
-        ( pagoModal, modalEffect ) =
-            PagoDetalleModal.init route
     in
-    ( { grupoId = grupoId, pagoModal = pagoModal }
+    ( { grupoId = grupoId }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
         , -- Los gastos los pide Shared cuando resuelve el participante, que
           -- es lo que este mensaje dispara.
           Effect.getCurrentUser grupoId
-        , Effect.map PagoModalMsg modalEffect
         ]
     )
-
-
-type Msg
-    = PagoModalMsg PagoDetalleModal.Msg
-
-
-update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
-update ctx store msg model =
-    case msg of
-        PagoModalMsg subMsg ->
-            let
-                ( pagoModal, eff ) =
-                    PagoDetalleModal.update ctx store subMsg model.pagoModal
-            in
-            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
 
 subscriptions : Model -> Sub Msg
@@ -97,7 +80,6 @@ view participanteId store model =
             , body =
                 [ div [ class "container-fluid py-3" ]
                     [ viewPagos participanteId store model grupo ]
-                , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
                 ]
             }
 
