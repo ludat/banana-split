@@ -193,17 +193,13 @@ esperarGrupo =
     Effect.sendCmd <| Task.perform (\_ -> CheckGrupoPresent) (Process.sleep 100)
 
 
-{-| Salir del formulario sin guardar. Editando un gasto que existe se vuelve a
-su detalle; creando uno nuevo no hay nada atrás, así que se cierra el popup.
+{-| Salir del formulario sin guardar cierra el popup entero, lo mismo creando
+que editando: cancelar devuelve la pantalla a como estaba antes de abrirlo, no
+a un detalle intermedio que nadie pidió ver.
 -}
 salirDeLaEdicion : Context -> Model -> Effect Msg -> ( Model, Effect Msg )
 salirDeLaEdicion ctx model effect =
-    case model.modo of
-        Nuevo ->
-            ( cerrado model, Effect.batch [ effect, syncUrl ctx.path Nothing ] )
-
-        VerDetalle ->
-            ( { model | edicion = Nothing }, effect )
+    ( cerrado model, Effect.batch [ effect, syncUrl ctx.path Nothing ] )
 
 
 {-| Arma el formulario sobre el gasto dado, o vacío si es uno nuevo.
