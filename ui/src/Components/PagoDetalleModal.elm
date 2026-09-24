@@ -35,7 +35,7 @@ import Html.Attributes as Attr exposing (accept, attribute, class, classList, di
 import Html.Events exposing (on, onClick, onSubmit)
 import Http
 import Json.Decode as Decode
-import Models.Grupo exposing (GrupoLike, grupoIdFromPath, lookupNombreParticipante)
+import Models.Grupo exposing (grupoIdFromPath, lookupNombreParticipante)
 import Models.LugarAccionable exposing (LugarParaAccionar(..))
 import Models.Moneda as Moneda
 import Models.Monto as Monto
@@ -207,29 +207,20 @@ esperarGrupo =
 que editando: cancelar devuelve la pantalla a como estaba antes de abrirlo, no
 a un detalle intermedio que nadie pidió ver.
 -}
-salirDeLaEdicion : Context -> Model -> Effect Msg -> ( Model, Effect Msg )
-salirDeLaEdicion ctx model effect =
-    ( cerrado model, Effect.batch [ effect, syncUrl ctx.path Nothing ] )
+salirDeLaEdicion : Context -> Model -> ( Model, Effect Msg )
+salirDeLaEdicion ctx model =
+    ( cerrado model, syncUrl ctx.path Nothing )
 
 
 {-| Arma el formulario sobre el gasto dado, o vacío si es uno nuevo.
 -}
-abrirFormulario : Context -> Grupo -> Maybe Pago -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
-abrirFormulario ctx grupo pago ( model, effect ) =
+abrirFormulario : Context -> Grupo -> Maybe Pago -> Model -> ( Model, Effect Msg )
+abrirFormulario ctx grupo pago model =
     let
         ( edicion, eff ) =
-            initEdicion
-                { grupoId = ctx.grupoId
-                , participantes = grupo.participantes
-                , participanteId = ctx.participanteId
-                , monedaPorDefecto = grupo.monedaPorDefecto
-                , today = ctx.today
-                , pago = pago
-                }
+            initEdicion ctx grupo pago
     in
-    ( { model | edicion = Just edicion }
-    , Effect.batch [ effect, eff ]
-    )
+    ( { model | edicion = Just edicion }, eff )
 
 
 {-| El popup abierto para crear todavía no tiene gasto atrás: es lo único que
@@ -383,7 +374,6 @@ type Msg
     | GuardadoPagoResponse (Result Http.Error Pago)
     | SelectSection Section
     | SubmitCurrentSection
-    | ResumenPagoUpdated (WebData ResumenPago)
     | ResumenDeudoresUpdated (WebData ResumenPago)
     | ResumenPagadoresUpdated (WebData ResumenPago)
     | ReceiptImageSelected File
@@ -521,9 +511,7 @@ updateInterno ctx store msg model =
         StartEdit ->
             case ( Store.getPago model.pagoId store, Store.getGrupo ctx.grupoId store ) of
                 ( Success pago, Success grupo ) ->
-                    ( { model | confirmingDelete = False }
-                    , Effect.none
-                    )
+                    { model | confirmingDelete = False }
                         |> abrirFormulario ctx grupo (Just pago)
 
                 _ ->
@@ -536,7 +524,7 @@ updateInterno ctx store msg model =
             else
                 case Store.getGrupo ctx.grupoId store of
                     Success grupo ->
-                        ( model, Effect.none ) |> abrirFormulario ctx grupo Nothing
+                        abrirFormulario ctx grupo Nothing model
 
                     Failure _ ->
                         ( cerrado model, Effect.none )
@@ -551,7 +539,7 @@ updateInterno ctx store msg model =
                 ( { model | confirmingDiscard = True }, Effect.none )
 
             else
-                salirDeLaEdicion ctx model Effect.none
+                salirDeLaEdicion ctx model
 
         GuardadoPagoResponse (Ok pago) ->
             -- Al gasto recién creado lo empezamos a mostrar como cualquier
@@ -601,9 +589,6 @@ updateInterno ctx store msg model =
         SubmitCurrentSection ->
             enElFormulario ctx store msg model
 
-        ResumenPagoUpdated _ ->
-            enElFormulario ctx store msg model
-
         ResumenDeudoresUpdated _ ->
             enElFormulario ctx store msg model
 
@@ -635,7 +620,7 @@ updateInterno ctx store msg model =
                         ( { model | confirmingDiscard = True }, Effect.none )
 
                     else
-                        salirDeLaEdicion ctx model Effect.none
+                        salirDeLaEdicion ctx model
 
                 Nothing ->
                     -- Todavía no se armó el formulario del gasto nuevo: no hay
@@ -646,7 +631,7 @@ updateInterno ctx store msg model =
             ( { model | confirmingDiscard = False }, Effect.none )
 
         ConfirmDiscardEdit ->
-            salirDeLaEdicion ctx { model | confirmingDiscard = False } Effect.none
+            salirDeLaEdicion ctx { model | confirmingDiscard = False }
 
 
 
@@ -713,11 +698,15 @@ view store grupo model =
                 ]
                 [ -- `modal-lg` en los dos modos: el formulario necesita el ancho
                   -- para sus tablas y el popup no cambia de tamaño al pasar de
-                  -- ver a editar.
-                  div [ class "modal-dialog modal-dialog-scrollable modal-lg" ]
+                  -- ver a editar. En mobile ocupa la pantalla entera, que es
+                  -- donde el formulario más necesita el alto.
+                  div [ class "modal-dialog modal-dialog-scrollable modal-lg modal-fullscreen-md-down" ]
                     [ div [ class "modal-content" ]
                         [ header
-                        , div [ class "modal-body" ] [ content ]
+
+                        -- Columna flex para que el pie de acciones del
+                        -- formulario pueda empujarse al fondo con `mt-auto`.
+                        , div [ class "modal-body d-flex flex-column" ] [ content ]
                         ]
                     ]
                 ]
@@ -1354,16 +1343,16 @@ type alias Edicion =
     -- `Nothing` es un gasto que todavía no existe: se crea con POST en vez de
     -- actualizarse con PUT.
     , pagoId : Maybe ULID
-    , participanteId : Maybe ParticipanteId
-    , monedaPorDefecto : Moneda
     , currentSection : Section
     , pagoBasicoForm : Form CustomFormError Pago
     , pagadoresForm : Form CustomFormError Pago
     , resumenPagadores : WebData ResumenPago
     , deudoresForm : Form CustomFormError Pago
     , resumenDeudores : WebData ResumenPago
+
+    -- El form completo no tiene resumen propio: lo que se muestra son los dos
+    -- de arriba, uno por paso.
     , pagoForm : Form CustomFormError Pago
-    , resumenPago : WebData ResumenPago
     , receiptParseState : Maybe ReceiptReadingState
     , storedClaims : Maybe { pagadores : List Api.RepartijaClaim, deudores : List Api.RepartijaClaim }
     , hasUnsavedChanges : Bool
@@ -1383,22 +1372,15 @@ type ReceiptReadingState
 {-| Con `pago = Nothing` el formulario arranca vacío para crear un gasto nuevo:
 la fecha de hoy y el creador como único pagador.
 -}
-initEdicion :
-    { grupoId : ULID
-    , participantes : List Participante
-    , participanteId : Maybe ParticipanteId
-    , monedaPorDefecto : Moneda
-    , today : Date
-    , pago : Maybe Pago
-    }
-    -> ( Edicion, Effect Msg )
-initEdicion { grupoId, participantes, participanteId, monedaPorDefecto, today, pago } =
+initEdicion : Context -> Grupo -> Maybe Pago -> ( Edicion, Effect Msg )
+initEdicion ctx grupo pago =
     let
+        participantes =
+            grupo.participantes
+
         vacio =
-            { grupoId = grupoId
+            { grupoId = ctx.grupoId
             , pagoId = pago |> Maybe.map .pagoId
-            , participanteId = participanteId
-            , monedaPorDefecto = monedaPorDefecto
             , currentSection = BasicPagoData
             , pagoBasicoForm = Form.initial [] (validatePagoInSection BasicPagoData participantes)
             , pagadoresForm = Form.initial [] (validatePagoInSection PagadoresSection participantes)
@@ -1406,7 +1388,6 @@ initEdicion { grupoId, participantes, participanteId, monedaPorDefecto, today, p
             , deudoresForm = Form.initial [] (validatePagoInSection DeudoresSection participantes)
             , resumenDeudores = NotAsked
             , pagoForm = Form.initial [] (validatePago participantes)
-            , resumenPago = NotAsked
             , receiptParseState = Nothing
             , storedClaims = Nothing
             , hasUnsavedChanges = False
@@ -1415,19 +1396,21 @@ initEdicion { grupoId, participantes, participanteId, monedaPorDefecto, today, p
     in
     -- Los resúmenes se piden comparando contra el modelo con los forms todavía
     -- vacíos, así arrancan calculados sobre el gasto que se está editando.
-    ( initializePagoForms participantes participanteId today pago vacio, Effect.none )
+    ( initializePagoForms participantes ctx.participanteId grupo.monedaPorDefecto ctx.today pago vacio
+    , Effect.none
+    )
         |> andThenUpdateResumenesFromForms vacio
 
 
-initializePagoForms : List Participante -> Maybe ParticipanteId -> Date -> Maybe Pago -> Edicion -> Edicion
-initializePagoForms participantes creadorId today pago model =
+initializePagoForms : List Participante -> Maybe ParticipanteId -> Moneda -> Date -> Maybe Pago -> Edicion -> Edicion
+initializePagoForms participantes creadorId monedaPorDefecto today pago model =
     let
         initialFormValues =
             [ Form.setString "id" (pago |> Maybe.map .pagoId |> Maybe.withDefault "")
             , Form.setString "nombre" (pago |> Maybe.map .nombre |> Maybe.withDefault "")
             , Form.setString "monto" (pago |> Maybe.map (.monto >> Monto.toRawString) |> Maybe.withDefault "")
             , Form.setString "moneda"
-                (Moneda.toString (pago |> Maybe.map .moneda |> Maybe.withDefault model.monedaPorDefecto))
+                (Moneda.toString (pago |> Maybe.map .moneda |> Maybe.withDefault monedaPorDefecto))
             , Form.setString "fecha"
                 (pago |> Maybe.map .fecha |> Maybe.withDefault today |> Date.toIsoString)
             , Form.setGroup "distribucion_pagadores" <|
@@ -1712,9 +1695,11 @@ receiptItemsFormMsgs prefix items form =
 -- UPDATE
 
 
-viewEdicion : GrupoLike g -> Maybe Overlay -> Edicion -> Html Msg
+viewEdicion : Grupo -> Maybe Overlay -> Edicion -> Html Msg
 viewEdicion grupo overlayAbierto model =
-    div []
+    -- Crece hasta el alto del modal y reparte en columna, así el paso de
+    -- adentro puede mandar su pie de acciones al fondo.
+    div [ class "flex-grow-1 d-flex flex-column" ]
         [ if model.hasUnsavedChanges then
             Bs.alert Bs.AlertWarning [ style "margin-bottom" "1rem" ] [ text "Hay cambios sin guardar" ]
 
@@ -1735,21 +1720,67 @@ viewEdicion grupo overlayAbierto model =
         ]
 
 
-hasActionableErrors : LugarParaAccionar -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> Bool
-hasActionableErrors lugar resumenData accessor =
-    case resumenData of
+{-| Los dos pasos del formulario que tienen netos propios —y por lo tanto
+errores y gráfico—. El campo del que salen y el accessor que los extrae iban
+siempre de a pares, así que el paso alcanza para los dos.
+
+El detalle tiene además el balance, que acá no existe: por eso esto no es el
+`Overlay` de tres constructores.
+
+-}
+type Paso
+    = Pagadores
+    | Deudores
+
+
+netosDelPaso : Paso -> Edicion -> WebData ResumenNetos
+netosDelPaso paso model =
+    case paso of
+        Pagadores ->
+            RemoteData.map .resumenPagadores model.resumenPagadores
+
+        Deudores ->
+            RemoteData.map .resumenDeudores model.resumenDeudores
+
+
+overlayDelPaso : Paso -> Overlay
+overlayDelPaso paso =
+    case paso of
+        Pagadores ->
+            PagadoresGraphOverlay
+
+        Deudores ->
+            DeudoresGraphOverlay
+
+
+pasoDelOverlay : Overlay -> Maybe Paso
+pasoDelOverlay overlay =
+    case overlay of
+        PagadoresGraphOverlay ->
+            Just Pagadores
+
+        DeudoresGraphOverlay ->
+            Just Deudores
+
+        BalanceGraphOverlay ->
+            Nothing
+
+
+hasActionableErrors : WebData ResumenNetos -> Bool
+hasActionableErrors netos =
+    case netos of
         Success resumen ->
-            List.any (\e -> List.member lugar (errorAccionableEn e.tipo)) (accessor resumen).errores
+            List.any (\e -> List.member Lugar_CreacionPago (errorAccionableEn e.tipo)) resumen.errores
 
         _ ->
             False
 
 
-viewErrorFromResumenData : WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> Html msg
-viewErrorFromResumenData resumenData accessor =
-    case resumenData of
-        Success resumenPago ->
-            viewErrorFromResumen Lugar_CreacionPago (accessor resumenPago)
+viewErrorFromResumenData : WebData ResumenNetos -> Html msg
+viewErrorFromResumenData netos =
+    case netos of
+        Success resumen ->
+            viewErrorFromResumen Lugar_CreacionPago resumen
 
         _ ->
             text ""
@@ -1795,65 +1826,62 @@ viewErrorFromResumen lugar resumen =
                 )
 
 
-{-| Pie de acciones de cada paso. En la pantalla completa esto es una barra fija
-al fondo; adentro del modal fluye al final del formulario y ya.
--}
-viewActionFooter : List (Html Msg) -> Html Msg
-viewActionFooter children =
-    div [ class "mt-4" ] children
-
-
-porcionesTorta : GrupoLike g -> Maybe Monto -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> List GraficoTorta.PorcionTorta
-porcionesTorta grupo totalPago resumenData accessor =
-    case resumenData of
-        Success resumenPago ->
-            GraficoTorta.porciones grupo totalPago (accessor resumenPago)
+porcionesTorta : Grupo -> Paso -> Edicion -> List GraficoTorta.PorcionTorta
+porcionesTorta grupo paso model =
+    case netosDelPaso paso model of
+        Success netos ->
+            GraficoTorta.porciones grupo (totalDelForm model) netos
 
         _ ->
             []
 
 
+{-| El monto que se está cargando, contra el que se calculan las porciones.
+-}
+totalDelForm : Edicion -> Maybe Monto
+totalDelForm model =
+    Form.getOutput model.pagoBasicoForm |> Maybe.map .monto
+
+
 {-| La torta del paso, en chiquito y clickeable para verla grande. El grande no
 es un modal de Bootstrap (no se pueden anidar) sino `viewTortaOverlay`.
 -}
-viewTortaFooter : GrupoLike g -> Maybe Monto -> WebData ResumenPago -> (ResumenPago -> ResumenNetos) -> Overlay -> Html Msg
-viewTortaFooter grupo totalPago resumenData accessor overlay =
+viewTortaFooter : Grupo -> Paso -> Edicion -> Html Msg
+viewTortaFooter grupo paso model =
     button
         [ type_ "button"
         , class "btn p-0 border-0 flex-shrink-0 d-flex align-items-center"
         , Attr.attribute "aria-label" "Ver el gráfico en grande"
-        , onClick (OpenOverlay overlay)
+        , onClick (OpenOverlay (overlayDelPaso paso))
         ]
-        [ GraficoTorta.viewTortaMini (porcionesTorta grupo totalPago resumenData accessor) ]
+        [ GraficoTorta.viewTortaMini (porcionesTorta grupo paso model) ]
 
 
 {-| El gráfico en grande mientras se edita. Las porciones se recalculan al
 dibujarlo, así sigue los cambios del formulario mientras está abierto; el
 detalle en cambio las saca del resumen ya guardado (ver `viewOverlay`).
 -}
-viewTortaOverlay : GrupoLike g -> Maybe Overlay -> Edicion -> Html Msg
+viewTortaOverlay : Grupo -> Maybe Overlay -> Edicion -> Html Msg
 viewTortaOverlay grupo overlayAbierto model =
-    let
-        totalPago =
-            Form.getOutput model.pagoBasicoForm |> Maybe.map .monto
-
-        torta resumenData accessor =
-            GraficoTorta.viewTortaGrande (porcionesTorta grupo totalPago resumenData accessor)
-    in
-    case overlayAbierto of
+    -- El balance no es un paso del formulario, así que `pasoDelOverlay` lo
+    -- descarta junto con el caso de que no haya nada abierto.
+    case overlayAbierto |> Maybe.andThen pasoDelOverlay of
         Nothing ->
             text ""
 
-        Just PagadoresGraphOverlay ->
-            viewOverlayChrome "Pago" (torta model.resumenPagadores .resumenPagadores)
+        Just paso ->
+            viewOverlayChrome (tituloDelPaso paso)
+                (GraficoTorta.viewTortaGrande (porcionesTorta grupo paso model))
 
-        Just DeudoresGraphOverlay ->
-            viewOverlayChrome "Reparto" (torta model.resumenDeudores .resumenDeudores)
 
-        -- El balance necesita el gasto guardado, así que solo se abre desde el
-        -- detalle; editando no hay botón que lo dispare.
-        Just BalanceGraphOverlay ->
-            text ""
+tituloDelPaso : Paso -> String
+tituloDelPaso paso =
+    case paso of
+        Pagadores ->
+            "Pago"
+
+        Deudores ->
+            "Reparto"
 
 
 {-| Wizard de pasos como tabs por defecto de Bootstrap (`nav-tabs`). Marca el
@@ -1949,10 +1977,10 @@ sectionHasError model section =
             False
 
         PagadoresSection ->
-            hasActionableErrors Lugar_CreacionPago model.resumenPagadores .resumenPagadores
+            hasActionableErrors (netosDelPaso Pagadores model)
 
         DeudoresSection ->
-            hasActionableErrors Lugar_CreacionPago model.resumenDeudores .resumenDeudores
+            hasActionableErrors (netosDelPaso Deudores model)
 
 
 viewBasicSection : Edicion -> Html Msg
@@ -1973,7 +2001,7 @@ viewBasicSection model =
         fechaField =
             Form.getFieldAsString "fecha" form
     in
-    Html.form [ onSubmit SubmitCurrentSection ]
+    Html.form [ onSubmit SubmitCurrentSection, class "flex-grow-1 d-flex flex-column" ]
         [ Html.map PagoForm <|
             Bs.textFormItem nombreField
                 { label = "Título"
@@ -2002,7 +2030,7 @@ viewBasicSection model =
                     , required = True
                     }
             ]
-        , viewActionFooter
+        , div [ class "mt-auto pt-4" ]
             [ viewBotonera
                 [ Bs.btn Bs.Primary
                     [ disabled (Form.getOutput form == Nothing)
@@ -2015,7 +2043,7 @@ viewBasicSection model =
         ]
 
 
-viewPagadoresSection : GrupoLike g -> Edicion -> Html Msg
+viewPagadoresSection : Grupo -> Edicion -> Html Msg
 viewPagadoresSection grupo model =
     let
         form =
@@ -2038,7 +2066,7 @@ viewPagadoresSection grupo model =
                 (Form.getFieldAsBool (prefix ++ "." ++ mostrarMontoFijoField) form).value == Just True
             }
     in
-    Html.form [ onSubmit SubmitCurrentSection ]
+    Html.form [ onSubmit SubmitCurrentSection, class "flex-grow-1 d-flex flex-column" ]
         [ div [ class "d-flex flex-wrap align-items-center gap-2 mb-2" ]
             [ Html.h5 [ class "mb-0" ] [ text "Quienes pagaron" ] ]
         , viewSeleccionarParticipantes
@@ -2051,11 +2079,11 @@ viewPagadoresSection grupo model =
             [ viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
             , viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
             ]
-        , viewPartesTable grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.pagadores)) form
-        , viewActionFooter
-            [ viewErrorFromResumenData model.resumenPagadores .resumenPagadores
+        , viewPartesTable grupo.monedaPorDefecto grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.pagadores)) form
+        , div [ class "mt-auto pt-4" ]
+            [ viewErrorFromResumenData (netosDelPaso Pagadores model)
             , viewBotonera
-                [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenPagadores .resumenPagadores PagadoresGraphOverlay
+                [ viewTortaFooter grupo Pagadores model
                 , Bs.btn Bs.Primary
                     [ disabled (Form.getOutput form == Nothing)
                     , onClick SubmitCurrentSection
@@ -2067,7 +2095,7 @@ viewPagadoresSection grupo model =
         ]
 
 
-viewDeudoresSection : GrupoLike g -> Edicion -> Html Msg
+viewDeudoresSection : Grupo -> Edicion -> Html Msg
 viewDeudoresSection grupo model =
     let
         form =
@@ -2076,13 +2104,13 @@ viewDeudoresSection grupo model =
         tipoField =
             Form.getFieldAsString "distribucion_deudores.tipo" form
     in
-    Html.form [ onSubmit <| PagoForm Form.Submit ]
+    Html.form [ onSubmit <| PagoForm Form.Submit, class "flex-grow-1 d-flex flex-column" ]
         [ viewReceiptBanner model.receiptParseState
         , viewModalidadSelector tipoField
         , case tipoField.value of
             Just "repartija" ->
                 div []
-                    [ viewRepartijaForm "distribucion_deudores" form
+                    [ viewRepartijaForm grupo.monedaPorDefecto "distribucion_deudores" form
                     , viewRepartijaLink model.grupoId form
                     ]
 
@@ -2091,13 +2119,13 @@ viewDeudoresSection grupo model =
 
             _ ->
                 text ""
-        , viewActionFooter
+        , div [ class "mt-auto pt-4" ]
             [ -- Sólo los errores de esta sección (deudores) y sin el tag de
               -- scope: `.resumenDeudores` ya viene sin el prefijo "deudores"
               -- que `.resumen` agrega al combinar pagadores y deudores.
-              viewErrorFromResumenData model.resumenDeudores .resumenDeudores
+              viewErrorFromResumenData (netosDelPaso Deudores model)
             , viewBotonera
-                [ viewTortaFooter grupo (Form.getOutput model.pagoBasicoForm |> Maybe.map .monto) model.resumenDeudores .resumenDeudores DeudoresGraphOverlay
+                [ viewTortaFooter grupo Deudores model
                 , Bs.btn Bs.Primary
                     [ -- Se permite enviar aunque el gasto sea inválido; el
                       -- backend lo guarda igual y deja los motivos en su
@@ -2264,7 +2292,7 @@ viewReceiptBanner receiptParseState =
         ]
 
 
-viewPartesForm : GrupoLike g -> String -> Form CustomFormError Pago -> Html Msg
+viewPartesForm : Grupo -> String -> Form CustomFormError Pago -> Html Msg
 viewPartesForm grupo prefix form =
     let
         incluidos =
@@ -2294,7 +2322,7 @@ viewPartesForm grupo prefix form =
             [ viewModoChip (prefix ++ "." ++ mostrarPartesField) mode.mostrarPartes "Partes"
             , viewModoChip (prefix ++ "." ++ mostrarMontoFijoField) mode.mostrarMontoFijo "Monto fijo"
             ]
-        , viewPartesTable grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.deudores)) form
+        , viewPartesTable grupo.monedaPorDefecto grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.deudores)) form
         ]
 
 
@@ -2472,10 +2500,31 @@ la moneda elegida.
 -}
 decimalesDelForm : Form CustomFormError Pago -> Int
 decimalesDelForm form =
-    (Form.getFieldAsString "moneda" form).value
-        |> Maybe.andThen Moneda.fromString
+    monedaDelForm form
         |> Maybe.map escalaDe
         |> Maybe.withDefault 2
+
+
+{-| La moneda elegida en el formulario, que no tiene por qué ser la del grupo.
+-}
+monedaDelForm : Form CustomFormError Pago -> Maybe Moneda
+monedaDelForm form =
+    (Form.getFieldAsString "moneda" form).value
+        |> Maybe.andThen Moneda.fromString
+
+
+{-| Un total del formulario con el símbolo de la moneda que el form tiene
+elegida. Con un "$" fijo, un gasto en dólares se mostraba como pesos.
+-}
+totalConSimbolo : Moneda -> Form CustomFormError Pago -> Maybe Monto -> String
+totalConSimbolo monedaPorDefecto form monto =
+    let
+        moneda =
+            monedaDelForm form |> Maybe.withDefault monedaPorDefecto
+    in
+    Moneda.simbolo monedaPorDefecto moneda
+        ++ " "
+        ++ (monto |> Maybe.map Monto.toString |> Maybe.withDefault "—")
 
 
 {-| Indica si la columna "División" debe mostrarse. Sólo se oculta cuando el
@@ -2532,8 +2581,8 @@ activo y "División" (contador de partes o "En partes iguales") salvo cuando el
 único modo es el de monto fijo. `suma` es el total de montos fijos parseado del
 form, mostrado en el pie cuando se editan montos.
 -}
-viewPartesTable : List Participante -> String -> ModoPartes -> List Participante -> Maybe Monto -> Form CustomFormError Pago -> Html Msg
-viewPartesTable participantesDelGrupo prefix mode incluidos suma form =
+viewPartesTable : Moneda -> List Participante -> String -> ModoPartes -> List Participante -> Maybe Monto -> Form CustomFormError Pago -> Html Msg
+viewPartesTable monedaPorDefecto participantesDelGrupo prefix mode incluidos suma form =
     let
         headerCells =
             Html.th [ Attr.scope "col" ] [ text "Participante" ]
@@ -2562,7 +2611,7 @@ viewPartesTable participantesDelGrupo prefix mode incluidos suma form =
                             (Html.td [] [ text "Total" ]
                                 :: (if mode.mostrarMontoFijo then
                                         [ Html.td [ class "text-end" ]
-                                            [ text ("$ " ++ (suma |> Maybe.map Monto.toString |> Maybe.withDefault "—")) ]
+                                            [ text (totalConSimbolo monedaPorDefecto form suma) ]
                                         ]
 
                                     else
@@ -2718,8 +2767,8 @@ fileDecoder =
             )
 
 
-viewRepartijaForm : String -> Form CustomFormError Pago -> Html Msg
-viewRepartijaForm prefix form =
+viewRepartijaForm : Moneda -> String -> Form CustomFormError Pago -> Html Msg
+viewRepartijaForm monedaPorDefecto prefix form =
     let
         montoField =
             Form.getFieldAsString (prefix ++ ".extra") form
@@ -2756,11 +2805,11 @@ viewRepartijaForm prefix form =
                             , Html.td [] []
                             , Html.td []
                                 [ text
-                                    ("$ "
-                                        ++ (Form.getOutput form
-                                                |> Maybe.map (\pago -> Monto.toString (totalItemsRepartija pago.deudores))
-                                                |> Maybe.withDefault "—"
-                                           )
+                                    (totalConSimbolo monedaPorDefecto
+                                        form
+                                        (Form.getOutput form
+                                            |> Maybe.map (\pago -> totalItemsRepartija pago.deudores)
+                                        )
                                     )
                                 ]
                             , Html.td [ style "width" "1%" ] []
@@ -2912,7 +2961,6 @@ andThenUpdateResumenesFromForms originalModel ( model, oldEffects ) =
     ( model
     , Effect.batch
         [ oldEffects
-        , updateResumenFromForm .pagoForm ResumenPagoUpdated
         , updateResumenFromForm .pagadoresForm ResumenPagadoresUpdated
         , updateResumenFromForm .deudoresForm ResumenDeudoresUpdated
         ]
@@ -2968,9 +3016,6 @@ updateEdicion participantes msg model =
             , Effect.none
             )
                 |> andThenUpdateResumenesFromForms model
-
-        ResumenPagoUpdated resumen ->
-            ( { model | resumenPago = resumen }, Effect.none )
 
         ResumenDeudoresUpdated resumen ->
             ( { model | resumenDeudores = resumen }, Effect.none )
