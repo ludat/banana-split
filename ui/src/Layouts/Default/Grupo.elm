@@ -1,7 +1,9 @@
 module Layouts.Default.Grupo exposing (Model, Msg, Props, layout)
 
 import Components.Bootstrap as Bs
+import Components.PagoDetalleModal as PagoDetalleModal
 import Css
+import Dict
 import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, ULID, User)
 import Html exposing (Html, a, button, div, h2, i, label, li, node, ol, option, p, select, text, ul)
@@ -30,12 +32,13 @@ type alias Props =
 layout : Props -> Shared.Model -> Route () -> Layout Layouts.Default.Props Model Msg contentMsg
 layout _ shared route =
     Layout.new
-        { init = \() -> init
-        , update = update
+        { init = \() -> init route
+        , update = update (PagoDetalleModal.context shared route) shared.store
         , view = view shared.store route.path shared.participanteId shared.origin shared.currentUser
         , subscriptions = subscriptions
         }
         |> Layout.withParentProps {}
+        |> Layout.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
 
 
 
@@ -44,14 +47,20 @@ layout _ shared route =
 
 type alias Model =
     { qrShare : Maybe { title : String, url : String }
+    , pagoModal : PagoDetalleModal.Model
     }
 
 
-init : ( Model, Effect Msg )
-init =
+init : Route () -> ( Model, Effect Msg )
+init route =
+    let
+        ( pagoModal, modalEffect ) =
+            PagoDetalleModal.init route
+    in
     ( { qrShare = Nothing
+      , pagoModal = pagoModal
       }
-    , Effect.none
+    , Effect.map PagoModalMsg modalEffect
     )
 
 
@@ -64,11 +73,19 @@ type Msg
     | ShareUrl { title : String, url : String }
     | OpenQrShare { title : String, url : String }
     | CloseQrShare
+    | PagoModalMsg PagoDetalleModal.Msg
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
+update ctx store msg model =
     case msg of
+        PagoModalMsg subMsg ->
+            let
+                ( pagoModal, eff ) =
+                    PagoDetalleModal.update ctx store subMsg model.pagoModal
+            in
+            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
+
         ForwardSharedMessage sharedMsg ->
             ( model
             , Effect.sendSharedMsg sharedMsg
@@ -145,6 +162,13 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
                 text ""
         , Html.map toContentMsg <|
             viewQrModal model.qrShare
+        , case remoteGrupo of
+            Success grupo ->
+                Html.map (toContentMsg << PagoModalMsg) <|
+                    PagoDetalleModal.view store grupo model.pagoModal
+
+            _ ->
+                text ""
         , case ( activeUser, remoteGrupo ) of
             ( Nothing, Success grupo ) ->
                 if List.isEmpty grupo.participantes then
@@ -188,13 +212,9 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                             { title = info.share.title
                             , url = origin ++ Path.toString info.share.path
                             }
-                        , Bs.btn Bs.Primary
-                            [ class "d-none d-md-inline-flex"
-                            , onClick
-                                (ForwardSharedMessage <|
-                                    Shared.NavigateTo <|
-                                        Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id }
-                                )
+                        , a
+                            [ class "btn btn-primary d-none d-md-inline-flex align-items-center"
+                            , PagoDetalleModal.hrefNuevoGasto currentPath
                             ]
                             [ i [ class "bi bi-plus-lg me-1" ] []
                             , text "Agregar gasto"
@@ -266,10 +286,17 @@ viewVerComoWarning currentUser activeUser grupo =
 
 
 {-| A single breadcrumb segment. `path` is `Just` when the segment should be a
-client-side link, `Nothing` when it is rendered as plain text.
+client-side link, `Nothing` when it is rendered as plain text. It carries a
+whole route (not just a path) because the gasto crumb apunta al popup, que vive
+en la query.
 -}
 type alias Crumb =
-    { label : String, path : Maybe Path.Path }
+    { label : String, path : Maybe PagoDetalleModal.Ruta }
+
+
+sinQuery : Path.Path -> PagoDetalleModal.Ruta
+sinQuery path =
+    { path = path, query = Dict.empty, hash = Nothing }
 
 
 {-| Computes everything the group header needs from the current path and store:
@@ -289,11 +316,11 @@ headerInfo currentPath store grupo =
     let
         grupoCrumb : Crumb
         grupoCrumb =
-            { label = grupo.nombre, path = Just (Path.Grupos_Id_ { id = grupo.id }) }
+            { label = grupo.nombre, path = Just (sinQuery (Path.Grupos_Id_ { id = grupo.id })) }
 
         pagosCrumb : Crumb
         pagosCrumb =
-            { label = "Gastos", path = Just (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }) }
+            { label = "Gastos", path = Just (sinQuery (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })) }
 
         gruposCrumb : Crumb
         gruposCrumb =
@@ -338,35 +365,6 @@ headerInfo currentPath store grupo =
             , share = { path = currentPath, title = grupo.nombre }
             }
 
-        Path.Grupos_GrupoId__Gastos_New params ->
-            { crumbs =
-                [ gruposCrumb
-                , grupoCrumb
-                , pagosCrumb
-                ]
-            , title = "Nuevo gasto"
-            , showTabs = False
-            , share = { title = "Nuevo gasto", path = Path.Grupos_GrupoId__Gastos_New params }
-            }
-
-        Path.Grupos_GrupoId__Gastos_GastoId_ params ->
-            let
-                pagoNombre =
-                    Store.getPago params.gastoId store
-                        |> RemoteData.toMaybe
-                        |> Maybe.map .nombre
-                        |> Maybe.withDefault "Cargando..."
-            in
-            { crumbs =
-                [ gruposCrumb
-                , grupoCrumb
-                , pagosCrumb
-                ]
-            , title = pagoNombre
-            , showTabs = False
-            , share = { title = pagoNombre, path = Path.Grupos_GrupoId__Gastos_GastoId_ params }
-            }
-
         Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
             let
                 maybeRepartija =
@@ -380,7 +378,12 @@ headerInfo currentPath store grupo =
 
                 pagoCrumbPath =
                     maybeRepartija
-                        |> Maybe.map (\r -> Path.Grupos_GrupoId__Gastos_GastoId_ { grupoId = grupo.id, gastoId = r.pagoId })
+                        |> Maybe.map
+                            (\r ->
+                                PagoDetalleModal.rutaGasto
+                                    (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+                                    r.pagoId
+                            )
             in
             { crumbs =
                 [ gruposCrumb
@@ -395,6 +398,20 @@ headerInfo currentPath store grupo =
 
         -- Rutas viejas: redirigen apenas se montan, así que nunca llegan a
         -- pintar chrome. Están acá solo para que el case sea exhaustivo.
+        Path.Grupos_GrupoId__Gastos_New _ ->
+            { crumbs = [ gruposCrumb, grupoCrumb, pagosCrumb ]
+            , title = "Nuevo gasto"
+            , showTabs = False
+            , share = { path = currentPath, title = grupo.nombre }
+            }
+
+        Path.Grupos_GrupoId__Gastos_GastoId_ _ ->
+            { crumbs = [ gruposCrumb, grupoCrumb, pagosCrumb ]
+            , title = "Cargando..."
+            , showTabs = False
+            , share = { path = currentPath, title = grupo.nombre }
+            }
+
         Path.Grupos_GrupoId__Pagos _ ->
             { crumbs = [ gruposCrumb, grupoCrumb ]
             , title = "Gastos"
@@ -458,8 +475,8 @@ viewBreadcrumb crumbs =
         viewCrumb crumb =
             li [ class "breadcrumb-item" ]
                 [ case crumb.path of
-                    Just path ->
-                        Html.a [ Path.href path ] [ text crumb.label ]
+                    Just ruta ->
+                        Html.a [ Route.href ruta ] [ text crumb.label ]
 
                     Nothing ->
                         text crumb.label
@@ -531,7 +548,7 @@ viewBottomNav currentPath grupo =
         , item "bi-card-list" "Gastos" (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
         , a
             [ Css.navbar_item
-            , Path.href (Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id })
+            , PagoDetalleModal.hrefNuevoGasto currentPath
             ]
             [ Html.span [ Css.navbar_big_button ]
                 [ i [ class "bi bi-plus-lg" ] [] ]

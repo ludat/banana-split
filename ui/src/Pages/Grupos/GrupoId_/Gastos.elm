@@ -8,7 +8,6 @@ import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, Moneda, ShallowPago, ULID)
 import Html exposing (Html, a, div, text)
 import Html.Attributes exposing (class, style)
-import Html.Events exposing (onClick)
 import Layouts
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -25,18 +24,20 @@ page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route shared.store
-        , update = update (PagoDetalleModal.context shared route) shared.store
+        , update = \_ model -> ( model, Effect.none )
         , subscriptions = subscriptions
         , view = view (Shared.currentParticipante shared route.params.grupoId) shared.store
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
-        |> Page.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
 
 
 type alias Model =
     { grupoId : String
-    , pagoModal : PagoDetalleModal.Model
     }
+
+
+type alias Msg =
+    ()
 
 
 init : Route { grupoId : String } -> Store -> ( Model, Effect Msg )
@@ -44,42 +45,15 @@ init route store =
     let
         grupoId =
             route.params.grupoId
-
-        ( pagoModal, modalEffect ) =
-            PagoDetalleModal.init route
     in
-    ( { grupoId = grupoId, pagoModal = pagoModal }
+    ( { grupoId = grupoId }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
         , -- Los gastos los pide Shared cuando resuelve el participante, que
           -- es lo que este mensaje dispara.
           Effect.getCurrentUser grupoId
-        , Effect.map PagoModalMsg modalEffect
         ]
     )
-
-
-type Msg
-    = OpenPago ULID
-    | PagoModalMsg PagoDetalleModal.Msg
-
-
-update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
-update ctx store msg model =
-    case msg of
-        OpenPago pagoId ->
-            let
-                ( pagoModal, eff ) =
-                    PagoDetalleModal.open ctx pagoId
-            in
-            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
-
-        PagoModalMsg subMsg ->
-            let
-                ( pagoModal, eff ) =
-                    PagoDetalleModal.update ctx store subMsg model.pagoModal
-            in
-            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
 
 subscriptions : Model -> Sub Msg
@@ -106,7 +80,6 @@ view participanteId store model =
             , body =
                 [ div [ class "container-fluid py-3" ]
                     [ viewPagos participanteId store model grupo ]
-                , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
                 ]
             }
 
@@ -128,7 +101,7 @@ viewPagos participanteId store model grupo =
                 Bs.alert Bs.AlertInfo
                     []
                     [ text "Todavía no hay gastos registrados. "
-                    , a [ Path.href <| Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id } ]
+                    , a [ PagoDetalleModal.hrefNuevoGasto <| Path.Grupos_GrupoId__Gastos { grupoId = grupo.id } ]
                         [ text "¡Agregá el primer gasto para empezar a dividir!" ]
                     ]
 
@@ -139,21 +112,20 @@ viewPagos participanteId store model grupo =
                             |> List.sortWith (\a b -> Date.compare b.fecha a.fecha)
                             |> List.map
                                 (\pago ->
-                                    ( pago.pagoId, viewPago participanteId grupo.monedaPorDefecto pago )
+                                    ( pago.pagoId, viewPago participanteId grupo.id grupo.monedaPorDefecto pago )
                                 )
                         )
                     ]
 
 
-viewPago : Maybe ULID -> Moneda -> ShallowPago -> Html Msg
-viewPago participanteId monedaPorDefecto pago =
+viewPago : Maybe ULID -> ULID -> Moneda -> ShallowPago -> Html Msg
+viewPago participanteId grupoId monedaPorDefecto pago =
     Bs.listGroupItem
-        [ class "list-group-item-action"
-        , style "cursor" "pointer"
-        , Html.Attributes.attribute "role" "button"
-        , onClick (OpenPago pago.pagoId)
-        ]
-        [ div [ class "d-flex align-items-center gap-3" ]
+        [ class "list-group-item-action p-0" ]
+        [ a
+            [ class "d-flex align-items-center gap-3 px-3 py-2 text-reset text-decoration-none"
+            , PagoDetalleModal.hrefPago (Path.Grupos_GrupoId__Gastos { grupoId = grupoId }) pago.pagoId
+            ]
             [ div
                 [ class "text-center border rounded px-2 py-1 flex-shrink-0"
                 , style "min-width" "2.5rem"

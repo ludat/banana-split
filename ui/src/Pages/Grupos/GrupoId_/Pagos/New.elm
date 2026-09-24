@@ -9,6 +9,7 @@ volver no rebota entre la ruta vieja y la nueva.
 
 -}
 
+import Components.PagoDetalleModal as PagoDetalleModal
 import Effect exposing (Effect)
 import Page exposing (Page)
 import Route exposing (Route)
@@ -38,5 +39,6 @@ type alias Msg =
 init : String -> ( Model, Effect Msg )
 init grupoId =
     ( {}
-    , Effect.replaceRoutePath (Path.Grupos_GrupoId__Gastos_New { grupoId = grupoId })
+    , Effect.replaceRoute <|
+        PagoDetalleModal.rutaNuevoGasto (Path.Grupos_GrupoId__Gastos { grupoId = grupoId })
     )

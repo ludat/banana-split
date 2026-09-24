@@ -37,18 +37,16 @@ page : Shared.Model -> Route { id : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route shared.store
-        , update = update shared.store (PagoDetalleModal.context shared route)
+        , update = update
         , subscriptions = subscriptions
         , view = view shared.store shared.timezone shared.now (Shared.currentParticipante shared route.params.id)
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
-        |> Page.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
 
 
 type alias Model =
     { grupoId : String
     , tabSeleccionado : Maybe Tab
-    , pagoModal : PagoDetalleModal.Model
     , confirmando : Maybe Api.Transferencia
     }
 
@@ -58,13 +56,9 @@ init route store =
     let
         grupoId =
             route.params.id
-
-        ( pagoModal, modalEffect ) =
-            PagoDetalleModal.init route
     in
     ( { grupoId = grupoId
       , tabSeleccionado = Nothing
-      , pagoModal = pagoModal
       , confirmando = Nothing
       }
     , Effect.batch
@@ -74,7 +68,6 @@ init route store =
           -- lo que este mensaje dispara.
           Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
-        , Effect.map PagoModalMsg modalEffect
         ]
     )
 
@@ -91,16 +84,14 @@ tabActivo seleccionado =
 
 type Msg
     = SelectTab Tab
-    | OpenPago ULID
-    | PagoModalMsg PagoDetalleModal.Msg
     | PedirConfirmacion Api.Transferencia
     | CancelarConfirmacion
     | SaldarTransferencia ULID
     | TransferenciaResponse String (Result Http.Error ULID)
 
 
-update : Store -> PagoDetalleModal.Context -> Msg -> Model -> ( Model, Effect Msg )
-update store ctx msg model =
+update : Msg -> Model -> ( Model, Effect Msg )
+update msg model =
     case msg of
         SelectTab tab ->
             ( { model | tabSeleccionado = Just tab }
@@ -141,20 +132,6 @@ update store ctx msg model =
                 , Toasts.pushToast Toasts.ToastDanger "No se pudo cambiar el estado de la transferencia"
                 ]
             )
-
-        OpenPago pagoId ->
-            let
-                ( pagoModal, eff ) =
-                    PagoDetalleModal.open ctx pagoId
-            in
-            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
-
-        PagoModalMsg subMsg ->
-            let
-                ( pagoModal, eff ) =
-                    PagoDetalleModal.update ctx store subMsg model.pagoModal
-            in
-            ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
 
 subscriptions : Model -> Sub Msg
@@ -198,7 +175,6 @@ view store zone ahora userId model =
                                 [ viewRightColumn store zone ahora userId model grupo ]
                             ]
                         ]
-                , Html.map PagoModalMsg (PagoDetalleModal.view store grupo model.pagoModal)
                 , viewConfirmacionModal userId grupo model.confirmando
                 ]
             }
@@ -241,7 +217,7 @@ viewLeftColumn store zone userId model grupo =
                 Bs.alert Bs.AlertInfo
                     []
                     [ text "Todavía no hay gastos registrados. "
-                    , a [ Path.href <| Path.Grupos_GrupoId__Gastos_New { grupoId = grupo.id } ]
+                    , a [ PagoDetalleModal.hrefNuevoGasto <| Path.Grupos_Id_ { id = grupo.id } ]
                         [ text "¡Agregá el primer gasto para empezar a dividir!" ]
                     ]
 
@@ -872,22 +848,21 @@ viewUltimosPagosCard participanteId store model grupo =
             Bs.card []
                 [ Bs.cardHeader [] [ text "Ultimos gastos" ]
                 , Bs.listGroup [ class "list-group-flush" ]
-                    (ultimosPagos |> List.map (viewUltimoPago participanteId grupo.monedaPorDefecto))
+                    (ultimosPagos |> List.map (viewUltimoPago participanteId grupo.id grupo.monedaPorDefecto))
                 ]
 
         _ ->
             text ""
 
 
-viewUltimoPago : Maybe ULID -> Moneda -> ShallowPago -> Html Msg
-viewUltimoPago participanteId monedaPorDefecto pago =
+viewUltimoPago : Maybe ULID -> ULID -> Moneda -> ShallowPago -> Html Msg
+viewUltimoPago participanteId grupoId monedaPorDefecto pago =
     Bs.listGroupItem
-        [ class "list-group-item-action"
-        , style "cursor" "pointer"
-        , Attr.attribute "role" "button"
-        , onClick (OpenPago pago.pagoId)
-        ]
-        [ div [ class "d-flex align-items-center gap-3" ]
+        [ class "list-group-item-action p-0" ]
+        [ a
+            [ class "d-flex align-items-center gap-3 px-3 py-2 text-reset text-decoration-none"
+            , PagoDetalleModal.hrefPago (Path.Grupos_Id_ { id = grupoId }) pago.pagoId
+            ]
             [ div
                 [ class "text-center border rounded px-2 py-1 flex-shrink-0"
                 , style "min-width" "2.5rem"
