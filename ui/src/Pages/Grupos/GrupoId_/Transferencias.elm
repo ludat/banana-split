@@ -7,7 +7,7 @@ import Form.Init as Form
 import Form.Validate as V exposing (Validation)
 import Generated.Api as Api exposing (Grupo, Moneda, NuevaTransferenciaParams, Transferencia, ULID)
 import Generated.Moneda exposing (escalaDe)
-import Html exposing (Html, div, label, p, span, text)
+import Html exposing (Html, div, em, h6, i, label, li, p, span, strong, text, ul)
 import Html.Attributes as Attr exposing (class)
 import Html.Events exposing (onClick)
 import Http
@@ -18,7 +18,7 @@ import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Models.Transferencia as Transferencia
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Shared
 import Time exposing (Zone)
@@ -48,6 +48,8 @@ type alias Model =
     { grupoId : String
     , confirmando : Maybe Confirmacion
     , nuevaForm : Maybe (Form CustomFormError NuevaTransferenciaParams)
+    , mostrarModalDeConfirmacion : Bool
+    , congelarGrupoRequest : WebData Grupo
     }
 
 
@@ -75,6 +77,8 @@ init grupoId store =
     ( { grupoId = grupoId
       , confirmando = Nothing
       , nuevaForm = Nothing
+      , mostrarModalDeConfirmacion = False
+      , congelarGrupoRequest = NotAsked
       }
     , Effect.batch
         [ Store.ensureResumen grupoId store
@@ -95,6 +99,10 @@ type Msg
     | CerrarNuevaTransferencia
     | NuevaForm Form.Msg
     | TransferenciaCreada (Result Http.Error Transferencia)
+    | MostrarModalDeCongelarGrupo
+    | CancelarModalDeCongelarGrupo
+    | ActivarModoTransferencias
+    | ActivacionResponse (Result Http.Error Grupo)
 
 
 validarNuevaTransferencia : ULID -> Validation CustomFormError NuevaTransferenciaParams
@@ -126,6 +134,38 @@ refrescarYAvisar model mensaje =
 update : Maybe ULID -> Msg -> Model -> ( Model, Effect Msg )
 update yo msg model =
     case msg of
+        MostrarModalDeCongelarGrupo ->
+            ( { model | mostrarModalDeConfirmacion = True }
+            , Effect.none
+            )
+
+        CancelarModalDeCongelarGrupo ->
+            ( { model | mostrarModalDeConfirmacion = False }
+            , Effect.none
+            )
+
+        ActivarModoTransferencias ->
+            ( { model | congelarGrupoRequest = Loading }
+            , Effect.sendCmd <| Api.postGrupoByIdFreeze model.grupoId ActivacionResponse
+            )
+
+        ActivacionResponse (Ok grupo) ->
+            ( { model | congelarGrupoRequest = Success grupo, mostrarModalDeConfirmacion = False }
+            , Effect.batch
+                [ Store.refreshGrupo model.grupoId
+                , Store.refreshResumen model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Modo Transferencias activado"
+                ]
+            )
+
+        ActivacionResponse (Err error) ->
+            ( { model | congelarGrupoRequest = Failure error, mostrarModalDeConfirmacion = False }
+            , Effect.batch
+                [ Store.refreshResumen model.grupoId
+                , Toasts.pushToast Toasts.ToastDanger "No se pudo activar el Modo Transferencias. Revisá que no queden gastos inválidos y que estén cargadas las tasas de cambio de todas las monedas con deuda."
+                ]
+            )
+
         AbrirNuevaTransferencia monedaPorDefecto ->
             ( { model
                 | nuevaForm =
@@ -247,9 +287,25 @@ view store zone ahora yo model =
             { title = grupo.nombre
             , body =
                 [ div [ class "container-fluid py-3" ]
-                    [ viewContent store zone ahora yo model grupo ]
+                    [ div [ class "row justify-content-center" ]
+                        [ div [ class "col-md-10 col-lg-7 col-xl-5" ]
+                            [ viewContent store zone ahora yo model grupo
+                            , espacioParaLaBarraInferior
+                            ]
+                        ]
+                    ]
                 ]
             }
+
+
+espacioParaLaBarraInferior : Html msg
+espacioParaLaBarraInferior =
+    div [ class "d-md-none", Attr.style "height" "7rem" ] []
+
+
+iconoModo : String
+iconoModo =
+    "bi bi-cash-stack"
 
 
 viewContent : Store -> Zone -> Posix -> Maybe ULID -> Model -> Grupo -> Html Msg
@@ -264,10 +320,6 @@ viewContent store zone ahora yo model grupo =
         Failure _ ->
             Bs.alert Bs.AlertDanger [] [ text "Error cargando los datos del grupo." ]
 
-        -- Sin congelar no hay plan que liquidar: las transferencias pendientes
-        -- existen como filas recién cuando congelar decide cuáles son. Sí se
-        -- puede registrar una que ya se hizo, que es lo único que el grupo
-        -- descongelado acepta.
         Success (Api.GrupoAbierto resumen) ->
             let
                 hechas =
@@ -277,18 +329,24 @@ viewContent store zone ahora yo model grupo =
                         |> List.reverse
             in
             div []
-                [ Bs.alert Bs.AlertInfo
-                    []
-                    [ text "Este grupo no está congelado, así que todavía no hay transferencias que hacer." ]
+                [ viewInvitacionAlModo resumen model
+                , viewPrevisualizar
                 , if List.isEmpty hechas then
                     text ""
 
                   else
-                    div [ class "list-group" ]
-                        (hechas |> List.map (viewTransferencia zone ahora grupo Borrar))
+                    div [ class "card mt-4" ]
+                        [ Bs.cardHeader []
+                            [ span [ class "text-uppercase small fw-bold" ]
+                                [ text "Transferencias registradas" ]
+                            ]
+                        , div [ class "list-group list-group-flush" ]
+                            (hechas |> List.map (viewTransferencia zone ahora grupo Borrar))
+                        ]
                 , viewNuevaTransferencia yo grupo model
                 , buscarConfirmacion model.confirmando hechas
                     |> viewConfirmacionModal grupo
+                , viewActivacionModal model
                 ]
 
         Success (Api.GrupoCongelado resumen) ->
@@ -303,24 +361,175 @@ viewContent store zone ahora yo model grupo =
                         |> List.sortBy .id
                         |> List.reverse
             in
-            if List.isEmpty todas then
-                Bs.alert Bs.AlertInfo
-                    []
-                    [ text "Este congelamiento no dejó transferencias." ]
+            div []
+                [ if List.isEmpty todas then
+                    Bs.alert Bs.AlertInfo
+                        []
+                        [ text "Este Modo Transferencias no dejó transferencias que hacer." ]
 
-            else
-                div []
-                    [ viewResumenDeEstados todas
-                    , div [ class "list-group" ]
-                        (todas |> List.map (viewTransferencia zone ahora grupo CambiarEstado))
-                    , buscarConfirmacion model.confirmando todas
-                        |> viewConfirmacionModal grupo
+                  else
+                    div [ class "card" ]
+                        -- El `flex-wrap` es para los teléfonos angostos: abajo
+                        -- de ~410px de ancho el título y el contador no entran
+                        -- juntos, y el contador baja a una segunda línea en vez
+                        -- de apretar el título.
+                        [ Bs.cardHeader [ class "d-flex align-items-center justify-content-between gap-2 flex-wrap" ]
+                            [ span [ class "text-uppercase small fw-bold" ]
+                                [ text "Transferencias del grupo" ]
+                            , viewContador todas
+                            ]
+                        , div [ class "list-group list-group-flush" ]
+                            (todas |> List.map (viewTransferencia zone ahora grupo CambiarEstado))
+                        ]
+                , buscarConfirmacion model.confirmando todas
+                    |> viewConfirmacionModal grupo
+                ]
+
+
+viewSaberMas : Html msg
+viewSaberMas =
+    span [ class "text-primary text-nowrap" ]
+        [ i [ class "bi bi-info-circle me-1" ] []
+        , text "Saber más"
+        ]
+
+
+{-| Lo que ve un grupo abierto: qué es el Modo Transferencias, qué cambia para
+todos, y el botón que abre el modal de confirmación.
+-}
+viewInvitacionAlModo : Api.ResumenAbierto -> Model -> Html Msg
+viewInvitacionAlModo resumen model =
+    let
+        monedasSinTasa : List Moneda
+        monedasSinTasa =
+            resumen.consolidado.monedasSinTasa
+
+        gastosInvalidos : Int
+        gastosInvalidos =
+            resumen.cantidadPagosInvalidos
+
+        activando : Bool
+        activando =
+            RemoteData.isLoading model.congelarGrupoRequest
+    in
+    div []
+        [ p []
+            [ text "Banana Split calcula todos los envíos de dinero que deben realizarse entre los participantes del grupo para quedar saldados. Para esto es necesario cambiar al "
+            , strong [] [ text "Modo Transferencias" ]
+            , text "."
+            ]
+        , h6 [ class "fw-bold mb-1" ] [ text "Modo Transferencias" ]
+        , p [ class "mb-1" ]
+            [ text "Este es un cambio de estado del grupo que modificará la visualización de todos los participantes y prohibirá la carga y edición de gastos*, esto es necesario para el cálculo de las transferencias. "
+            , viewSaberMas
+            ]
+        , p [ class "text-muted small" ]
+            [ text "*Esta acción se puede deshacer pero hay que tener en cuenta su implicancia en las transferencias realizadas." ]
+        , viewAvisosParaActivar monedasSinTasa gastosInvalidos
+        , Bs.btn Bs.PrimaryOutline
+            [ class "w-100 py-3 fs-5 d-flex align-items-center justify-content-center gap-2"
+            , onClick MostrarModalDeCongelarGrupo
+            , Attr.disabled (not (List.isEmpty monedasSinTasa) || gastosInvalidos /= 0 || activando)
+            ]
+            (if activando then
+                -- Calcular las transferencias mínimas puede tardar bastante
+                -- —es un solver, no una cuenta—, así que mientras tanto el
+                -- botón tiene que mostrar que algo está pasando.
+                [ Bs.spinner
+                    [ Attr.style "width" "1.25rem"
+                    , Attr.style "height" "1.25rem"
+                    , Attr.style "border-width" "0.2em"
+                    , Attr.style "flex" "0 0 auto"
                     ]
+                , text "Activando..."
+                ]
+
+             else
+                [ i [ class iconoModo ] []
+                , text "Activar Modo Transferencias"
+                ]
+            )
+        ]
+
+
+viewAvisosParaActivar : List Moneda -> Int -> Html Msg
+viewAvisosParaActivar monedasSinTasa gastosInvalidos =
+    div []
+        [ if List.isEmpty monedasSinTasa then
+            text ""
+
+          else
+            Bs.alert Bs.AlertWarning
+                [ class "mb-3" ]
+                [ text <|
+                    (if List.length monedasSinTasa == 1 then
+                        "Para activar el Modo Transferencias falta la tasa de cambio de "
+
+                     else
+                        "Para activar el Modo Transferencias faltan las tasas de cambio de "
+                    )
+                        ++ (monedasSinTasa |> List.map Moneda.nombre |> String.join ", ")
+                        ++ ". Cargalas en Ajustes del grupo."
+                ]
+        , if gastosInvalidos == 0 then
+            text ""
+
+          else
+            Bs.alert Bs.AlertWarning
+                [ class "mb-3" ]
+                [ text <|
+                    if gastosInvalidos == 1 then
+                        "Para activar el Modo Transferencias hay que arreglar 1 gasto inválido: no se cuenta para las deudas."
+
+                    else
+                        "Para activar el Modo Transferencias hay que arreglar "
+                            ++ String.fromInt gastosInvalidos
+                            ++ " gastos inválidos: no se cuentan para las deudas."
+                ]
+        ]
+
+
+{-| La card de previsualización del diseño. El plan de transferencias lo calcula
+`minimizeTransferencias` en el backend y hoy solo corre al congelar el grupo, así
+que no hay de dónde leerlo sin activar el modo: el botón queda deshabilitado
+hasta que exista el endpoint que lo devuelva.
+-}
+viewPrevisualizar : Html Msg
+viewPrevisualizar =
+    Bs.card [ class "mt-4" ]
+        [ Bs.cardBody []
+            [ h6 [ class "text-uppercase text-muted small fw-bold" ]
+                [ text "Previsualizar envíos de dinero" ]
+            , p [ class "mb-3" ]
+                [ text "Observá cómo quedarían calculadas las transferencias antes de activar el Modo Transferencias." ]
+            , div [ class "text-center" ]
+                [ Bs.btn Bs.Primary [ Attr.disabled True ] [ text "Previsualizar" ] ]
+            , p [ class "form-text text-center mb-0" ]
+                [ text "Todavía no está disponible." ]
+            ]
+        ]
+
+
+viewContador : List Transferencia -> Html Msg
+viewContador todas =
+    let
+        hechas =
+            todas
+                |> List.filter Transferencia.estaHecha
+                |> List.length
+    in
+    span [ class "d-flex align-items-center gap-2 small text-muted" ]
+        [ text "Realizadas"
+        , Bs.badge "bg-primary-subtle text-primary-emphasis"
+            []
+            [ text (String.fromInt hechas ++ " / " ++ String.fromInt (List.length todas)) ]
+        ]
 
 
 {-| Qué se puede hacer con una fila, que depende de en qué estado está el grupo:
-congelado hay un plan que se va marcando, descongelado las que quedan son plata
-que ya se movió y lo único que tiene sentido es borrar la que nunca pasó.
+en Modo Transferencias hay un plan que se va marcando, sin el modo las que
+quedan son plata que ya se movió y lo único que tiene sentido es borrar la que
+nunca pasó.
 -}
 type AccionDeFila
     = CambiarEstado
@@ -342,31 +551,9 @@ buscarConfirmacion confirmando filas =
             )
 
 
-viewResumenDeEstados : List Transferencia -> Html Msg
-viewResumenDeEstados todas =
-    let
-        hechas =
-            todas
-                |> List.filter Transferencia.estaHecha
-                |> List.length
-    in
-    div [ class "text-muted small mb-3" ]
-        [ text (String.fromInt hechas)
-        , text " de "
-        , text (String.fromInt (List.length todas))
-        , text
-            (if List.length todas == 1 then
-                " transferencia hecha"
-
-             else
-                " transferencias hechas"
-            )
-        ]
-
-
 {-| Una fila de la lista: el estado, quién le transfiere a quién, cuánto, y la
 acción que lo cambia. Sin distinguir entre "tuyas" y "ajenas": esta pantalla es
-para ver y corregir el congelamiento entero.
+para ver y corregir el plan entero.
 -}
 viewTransferencia : Zone -> Posix -> Grupo -> AccionDeFila -> Transferencia -> Html Msg
 viewTransferencia zone ahora grupo accion t =
@@ -374,52 +561,40 @@ viewTransferencia zone ahora grupo accion t =
         estado =
             Transferencia.estado t
     in
-    div [ class "list-group-item d-flex align-items-center gap-3 flex-wrap" ]
-        [ case estado of
-            Transferencia.Pendiente ->
-                span [ class "badge text-bg-secondary" ] [ text "Pendiente" ]
+    div [ class "list-group-item py-3" ]
+        [ div [ class "d-flex align-items-center gap-2 mb-2" ]
+            [ case estado of
+                Transferencia.Pendiente ->
+                    Bs.badge "bg-secondary-subtle text-secondary-emphasis" [] [ text "Pendiente" ]
 
-            Transferencia.Hecha _ ->
-                span [ class "badge text-bg-success" ] [ text "Hecha" ]
-        , span
-            [ class "flex-grow-1"
-            , class
-                (case estado of
-                    Transferencia.Pendiente ->
-                        ""
+                Transferencia.Hecha _ ->
+                    Bs.badge "bg-success-subtle text-success-emphasis" [] [ text "Realizada" ]
+            , case estado of
+                Transferencia.Pendiente ->
+                    text ""
 
-                    Transferencia.Hecha _ ->
-                        "text-muted"
-                )
+                Transferencia.Hecha saldadaAt ->
+                    span
+                        [ class "text-muted small text-nowrap"
+                        , Attr.title (Posix.toString zone saldadaAt)
+                        ]
+                        [ text (Posix.relativo ahora saldadaAt) ]
             ]
-            (Transferencia.frase grupo t
-                ++ (case estado of
-                        Transferencia.Pendiente ->
-                            []
-
-                        Transferencia.Hecha saldadaAt ->
-                            [ span
-                                [ class "text-muted small ms-2 text-nowrap"
-                                , Attr.title (Posix.toString zone saldadaAt)
-                                ]
-                                [ text (Posix.relativo ahora saldadaAt) ]
-                            ]
-                   )
-            )
+        , div [ class "mb-2" ] (Transferencia.frase grupo t)
         , case ( accion, estado ) of
             ( CambiarEstado, Transferencia.Pendiente ) ->
-                Bs.btn Bs.Secondary
+                Bs.btn Bs.Success
                     [ class "btn-sm text-nowrap"
                     , onClick (PedirConfirmacion (CambiarEstadoDe t.id))
                     ]
-                    [ text "Marcar como hecha" ]
+                    [ text "Marcar como Realizada" ]
 
             ( CambiarEstado, Transferencia.Hecha _ ) ->
                 Bs.btn Bs.Secondary
-                    [ class "btn-sm text-nowrap"
+                    [ class "btn-sm text-nowrap text-muted"
                     , onClick (PedirConfirmacion (CambiarEstadoDe t.id))
                     ]
-                    [ text "Volver a pendiente" ]
+                    [ text "Marcar como Pendiente" ]
 
             ( Borrar, _ ) ->
                 Bs.btn Bs.Danger
@@ -430,8 +605,80 @@ viewTransferencia zone ahora grupo accion t =
         ]
 
 
+viewActivacionModal : Model -> Html Msg
+viewActivacionModal model =
+    let
+        activando =
+            RemoteData.isLoading model.congelarGrupoRequest
+    in
+    Bs.modal
+        { isOpen = model.mostrarModalDeConfirmacion
+        , onClose = CancelarModalDeCongelarGrupo
+        , title = "Activar Modo Transferencias"
+        , centered = True
+        , body =
+            [ div [ class "text-center text-primary mb-4" ]
+                [ i [ class iconoModo, Attr.style "font-size" "4rem" ] [] ]
+            , p []
+                [ text "Es un "
+                , strong [] [ text "cambio de estado" ]
+                , text " del grupo que ayudará a que los participantes puedan "
+                , strong [] [ text "saldar los gastos" ]
+                , text ". Se calcularán todas las transferencias que deben realizar los participantes para quedar saldados."
+                ]
+            , p [ class "fw-bold mb-2" ] [ text "Cambios para todos los participantes:" ]
+            , ul [ class "mb-3" ]
+                [ li []
+                    [ text "Ya no podrán "
+                    , em [] [ text "cargar" ]
+                    , text " y "
+                    , em [] [ text "editar" ]
+                    , text " gastos en este grupo."
+                    ]
+                , li []
+                    [ text "La página de "
+                    , em [] [ text "Resumen del grupo" ]
+                    , text " cambiará y empezará a mostrar información relevante sobre las transferencias."
+                    ]
+                , li []
+                    [ text "Esta sección "
+                    , em [] [ text "Transferencias" ]
+                    , text " comenzará a mostrar el estado de las transferencias de todo el grupo."
+                    ]
+                ]
+            , p [ class "text-muted small mb-0" ]
+                [ text "Este cambio de estado se podrá revertir desde "
+                , em [] [ text "Ajustes" ]
+                , text " del grupo, pero tiene implicancias. "
+                , viewSaberMas
+                ]
+            ]
+        , footer =
+            [ Bs.btn Bs.Primary
+                [ class "w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                , onClick ActivarModoTransferencias
+                , Attr.disabled activando
+                ]
+                (if activando then
+                    [ Bs.spinner
+                        [ Attr.style "width" "1.25rem"
+                        , Attr.style "height" "1.25rem"
+                        , Attr.style "border-width" "0.2em"
+                        , Attr.style "flex" "0 0 auto"
+                        , class "text-white"
+                        ]
+                    , text "Activando..."
+                    ]
+
+                 else
+                    [ text "Confirmar" ]
+                )
+            ]
+        }
+
+
 {-| El cambio de estado se relee antes de aplicarlo. El texto sale del estado
-actual: se confirma pasar a hecha, o volver a pendiente.
+actual: se confirma pasar a realizada, o volver a pendiente.
 -}
 viewConfirmacionModal : Grupo -> Maybe ( Confirmacion, Transferencia ) -> Html Msg
 viewConfirmacionModal grupo confirmando =
@@ -439,13 +686,13 @@ viewConfirmacionModal grupo confirmando =
         ( titulo, cuerpo, accion ) =
             case confirmando |> Maybe.map (\( c, t ) -> ( c, Transferencia.estado t, t )) of
                 Just ( CambiarEstadoDe transferenciaId, Transferencia.Pendiente, t ) ->
-                    ( "Marcar como hecha"
+                    ( "Marcar como Realizada"
                     , Transferencia.frase grupo t ++ [ text ". ¿Ya pasó?" ]
                     , Just ( Bs.Primary, SaldarTransferencia transferenciaId )
                     )
 
                 Just ( CambiarEstadoDe transferenciaId, Transferencia.Hecha _, t ) ->
-                    ( "Volver a pendiente"
+                    ( "Marcar como Pendiente"
                     , Transferencia.frase grupo t
                         ++ [ text ". Vuelve a la lista como pendiente." ]
                     , Just ( Bs.Primary, DesmarcarTransferencia transferenciaId )
@@ -481,15 +728,6 @@ viewConfirmacionModal grupo confirmando =
         }
 
 
-{-| Registrar a mano una transferencia que ya se hizo. Va escondida detrás de un
-botón chico: es para cuando la plata se movió sin pasar por un congelamiento, no
-el camino principal.
-
-Solo con el grupo descongelado, porque congelado el plan de transferencias ya
-está decidido y una que no esté en él lo invalidaría. Y solo si sabemos quién
-sos en el grupo, porque vos sos el `from`.
-
--}
 viewNuevaTransferencia : Maybe ULID -> Grupo -> Model -> Html Msg
 viewNuevaTransferencia yo grupo model =
     case yo of
@@ -517,8 +755,6 @@ viewNuevaTransferenciaModal from grupo nuevaForm =
 
                 Just form ->
                     let
-                        -- El monto lleva los decimales de la moneda elegida en
-                        -- el select de al lado, no los de la del grupo.
                         moneda =
                             Form.getFieldAsString "moneda" form
                                 |> .value
@@ -556,7 +792,7 @@ viewNuevaTransferenciaModal from grupo nuevaForm =
                                 ]
                             ]
                     , div [ class "form-text mt-2" ]
-                        [ text "Queda registrada como hecha y cuenta en los netos del grupo." ]
+                        [ text "Queda registrada como realizada y cuenta en los netos del grupo." ]
                     ]
     in
     Bs.modal

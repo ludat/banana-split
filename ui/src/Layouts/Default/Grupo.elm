@@ -12,7 +12,7 @@ import Html.Events exposing (on, onClick, preventDefaultOn)
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
-import Models.Grupo exposing (GrupoLike, currentParticipante, grupoIdFromPath, ownedParticipante)
+import Models.Grupo exposing (GrupoLike, currentParticipante, estaCongelado, grupoIdFromPath, ownedParticipante)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import QRCode
@@ -200,6 +200,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                 [ div []
                     [ viewBreadcrumb info.crumbs
                     , h2 [ class "mb-0 fw-bold" ] [ text info.title ]
+                    , viewBadgeModoTransferencias grupo
                     ]
                 , div [ class "d-flex flex-column align-items-end gap-2" ]
                     [ label [ class "d-flex align-items-center gap-2 small text-muted text-nowrap" ]
@@ -235,6 +236,25 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
           else
             text ""
         ]
+
+
+viewBadgeModoTransferencias : Grupo -> Html Msg
+viewBadgeModoTransferencias grupo =
+    if estaCongelado grupo then
+        div [ class "d-flex align-items-center gap-3 flex-wrap mt-2" ]
+            [ Bs.badge "bg-primary-subtle text-primary-emphasis d-inline-flex align-items-center gap-1 text-uppercase"
+                []
+                [ i [ class "bi bi-cash-stack" ] []
+                , text "Modo Transferencias"
+                ]
+            , Html.span [ class "text-primary text-nowrap small" ]
+                [ i [ class "bi bi-info-circle me-1" ] []
+                , text "Saber más"
+                ]
+            ]
+
+    else
+        text ""
 
 
 {-| Inline warning shown next to the "Ver como" toggle when a logged-in user is

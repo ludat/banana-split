@@ -37,7 +37,7 @@ estaHecha transferencia =
 frase : Grupo -> Transferencia -> List (Html msg)
 frase grupo t =
     [ participante grupo t.from
-    , text " le transfiere "
+    , text " transfiere "
     , monto grupo.monedaPorDefecto t
     , text " a "
     , participante grupo t.to
