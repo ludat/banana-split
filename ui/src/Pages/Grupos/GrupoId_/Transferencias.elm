@@ -376,7 +376,7 @@ viewContent store zone ahora yo model grupo =
                         [ Bs.cardHeader [ class "d-flex align-items-center justify-content-between gap-2 flex-wrap" ]
                             [ span [ class "text-uppercase small fw-bold" ]
                                 [ text "Transferencias del grupo" ]
-                            , viewContador todas
+                            , viewContador grupo todas
                             ]
                         , div [ class "list-group list-group-flush" ]
                             (todas |> List.map (viewTransferencia zone ahora grupo CambiarEstado))
@@ -510,19 +510,21 @@ viewPrevisualizar =
         ]
 
 
-viewContador : List Transferencia -> Html Msg
-viewContador todas =
+{-| El progreso sobre el plan que propuso la app, no sobre la lista entera: las
+que alguien registró a mano antes de congelar aparecen igual como filas, pero no
+son algo que quede por hacer y contarlas daba un progreso arrancado.
+-}
+viewContador : Grupo -> List Transferencia -> Html Msg
+viewContador grupo todas =
     let
-        hechas =
-            todas
-                |> List.filter Transferencia.estaHecha
-                |> List.length
+        progreso =
+            Transferencia.progresoDelPlan grupo todas
     in
     span [ class "d-flex align-items-center gap-2 small text-muted" ]
         [ text "Realizadas"
         , Bs.badge "bg-primary-subtle text-primary-emphasis"
             []
-            [ text (String.fromInt hechas ++ " / " ++ String.fromInt (List.length todas)) ]
+            [ text (String.fromInt progreso.completadas ++ " / " ++ String.fromInt progreso.total) ]
         ]
 
 
