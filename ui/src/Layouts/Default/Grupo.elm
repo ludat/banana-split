@@ -6,7 +6,7 @@ import Css
 import Dict
 import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, ULID, User)
-import Html exposing (Html, a, button, div, h2, i, label, li, node, ol, option, p, select, text, ul)
+import Html exposing (Html, a, button, div, h2, i, label, li, node, option, p, select, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
 import Html.Events exposing (on, onClick, preventDefaultOn)
 import Json.Decode as Decode
@@ -193,28 +193,34 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
     let
         info =
             headerInfo currentPath store grupo
+
+        share =
+            { title = info.share.title
+            , url = origin ++ Path.toString info.share.path
+            }
     in
     div [ class "border-bottom" ]
         [ div [ class "container-fluid py-3" ]
             [ div [ class "d-flex flex-wrap align-items-start justify-content-between gap-3" ]
                 [ div []
-                    [ viewBreadcrumb info.crumbs
+                    [ viewBreadcrumb info.crumb
                     , h2 [ class "mb-0 fw-bold" ] [ text info.title ]
                     , viewBadgeModoTransferencias grupo
                     ]
-                , div [ class "d-flex flex-column align-items-end gap-2" ]
+
+                -- Solo desktop. En mobile el "Ver como" baja a su propia banda
+                -- y las acciones se van a la navbar de abajo: compartir al menú
+                -- "Más", y agregar gasto al botón del medio.
+                , div [ class "d-none d-md-flex flex-column align-items-end gap-2" ]
                     [ label [ class "d-flex align-items-center gap-2 small text-muted text-nowrap" ]
                         [ text "Ver como:"
                         , viewGlobalUserSelector activeUser grupo
                         ]
                     , viewVerComoWarning currentUser activeUser grupo
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
-                        [ viewShareDropdown
-                            { title = info.share.title
-                            , url = origin ++ Path.toString info.share.path
-                            }
+                        [ viewShareDropdown share
                         , a
-                            [ class "btn btn-primary d-none d-md-inline-flex align-items-center"
+                            [ class "btn btn-primary d-inline-flex align-items-center"
                             , PagoDetalleModal.hrefNuevoGasto currentPath
                             ]
                             [ i [ class "bi bi-plus-lg me-1" ] []
@@ -224,6 +230,28 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                     ]
                 ]
             ]
+
+        -- La banda de "Ver como" de mobile: separada del título por su propio
+        -- borde, como en el diseño.
+        , div [ class "d-md-none border-top" ]
+            [ div [ class "container-fluid py-2 d-flex align-items-center flex-wrap gap-2" ]
+                [ label [ class "d-flex align-items-center gap-2 small text-muted text-nowrap mb-0" ]
+                    [ text "Ver como:"
+                    , viewGlobalUserSelector activeUser grupo
+                    ]
+                , viewVerComoWarning currentUser activeUser grupo
+
+                -- Compartir vive en el menú "Más" de la navbar inferior, pero
+                -- esa navbar solo existe en las secciones con tabs. Donde no
+                -- está —la repartija, que es justamente la que más se
+                -- comparte— el botón se queda acá para no perderlo.
+                , if info.showTabs then
+                    text ""
+
+                  else
+                    div [ class "ms-auto" ] [ viewShareDropdown share ]
+                ]
+            ]
         , if info.showTabs then
             div [ class "container-fluid d-none d-md-block" ]
                 [ viewTabNav currentPath grupo ]
@@ -231,7 +259,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
           else
             text ""
         , if info.showTabs then
-            viewBottomNav currentPath grupo
+            viewBottomNav currentPath share grupo
 
           else
             text ""
@@ -305,13 +333,19 @@ viewVerComoWarning currentUser activeUser grupo =
             text ""
 
 
-{-| A single breadcrumb segment. `path` is `Just` when the segment should be a
-client-side link, `Nothing` when it is rendered as plain text. It carries a
-whole route (not just a path) because the gasto crumb apunta al popup, que vive
-en la query.
+{-| Adónde te devuelve el "‹". Es uno solo: no un camino completo desde la raíz,
+sino un salto para atrás. En casi todas las secciones es el grupo, en la
+repartija es el gasto, y en el resumen del grupo es la lista de grupos.
+
+El `label` de una entidad lleva el tipo adelante —"Grupo: Salidita de Jueves"—
+para que no haya que adivinar qué es ese nombre.
+
+Lleva una ruta entera y no un path pelado porque la del gasto apunta al popup,
+que vive en la query.
+
 -}
 type alias Crumb =
-    { label : String, path : Maybe PagoDetalleModal.Ruta }
+    { label : String, ruta : PagoDetalleModal.Ruta }
 
 
 sinQuery : Path.Path -> PagoDetalleModal.Ruta
@@ -320,8 +354,8 @@ sinQuery path =
 
 
 {-| Computes everything the group header needs from the current path and store:
-the breadcrumb trail, the big `h2` title, and whether the section tabs should be
-shown (only on top-level sections).
+de qué entidad colgás, the big `h2` title, and whether the section tabs should
+be shown (only on top-level sections).
 
 Entity names are resolved from the store, falling back to `"Cargando..."` while the
 data is still loading.
@@ -331,55 +365,52 @@ headerInfo :
     Path.Path
     -> Store
     -> Grupo
-    -> { crumbs : List Crumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
+    -> { crumb : Maybe Crumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
 headerInfo currentPath store grupo =
     let
-        grupoCrumb : Crumb
+        -- De acá cuelgan todas las secciones del grupo. La única que no es
+        -- esta es la repartija, que cuelga de su gasto.
+        grupoCrumb : Maybe Crumb
         grupoCrumb =
-            { label = grupo.nombre, path = Just (sinQuery (Path.Grupos_Id_ { id = grupo.id })) }
-
-        pagosCrumb : Crumb
-        pagosCrumb =
-            { label = "Gastos", path = Just (sinQuery (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })) }
-
-        gruposCrumb : Crumb
-        gruposCrumb =
-            { label = "Grupos", path = Nothing }
+            Just
+                { label = "Grupo: " ++ grupo.nombre
+                , ruta = sinQuery (Path.Grupos_Id_ { id = grupo.id })
+                }
 
         grupoShare =
             { title = grupo.nombre, path = Path.Grupos_Id_ { id = grupo.id } }
     in
     case currentPath of
         Path.Grupos_GrupoId__Gastos _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb ]
+            { crumb = grupoCrumb
             , title = "Gastos"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Transferencias _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb ]
+            { crumb = grupoCrumb
             , title = "Transferencias"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Liquidaciones _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb ]
+            { crumb = grupoCrumb
             , title = "Transferencias"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Participantes _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb ]
+            { crumb = grupoCrumb
             , title = "Participantes"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Settings _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb ]
+            { crumb = grupoCrumb
             , title = "Ajustes"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
@@ -395,22 +426,22 @@ headerInfo currentPath store grupo =
                     maybeRepartija
                         |> Maybe.map .pagoNombre
                         |> Maybe.withDefault "Cargando"
-
-                pagoCrumbPath =
-                    maybeRepartija
-                        |> Maybe.map
-                            (\r ->
+            in
+            { -- La repartija es lo único que no cuelga del grupo: cuelga del
+              -- gasto que la generó, y ahí es adonde tenés que poder volver.
+              -- Mientras el gasto no cargó no hay a dónde apuntar, así que no
+              -- va migaja en vez de una rota.
+              crumb =
+                maybeRepartija
+                    |> Maybe.map
+                        (\r ->
+                            { label = "Gasto: " ++ pagoNombre
+                            , ruta =
                                 PagoDetalleModal.rutaGasto
                                     (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
                                     r.pagoId
-                            )
-            in
-            { crumbs =
-                [ gruposCrumb
-                , grupoCrumb
-                , pagosCrumb
-                , { label = pagoNombre, path = pagoCrumbPath }
-                ]
+                            }
+                        )
             , title = "Deudores de '" ++ pagoNombre ++ "'"
             , showTabs = False
             , share = { title = "Deudores de " ++ pagoNombre, path = Path.Grupos_GrupoId__Repartijas_RepartijaId_ params }
@@ -419,93 +450,99 @@ headerInfo currentPath store grupo =
         -- Rutas viejas: redirigen apenas se montan, así que nunca llegan a
         -- pintar chrome. Están acá solo para que el case sea exhaustivo.
         Path.Grupos_GrupoId__Gastos_New _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb, pagosCrumb ]
+            { crumb = grupoCrumb
             , title = "Nuevo gasto"
             , showTabs = False
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Gastos_GastoId_ _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb, pagosCrumb ]
+            { crumb = grupoCrumb
             , title = "Cargando..."
             , showTabs = False
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Pagos _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb ]
+            { crumb = grupoCrumb
             , title = "Gastos"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Pagos_New _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb, pagosCrumb ]
+            { crumb = grupoCrumb
             , title = "Nuevo gasto"
             , showTabs = False
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Pagos_PagoId_ _ ->
-            { crumbs = [ gruposCrumb, grupoCrumb, pagosCrumb ]
+            { crumb = grupoCrumb
             , title = "Cargando..."
             , showTabs = False
             , share = { path = currentPath, title = grupo.nombre }
             }
 
+        -- El grupo no cuelga de otra entidad, cuelga de tu lista de grupos. Y
+        -- el título ya es el nombre del grupo, así que repetirlo acá arriba no
+        -- diría nada nuevo.
         Path.Grupos_Id_ _ ->
-            { crumbs = [ gruposCrumb ]
+            { crumb = Just { label = "Tus grupos", ruta = sinQuery Path.Home_ }
             , title = grupo.nombre
             , showTabs = True
             , share = grupoShare
             }
 
         Path.NotFound_ ->
-            { crumbs = []
+            { crumb = Nothing
             , title = grupo.nombre
             , showTabs = False
             , share = grupoShare
             }
 
         Path.Home_ ->
-            { crumbs = []
+            { crumb = Nothing
             , title = "Banana split"
             , showTabs = False
             , share = grupoShare
             }
 
         Path.Login ->
-            { crumbs = []
+            { crumb = Nothing
             , title = "Banana split"
             , showTabs = False
             , share = grupoShare
             }
 
         Path.Cuenta ->
-            { crumbs = []
+            { crumb = Nothing
             , title = "Banana split"
             , showTabs = False
             , share = grupoShare
             }
 
 
-viewBreadcrumb : List Crumb -> Html Msg
-viewBreadcrumb crumbs =
-    let
-        viewCrumb crumb =
-            li [ class "breadcrumb-item" ]
-                [ case crumb.path of
-                    Just ruta ->
-                        Html.a [ Route.href ruta ] [ text crumb.label ]
+{-| La vuelta a la entidad de la que colgás, con forma de "‹ Grupo: Salidita de
+Jueves". No es un camino desde la raíz sino un solo salto para atrás, así que se
+pinta como un link y no como una lista de migajas.
+-}
+viewBreadcrumb : Maybe Crumb -> Html Msg
+viewBreadcrumb crumb =
+    case crumb of
+        Nothing ->
+            text ""
 
-                    Nothing ->
-                        text crumb.label
+        Just crumbDeVuelta ->
+            Html.nav [ Attr.attribute "aria-label" "breadcrumb", class "mb-1" ]
+                [ Html.a
+                    [ Route.href crumbDeVuelta.ruta
+                    , class "text-decoration-none d-inline-flex align-items-center gap-1"
+                    ]
+                    [ Html.span [ Attr.attribute "aria-hidden" "true" ] [ text "‹" ]
+                    , Html.span [] [ text crumbDeVuelta.label ]
+                    ]
                 ]
-    in
-    Html.nav [ Attr.attribute "aria-label" "breadcrumb" ]
-        [ ol [ class "breadcrumb mb-1 small" ]
-            (crumbs |> List.map viewCrumb)
-        ]
 
 
 viewTabNav : Path.Path -> Grupo -> Html Msg
@@ -543,12 +580,17 @@ viewTabNav currentPath grupo =
 raised "Ingresar pago" FAB in the centre and a "Más" popover (opening upward)
 for the sections that don't fit on the bar. Hidden on `md+` via the
 `navbar-bottom` component's own media query.
+
+El menú "Más" también es donde vive compartir en mobile: en el header solo está
+de `md` para arriba.
+
 -}
 viewBottomNav :
     Path.Path
+    -> { title : String, url : String }
     -> Grupo
     -> Html Msg
-viewBottomNav currentPath grupo =
+viewBottomNav currentPath share grupo =
     let
         item icon label path =
             a
@@ -604,6 +646,29 @@ viewBottomNav currentPath grupo =
                         ]
                         [ i [ class "bi bi-gear me-2" ] []
                         , text "Ajustes"
+                        ]
+                    ]
+                , li [] [ Html.hr [ class "dropdown-divider" ] [] ]
+                , li []
+                    [ a
+                        [ class "dropdown-item"
+                        , Attr.href "#"
+                        , preventDefaultOn "click"
+                            (Decode.succeed ( ShareUrl share, True ))
+                        ]
+                        [ i [ class "bi bi-link-45deg me-2" ] []
+                        , text "Compartir link"
+                        ]
+                    ]
+                , li []
+                    [ a
+                        [ class "dropdown-item"
+                        , Attr.href "#"
+                        , preventDefaultOn "click"
+                            (Decode.succeed ( OpenQrShare share, True ))
+                        ]
+                        [ i [ class "bi bi-qr-code me-2" ] []
+                        , text "Código QR"
                         ]
                     ]
                 ]
