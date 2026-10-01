@@ -1,4 +1,4 @@
-module Models.Transferencia exposing (Estado(..), esPropuesta, estaHecha, estado, frase, monto, participante, progresoDelPlan)
+module Models.Transferencia exposing (Estado(..), conFlechas, esPropuesta, estaHecha, estado, frase, monto, participante, progresoDelPlan)
 
 import Generated.Api exposing (Grupo, Moneda, ParticipanteId, Transferencia)
 import Html exposing (Html, span, text)
@@ -84,6 +84,25 @@ frase grupo t =
     , text " a "
     , participante grupo t.to
     ]
+
+
+conFlechas : Grupo -> Transferencia -> List (Html msg)
+conFlechas grupo t =
+    [ participante grupo t.from
+    , flecha
+    , monto grupo.monedaPorDefecto t
+    , flecha
+    , participante grupo t.to
+    ]
+
+
+flecha : Html msg
+flecha =
+    span
+        [ class "mx-2 text-body-secondary"
+        , Html.Attributes.attribute "aria-hidden" "true"
+        ]
+        [ text "→" ]
 
 
 participante : Grupo -> ParticipanteId -> Html msg

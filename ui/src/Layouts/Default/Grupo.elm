@@ -205,7 +205,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                 [ div []
                     [ viewBreadcrumb info.crumb
                     , h2 [ class "mb-0 fw-bold" ] [ text info.title ]
-                    , viewBadgeModoTransferencias grupo
+                    , viewBadgeCongelado grupo
                     ]
 
                 -- Solo desktop. En mobile el "Ver como" baja a su propia banda
@@ -266,18 +266,14 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
         ]
 
 
-viewBadgeModoTransferencias : Grupo -> Html Msg
-viewBadgeModoTransferencias grupo =
+viewBadgeCongelado : Grupo -> Html Msg
+viewBadgeCongelado grupo =
     if estaCongelado grupo then
-        div [ class "d-flex align-items-center gap-3 flex-wrap mt-2" ]
-            [ Bs.badge "bg-primary-subtle text-primary-emphasis d-inline-flex align-items-center gap-1 text-uppercase"
-                []
+        div [ class "mt-2" ]
+            [ Bs.badge "d-inline-flex align-items-center gap-1 text-uppercase text-white"
+                [ Bs.fondoCongelado ]
                 [ i [ class "bi bi-cash-stack" ] []
-                , text "Modo Transferencias"
-                ]
-            , Html.span [ class "text-primary text-nowrap small" ]
-                [ i [ class "bi bi-info-circle me-1" ] []
-                , text "Saber más"
+                , text "Saldando deudas"
                 ]
             ]
 
