@@ -553,8 +553,14 @@ viewMisTransferenciasCard zone grupo rol transferencias =
         textos =
             textosDe rol
 
-        hechas =
-            transferencias |> List.filter Transferencia.estaHecha |> List.length
+        -- El contador va sobre el plan y no sobre la lista: las que registraste
+        -- a mano antes de congelar se siguen viendo como filas, pero no son algo
+        -- que te quede por hacer.
+        delPlan =
+            transferencias |> List.filter (Transferencia.esPropuesta grupo)
+
+        progreso =
+            Transferencia.progresoDelPlan grupo transferencias
     in
     Bs.card []
         [ Bs.cardBody []
@@ -562,9 +568,9 @@ viewMisTransferenciasCard zone grupo rol transferencias =
                 [ viewEtiqueta [] [ text "Tus transferencias" ]
                 , div [ class "d-flex align-items-center gap-2" ]
                     [ span [ class "text-body-secondary small" ] [ text textos.contador ]
-                    , Bs.badge (colorDelContador rol transferencias ++ " fw-normal")
+                    , Bs.badge (colorDelContador rol delPlan ++ " fw-normal")
                         []
-                        [ text (String.fromInt hechas ++ " / " ++ String.fromInt (List.length transferencias)) ]
+                        [ text (String.fromInt progreso.completadas ++ " / " ++ String.fromInt progreso.total) ]
                     ]
                 ]
             , div [ class "fs-5 fw-bold" ] [ text textos.titulo ]
@@ -643,9 +649,23 @@ viewUltimasTransferenciasCard zone ahora grupo transferencias =
                         )
                     |> List.reverse
                     |> List.take 5
+
+            progreso =
+                Transferencia.progresoDelPlan grupo transferencias
         in
         Bs.card []
-            [ Bs.cardHeader [] [ text "Ultimas transferencias" ]
+            [ Bs.cardHeader [ class "d-flex justify-content-between align-items-center gap-2" ]
+                [ text "Ultimas transferencias"
+
+                -- Acá el contador es el del grupo entero, no el tuyo: este feed
+                -- es para saber si la cosa se está moviendo en general.
+                , div [ class "d-flex align-items-center gap-2" ]
+                    [ span [ class "text-body-secondary small fw-normal" ] [ text "Realizadas" ]
+                    , Bs.badge "text-bg-secondary-subtle text-secondary-emphasis fw-normal"
+                        []
+                        [ text (String.fromInt progreso.completadas ++ " / " ++ String.fromInt progreso.total) ]
+                    ]
+                ]
             , Bs.listGroup [ class "list-group-flush" ]
                 (ultimas |> List.map (viewActualizacion zone ahora grupo))
             ]

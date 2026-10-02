@@ -7,7 +7,7 @@ import Form.Init as Form
 import Form.Validate as V exposing (Validation)
 import Generated.Api as Api exposing (Grupo, Moneda, NuevaTransferenciaParams, Transferencia, ULID)
 import Generated.Moneda exposing (escalaDe)
-import Html exposing (Html, div, label, p, span, text)
+import Html exposing (Html, div, em, h6, i, label, li, p, span, strong, text, ul)
 import Html.Attributes as Attr exposing (class)
 import Html.Events exposing (onClick)
 import Http
@@ -18,7 +18,7 @@ import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Models.Transferencia as Transferencia
 import Page exposing (Page)
-import RemoteData exposing (RemoteData(..))
+import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Shared
 import Time exposing (Zone)
@@ -48,6 +48,10 @@ type alias Model =
     { grupoId : String
     , confirmando : Maybe Confirmacion
     , nuevaForm : Maybe (Form CustomFormError NuevaTransferenciaParams)
+    , mostrarModalDeConfirmacion : Bool
+    , congelarGrupoRequest : WebData Grupo
+    , bannerAbierto : Bool
+    , descongelarGrupoRequest : WebData Grupo
     }
 
 
@@ -75,6 +79,10 @@ init grupoId store =
     ( { grupoId = grupoId
       , confirmando = Nothing
       , nuevaForm = Nothing
+      , mostrarModalDeConfirmacion = False
+      , congelarGrupoRequest = NotAsked
+      , bannerAbierto = False
+      , descongelarGrupoRequest = NotAsked
       }
     , Effect.batch
         [ Store.ensureResumen grupoId store
@@ -95,6 +103,13 @@ type Msg
     | CerrarNuevaTransferencia
     | NuevaForm Form.Msg
     | TransferenciaCreada (Result Http.Error Transferencia)
+    | MostrarModalDeCongelarGrupo
+    | CancelarModalDeCongelarGrupo
+    | CongelarGrupo
+    | CongelarGrupoResponse (Result Http.Error Grupo)
+    | AlternarBanner
+    | DescongelarGrupo
+    | DescongelarGrupoResponse (Result Http.Error Grupo)
 
 
 validarNuevaTransferencia : ULID -> Validation CustomFormError NuevaTransferenciaParams
@@ -126,6 +141,65 @@ refrescarYAvisar model mensaje =
 update : Maybe ULID -> Msg -> Model -> ( Model, Effect Msg )
 update yo msg model =
     case msg of
+        MostrarModalDeCongelarGrupo ->
+            ( { model | mostrarModalDeConfirmacion = True }
+            , Effect.none
+            )
+
+        CancelarModalDeCongelarGrupo ->
+            ( { model | mostrarModalDeConfirmacion = False }
+            , Effect.none
+            )
+
+        CongelarGrupo ->
+            ( { model | congelarGrupoRequest = Loading }
+            , Effect.sendCmd <| Api.postGrupoByIdFreeze model.grupoId CongelarGrupoResponse
+            )
+
+        CongelarGrupoResponse (Ok grupo) ->
+            ( { model | congelarGrupoRequest = Success grupo, mostrarModalDeConfirmacion = False }
+            , Effect.batch
+                [ Store.refreshGrupo model.grupoId
+                , Store.refreshResumen model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "Empezaron a saldarse las deudas"
+                ]
+            )
+
+        CongelarGrupoResponse (Err error) ->
+            ( { model | congelarGrupoRequest = Failure error, mostrarModalDeConfirmacion = False }
+            , Effect.batch
+                [ Store.refreshResumen model.grupoId
+                , Toasts.pushToast Toasts.ToastDanger "No se pudo empezar a saldar las deudas. Revisá que no queden gastos inválidos y que estén cargadas las tasas de cambio de todas las monedas con deuda."
+                ]
+            )
+
+        AlternarBanner ->
+            ( { model | bannerAbierto = not model.bannerAbierto }
+            , Effect.none
+            )
+
+        DescongelarGrupo ->
+            ( { model | descongelarGrupoRequest = Loading }
+            , Effect.sendCmd <| Api.deleteGrupoByIdFreeze model.grupoId DescongelarGrupoResponse
+            )
+
+        DescongelarGrupoResponse (Ok grupo) ->
+            -- Desactivar tira las pendientes y el grupo vuelve a aceptar
+            -- gastos: cambia la pantalla entera, así que se releen las dos
+            -- cosas.
+            ( { model | descongelarGrupoRequest = Success grupo, bannerAbierto = False }
+            , Effect.batch
+                [ Store.refreshGrupo model.grupoId
+                , Store.refreshResumen model.grupoId
+                , Toasts.pushToast Toasts.ToastSuccess "El grupo dejó de saldar deudas"
+                ]
+            )
+
+        DescongelarGrupoResponse (Err error) ->
+            ( { model | descongelarGrupoRequest = Failure error }
+            , Toasts.pushToast Toasts.ToastDanger "No se pudo dejar de saldar deudas"
+            )
+
         AbrirNuevaTransferencia monedaPorDefecto ->
             ( { model
                 | nuevaForm =
@@ -247,9 +321,25 @@ view store zone ahora yo model =
             { title = grupo.nombre
             , body =
                 [ div [ class "container-fluid py-3" ]
-                    [ viewContent store zone ahora yo model grupo ]
+                    [ div [ class "row justify-content-center" ]
+                        [ div [ class "col-md-10 col-lg-7 col-xl-5" ]
+                            [ viewContent store zone ahora yo model grupo
+                            , espacioParaLaBarraInferior
+                            ]
+                        ]
+                    ]
                 ]
             }
+
+
+espacioParaLaBarraInferior : Html msg
+espacioParaLaBarraInferior =
+    div [ class "d-md-none", Attr.style "height" "7rem" ] []
+
+
+iconoCongelado : String
+iconoCongelado =
+    "bi bi-cash-stack"
 
 
 viewContent : Store -> Zone -> Posix -> Maybe ULID -> Model -> Grupo -> Html Msg
@@ -264,10 +354,6 @@ viewContent store zone ahora yo model grupo =
         Failure _ ->
             Bs.alert Bs.AlertDanger [] [ text "Error cargando los datos del grupo." ]
 
-        -- Sin congelar no hay plan que liquidar: las transferencias pendientes
-        -- existen como filas recién cuando congelar decide cuáles son. Sí se
-        -- puede registrar una que ya se hizo, que es lo único que el grupo
-        -- descongelado acepta.
         Success (Api.GrupoAbierto resumen) ->
             let
                 hechas =
@@ -277,50 +363,371 @@ viewContent store zone ahora yo model grupo =
                         |> List.reverse
             in
             div []
-                [ Bs.alert Bs.AlertInfo
-                    []
-                    [ text "Este grupo no está congelado, así que todavía no hay transferencias que hacer." ]
+                [ viewInvitacionACongelar resumen model
+                , viewPrevisualizar
                 , if List.isEmpty hechas then
                     text ""
 
                   else
-                    div [ class "list-group" ]
-                        (hechas |> List.map (viewTransferencia zone ahora grupo Borrar))
+                    div [ class "card mt-4" ]
+                        [ Bs.cardHeader []
+                            [ span [ class "text-uppercase small fw-bold" ]
+                                [ text "Transferencias registradas" ]
+                            ]
+                        , div [ class "list-group list-group-flush" ]
+                            (hechas |> List.map (viewTransferencia zone ahora grupo Borrar))
+                        ]
                 , viewNuevaTransferencia yo grupo model
                 , buscarConfirmacion model.confirmando hechas
                     |> viewConfirmacionModal grupo
+                , viewActivacionModal model
                 ]
 
         Success (Api.GrupoCongelado resumen) ->
             let
-                todas : List Transferencia
-                todas =
-                    resumen.transferencias
-                        -- Más nueva primero. El id es el orden en que se
-                        -- crearon y no cambia al marcarlas, así que una fila no
-                        -- se mueve de lugar por debajo de quien la está
-                        -- tocando.
-                        |> List.sortBy .id
-                        |> List.reverse
-            in
-            if List.isEmpty todas then
-                Bs.alert Bs.AlertInfo
-                    []
-                    [ text "Este congelamiento no dejó transferencias." ]
+                ordenadas : List Transferencia -> List Transferencia
+                ordenadas =
+                    -- Más nueva primero. El id es el orden en que se crearon y
+                    -- no cambia al marcarlas, así que una fila no se mueve de
+                    -- lugar por debajo de quien la está tocando.
+                    List.sortBy .id >> List.reverse
 
-            else
-                div []
-                    [ viewResumenDeEstados todas
-                    , div [ class "list-group" ]
-                        (todas |> List.map (viewTransferencia zone ahora grupo CambiarEstado))
-                    , buscarConfirmacion model.confirmando todas
-                        |> viewConfirmacionModal grupo
+                -- El plan que calculó este congelamiento, que es lo que hay para hacer.
+                calculadas : List Transferencia
+                calculadas =
+                    resumen.transferencias
+                        |> List.filter (Transferencia.esPropuesta grupo)
+                        |> ordenadas
+
+                -- Lo que quedó de antes: planes de congelamientos anteriores y las que
+                -- alguien registró a mano. Son historia, no hay nada que
+                -- hacerles.
+                anteriores : List Transferencia
+                anteriores =
+                    resumen.transferencias
+                        |> List.filter (not << Transferencia.esPropuesta grupo)
+                        |> ordenadas
+            in
+            div []
+                [ viewBannerCongelado model
+                , if List.isEmpty calculadas then
+                    Bs.alert Bs.AlertInfo
+                        [ class "mt-3" ]
+                        [ text "No quedaron transferencias que hacer para saldar las deudas." ]
+
+                  else
+                    viewCalculadas zone ahora grupo calculadas
+                , viewAnteriores zone ahora grupo anteriores
+                , buscarConfirmacion model.confirmando resumen.transferencias
+                    |> viewConfirmacionModal grupo
+                ]
+
+
+{-| Los tres cambios que trae congelar para todo el grupo. El mismo texto se dice
+antes de activarlo —en el modal, para decidir— y después —en el banner, para
+recordar qué pasó—, así que vive en un solo lugar.
+-}
+viewCambiosAlCongelar : List (Html msg)
+viewCambiosAlCongelar =
+    [ li []
+        [ text "Ya no podrán "
+        , em [] [ text "cargar" ]
+        , text " y "
+        , em [] [ text "editar" ]
+        , text " gastos en este grupo."
+        ]
+    , li []
+        [ text "La página de "
+        , em [] [ text "Resumen del grupo" ]
+        , text " cambiará y empezará a mostrar información relevante sobre las transferencias."
+        ]
+    , li []
+        [ text "Esta sección "
+        , em [] [ text "Transferencias" ]
+        , text " comenzará a mostrar el estado de las transferencias de todo el grupo."
+        ]
+    ]
+
+
+{-| El banner violeta de arriba de todo con el grupo saldando deudas. Arranca
+cerrado —todos los días lo que importa es la lista de abajo— y al abrirlo
+explica qué pasó y ofrece descongelar.
+-}
+viewBannerCongelado : Model -> Html Msg
+viewBannerCongelado model =
+    div [ Bs.fondoCongelado, class "text-white rounded mb-3" ]
+        [ Html.button
+            [ Attr.type_ "button"
+            , class "btn w-100 d-flex align-items-center gap-2 text-white fw-semibold px-3 py-3 border-0 shadow-none"
+            , Attr.attribute "aria-expanded"
+                (if model.bannerAbierto then
+                    "true"
+
+                 else
+                    "false"
+                )
+            , onClick AlternarBanner
+            ]
+            [ i [ class iconoCongelado ] []
+            , span [ class "flex-grow-1 text-start" ] [ text "Saldando deudas" ]
+            , i
+                [ class
+                    (if model.bannerAbierto then
+                        "bi bi-chevron-up"
+
+                     else
+                        "bi bi-chevron-down"
+                    )
+                ]
+                []
+            ]
+        , if model.bannerAbierto then
+            let
+                desactivando =
+                    RemoteData.isLoading model.descongelarGrupoRequest
+            in
+            div [ class "px-3 pb-3" ]
+                [ p []
+                    [ text "Este grupo se encuentra saldando deudas, que ayuda a los participantes a saldar sus gastos. Al empezar se calcularon todas las transferencias de dinero que se deben realizar entre los participantes para quedar saldados." ]
+                , p [ class "fw-bold mb-2" ] [ text "Cambios experimentados por todos los participantes:" ]
+                , ul [ class "mb-3" ] viewCambiosAlCongelar
+                , Bs.btn Bs.CongeladoInverso
+                    [ class "w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                    , onClick DescongelarGrupo
+                    , Attr.disabled desactivando
                     ]
+                    (if desactivando then
+                        [ Bs.spinner
+                            [ Attr.style "width" "1.25rem"
+                            , Attr.style "height" "1.25rem"
+                            , Attr.style "border-width" "0.2em"
+                            , Attr.style "flex" "0 0 auto"
+                            ]
+                        , text "Desactivando..."
+                        ]
+
+                     else
+                        [ i [ class "bi bi-x-circle" ] []
+                        , text "Dejar de saldar deudas"
+                        ]
+                    )
+                ]
+
+          else
+            text ""
+        ]
+
+
+{-| El plan que dejó el congelamiento: lo que hay para hacer, con su progreso.
+-}
+viewCalculadas : Zone -> Posix -> Grupo -> List Transferencia -> Html Msg
+viewCalculadas zone ahora grupo calculadas =
+    div [ class "card" ]
+        [ Bs.cardHeader []
+            -- El `flex-wrap` es para los teléfonos angostos: abajo de ~410px de
+            -- ancho el título y el contador no entran juntos, y el contador
+            -- baja a una segunda línea en vez de apretar el título.
+            [ div [ class "d-flex align-items-center justify-content-between gap-2 flex-wrap" ]
+                [ span [ class "text-uppercase small fw-bold" ]
+                    [ text "Transferencias calculadas" ]
+                , viewContador grupo calculadas
+                ]
+            , p [ class "text-body-secondary small mb-0 mt-1" ]
+                [ text "Al empezar a saldar deudas se calcularon las siguientes transferencias a realizar." ]
+            ]
+        , div [ class "list-group list-group-flush" ]
+            (calculadas |> List.map (viewTransferencia zone ahora grupo CambiarEstado))
+        ]
+
+
+{-| Lo que quedó de antes: planes de congelamientos anteriores y las que alguien registró
+a mano. Son historia —no hay nada que marcar ni corregir—, así que van sin
+acciones y con hace cuánto se hicieron.
+-}
+viewAnteriores : Zone -> Posix -> Grupo -> List Transferencia -> Html Msg
+viewAnteriores zone ahora grupo anteriores =
+    if List.isEmpty anteriores then
+        text ""
+
+    else
+        div [ class "card mt-4" ]
+            [ Bs.cardHeader []
+                [ span [ class "text-uppercase small fw-bold" ]
+                    [ text "Transferencias anteriores" ]
+                , p [ class "text-body-secondary small mb-0 mt-1" ]
+                    [ text "Estas son transferencias calculadas en congelamientos pasados o registradas por los participantes." ]
+                ]
+            , div [ class "list-group list-group-flush" ]
+                (anteriores |> List.map (viewTransferenciaAnterior zone ahora grupo))
+            ]
+
+
+viewTransferenciaAnterior : Zone -> Posix -> Grupo -> Transferencia -> Html Msg
+viewTransferenciaAnterior zone ahora grupo t =
+    div [ class "list-group-item d-flex align-items-center justify-content-between gap-3 flex-wrap py-3" ]
+        [ div [] (Transferencia.conFlechas grupo t)
+        , case t.saldadaAt of
+            Just saldadaAt ->
+                -- Hace cuánto, igual que en las filas de arriba. La fecha
+                -- exacta queda en el `title`, que es donde importa para algo
+                -- viejo.
+                span
+                    [ class "text-body-secondary small text-nowrap"
+                    , Attr.title (Posix.toString zone saldadaAt)
+                    ]
+                    [ text (Posix.relativo ahora saldadaAt) ]
+
+            Nothing ->
+                text ""
+        ]
+
+
+{-| Lo que ve un grupo abierto: qué es saldar deudas, qué cambia para
+todos, y el botón que abre el modal de confirmación.
+-}
+viewInvitacionACongelar : Api.ResumenAbierto -> Model -> Html Msg
+viewInvitacionACongelar resumen model =
+    let
+        monedasSinTasa : List Moneda
+        monedasSinTasa =
+            resumen.consolidado.monedasSinTasa
+
+        gastosInvalidos : Int
+        gastosInvalidos =
+            resumen.cantidadPagosInvalidos
+
+        activando : Bool
+        activando =
+            RemoteData.isLoading model.congelarGrupoRequest
+    in
+    div []
+        [ p []
+            [ text "Banana Split calcula todos los envíos de dinero que deben realizarse entre los participantes del grupo para quedar saldados. Para esto el grupo tiene que "
+            , strong [] [ text "empezar a saldar deudas" ]
+            , text "."
+            ]
+        , h6 [ class "fw-bold mb-1" ] [ text "Saldando deudas" ]
+        , p [ class "mb-1" ]
+            [ text "Este es un cambio de estado del grupo que modificará la visualización de todos los participantes y prohibirá la carga y edición de gastos*, esto es necesario para el cálculo de las transferencias." ]
+        , p [ class "text-muted small" ]
+            [ text "*Esta acción se puede deshacer pero hay que tener en cuenta su implicancia en las transferencias realizadas." ]
+        , viewAvisosParaActivar monedasSinTasa gastosInvalidos
+        , Bs.btn Bs.Congelado
+            [ class "w-100 py-3 fs-5 d-flex align-items-center justify-content-center gap-2"
+            , onClick MostrarModalDeCongelarGrupo
+            , Attr.disabled (not (List.isEmpty monedasSinTasa) || gastosInvalidos /= 0 || activando)
+            ]
+            (if activando then
+                -- Calcular las transferencias mínimas puede tardar bastante
+                -- —es un solver, no una cuenta—, así que mientras tanto el
+                -- botón tiene que mostrar que algo está pasando.
+                [ Bs.spinner
+                    [ Attr.style "width" "1.25rem"
+                    , Attr.style "height" "1.25rem"
+                    , Attr.style "border-width" "0.2em"
+                    , Attr.style "flex" "0 0 auto"
+                    , class "text-white"
+                    ]
+                , text "Calculando..."
+                ]
+
+             else
+                [ i [ class iconoCongelado ] []
+                , text "Empezar a saldar deudas"
+                ]
+            )
+        ]
+
+
+viewAvisosParaActivar : List Moneda -> Int -> Html Msg
+viewAvisosParaActivar monedasSinTasa gastosInvalidos =
+    div []
+        [ if List.isEmpty monedasSinTasa then
+            text ""
+
+          else
+            Bs.alert Bs.AlertWarning
+                [ class "mb-3" ]
+                [ text <|
+                    (if List.length monedasSinTasa == 1 then
+                        "Para empezar a saldar deudas falta la tasa de cambio de "
+
+                     else
+                        "Para empezar a saldar deudas faltan las tasas de cambio de "
+                    )
+                        ++ (monedasSinTasa |> List.map Moneda.nombre |> String.join ", ")
+                        ++ ". Cargalas en Ajustes del grupo."
+                ]
+        , if gastosInvalidos == 0 then
+            text ""
+
+          else
+            Bs.alert Bs.AlertWarning
+                [ class "mb-3" ]
+                [ text <|
+                    if gastosInvalidos == 1 then
+                        "Para empezar a saldar deudas hay que arreglar 1 gasto inválido: no se cuenta para las deudas."
+
+                    else
+                        "Para empezar a saldar deudas hay que arreglar "
+                            ++ String.fromInt gastosInvalidos
+                            ++ " gastos inválidos: no se cuentan para las deudas."
+                ]
+        ]
+
+
+{-| La card de previsualización del diseño. El plan de transferencias lo calcula
+`minimizeTransferencias` en el backend y hoy solo corre al congelar el grupo, así
+que no hay de dónde leerlo sin congelar: el botón queda deshabilitado
+hasta que exista el endpoint que lo devuelva.
+-}
+viewPrevisualizar : Html Msg
+viewPrevisualizar =
+    Bs.card [ class "mt-4" ]
+        [ Bs.cardBody []
+            [ h6 [ class "text-uppercase text-muted small fw-bold" ]
+                [ text "Previsualizar envíos de dinero" ]
+            , p [ class "mb-3" ]
+                [ text "Observá cómo quedarían calculadas las transferencias antes de empezar a saldar deudas." ]
+            , div [ class "text-center" ]
+                [ Bs.btn Bs.Primary [ Attr.disabled True ] [ text "Previsualizar" ] ]
+            , p [ class "form-text text-center mb-0" ]
+                [ text "Todavía no está disponible." ]
+            ]
+        ]
+
+
+{-| El progreso sobre el plan que propuso la app, no sobre la lista entera: las
+que alguien registró a mano antes de congelar aparecen igual como filas, pero no
+son algo que quede por hacer y contarlas daba un progreso arrancado.
+-}
+viewContador : Grupo -> List Transferencia -> Html Msg
+viewContador grupo todas =
+    let
+        progreso =
+            Transferencia.progresoDelPlan grupo todas
+    in
+    span [ class "d-flex align-items-center gap-2 small text-muted" ]
+        [ text "Realizadas"
+
+        -- Ámbar mientras quede algo por hacer y verde cuando no: el contador
+        -- usa los mismos colores que los estados de las filas que cuenta.
+        , Bs.badge
+            (if progreso.completadas == progreso.total then
+                "text-bg-success"
+
+             else
+                "text-bg-warning"
+            )
+            []
+            [ text (String.fromInt progreso.completadas ++ " / " ++ String.fromInt progreso.total) ]
+        ]
 
 
 {-| Qué se puede hacer con una fila, que depende de en qué estado está el grupo:
-congelado hay un plan que se va marcando, descongelado las que quedan son plata
-que ya se movió y lo único que tiene sentido es borrar la que nunca pasó.
+congelado hay un plan que se va marcando, descongelado las que
+quedan son plata que ya se movió y lo único que tiene sentido es borrar la que
+nunca pasó.
 -}
 type AccionDeFila
     = CambiarEstado
@@ -342,31 +749,9 @@ buscarConfirmacion confirmando filas =
             )
 
 
-viewResumenDeEstados : List Transferencia -> Html Msg
-viewResumenDeEstados todas =
-    let
-        hechas =
-            todas
-                |> List.filter Transferencia.estaHecha
-                |> List.length
-    in
-    div [ class "text-muted small mb-3" ]
-        [ text (String.fromInt hechas)
-        , text " de "
-        , text (String.fromInt (List.length todas))
-        , text
-            (if List.length todas == 1 then
-                " transferencia hecha"
-
-             else
-                " transferencias hechas"
-            )
-        ]
-
-
-{-| Una fila de la lista: el estado, quién le transfiere a quién, cuánto, y la
-acción que lo cambia. Sin distinguir entre "tuyas" y "ajenas": esta pantalla es
-para ver y corregir el congelamiento entero.
+{-| Una fila de la lista: el estado, cuándo se marcó, quién le transfiere a
+quién y cuánto, y un menú con lo único que se le puede hacer. Sin distinguir
+entre "tuyas" y "ajenas": esta pantalla es para ver y corregir el plan entero.
 -}
 viewTransferencia : Zone -> Posix -> Grupo -> AccionDeFila -> Transferencia -> Html Msg
 viewTransferencia zone ahora grupo accion t =
@@ -374,64 +759,132 @@ viewTransferencia zone ahora grupo accion t =
         estado =
             Transferencia.estado t
     in
-    div [ class "list-group-item d-flex align-items-center gap-3 flex-wrap" ]
-        [ case estado of
-            Transferencia.Pendiente ->
-                span [ class "badge text-bg-secondary" ] [ text "Pendiente" ]
-
-            Transferencia.Hecha _ ->
-                span [ class "badge text-bg-success" ] [ text "Hecha" ]
-        , span
-            [ class "flex-grow-1"
-            , class
-                (case estado of
+    div [ class "list-group-item py-3 d-flex align-items-start gap-2" ]
+        [ div [ class "flex-grow-1" ]
+            [ div [ class "d-flex align-items-center gap-2 mb-2" ]
+                [ case estado of
                     Transferencia.Pendiente ->
-                        ""
+                        Bs.badge "text-bg-warning" [] [ text "Pendiente" ]
 
                     Transferencia.Hecha _ ->
-                        "text-muted"
-                )
-            ]
-            (Transferencia.frase grupo t
-                ++ (case estado of
-                        Transferencia.Pendiente ->
-                            []
+                        Bs.badge "text-bg-success" [] [ text "Realizada" ]
+                , case estado of
+                    Transferencia.Pendiente ->
+                        text ""
 
-                        Transferencia.Hecha saldadaAt ->
-                            [ span
-                                [ class "text-muted small ms-2 text-nowrap"
-                                , Attr.title (Posix.toString zone saldadaAt)
-                                ]
-                                [ text (Posix.relativo ahora saldadaAt) ]
+                    Transferencia.Hecha saldadaAt ->
+                        span
+                            [ class "text-muted small text-nowrap"
+                            , Attr.title (Posix.toString zone saldadaAt)
                             ]
-                   )
-            )
-        , case ( accion, estado ) of
-            ( CambiarEstado, Transferencia.Pendiente ) ->
-                Bs.btn Bs.Secondary
-                    [ class "btn-sm text-nowrap"
-                    , onClick (PedirConfirmacion (CambiarEstadoDe t.id))
-                    ]
-                    [ text "Marcar como hecha" ]
-
-            ( CambiarEstado, Transferencia.Hecha _ ) ->
-                Bs.btn Bs.Secondary
-                    [ class "btn-sm text-nowrap"
-                    , onClick (PedirConfirmacion (CambiarEstadoDe t.id))
-                    ]
-                    [ text "Volver a pendiente" ]
-
-            ( Borrar, _ ) ->
-                Bs.btn Bs.Danger
-                    [ class "btn-sm text-nowrap"
-                    , onClick (PedirConfirmacion (BorrarA t.id))
-                    ]
-                    [ text "Borrar" ]
+                            [ text (Posix.relativo ahora saldadaAt) ]
+                ]
+            , div [] (Transferencia.conFlechas grupo t)
+            ]
+        , viewMenuDeFila accion estado t
         ]
 
 
+{-| El menú de los tres puntos. Lleva una sola cosa, la que corresponde según de
+qué lista venga la fila: con el grupo congelado, cambiar el estado; sin congelar, las
+que quedan son plata que ya se movió y lo único que tiene sentido es borrar la
+que nunca pasó.
+-}
+viewMenuDeFila : AccionDeFila -> Transferencia.Estado -> Transferencia -> Html Msg
+viewMenuDeFila accion estado t =
+    let
+        -- Un `button` y no un `a href="#"`: el ítem no navega a ningún lado, y
+        -- con el ancla el `#` se le pega a la URL igual.
+        item icono etiqueta extraClass confirmacion =
+            Html.li []
+                [ Html.button
+                    [ Attr.type_ "button"
+                    , class ("dropdown-item " ++ extraClass)
+                    , onClick (PedirConfirmacion confirmacion)
+                    ]
+                    [ i [ class (icono ++ " me-2") ] []
+                    , text etiqueta
+                    ]
+                ]
+    in
+    div [ class "dropdown flex-shrink-0" ]
+        [ Html.button
+            [ Attr.type_ "button"
+            , class "btn btn-sm border-0 text-body-secondary"
+            , Attr.attribute "data-bs-toggle" "dropdown"
+            , Attr.attribute "aria-expanded" "false"
+            , Attr.attribute "aria-label" "Acciones de la transferencia"
+            ]
+            [ i [ class "bi bi-three-dots-vertical" ] [] ]
+        , ul [ class "dropdown-menu dropdown-menu-end shadow" ]
+            [ case ( accion, estado ) of
+                ( CambiarEstado, Transferencia.Pendiente ) ->
+                    item "bi bi-check2" "Marcar como Realizada" "" (CambiarEstadoDe t.id)
+
+                ( CambiarEstado, Transferencia.Hecha _ ) ->
+                    item "bi bi-arrow-counterclockwise" "Marcar como Pendiente" "" (CambiarEstadoDe t.id)
+
+                ( Borrar, _ ) ->
+                    item "bi bi-trash" "Borrar" "text-danger" (BorrarA t.id)
+            ]
+        ]
+
+
+viewActivacionModal : Model -> Html Msg
+viewActivacionModal model =
+    let
+        activando =
+            RemoteData.isLoading model.congelarGrupoRequest
+    in
+    Bs.modal
+        { isOpen = model.mostrarModalDeConfirmacion
+        , onClose = CancelarModalDeCongelarGrupo
+        , title = "Empezar a saldar deudas"
+        , centered = True
+        , body =
+            [ div [ Bs.textoCongelado, class "text-center mb-4" ]
+                [ i [ class iconoCongelado, Attr.style "font-size" "4rem" ] [] ]
+            , p []
+                [ text "Es un "
+                , strong [] [ text "cambio de estado" ]
+                , text " del grupo que ayudará a que los participantes puedan "
+                , strong [] [ text "saldar los gastos" ]
+                , text ". Se calcularán todas las transferencias que deben realizar los participantes para quedar saldados."
+                ]
+            , p [ class "fw-bold mb-2" ] [ text "Cambios para todos los participantes:" ]
+            , ul [ class "mb-3" ] viewCambiosAlCongelar
+            , p [ class "text-muted small mb-0" ]
+                [ text "Este cambio de estado se podrá revertir desde "
+                , em [] [ text "Ajustes" ]
+                , text " del grupo, pero tiene implicancias."
+                ]
+            ]
+        , footer =
+            [ Bs.btn Bs.Congelado
+                [ class "w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                , onClick CongelarGrupo
+                , Attr.disabled activando
+                ]
+                (if activando then
+                    [ Bs.spinner
+                        [ Attr.style "width" "1.25rem"
+                        , Attr.style "height" "1.25rem"
+                        , Attr.style "border-width" "0.2em"
+                        , Attr.style "flex" "0 0 auto"
+                        , class "text-white"
+                        ]
+                    , text "Calculando..."
+                    ]
+
+                 else
+                    [ text "Confirmar" ]
+                )
+            ]
+        }
+
+
 {-| El cambio de estado se relee antes de aplicarlo. El texto sale del estado
-actual: se confirma pasar a hecha, o volver a pendiente.
+actual: se confirma pasar a realizada, o volver a pendiente.
 -}
 viewConfirmacionModal : Grupo -> Maybe ( Confirmacion, Transferencia ) -> Html Msg
 viewConfirmacionModal grupo confirmando =
@@ -439,13 +892,13 @@ viewConfirmacionModal grupo confirmando =
         ( titulo, cuerpo, accion ) =
             case confirmando |> Maybe.map (\( c, t ) -> ( c, Transferencia.estado t, t )) of
                 Just ( CambiarEstadoDe transferenciaId, Transferencia.Pendiente, t ) ->
-                    ( "Marcar como hecha"
+                    ( "Marcar como Realizada"
                     , Transferencia.frase grupo t ++ [ text ". ¿Ya pasó?" ]
                     , Just ( Bs.Primary, SaldarTransferencia transferenciaId )
                     )
 
                 Just ( CambiarEstadoDe transferenciaId, Transferencia.Hecha _, t ) ->
-                    ( "Volver a pendiente"
+                    ( "Marcar como Pendiente"
                     , Transferencia.frase grupo t
                         ++ [ text ". Vuelve a la lista como pendiente." ]
                     , Just ( Bs.Primary, DesmarcarTransferencia transferenciaId )
@@ -481,15 +934,6 @@ viewConfirmacionModal grupo confirmando =
         }
 
 
-{-| Registrar a mano una transferencia que ya se hizo. Va escondida detrás de un
-botón chico: es para cuando la plata se movió sin pasar por un congelamiento, no
-el camino principal.
-
-Solo con el grupo descongelado, porque congelado el plan de transferencias ya
-está decidido y una que no esté en él lo invalidaría. Y solo si sabemos quién
-sos en el grupo, porque vos sos el `from`.
-
--}
 viewNuevaTransferencia : Maybe ULID -> Grupo -> Model -> Html Msg
 viewNuevaTransferencia yo grupo model =
     case yo of
@@ -517,8 +961,6 @@ viewNuevaTransferenciaModal from grupo nuevaForm =
 
                 Just form ->
                     let
-                        -- El monto lleva los decimales de la moneda elegida en
-                        -- el select de al lado, no los de la del grupo.
                         moneda =
                             Form.getFieldAsString "moneda" form
                                 |> .value
@@ -556,7 +998,7 @@ viewNuevaTransferenciaModal from grupo nuevaForm =
                                 ]
                             ]
                     , div [ class "form-text mt-2" ]
-                        [ text "Queda registrada como hecha y cuenta en los netos del grupo." ]
+                        [ text "Queda registrada como realizada y cuenta en los netos del grupo." ]
                     ]
     in
     Bs.modal

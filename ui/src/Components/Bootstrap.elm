@@ -9,6 +9,7 @@ module Components.Bootstrap exposing
     , cardHeader
     , dateFormItem
     , fileInput
+    , fondoCongelado
     , listGroup
     , listGroupItem
     , listGroupKeyed
@@ -25,6 +26,7 @@ module Components.Bootstrap exposing
     , spinner
     , textFormItem
     , textInput
+    , textoCongelado
     )
 
 import Form exposing (Msg(..))
@@ -54,29 +56,124 @@ type BtnVariant
     | SecondarySolid
     | Danger
     | Transparent
+      -- El violeta de un grupo congelado y su versión invertida, para el botón
+      -- blanco que va adentro del banner violeta. Los dos salen de `styles.css`.
+    | Congelado
+    | CongeladoInverso
 
 
 btn : BtnVariant -> List (Attribute msg) -> List (Html msg) -> Html msg
 btn variant attrs children =
     let
-        variantClass =
+        -- Atributos y no un string de clases porque las variantes del grupo
+        -- congelado no tienen clase: se arman con las variables de Bootstrap
+        -- puestas inline.
+        variantAttrs =
             case variant of
                 Primary ->
-                    "btn-primary"
+                    [ class "btn-primary" ]
 
                 Secondary ->
-                    "btn-outline-secondary"
+                    [ class "btn-outline-secondary" ]
 
                 SecondarySolid ->
-                    "btn-secondary"
+                    [ class "btn-secondary" ]
 
                 Danger ->
-                    "btn-danger"
+                    [ class "btn-danger" ]
 
                 Transparent ->
-                    "btn-outline-secondary border-0"
+                    [ class "btn-outline-secondary border-0" ]
+
+                Congelado ->
+                    [ variablesDeBoton
+                        { texto = violeta.contraste
+                        , fondo = violeta.base
+                        , hover = violeta.oscuro
+                        , apretado = violeta.masOscuro
+                        }
+                    ]
+
+                CongeladoInverso ->
+                    [ variablesDeBoton
+                        { texto = violeta.base
+                        , fondo = violeta.contraste
+                        , hover = violeta.claro
+                        , apretado = violeta.masClaro
+                        }
+                    ]
     in
-    button ([ type_ "button", class ("btn " ++ variantClass) ] ++ attrs) children
+    button (type_ "button" :: class "btn" :: variantAttrs ++ attrs) children
+
+
+{-| Las variables con las que Bootstrap 5.3 arma un botón, puestas inline en vez
+de en una clase propia.
+
+Va por `attribute "style"` y no por `Attr.style`: esta última termina en
+`domNode.style[clave] = valor`, que para una custom property no hace nada —
+hace falta `setProperty`—, mientras que el atributo pasa por el parser de CSS y
+sí las toma.
+
+OJO: no mezclar con `Attr.style` en el mismo botón. Elm aplica los estilos por
+asignación y los atributos por `setAttribute`, así que uno pisa al otro.
+
+-}
+variablesDeBoton :
+    { texto : String, fondo : String, hover : String, apretado : String }
+    -> Attribute msg
+variablesDeBoton { texto, fondo, hover, apretado } =
+    Attr.attribute "style" <|
+        String.join "; "
+            [ "--bs-btn-color: " ++ texto
+            , "--bs-btn-bg: " ++ fondo
+            , "--bs-btn-border-color: " ++ fondo
+            , "--bs-btn-hover-color: " ++ texto
+            , "--bs-btn-hover-bg: " ++ hover
+            , "--bs-btn-hover-border-color: " ++ hover
+            , "--bs-btn-active-color: " ++ texto
+            , "--bs-btn-active-bg: " ++ apretado
+            , "--bs-btn-active-border-color: " ++ apretado
+            , "--bs-btn-disabled-color: " ++ texto
+            , "--bs-btn-disabled-bg: " ++ fondo
+            , "--bs-btn-disabled-border-color: " ++ fondo
+            ]
+
+
+{-| El violeta de un grupo congelado, el que en pantalla se lee como "saldando
+deudas". No sale de la paleta de Bootstrap —su `--bs-purple` es bastante más
+apagado— así que vive acá, que es el único módulo que lo usa.
+
+`oscuro` y `masOscuro` son el hover y el apretado del botón violeta; `claro` y
+`masClaro`, los del invertido —el blanco que va adentro del banner—. Y
+`contraste` es lo que se apoya sobre el violeta.
+
+No hay variante para tema oscuro: donde se usa el violeta es siempre de fondo,
+con texto blanco encima, así que el contraste lo trae el par y no depende del
+tema.
+
+-}
+violeta : { base : String, oscuro : String, masOscuro : String, contraste : String, claro : String, masClaro : String }
+violeta =
+    { base = "#8e12fc"
+    , oscuro = "#7a0fd9"
+    , masOscuro = "#6a0cbd"
+    , contraste = "#fff"
+    , claro = "#f3e8ff"
+    , masClaro = "#e9d5ff"
+    }
+
+
+{-| El violeta del grupo congelado como fondo y como color de texto, para lo que
+no es un botón: el banner, el badge y el ícono del modal.
+-}
+fondoCongelado : Attribute msg
+fondoCongelado =
+    Attr.style "background-color" violeta.base
+
+
+textoCongelado : Attribute msg
+textoCongelado =
+    Attr.style "color" violeta.base
 
 
 spinner : List (Attribute msg) -> Html msg
