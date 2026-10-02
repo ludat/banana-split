@@ -192,7 +192,7 @@ viewGroupHeader : String -> Path.Path -> Maybe ULID -> WebData User -> Store -> 
 viewGroupHeader origin currentPath activeUser currentUser store grupo =
     let
         info =
-            headerInfo currentPath store grupo
+            headerInfo currentPath store currentUser grupo
 
         share =
             { title = info.share.title
@@ -203,7 +203,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
         [ div [ class "container-fluid py-3" ]
             [ div [ class "d-flex flex-wrap align-items-start justify-content-between gap-3" ]
                 [ div []
-                    [ viewBreadcrumb info.crumb
+                    [ viewBreadcrumb info.breadcrumb
                     , h2 [ class "mb-0 fw-bold" ] [ text info.title ]
                     , viewBadgeCongelado grupo
                     ]
@@ -344,9 +344,35 @@ type alias Crumb =
     { label : String, ruta : PagoDetalleModal.Ruta }
 
 
+{-| Qué te ofrece el breadcrumb. Casi siempre volver a la entidad de la que
+colgás, pero en el resumen de un grupo depende de si hay sesión: sin sesión no
+hay grupos que listar, así que mandar a alguien a "Tus grupos" lo deja mirando
+una página vacía, y en ese caso ofrece tener una cuenta.
+
+Va envuelto en un `Maybe` donde `Nothing` es "todavía no sé cuál de las dos" —
+falta el gasto de la repartija, o falta saber si hay sesión—. Eso no es una
+acción, así que no entra como un caso más acá adentro.
+
+-}
+type AccionDelBreadcrumb
+    = Volver Crumb
+    | InvitarASesion PagoDetalleModal.Ruta
+
+
 sinQuery : Path.Path -> PagoDetalleModal.Ruta
 sinQuery path =
     { path = path, query = Dict.empty, hash = Nothing }
+
+
+{-| El login con el `redirect` puesto, para volver a donde estabas. Es el mismo
+parámetro que usa el "Iniciar sesión" de la navbar.
+-}
+rutaDeLogin : Path.Path -> PagoDetalleModal.Ruta
+rutaDeLogin volverA =
+    { path = Path.Login
+    , query = Dict.singleton "redirect" (Path.toString volverA)
+    , hash = Nothing
+    }
 
 
 {-| Computes everything the group header needs from the current path and store:
@@ -360,53 +386,55 @@ data is still loading.
 headerInfo :
     Path.Path
     -> Store
+    -> WebData User
     -> Grupo
-    -> { crumb : Maybe Crumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
-headerInfo currentPath store grupo =
+    -> { breadcrumb : Maybe AccionDelBreadcrumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
+headerInfo currentPath store currentUser grupo =
     let
         -- De acá cuelgan todas las secciones del grupo. La única que no es
         -- esta es la repartija, que cuelga de su gasto.
-        grupoCrumb : Maybe Crumb
-        grupoCrumb =
-            Just
-                { label = "Grupo: " ++ grupo.nombre
-                , ruta = sinQuery (Path.Grupos_Id_ { id = grupo.id })
-                }
+        volverAlGrupo : Maybe AccionDelBreadcrumb
+        volverAlGrupo =
+            Just <|
+                Volver
+                    { label = "Grupo: " ++ grupo.nombre
+                    , ruta = sinQuery (Path.Grupos_Id_ { id = grupo.id })
+                    }
 
         grupoShare =
             { title = grupo.nombre, path = Path.Grupos_Id_ { id = grupo.id } }
     in
     case currentPath of
         Path.Grupos_GrupoId__Gastos _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Gastos"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Transferencias _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Transferencias"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Liquidaciones _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Transferencias"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Participantes _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Participantes"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Settings _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Ajustes"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
@@ -425,18 +453,18 @@ headerInfo currentPath store grupo =
             in
             { -- La repartija es lo único que no cuelga del grupo: cuelga del
               -- gasto que la generó, y ahí es adonde tenés que poder volver.
-              -- Mientras el gasto no cargó no hay a dónde apuntar, así que no
-              -- va migaja en vez de una rota.
-              crumb =
+              -- Mientras el gasto no cargó todavía no hay a dónde apuntar.
+              breadcrumb =
                 maybeRepartija
                     |> Maybe.map
                         (\r ->
-                            { label = "Gasto: " ++ pagoNombre
-                            , ruta =
-                                PagoDetalleModal.rutaGasto
-                                    (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
-                                    r.pagoId
-                            }
+                            Volver
+                                { label = "Gasto: " ++ pagoNombre
+                                , ruta =
+                                    PagoDetalleModal.rutaGasto
+                                        (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+                                        r.pagoId
+                                }
                         )
             , title = "Deudores de '" ++ pagoNombre ++ "'"
             , showTabs = False
@@ -446,35 +474,35 @@ headerInfo currentPath store grupo =
         -- Rutas viejas: redirigen apenas se montan, así que nunca llegan a
         -- pintar chrome. Están acá solo para que el case sea exhaustivo.
         Path.Grupos_GrupoId__Gastos_New _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Nuevo gasto"
             , showTabs = False
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Gastos_GastoId_ _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Cargando..."
             , showTabs = False
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Pagos _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Gastos"
             , showTabs = True
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Pagos_New _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Nuevo gasto"
             , showTabs = False
             , share = { path = currentPath, title = grupo.nombre }
             }
 
         Path.Grupos_GrupoId__Pagos_PagoId_ _ ->
-            { crumb = grupoCrumb
+            { breadcrumb = volverAlGrupo
             , title = "Cargando..."
             , showTabs = False
             , share = { path = currentPath, title = grupo.nombre }
@@ -483,36 +511,52 @@ headerInfo currentPath store grupo =
         -- El grupo no cuelga de otra entidad, cuelga de tu lista de grupos. Y
         -- el título ya es el nombre del grupo, así que repetirlo acá arriba no
         -- diría nada nuevo.
+        --
+        -- Sin sesión esa lista está vacía, así que en vez del link va la
+        -- invitación a tener una cuenta. Y mientras el pedido está en vuelo
+        -- todavía no se sabe cuál de las dos corresponde.
         Path.Grupos_Id_ _ ->
-            { crumb = Just { label = "Tus grupos", ruta = sinQuery Path.Home_ }
+            { breadcrumb =
+                case currentUser of
+                    Success _ ->
+                        Just <| Volver { label = "Tus grupos", ruta = sinQuery Path.Home_ }
+
+                    Failure _ ->
+                        Just <| InvitarASesion (rutaDeLogin currentPath)
+
+                    NotAsked ->
+                        Just <| InvitarASesion (rutaDeLogin currentPath)
+
+                    Loading ->
+                        Nothing
             , title = grupo.nombre
             , showTabs = True
             , share = grupoShare
             }
 
         Path.NotFound_ ->
-            { crumb = Nothing
+            { breadcrumb = Nothing
             , title = grupo.nombre
             , showTabs = False
             , share = grupoShare
             }
 
         Path.Home_ ->
-            { crumb = Nothing
+            { breadcrumb = Nothing
             , title = "Banana split"
             , showTabs = False
             , share = grupoShare
             }
 
         Path.Login ->
-            { crumb = Nothing
+            { breadcrumb = Nothing
             , title = "Banana split"
             , showTabs = False
             , share = grupoShare
             }
 
         Path.Cuenta ->
-            { crumb = Nothing
+            { breadcrumb = Nothing
             , title = "Banana split"
             , showTabs = False
             , share = grupoShare
@@ -522,14 +566,21 @@ headerInfo currentPath store grupo =
 {-| La vuelta a la entidad de la que colgás, con forma de "‹ Grupo: Salidita de
 Jueves". No es un camino desde la raíz sino un solo salto para atrás, así que se
 pinta como un link y no como una lista de migajas.
+
+La invitación a tener cuenta ocupa el mismo lugar pero no lleva el "‹": no te
+devuelve a ningún lado, te ofrece algo.
+
 -}
-viewBreadcrumb : Maybe Crumb -> Html Msg
-viewBreadcrumb crumb =
-    case crumb of
+viewBreadcrumb : Maybe AccionDelBreadcrumb -> Html Msg
+viewBreadcrumb accion =
+    case accion of
+        -- Mientras no se sabe qué ofrecer no va nada: un placeholder acá
+        -- movería el título para abajo y después lo acomodaría, que molesta
+        -- más que esperar.
         Nothing ->
             text ""
 
-        Just crumbDeVuelta ->
+        Just (Volver crumbDeVuelta) ->
             Html.nav [ Attr.attribute "aria-label" "breadcrumb", class "mb-1" ]
                 [ Html.a
                     [ Route.href crumbDeVuelta.ruta
@@ -537,6 +588,18 @@ viewBreadcrumb crumb =
                     ]
                     [ Html.span [ Attr.attribute "aria-hidden" "true" ] [ text "‹" ]
                     , Html.span [] [ text crumbDeVuelta.label ]
+                    ]
+                ]
+
+        Just (InvitarASesion rutaLogin) ->
+            div [ class "mb-1" ]
+                [ Html.a
+                    [ Route.href rutaLogin
+                    , class "text-decoration-none d-inline-flex align-items-center gap-1 small"
+                    , Attr.title "Con una cuenta ves todos los grupos en los que participás, sin tener que acordarte las URLs."
+                    ]
+                    [ i [ class "bi bi-person-circle" ] []
+                    , Html.span [] [ text "Logueate para ver tus grupos" ]
                     ]
                 ]
 
