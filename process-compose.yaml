@@ -4,6 +4,13 @@ processes:
   backend: &backend
     command: |
       ghcid --command='cabal repl --enable-multi-repl exe:banana-split lib:banana-split' --reload=./config --run=Main.main --warnings
+    environment:
+    # Sin esto el backend no exporta nada (ver Site.Telemetry). Es el mismo
+    # collector al que reporta el frontend, así que un request que arranca en el
+    # browser y termina en la base queda en un solo trace.
+    - OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+    - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+    - OTEL_SERVICE_NAME=banana-split-backend
     availability:
       restart: "always"
     depends_on:
@@ -20,6 +27,7 @@ processes:
     # - LAUNCH_EDITOR=zeditor
     environment:
     - LAUNCH_EDITOR=idea
+    - OTLP_ENDPOINT=http://localhost:4318
     working_dir: ./ui
     availability:
       restart: "always"
@@ -40,12 +48,25 @@ processes:
       database:
         condition: process_healthy
   database:
-    command: docker-compose up database
+    command: docker compose up database
     readiness_probe:
       exec:
         command: docker compose exec database pg_isready
     shutdown:
-      command: docker-compose down
+      command: docker compose down database
+  observability:
+    command: docker compose up observability
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        scheme: http
+        path: "/ready"
+        port: 13133
+      initial_delay_seconds: 5
+      period_seconds: 2
+      failure_threshold: 30
+    shutdown:
+      command: docker compose stop observability
   mails:
     command: mailpit --enable-chaos
     readiness_probe:

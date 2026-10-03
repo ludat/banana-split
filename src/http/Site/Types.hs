@@ -10,6 +10,7 @@ import Database.Beam.Postgres qualified as Beam
 import Servant
 
 import BananaSplit.Receipts
+import BananaSplit.Telemetry (Telemetry (..))
 import Preludat
 import Site.Mailer (Mailer)
 
@@ -24,6 +25,10 @@ data App = App
   -- ^ Whether session cookies are marked @Secure@ (HTTPS only). Off in dev.
   , mailer :: Mailer
   -- ^ Delivers login confirmation codes (console in dev, email in prod).
+  , telemetry :: Telemetry
+  -- ^ Tracer, logger and metric instruments. See "Site.Telemetry"; handlers
+  -- reach these through the helpers in "Site.Handler.Utils" rather than
+  -- directly.
   }
 
 type AppHandler = ReaderT App Servant.Handler

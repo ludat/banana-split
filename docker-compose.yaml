@@ -7,8 +7,41 @@ services:
       - database
     environment:
       - BANANASPLIT_DATABASE_URL=postgres://postgres:postgres@database/bananasplit_dev
+      # Ver TELEMETRY.md: sin endpoint el backend no exporta nada.
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://observability:4318
+      - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
+      - OTEL_SERVICE_NAME=banana-split-backend
     volumes:
       - ./config/dev.properties:/opt/banana-split/config/dev.properties
+  # Backend de OpenTelemetry para desarrollo: trae el Collector, Prometheus
+  # (métricas), Tempo (traces), Loki (logs) y Grafana ya conectados entre sí.
+  # Grafana queda en http://localhost:3000 sin login.
+  #
+  # El config que trae la imagen ya habilita CORS para origins http://*, que es
+  # lo que necesita el frontend para postear OTLP desde el browser.
+  observability:
+    image: "grafana/otel-lgtm:0.34.0"
+    environment:
+      # El frontend manda métricas en temporalidad delta (un contador en el
+      # browser arranca de cero en cada carga, así que acumulativo no
+      # significaría nada), y el receiver OTLP de Prometheus las rechaza con
+      # "invalid temporality and type combination" salvo que se le habilite la
+      # conversión a acumulativo.
+      - PROMETHEUS_EXTRA_ARGS=--enable-feature=otlp-deltatocumulative
+      # Logs de todos los componentes (Collector, Prometheus, Tempo, Loki,
+      # Grafana, Pyroscope) al stdout del contenedor. Por defecto la imagen los
+      # manda a /dev/null, con lo cual un componente que rechaza data falla en
+      # silencio. Se ven con `docker compose logs -f observability`, y se puede
+      # acotar a uno solo cambiando esto por ENABLE_LOGS_PROMETHEUS=true (o
+      # _OTELCOL, _TEMPO, _LOKI, _GRAFANA, _PYROSCOPE).
+      - ENABLE_LOGS_ALL=true
+    ports:
+      - "3000:3000" # Grafana
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP — por acá postea el browser
+      - "13133:13133" # health check del Collector
+    volumes:
+      - otel-data:/data
   database:
     image: "postgres:18-alpine"
     restart: always
@@ -29,3 +62,4 @@ services:
 
 volumes:
   db-data:
+  otel-data:

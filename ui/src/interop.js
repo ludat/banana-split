@@ -3,6 +3,9 @@ import "bootstrap-icons/font/bootstrap-icons.css";
 import "bootstrap";
 import "./styles.css";
 import "./js/MontoInput";
+import { initTelemetry, recordAppEvent, recordFeedback } from "./js/telemetry";
+
+initTelemetry();
 
 const darkModeQuery = window.matchMedia("(prefers-color-scheme: dark)");
 const applyTheme = (dark) => {
@@ -126,23 +129,53 @@ export const onReady = ({ app, env }) => {
           // data: { title: string, url: string }
           {
             if (navigator.share) {
-              navigator.share({ title: data.title, url: data.url }).catch((err) => {
-                // AbortError happens when the user dismisses the share sheet.
-                if (err && err.name !== "AbortError") {
+              navigator.share({ title: data.title, url: data.url }).then(
+                () => recordAppEvent("share", { outcome: "native" }),
+                (err) => {
+                  // AbortError happens when the user dismisses the share sheet.
+                  if (err && err.name === "AbortError") {
+                    recordAppEvent("share", { outcome: "dismissed" });
+                    return;
+                  }
+                  recordAppEvent("share", { outcome: "failed" });
                   console.warn("Share failed:", err);
-                }
-              });
+                },
+              );
             } else if (navigator.clipboard) {
               navigator.clipboard.writeText(data.url).then(
-                () =>
+                () => {
+                  recordAppEvent("share", { outcome: "clipboard" });
                   app.ports.incoming.send({
                     tag: "SHARE_LINK_COPIED",
                     data: null,
-                  }),
-                (err) => console.warn("Clipboard write failed:", err),
+                  });
+                },
+                (err) => {
+                  recordAppEvent("share", { outcome: "failed" });
+                  console.warn("Clipboard write failed:", err);
+                },
               );
+            } else {
+              recordAppEvent("share", { outcome: "unsupported" });
             }
           }
+          break;
+
+        case "SEND_FEEDBACK":
+          // data: { message: string }
+          // El único texto libre que sale del browser, y porque la persona lo
+          // escribió y apretó un botón. Ver js/telemetry.js.
+          app.ports.incoming.send({
+            tag: "FEEDBACK_SENT",
+            data: { accepted: recordFeedback(data.message) },
+          });
+          break;
+
+        case "TELEMETRY_EVENT":
+          // data: { name: string, attributes: { [k: string]: string } }
+          // Anything outside the vocabulary declared in js/telemetry.js is
+          // dropped there, not here.
+          recordAppEvent(data.name, data.attributes);
           break;
 
         case "COPY":

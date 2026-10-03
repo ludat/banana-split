@@ -34,6 +34,7 @@ common base-settings
     beam-core,
     beam-postgres,
     bytestring,
+    case-insensitive,
     conferer,
     conferer-warp,
     containers,
@@ -41,6 +42,8 @@ common base-settings
     elm-bridge,
     file-embed,
     filepath,
+    hs-opentelemetry-api,
+    hs-opentelemetry-sdk,
     http-api-data,
     http-client,
     http-client-tls,
@@ -101,6 +104,15 @@ library
     BananaSplit.User
     Preludat
 
+-- El setup del SDK de OpenTelemetry y los helpers que valen en cualquier parte.
+-- Está aparte porque lo usan tanto `database` (las migraciones) como `http`
+-- (los requests), y `database` no puede depender de `http`.
+library telemetry
+  import: base-settings
+  hs-source-dirs: src/telemetry/
+  exposed-modules:
+    BananaSplit.Telemetry
+
 library database
   import: base-settings
   hs-source-dirs: src/database/
@@ -112,7 +124,8 @@ library database
     BananaSplit.PgRoll
 
   build-depends:
-    banana-split
+    banana-split,
+    banana-split:telemetry,
 
 library receipts
   import: base-settings
@@ -156,12 +169,14 @@ library http
     Site.Handler.Utils
     Site.Mailer
     Site.Server
+    Site.Telemetry
     Site.Types
 
   build-depends:
     banana-split,
     banana-split:database,
     banana-split:receipts,
+    banana-split:telemetry,
     cookie,
     crypton,
     jose,
@@ -177,6 +192,7 @@ executable banana-split
     banana-split:database,
     banana-split:elm,
     banana-split:http,
+    banana-split:telemetry,
 
 test-suite spec
   import: base-settings, threaded-rts
@@ -199,6 +215,7 @@ test-suite spec
     Integracion.ConcurrenciaSpec
     Site.AuthSpec
     Site.Handler.InboundEmailSpec
+    Site.TelemetrySpec
 
   build-depends:
     QuickCheck,
@@ -206,6 +223,7 @@ test-suite spec
     banana-split:database,
     banana-split:http,
     banana-split:receipts,
+    banana-split:telemetry,
     hspec,
     lens,
 

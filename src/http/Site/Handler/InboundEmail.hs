@@ -54,8 +54,9 @@ import BananaSplit.Receipts (
   ReceiptsReaderConfig (..),
   analyzePagoFromEmail,
  )
+import BananaSplit.Telemetry (logAttr)
 import Preludat
-import Site.Handler.Utils (runBeamFastRead, runBeamWrite)
+import Site.Handler.Utils (inSpan, logInfo, logWarn, runBeamFastRead, runBeamWrite)
 import Site.Mailer (Mailer (..))
 import Site.Types
 
@@ -159,9 +160,16 @@ instance FromJSON MailerooValidation where
 handleInboundEmail :: Maybe Text -> MailerooInbound -> AppHandler NoContent
 handleInboundEmail host payload = do
   outcome <- runExceptT $ processInbound host payload
+  -- Siempre contestamos 200 (ver abajo), así que el request span sale verde
+  -- pase lo que pase: el desenlace tiene que quedar registrado o no se ve en
+  -- ningún lado.
   case outcome of
-    Left reason -> putText $ "[inbound-email] dropped: " <> reason
-    Right report -> putText $ "[inbound-email] " <> report
+    Left reason -> do
+      putText $ "[inbound-email] dropped: " <> reason
+      logWarn "email.inbound.dropped" [logAttr "app.email.drop_reason" reason]
+    Right report -> do
+      putText $ "[inbound-email] " <> report
+      logInfo "email.inbound.saved" [logAttr "app.email.outcome" report]
   -- Always 200: never surface processing failures to the provider, so Maileroo
   -- doesn't retry-storm. User-facing failures will go out as email later.
   pure NoContent
@@ -177,7 +185,8 @@ processInbound :: Maybe Text -> MailerooInbound -> ExceptT Text AppHandler Text
 processInbound host payload = do
   -- 1. Prove the POST came from Maileroo.
   config <- lift $ asks (.receipts)
-  validated <- liftIO $ validateWebhook config.manager payload.validationUrl
+  validated <-
+    lift $ inSpan "email.inbound.validate_webhook" $ liftIO $ validateWebhook config.manager payload.validationUrl
   unless validated
     $ throwError "validation_url did not confirm the webhook (success was not true)"
 
@@ -229,12 +238,24 @@ processPago payload fromEmail = do
   grupo <-
     lift (runBeamFastRead $ fetchGrupo grupoId)
       `orElseMay` throwError "No perteneces a ese grupo, o el grupo no existe."
+  lift
+    $ logInfo
+      "email.inbound.authorized"
+      [ logAttr "app.user.email" (unEmail fromEmail)
+      , logAttr "enduser.id" (show user.id :: Text)
+      , logAttr "app.grupo.id" (show grupo.id :: Text)
+      ]
 
   -- 5. Ask the AI to parse exactly one pago within this grupo (text only for
   -- now). A 'Left' here is the model's own (Spanish) explanation.
   let subject = fromMaybe "" (firstHeader "Subject" payload.headers)
   parsed <-
-    liftIO (analyzePagoFromEmail config (mkPagoContext user grupo) subject (bodyText payload))
+    -- El llamado al modelo es lo más lento y lo que falla más seguido de todo
+    -- el pipeline, así que va en su propio span.
+    lift
+      ( inSpan "ai.parse_email_pago"
+          $ liftIO (analyzePagoFromEmail config (mkPagoContext user grupo) subject (bodyText payload))
+      )
       `orElse` throwError
 
   -- 6. Resolve the model's output into a real Pago. This is deliberately
