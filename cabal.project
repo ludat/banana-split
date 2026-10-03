@@ -1,6 +1,13 @@
 packages:
     .
 
+-- La 1.0 es la primera que trae métricas y logs además de traces. La 0.x (de
+-- 2023) solo tiene traces, y además tiene otro layout de módulos, así que no
+-- queremos volver a caer ahí sin notarlo. Ojo que para que el solver la vea
+-- hace falta el index-state de cabal.project.freeze, que es lo que la tapaba.
+constraints:
+    hs-opentelemetry-sdk >= 1.0
+
 source-repository-package
     type: git
     location: https://github.com/msakai/haskell-MIP.git

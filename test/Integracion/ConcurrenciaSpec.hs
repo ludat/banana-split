@@ -22,6 +22,7 @@ import BananaSplit qualified as M
 import BananaSplit.Persistence
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
+import BananaSplit.Telemetry (telemetryFromGlobals)
 import BananaSplit.ULID (ULID, nullUlid)
 import Preludat
 import Site.Config qualified as Config
@@ -58,8 +59,9 @@ conConexiones correr = do
   -- Migrar es idempotente y barato, así que este spec no depende de que otro
   -- haya corrido antes. La base tiene que existir de antes, igual que para el
   -- resto del suite.
-  PgRoll.init config
-  PgRoll.startAndComplete config
+  telemetry <- telemetryFromGlobals
+  PgRoll.init telemetry config
+  PgRoll.startAndComplete telemetry config
   bracket (makePool config) Pool.destroyAllResources $ \pool ->
     -- Anidar dos 'withResource' da dos conexiones distintas —el pool nunca
     -- entrega el mismo recurso a dos tomadores a la vez—, que es justo lo que

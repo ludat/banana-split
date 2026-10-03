@@ -72,6 +72,7 @@ import Database.Beam.Postgres.Full hiding (insert)
 import Database.PostgreSQL.Simple (Only (..), execute, query)
 import Database.PostgreSQL.Simple.Errors (isSerializationError)
 import Database.PostgreSQL.Simple.Transaction qualified as Transaction
+import OpenTelemetry.Trace.Core qualified as Otel
 
 import BananaSplit qualified as M
 import BananaSplit.Persistence.Migration_2026_05_26_FixDates qualified as FixDates
@@ -79,6 +80,8 @@ import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..))
 import BananaSplit.Persistence.ResumenGuardado qualified as ResumenGuardado
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
+import BananaSplit.Telemetry (Telemetry)
+import BananaSplit.Telemetry qualified as Telemetry
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
 import Preludat
@@ -136,20 +139,29 @@ conTransaccionDeLecturaRapida conn accion =
     conn
     (runBeamPostgres conn accion)
 
-runMigration :: Conferer.Config -> [String] -> IO ()
-runMigration config args = do
+-- | Cada migración queda como un span raíz llamado @migration \<nombre\>@, con
+-- un log de arranque y uno de cierre. Son comandos que se corren a mano y que
+-- pueden tardar; sin esto lo único que queda de una corrida es lo que haya
+-- quedado en la terminal de quien la ejecutó.
+runMigration :: Telemetry -> Conferer.Config -> [String] -> IO ()
+runMigration telemetry config args = do
   conn <- openConnection config
+  let nombre = Text.unwords $ fmap toS args
+      correr accion =
+        Telemetry.inSpan telemetry ("migration " <> nombre) $ do
+          Telemetry.logInfo telemetry "migration.start" [Telemetry.logAttr "app.migration" nombre]
+          void accion
+          Telemetry.logInfo telemetry "migration.done" [Telemetry.logAttr "app.migration" nombre]
+          putText "Done"
   case args of
-    ["fix-pagos-fecha"] -> do
-      runBeamPostgres conn FixDates.run
-      putText "Done"
-    ["recompute-pagos"] -> do
-      recomputePagos conn
-      putText "Done"
-    ["prune-login-attempts"] -> do
-      runBeamPostgres conn deleteOldLoginAttempts
-      putText "Done"
+    ["fix-pagos-fecha"] -> correr $ runBeamPostgres conn FixDates.run
+    ["recompute-pagos"] -> correr $ recomputePagos telemetry conn
+    ["prune-login-attempts"] -> correr $ runBeamPostgres conn deleteOldLoginAttempts
     _ -> do
+      Telemetry.logWarn
+        telemetry
+        "migration.unknown"
+        [Telemetry.logAttr "app.migration" nombre]
       putText $ "Unknown migration: " <> show args
       exitFailure
   close conn
@@ -876,33 +888,56 @@ savePago grupoId pagoWithoutId = do
   escribirPagadoYConsumido grupoId pagoNuevo resumen
   pure pagoNuevo
 
-recomputePagos :: Connection -> IO ()
-recomputePagos conn = go 0 nullUlid
+-- | Recomputa todos los pagos, por lotes.
+--
+-- Cada lote es su propio span colgado del de la migración, con el número de
+-- lote y cuántos pagos procesó. Es lo que hace que una corrida larga se pueda
+-- mirar mientras pasa en lugar de solo al final: en el trace se ve el avance
+-- lote por lote y cuál de ellos se puso lento.
+recomputePagos :: Telemetry -> Connection -> IO ()
+recomputePagos telemetry conn = go 1 0 nullUlid
   where
     recomputePagosBatchSize = 100
 
     -- 'total' es la cantidad de pagos ya recomputados (para loguear progreso).
-    go :: Int -> ULID -> IO ()
-    go total ultimoId = do
-      resultado <- runBeamPostgres conn $ do
-        lote <- runSelectReturningList $ select $ do
-          limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
-            p <- all_ db.pagos
-            guard_ (p.pagoId >. val_ ultimoId)
-            pure (p.pagoId, p.pagoGrupo)
-        case NE.nonEmpty lote of
-          Nothing -> pure Nothing
-          Just loteNE -> do
-            forM_ loteNE $ \(pagoId, GrupoId grupoId) -> do
-              pago <- fetchPago grupoId pagoId
-              void $ savePago grupoId pago
-            pure $ Just (NE.length loteNE, fst $ NE.last loteNE)
+    go :: Int -> Int -> ULID -> IO ()
+    go lote total ultimoId = do
+      resultado <- Telemetry.inSpan' telemetry "recompute-pagos.lote" $ \span -> do
+        Otel.addAttribute span "app.recompute.lote" (fromIntegral lote :: Int64)
+        resultado <- runBeamPostgres conn $ do
+          batch <- runSelectReturningList $ select $ do
+            limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
+              p <- all_ db.pagos
+              guard_ (p.pagoId >. val_ ultimoId)
+              pure (p.pagoId, p.pagoGrupo)
+          case NE.nonEmpty batch of
+            Nothing -> pure Nothing
+            Just batchNE -> do
+              forM_ batchNE $ \(pagoId, GrupoId grupoId) -> do
+                pago <- fetchPago grupoId pagoId
+                void $ savePago grupoId pago
+              pure $ Just (NE.length batchNE, fst $ NE.last batchNE)
+        Otel.addAttribute span "app.recompute.pagos"
+          $ (fromIntegral (maybe 0 fst resultado) :: Int64)
+        pure resultado
       case resultado of
-        Nothing -> putText $ "recompute-pagos: listo, " <> show total <> " pagos recomputados"
+        Nothing -> do
+          putText $ "recompute-pagos: listo, " <> show total <> " pagos recomputados"
+          Telemetry.logInfo
+            telemetry
+            "recompute_pagos.finished"
+            [Telemetry.logAttr "app.recompute.total" (fromIntegral total :: Int64)]
         Just (procesados, siguienteId) -> do
           let total' = total + procesados
           putText $ "recompute-pagos: lote de " <> show procesados <> " procesado (" <> show total' <> " en total)"
-          go total' siguienteId
+          Telemetry.logInfo
+            telemetry
+            "recompute_pagos.lote"
+            [ Telemetry.logAttr "app.recompute.lote" (fromIntegral lote :: Int64)
+            , Telemetry.logAttr "app.recompute.pagos" (fromIntegral procesados :: Int64)
+            , Telemetry.logAttr "app.recompute.total" (fromIntegral total' :: Int64)
+            ]
+          go (lote + 1) total' siguienteId
 
 saveDistribucion :: M.Moneda -> M.Distribucion -> Pg M.Distribucion
 saveDistribucion moneda distribucionWithoutId = do
