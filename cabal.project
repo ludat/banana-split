@@ -1,8 +1,45 @@
 packages:
     .
 
+-- `hs-opentelemetry-api` usa la API de `Ref` de thread-utils-context, que
+-- apareció en 0.4.1.1, pero declara `>= 0.3 && < 0.5`. Con ese bound el solver
+-- puede elegir 0.3.0.4 y entonces la compilación de otel falla con
+-- "Variable not in scope: ensureRef" — un error que parece de otel pero es de
+-- resolución. Hasta que upstream suba el lower bound, lo subimos acá.
+constraints:
+    thread-utils-context >= 0.4.1.1
+
 source-repository-package
     type: git
     location: https://github.com/msakai/haskell-MIP.git
     tag: 0c602fc593155b2ebf82f15b0325ac439e2c7bcc
     subdir: MIP
+
+-- OpenTelemetry desde el repo, igual que MIP y conferer, y no desde Hackage.
+-- Los paquetes del monorepo se publican juntos y se referencian entre ellos con
+-- bounds exactos (`== 1.0.*`), así que mezclar fuentes es pedir problemas; y los
+-- que hay en nixpkgs son de 2023 (solo traces) o están marcados como broken.
+-- Pinneando el repo, el build de cabal y el de Nix usan exactamente el mismo
+-- código: ver el override en `flake.nix`, que tiene que listar los mismos
+-- subdirectorios que esto.
+--
+-- La lista es `sdk` y todo lo que arrastra: el SDK depende de todos los
+-- propagadores y de los dos exporters, aunque se elija uno solo por
+-- OTEL_PROPAGATORS / OTEL_*_EXPORTER.
+source-repository-package
+    type: git
+    location: https://github.com/iand675/hs-opentelemetry.git
+    tag: 5a267e690941bc3817b1de8dbd496cb35bb4788c
+    subdir:
+        api
+        api-types
+        semantic-conventions
+        otlp
+        sdk
+        exporters/handle
+        exporters/otlp
+        propagators/b3
+        propagators/datadog
+        propagators/jaeger
+        propagators/w3c
+        propagators/xray

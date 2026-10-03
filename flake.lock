@@ -65,6 +65,23 @@
         "type": "github"
       }
     },
+    "hs-opentelemetry": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1781772088,
+        "narHash": "sha256-xGcYnJ4NXQkhEhRtyiSyqQuiA3bkDTcUPu9c3uIv7cE=",
+        "owner": "iand675",
+        "repo": "hs-opentelemetry",
+        "rev": "5a267e690941bc3817b1de8dbd496cb35bb4788c",
+        "type": "github"
+      },
+      "original": {
+        "owner": "iand675",
+        "repo": "hs-opentelemetry",
+        "rev": "5a267e690941bc3817b1de8dbd496cb35bb4788c",
+        "type": "github"
+      }
+    },
     "nixpkgs": {
       "locked": {
         "lastModified": 1769461804,
@@ -102,7 +119,26 @@
         "conferer": "conferer",
         "flake-parts": "flake-parts",
         "haskell-flake": "haskell-flake",
-        "nixpkgs": "nixpkgs"
+        "hs-opentelemetry": "hs-opentelemetry",
+        "nixpkgs": "nixpkgs",
+        "thread-utils": "thread-utils"
+      }
+    },
+    "thread-utils": {
+      "flake": false,
+      "locked": {
+        "lastModified": 1788464644,
+        "narHash": "sha256-lmORcauMPYeI1+jlEIzIHSZMfdViWxJtiuLu8FvwMO8=",
+        "owner": "iand675",
+        "repo": "thread-utils",
+        "rev": "4a981ca2a0dd67cb6dce81cb8465612cfb3b1ced",
+        "type": "github"
+      },
+      "original": {
+        "owner": "iand675",
+        "repo": "thread-utils",
+        "rev": "4a981ca2a0dd67cb6dce81cb8465612cfb3b1ced",
+        "type": "github"
       }
     }
   },

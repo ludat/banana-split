@@ -19,14 +19,16 @@ import System.Posix (Handler (..), installHandler, sigTERM)
 
 import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.Receipts (ReceiptsReaderConfig (..))
+import BananaSplit.Telemetry (withTelemetry)
 import Site.Auth (mkSessionKey)
 import Site.Config (createConfig)
 import Site.Mailer (mkMailer)
 import Site.Server qualified
+import Site.Telemetry (traceApiMiddleware, tracedMailer)
 import Site.Types
 
 runBackend :: IO ()
-runBackend = do
+runBackend = withTelemetry $ \telemetry -> do
   -- Containers commonly have no locale configured (LANG unset or "C"/"POSIX"),
   -- which makes GHC default stdout/stderr to an encoding that can't represent
   -- most Unicode text. Printing anything outside that range (e.g. a Greek
@@ -50,7 +52,7 @@ runBackend = do
 
   httpManager <- newManager tlsManagerSettings
 
-  mailer <- mkMailer config
+  mailer <- tracedMailer telemetry <$> mkMailer config
 
   let appState =
         App
@@ -65,6 +67,7 @@ runBackend = do
           , authPepper = encodeUtf8 jwtSecret
           , cookieSecure = cookieSecure'
           , mailer = mailer
+          , telemetry = telemetry
           }
 
   let shutdownAction = Pool.destroyAllResources beamPool
@@ -83,8 +86,10 @@ runBackend = do
   -- something that silently depends on config plumbing.
   let settings = Warp.setOnException logWarpException fetchedSettings
 
+  traceMiddleware <- traceApiMiddleware telemetry
+
   putText [i|Listening on port #{Warp.getPort settings}...|]
-  Warp.runSettings settings $ Site.Server.app appState
+  Warp.runSettings settings $ traceMiddleware $ Site.Server.app appState
 
 -- | Log unhandled exceptions Warp catches outside of Servant's own handler
 -- dispatch (e.g. while streaming a response, or in a WAI middleware). Site.Server

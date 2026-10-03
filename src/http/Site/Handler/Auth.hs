@@ -27,6 +27,7 @@ import BananaSplit.Persistence (
   recordAttempt,
   updateUser,
  )
+import BananaSplit.Telemetry (logAttr)
 import Preludat
 import Site.Api (
   LoginChallenge (..),
@@ -50,7 +51,7 @@ import Site.Auth (
   shouldRefreshSession,
   verifyRegistrationToken,
  )
-import Site.Handler.Utils (runBeamFastRead, runBeamWrite, throwJsonError)
+import Site.Handler.Utils (logDebug, logInfo, logWarn, runBeamFastRead, runBeamWrite, throwJsonError)
 import Site.Mailer (Mailer (..))
 import Site.Types
 
@@ -77,8 +78,14 @@ handleRequestCode params = do
   -- Throttle login events for this address, so the endpoint can't be used to
   -- email-bomb a victim or run up SMTP costs.
   attempts <- runBeamFastRead $ countRecentAttempts email
-  when (attempts >= maxLoginAttempts)
-    $ throwJsonError err429 "Pediste demasiados códigos. Esperá unos minutos y volvé a intentar."
+  when (attempts >= maxLoginAttempts) $ do
+    logWarn
+      "auth.rate_limited"
+      [ logAttr "app.auth.stage" ("request_code" :: Text)
+      , logAttr "app.user.email" (unEmail email)
+      , logAttr "app.auth.attempts" (fromIntegral attempts :: Int64)
+      ]
+    throwJsonError err429 "Pediste demasiados códigos. Esperá unos minutos y volvé a intentar."
   code <- liftIO generateLoginCode
   challenge <-
     liftIO
@@ -86,6 +93,11 @@ handleRequestCode params = do
       `orElse` (throwIO . SessionTokenError . ("Could not sign login challenge: " <>) . show)
   runBeamWrite $ recordAttempt email CodeSent
   liftIO $ mailer.sendLoginCode email code
+  logInfo
+    "auth.code_sent"
+    [ logAttr "app.user.email" (unEmail email)
+    , logAttr "app.auth.attempts" (fromIntegral attempts :: Int64)
+    ]
   pure $ LoginChallenge challenge
 
 -- | Step 2: prove ownership of the challenge's email with the code, then branch
@@ -99,13 +111,28 @@ handleVerify params = do
   secure <- asks (.cookieSecure)
   payload <-
     liftIO (openChallenge key params.challenge)
-      `orElseMay` throwJsonError err401 "Código inválido o vencido"
+      `orElseMay` do
+        -- No hay email que registrar: justamente lo que falló es recuperarlo
+        -- del challenge. Pasa con un challenge vencido o manoseado.
+        logWarn "auth.challenge_rejected" []
+        throwJsonError err401 "Código inválido o vencido"
   let email = payload.email
   attempts <- runBeamFastRead $ countRecentAttempts email
-  when (attempts >= maxLoginAttempts)
-    $ throwJsonError err429 "Demasiados intentos. Esperá unos minutos y volvé a intentar."
+  when (attempts >= maxLoginAttempts) $ do
+    logWarn
+      "auth.rate_limited"
+      [ logAttr "app.auth.stage" ("verify" :: Text)
+      , logAttr "app.user.email" (unEmail email)
+      , logAttr "app.auth.attempts" (fromIntegral attempts :: Int64)
+      ]
+    throwJsonError err429 "Demasiados intentos. Esperá unos minutos y volvé a intentar."
   unless (checkChallengeCode pepper payload params.code) $ do
     runBeamWrite $ recordAttempt email VerifyFailure
+    logWarn
+      "auth.wrong_code"
+      [ logAttr "app.user.email" (unEmail email)
+      , logAttr "app.auth.attempts" (fromIntegral attempts :: Int64)
+      ]
     throwJsonError err401 "Código inválido o vencido"
   -- Ownership proven: drop this email's attempts so a legit fumble doesn't count.
   runBeamWrite $ clearAttempts email
@@ -116,12 +143,20 @@ handleVerify params = do
         liftIO
           $ issueToken key user
           `orElse` (throwIO . SessionTokenError . ("Could not sign session token: " <>) . show)
+      logInfo
+        "auth.logged_in"
+        [ logAttr "enduser.id" (show user.id :: Text)
+        , logAttr "app.user.email" (unEmail email)
+        ]
       pure $ addHeader (renderSessionCookie secure token) (VerifyLoggedIn user)
     Nothing -> do
       regToken <-
         liftIO
           $ issueRegistrationToken key email
           `orElse` (throwIO . SessionTokenError . ("Could not sign registration token: " <>) . show)
+      logInfo
+        "auth.registration_needed"
+        [logAttr "app.user.email" (unEmail email)]
       pure $ noHeader (VerifyNeedsRegistration regToken)
 
 -- | Step 3 (new accounts only): exchange the registration token + a chosen
@@ -136,7 +171,9 @@ handleRegister params = do
     $ throwJsonError err400 "Ingresá tu nombre"
   email <-
     liftIO (verifyRegistrationToken key params.registrationToken)
-      `orElseMay` throwJsonError err401 "Tu registro venció. Volvé a empezar."
+      `orElseMay` do
+        logWarn "auth.registration_token_rejected" []
+        throwJsonError err401 "Tu registro venció. Volvé a empezar."
   existing <- runBeamFastRead $ fetchUserByEmail email
   when (isJust existing)
     $ throwJsonError err409 "Ya existe una cuenta con ese email. Iniciá sesión."
@@ -145,6 +182,11 @@ handleRegister params = do
     liftIO
       $ issueToken key user
       `orElse` (throwIO . SessionTokenError . ("Could not sign session token: " <>) . show)
+  logInfo
+    "auth.registered"
+    [ logAttr "enduser.id" (show user.id :: Text)
+    , logAttr "app.user.email" (unEmail email)
+    ]
   pure $ addHeader (renderSessionCookie secure token) user
 
 handleLogout :: AppHandler (Headers '[Header "Set-Cookie" Text] Text)
@@ -175,6 +217,9 @@ handleRefresh session = do
         liftIO
           $ issueToken key user
           `orElse` (throwIO . SessionTokenError . ("Could not sign session token: " <>) . show)
+      -- Pasa seguido y por sí solo no dice nada: solo interesa cuando estás
+      -- mirando de cerca por qué a alguien se le cae la sesión.
+      logDebug "auth.session_renewed" [logAttr "enduser.id" (show user.id :: Text)]
       pure $ addHeader (renderSessionCookie secure token) user
     else pure $ noHeader user
 

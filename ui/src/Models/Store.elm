@@ -6,13 +6,16 @@ import Generated.Api as Api exposing (Grupo, Pago, RepartijaForFrontend, Resumen
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
+import Utils.Telemetry
 
 
 update : StoreMsg -> Store -> ( Store, Effect Shared.Msg.Msg )
 update msg store =
     case msg of
         GrupoFetched grupoId grupo ->
-            ( store |> saveGrupo grupoId grupo, Effect.none )
+            ( store |> saveGrupo grupoId grupo
+            , Utils.Telemetry.trackDecodeErrors "getGrupoById" grupo
+            )
 
         FetchGrupo grupoId ->
             ( store
@@ -22,7 +25,9 @@ update msg store =
             )
 
         ResumenFetched grupoId resumen ->
-            ( store |> saveResumen grupoId resumen, Effect.none )
+            ( store |> saveResumen grupoId resumen
+            , Utils.Telemetry.trackDecodeErrors "getGrupoByIdResumen" resumen
+            )
 
         FetchResumen grupoId ->
             ( store
@@ -36,7 +41,7 @@ update msg store =
 
         PagosFetched grupoId pagos ->
             ( store |> savePagos grupoId pagos
-            , Effect.none
+            , Utils.Telemetry.trackDecodeErrors "getGrupoByIdPagos" pagos
             )
 
         FetchPagos grupoId participanteId ->
@@ -51,7 +56,7 @@ update msg store =
 
         PagoFetched pagoId pago ->
             ( store |> savePago pagoId pago
-            , Effect.none
+            , Utils.Telemetry.trackDecodeErrors "getGrupoByIdPagosByPagoId" pago
             )
 
         FetchPago grupoId pagoId ->
@@ -63,7 +68,7 @@ update msg store =
 
         RepartijaFetched repartijaId repartija ->
             ( store |> saveRepartija repartijaId repartija
-            , Effect.none
+            , Utils.Telemetry.trackDecodeErrors "getRepartijasByRepartijaId" repartija
             )
 
         FetchRepartija repartijaId ->

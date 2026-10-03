@@ -18,6 +18,7 @@ port module Effect exposing
     , saveCurrentUser
     , saveLastReadChangelog
     , sendCmd
+    , sendFeedback
     , sendMsg
     , sendSharedMsg
     , sendStoreMsg
@@ -25,6 +26,7 @@ port module Effect exposing
     , sendToastMsg
     , setUnsavedChangesWarning
     , share
+    , telemetryEvent
     , toCmd
     )
 
@@ -259,6 +261,46 @@ share { title, url } =
                 Json.Encode.object
                     [ ( "title", Json.Encode.string title )
                     , ( "url", Json.Encode.string url )
+                    ]
+            }
+
+
+{-| Mandar un comentario escrito por la persona.
+
+Es el único lugar de la app por el que sale texto libre, y va como log record a
+la telemetría, no a la API. No hay forma de responderlo: no se adjunta ningún
+identificador. La pantalla que lo use tiene que decir que se manda.
+
+-}
+sendFeedback : String -> Effect msg
+sendFeedback message =
+    SendCmd <|
+        outgoing
+            { tag = "SEND_FEEDBACK"
+            , data = Json.Encode.object [ ( "message", Json.Encode.string message ) ]
+            }
+
+
+{-| Reportar un evento de telemetría.
+
+El nombre del evento y los atributos permitidos están declarados en
+`src/js/telemetry.js`: lo que no esté en ese vocabulario se descarta y no se
+manda. No pasar texto escrito por el usuario ni ids por acá; ver
+`Utils.Telemetry` para los helpers de más alto nivel.
+
+-}
+telemetryEvent : String -> List ( String, String ) -> Effect msg
+telemetryEvent name attributes =
+    SendCmd <|
+        outgoing
+            { tag = "TELEMETRY_EVENT"
+            , data =
+                Json.Encode.object
+                    [ ( "name", Json.Encode.string name )
+                    , ( "attributes"
+                      , Json.Encode.object <|
+                            List.map (Tuple.mapSecond Json.Encode.string) attributes
+                      )
                     ]
             }
 

@@ -9,32 +9,60 @@ module BananaSplit.PgRoll (
 
 import Conferer
 import Data.String
+import Data.Text qualified as Text
+import OpenTelemetry.Trace.Core qualified as Otel
 import Protolude
 import System.Process (callProcess, readProcess)
 
-rawCall :: Config -> [String] -> IO ()
-rawCall config args = do
+import BananaSplit.Telemetry (Telemetry, inSpan', logAttr, logError, logInfo)
+
+-- | Corre @pgroll@ con la conexión que sale de la config.
+--
+-- El span abarca el subproceso entero, que es lo único que se puede medir desde
+-- acá: @pgroll@ no reporta nada a OpenTelemetry, así que de una migración larga
+-- se ve cuánto tardó y si falló, no en qué paso está.
+--
+-- Solo se registran los @args@, nunca la URL de conexión: lleva la contraseña.
+-- Y por eso mismo la excepción se ataja /adentro/ del span y se re-lanza
+-- afuera, en lugar de dejarla atravesarlo: cuando @callProcess@ falla, el
+-- mensaje de la 'IOException' incluye el argv completo — con la URL y la
+-- contraseña — y 'inSpan'' graba el mensaje de cualquier excepción que lo cruce
+-- como @exception.message@. Dejándola pasar, la contraseña termina en Tempo.
+rawCall :: Telemetry -> Config -> [String] -> IO ()
+rawCall telemetry config args = do
   connString <- Conferer.fetchFromConfig "database.url" config
   let connectionArgs = ["--postgres-url", connString ++ "?sslmode=disable"]
-  callProcess "pgroll" $ connectionArgs ++ args
+      comando = Text.unwords $ fmap toS args
+  outcome <- inSpan' telemetry ("pgroll " <> comando) $ \span -> do
+    Otel.addAttribute span "app.pgroll.args" comando
+    logInfo telemetry "migration.pgroll.start" [logAttr "app.pgroll.args" comando]
+    result <- try @SomeException $ callProcess "pgroll" $ connectionArgs ++ args
+    case result of
+      Right () ->
+        logInfo telemetry "migration.pgroll.done" [logAttr "app.pgroll.args" comando]
+      Left _ -> do
+        Otel.setStatus span (Otel.Error "pgroll failed")
+        logError telemetry "migration.pgroll.failed" [logAttr "app.pgroll.args" comando]
+    pure result
+  either throwIO pure outcome
 
 getLatestSchema :: IO String
 getLatestSchema =
   readProcess "pgroll" ["latest", "schema", "--local", "./migrations"] ""
     <&> filter (not . isControl)
 
-init :: Config -> IO ()
-init config = do
-  rawCall config ["init"]
+init :: Telemetry -> Config -> IO ()
+init telemetry config = do
+  rawCall telemetry config ["init"]
 
-start :: Config -> IO ()
-start config = do
-  rawCall config ["migrate", "./migrations"]
+start :: Telemetry -> Config -> IO ()
+start telemetry config = do
+  rawCall telemetry config ["migrate", "./migrations"]
 
-rollback :: Config -> IO ()
-rollback config = do
-  rawCall config ["rollback"]
+rollback :: Telemetry -> Config -> IO ()
+rollback telemetry config = do
+  rawCall telemetry config ["rollback"]
 
-startAndComplete :: Config -> IO ()
-startAndComplete config = do
-  rawCall config ["migrate", "--complete", "./migrations"]
+startAndComplete :: Telemetry -> Config -> IO ()
+startAndComplete telemetry config = do
+  rawCall telemetry config ["migrate", "--complete", "./migrations"]
