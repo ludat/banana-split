@@ -17,7 +17,7 @@
     # marcados como broken. El pin tiene que coincidir con el
     # `source-repository-package` de `cabal.project`.
     hs-opentelemetry = {
-      url = "github:iand675/hs-opentelemetry/5a267e690941bc3817b1de8dbd496cb35bb4788c";
+      url = "github:iand675/hs-opentelemetry";
       flake = false;
     };
     # `hs-opentelemetry-api` necesita >= 0.4.1.1 (ver el comentario del override
@@ -26,7 +26,7 @@
     # `source = "0.4.1.1"` falla con
     # "thread-utils-context.cabal: Not found in archive", así que va del repo.
     thread-utils = {
-      url = "github:iand675/thread-utils/4a981ca2a0dd67cb6dce81cb8465612cfb3b1ced";
+      url = "github:iand675/thread-utils";
       flake = false;
     };
   };
@@ -74,11 +74,9 @@
               conferer-warp.source = inputs.conferer + /packages/warp;
               jose.source = "0.12";
 
-              # Los mismos subdirectorios que el `source-repository-package` de
-              # `cabal.project`, más `exporters/in-memory`: ese es dependencia
-              # del test-suite del sdk, y haskell-flake corre los checks de las
-              # dependencias mientras cabal no compila los tests de las suyas.
-              # Si se agrega un subdirectorio en uno, va también en el otro.
+              # Los mismos subdirectorios, y en el mismo commit, que el
+              # `source-repository-package` de `cabal.project`. Si se agrega uno
+              # en un lado, va también en el otro.
               hs-opentelemetry-api.source = inputs.hs-opentelemetry + /api;
               hs-opentelemetry-api-types.source = inputs.hs-opentelemetry + /api-types;
               hs-opentelemetry-semantic-conventions.source = inputs.hs-opentelemetry + /semantic-conventions;
@@ -99,10 +97,11 @@
               # falla con "Variable not in scope: ensureRef" — un error que
               # parece de otel y es de resolución.
               #
-              # Acá va del repo y no como `source = "0.4.1.1"` porque esa
-              # versión es más nueva que el snapshot de `all-cabal-hashes` de
-              # nuestro nixpkgs. Del lado de cabal sale de Hackage, forzada por
-              # el `constraints` de `cabal.project`; es la misma versión.
+              # Va del repo y no como `source = "0.4.1.1"` porque esa versión es
+              # más nueva que el snapshot de `all-cabal-hashes` que trae nuestro
+              # nixpkgs, y pedirla por versión falla con
+              # "thread-utils-context.cabal: Not found in archive".
+              # `cabal.project` lo pinnea en el mismo commit.
               thread-utils-context.source = inputs.thread-utils + /thread-utils-context;
             };
 

@@ -78,7 +78,6 @@
       "original": {
         "owner": "iand675",
         "repo": "hs-opentelemetry",
-        "rev": "5a267e690941bc3817b1de8dbd496cb35bb4788c",
         "type": "github"
       }
     },
@@ -137,7 +136,6 @@
       "original": {
         "owner": "iand675",
         "repo": "thread-utils",
-        "rev": "4a981ca2a0dd67cb6dce81cb8465612cfb3b1ced",
         "type": "github"
       }
     }
