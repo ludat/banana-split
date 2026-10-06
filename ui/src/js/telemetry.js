@@ -234,13 +234,16 @@ function telemetryDisabledReason() {
   // no le llegó la variable no reporta en vez de reportar a cualquier lado.
   if (!OTLP_ENDPOINT) return "OTLP_ENDPOINT was not set when the bundle was built";
 
-  // Respect the browser-level signals even though we believe we do not need
-  // consent: someone who sends them is asking not to be measured. Only in
-  // production, though — locally the data goes to your own machine, and having
-  // your own DNT setting hide your own traces is just confusing.
+  // Respect the browser-level signal even though we believe we do not need
+  // consent: alguien que lo manda está pidiendo que no se lo mida. Solo en
+  // producción, igual — localmente la data va a tu propia máquina, y que tu
+  // propia preferencia te esconda tus propias trazas solo genera confusión.
+  //
+  // Solo GPC. `navigator.doNotTrack` está deprecado: lo saque la especificación,
+  // Safari lo removió hace años y Firefox le sacó la UI en la 135, así que no
+  // quedaba quién lo mandara.
   if (import.meta.env?.PROD) {
     if (navigator.globalPrivacyControl === true) return "globalPrivacyControl is on";
-    if (navigator.doNotTrack === "1") return "doNotTrack is on";
   }
 
   return null;

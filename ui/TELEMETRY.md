@@ -30,7 +30,7 @@ De eso se desprende el resto:
 | Nada de texto libre por su cuenta | Ni mensajes de error, ni stack traces, ni bodies, ni headers. Un mensaje de error puede traer el nombre de un grupo o un monto que tipeó la persona. De los errores se registra solo el *tipo* (`TypeError`, etc.). La única excepción son los comentarios que la persona escribe y manda a propósito, más abajo. |
 | URLs siempre plantilladas | Los ULIDs de grupo/pago/repartija se reemplazan por `:id`, y el query string y el fragment se descartan enteros. `/grupos/01J…/gastos?x=y` queda en `/grupos/:id/gastos`. |
 | No se instrumentan las interacciones | `@opentelemetry/instrumentation-user-interaction` nombra los spans según el target DOM de cada click, lo que arrastra ids y textos de elementos a la telemetría. Es justo lo que convertiría esto en tracking de comportamiento, así que no está. |
-| Se respetan DNT y GPC | En producción, si el browser manda `navigator.doNotTrack === "1"` o `navigator.globalPrivacyControl`, no se inicializa nada. En desarrollo se ignoran a propósito: la data va a tu propia máquina, y que tu propio DNT te esconda tus propias trazas solo genera confusión. |
+| Se respeta GPC | En producción, si el browser manda `navigator.globalPrivacyControl`, no se inicializa nada. En desarrollo se ignora a propósito: la data va a tu propia máquina, y que tu propia preferencia te esconda tus propias trazas solo genera confusión. No se mira `navigator.doNotTrack`: está deprecado —fuera de la especificación, Safari lo removió hace años y Firefox le sacó la UI en la 135— así que ya no queda quién lo mande. |
 
 El plantillado de URLs es deliberadamente paranoico: un segmento de path que no
 se reconozca como palabra de ruta conocida (porque parece ULID o UUID, es
@@ -178,7 +178,7 @@ página lleva un rato abierta o alguien limpió la consola:
 ```js
 window.__telemetry
 // { on: true, endpoint: "https://otlp.ludat.io", version: "C10GL13Y" }
-// { on: false, reason: "doNotTrack is on" }
+// { on: false, reason: "globalPrivacyControl is on" }
 ```
 
 Que esto se reporte en producción es deliberado: antes todo el logging estaba
