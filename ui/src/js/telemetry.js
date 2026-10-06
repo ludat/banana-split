@@ -53,14 +53,19 @@ import {
 } from "@opentelemetry/semantic-conventions";
 import { onCLS, onFCP, onINP, onLCP, onTTFB } from "web-vitals";
 
-// Set OTLP_ENDPOINT in the environment to point a session at a collector of
-// your own; it is declared in elm-land.json, which is what makes elm-land
-// expose it here under the ELM_LAND_ prefix. process-compose sets it so local
-// development reports into the Grafana stack (see ui/TELEMETRY.md).
+// A dónde se exporta. Se resuelve al compilar: Vite sustituye el valor en el
+// bundle, así que no hay forma de cambiarlo sin rebuild. Lo declara
+// elm-land.json, que es lo que hace que llegue acá con el prefijo ELM_LAND_.
+// Lo setean process-compose (desarrollo) y la derivación `elm-ui` de flake.nix
+// (producción) — ver ui/TELEMETRY.md.
+//
+// No hay default: sin endpoint no se instrumenta nada, y eso vale igual en
+// producción. Un fallback hardcodeado haría que un build al que no le llegó la
+// variable reportara igual, a un destino que nadie eligió, y en silencio.
 //
 // The `?.` on import.meta.env keeps this module importable from plain node,
 // which is what the tests in tests/telemetry.test.mjs rely on.
-const OTLP_ENDPOINT = import.meta.env?.ELM_LAND_OTLP_ENDPOINT ?? "https://otlp.ludat.io";
+const OTLP_ENDPOINT = import.meta.env?.ELM_LAND_OTLP_ENDPOINT;
 const SERVICE_NAME = "banana-split-ui";
 
 // Vite content-hashes the bundle, so the module's own URL already identifies
@@ -223,6 +228,12 @@ export class PrivacySpanProcessor {
 // reason matters: every path here fails silently and closed, which is right in
 // production but impossible to debug locally, so the caller logs it in dev.
 function telemetryDisabledReason() {
+  // Sin lugar a dónde exportar no hay nada que hacer, y esto va primero porque
+  // vale en los dos ambientes: un `pnpm start` suelto se queda callado en lugar
+  // de llenar la consola de exports fallidos, y un build de producción al que
+  // no le llegó la variable no reporta en vez de reportar a cualquier lado.
+  if (!OTLP_ENDPOINT) return "OTLP_ENDPOINT was not set when the bundle was built";
+
   // Respect the browser-level signals even though we believe we do not need
   // consent: someone who sends them is asking not to be measured. Only in
   // production, though — locally the data goes to your own machine, and having
@@ -230,16 +241,9 @@ function telemetryDisabledReason() {
   if (import.meta.env?.PROD) {
     if (navigator.globalPrivacyControl === true) return "globalPrivacyControl is on";
     if (navigator.doNotTrack === "1") return "doNotTrack is on";
-    return null;
   }
 
-  // In development nothing is sent unless there is somewhere local to send it
-  // to: process-compose sets OTLP_ENDPOINT so the dev server reports into the
-  // local Grafana stack, while a bare `pnpm start` stays silent instead of
-  // logging failed exports. `?telemetry=1` forces it on either way.
-  if (import.meta.env?.ELM_LAND_OTLP_ENDPOINT) return null;
-  if (new URLSearchParams(window.location.search).get("telemetry") === "1") return null;
-  return "OTLP_ENDPOINT is not set and ?telemetry=1 is absent";
+  return null;
 }
 
 function setUpMetrics(resource) {

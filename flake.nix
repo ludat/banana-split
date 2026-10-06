@@ -179,6 +179,16 @@
                 cacert
               ];
 
+              # A dónde reporta la telemetría del frontend. Vite sustituye esto
+              # en el bundle al compilar, así que es build-time y no runtime: el
+              # valor queda fijo en la imagen y cambiarlo es un rebuild. Está
+              # declarada en `ui/elm-land.json`, que es lo que hace que llegue al
+              # código como `import.meta.env.ELM_LAND_OTLP_ENDPOINT`.
+              #
+              # Si se saca, el frontend no instrumenta nada (no hay default
+              # hardcodeado a propósito, ver `ui/src/js/telemetry.js`).
+              OTLP_ENDPOINT = "https://otlp.ludat.io";
+
               buildPhase = ''
                 export HOME=$PWD
                 export ELM_HOME=$HOME/.elm-home

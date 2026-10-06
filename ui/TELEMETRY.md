@@ -139,8 +139,28 @@ expone al browser como `import.meta.env.ELM_LAND_OTLP_ENDPOINT` — y que
 `frontend`. Levantando todo con process-compose esto funciona sin hacer nada.
 
 Un `pnpm start` suelto, sin esa variable, no instrumenta nada: así no llena la
-consola de exports fallidos cuando no hay stack local. `?telemetry=1` en la URL
-lo fuerza igual.
+consola de exports fallidos cuando no hay stack local.
+
+### Es build-time, no runtime
+
+Vite sustituye el valor en el bundle al compilar, así que **el endpoint queda
+fijo en el artefacto** y cambiarlo es un rebuild. En producción lo pone la
+derivación `elm-ui` de `flake.nix`, que es donde se compila el frontend.
+
+Eso también quiere decir que no se puede apuntar una misma imagen a dos
+collectors distintos. Si algún día hace falta, las opciones son un endpoint de
+config JSON que el backend sirva y el frontend lea antes de arrancar (cuesta un
+round trip antes del primer render, porque `initTelemetry` tiene que esperarlo o
+las instrumentaciones se registran después de los primeros requests de Elm), o
+proxear OTLP same-origin desde el ingress y usar una URL relativa — ojo que eso
+último manda la cookie de sesión al collector, que es justamente el tipo de
+identificador que el contrato de arriba excluye, así que habría que stripearla
+en el ingress.
+
+**No hay default hardcodeado**, y es a propósito: un build al que no le llegó la
+variable no reporta, en lugar de reportar a un destino que nadie eligió y en
+silencio. Por eso tampoco existe más un `?telemetry=1`: sin endpoint no hay nada
+que forzar.
 
 Si no ves datos, lo primero es la consola: en desarrollo el módulo imprime
 `[telemetry] on, exporting to …` o `[telemetry] off: <razón>`, y además se
