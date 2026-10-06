@@ -558,19 +558,30 @@ function trackErrors(errors) {
 
 export function initTelemetry() {
   const disabledReason = telemetryDisabledReason();
+
+  // El estado se reporta SIEMPRE, también en producción. Antes esto estaba
+  // detrás de `!PROD` y el resultado era que desde el browser no había ninguna
+  // forma de saber si la telemetría estaba activa: ni log, ni nada que mirar.
+  // Una línea no es ruido, y nada de esto sale del dispositivo.
+  //
+  // Va además a `window.__telemetry` porque el log se pierde: se limpia la
+  // consola, o te enganchás con la página abierta desde hace una hora. Son
+  // strings y un booleano, nada que dependa del resto del módulo.
   if (disabledReason) {
-    if (!import.meta.env?.PROD) {
-      console.info(`[telemetry] off: ${disabledReason}`);
-    }
+    console.info(`[telemetry] off: ${disabledReason}`);
+    window.__telemetry = { on: false, reason: disabledReason };
     return;
   }
-  if (!import.meta.env?.PROD) {
-    console.info(`[telemetry] on, exporting to ${OTLP_ENDPOINT}`);
-    // Without this the SDK swallows export failures entirely, so a collector
-    // that is down or rejecting looks exactly like one that is working. Stays
-    // off in production, where it would just be console noise for users.
-    diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.WARN);
-  }
+
+  console.info(`[telemetry] on, exporting to ${OTLP_ENDPOINT}`);
+  window.__telemetry = { on: true, endpoint: OTLP_ENDPOINT, version: buildId() };
+
+  // Without this the SDK swallows export failures entirely, so a collector that
+  // is down or rejecting looks exactly like one that is working. Va prendido en
+  // todos los ambientes: solo habla cuando algo falla, y el único costo es ruido
+  // en una consola que los usuarios no abren — mucho más barato que no poder
+  // distinguir "no se manda" de "se manda y se pierde".
+  diag.setLogger(new DiagConsoleLogger(), DiagLogLevel.WARN);
 
   const resource = defaultResource().merge(
     resourceFromAttributes({

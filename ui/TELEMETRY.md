@@ -162,13 +162,40 @@ variable no reporta, en lugar de reportar a un destino que nadie eligió y en
 silencio. Por eso tampoco existe más un `?telemetry=1`: sin endpoint no hay nada
 que forzar.
 
-Si no ves datos, lo primero es la consola: en desarrollo el módulo imprime
-`[telemetry] on, exporting to …` o `[telemetry] off: <razón>`, y además se
-prende el logger interno de OpenTelemetry en nivel WARN para que un export
-fallido no pase en silencio. Ojo que eso cubre el salto browser → collector
-nada más; si el collector acepta la data y la pierde más adelante, el browser
-ve un 200 y no se entera. Para ese caso los contadores del collector son el
-lugar donde mirar:
+## ¿Está activa?
+
+Lo primero es la consola, **en cualquier ambiente, producción incluida**: al
+arrancar el módulo imprime una línea y una sola,
+
+```
+[telemetry] on, exporting to https://otlp.ludat.io
+[telemetry] off: OTLP_ENDPOINT was not set when the bundle was built
+```
+
+Y lo mismo queda en `window.__telemetry`, que es a lo que conviene ir cuando la
+página lleva un rato abierta o alguien limpió la consola:
+
+```js
+window.__telemetry
+// { on: true, endpoint: "https://otlp.ludat.io", version: "C10GL13Y" }
+// { on: false, reason: "doNotTrack is on" }
+```
+
+Que esto se reporte en producción es deliberado: antes todo el logging estaba
+detrás de `import.meta.env.PROD` y el resultado era que desde el browser no había
+ninguna forma de saber si la telemetría estaba corriendo. Una línea no es ruido,
+y no sale nada del dispositivo.
+
+### Si está activa pero no llegan datos
+
+El logger interno del SDK (nivel WARN) es lo que delata un export fallido, y está
+prendido en **todos** los ambientes. Solo habla cuando algo falla, y el único
+costo es ruido en una consola que los usuarios no abren — mucho más barato que no
+poder distinguir "no se manda" de "se manda y se pierde".
+
+Ojo que eso cubre el salto browser → collector nada más; si el collector acepta
+la data y la pierde más adelante, el browser ve un 200 y no se entera. Para ese
+caso los contadores del collector son el lugar donde mirar:
 
 ```bash
 docker exec banana-split-observability-1 \
