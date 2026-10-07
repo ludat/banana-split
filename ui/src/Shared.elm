@@ -30,16 +30,23 @@ import Utils.Toasts.Types exposing (ToastLevel(..))
 
 
 type alias Flags =
-    { now : Int, offset : Int, timeZone : String, lastReadChangelog : Maybe Int, origin : String }
+    { now : Int
+    , offset : Int
+    , timeZone : String
+    , lastReadChangelog : Maybe Int
+    , repartijaIntroDismissed : Bool
+    , origin : String
+    }
 
 
 decoder : Json.Decode.Decoder Flags
 decoder =
-    Json.Decode.map5 Flags
+    Json.Decode.map6 Flags
         (Json.Decode.field "now" Json.Decode.int)
         (Json.Decode.field "offset" Json.Decode.int)
         (Json.Decode.field "timeZone" Json.Decode.string)
         (Json.Decode.field "lastReadChangelog" (Json.Decode.nullable Json.Decode.int))
+        (Json.Decode.field "repartijaIntroDismissed" Json.Decode.bool)
         (Json.Decode.field "origin" Json.Decode.string)
 
 
@@ -61,6 +68,7 @@ init possiblyFlags _ =
                     , offset = 0
                     , timeZone = "UTC"
                     , lastReadChangelog = Nothing
+                    , repartijaIntroDismissed = False
                     , origin = ""
                     }
 
@@ -82,6 +90,7 @@ init possiblyFlags _ =
       , lastReadChangelog =
             flags.lastReadChangelog
                 |> Maybe.map (\ms -> Date.fromPosix timezone (Time.millisToPosix ms))
+      , repartijaIntroDismissed = flags.repartijaIntroDismissed
       , origin = flags.origin
       }
     , Effect.sendCmd (Api.postAuthRefresh CurrentUserLoaded)
@@ -260,6 +269,11 @@ update _ msg model =
         MarkChangelogRead ->
             ( { model | lastReadChangelog = Just <| Date.fromPosix model.timezone model.now }
             , Effect.saveLastReadChangelog
+            )
+
+        DismissRepartijaIntro ->
+            ( { model | repartijaIntroDismissed = True }
+            , Effect.saveRepartijaIntroDismissed
             )
 
         Shared.Msg.Tick datetime ->

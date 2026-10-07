@@ -17,6 +17,7 @@ port module Effect exposing
     , replaceRoutePath
     , saveCurrentUser
     , saveLastReadChangelog
+    , saveRepartijaIntroDismissed
     , sendCmd
     , sendMsg
     , sendSharedMsg
@@ -243,6 +244,17 @@ saveLastReadChangelog =
     SendCmd <|
         outgoing
             { tag = "SAVE_LAST_READ_CHANGELOG"
+            , data = Json.Encode.null
+            }
+
+
+{-| Remember that the intro to the repartija was dismissed, so it isn't shown again.
+-}
+saveRepartijaIntroDismissed : Effect msg
+saveRepartijaIntroDismissed =
+    SendCmd <|
+        outgoing
+            { tag = "SAVE_REPARTIJA_INTRO_DISMISSED"
             , data = Json.Encode.null
             }
 

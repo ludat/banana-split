@@ -32,4 +32,5 @@ type Msg
     | Logout
     | LoggedOut
     | MarkChangelogRead
+    | DismissRepartijaIntro
     | Tick Posix

@@ -6,13 +6,14 @@ import Css
 import Dict
 import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, ULID, User)
-import Html exposing (Html, a, button, div, h2, i, label, li, node, option, p, select, text, ul)
+import Html exposing (Html, a, button, div, h2, i, label, li, node, option, p, select, span, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
 import Html.Events exposing (on, onClick, preventDefaultOn)
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
 import Models.Grupo exposing (GrupoLike, currentParticipante, estaCongelado, grupoIdFromPath, ownedParticipante)
+import Models.Repartija as Repartija
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import QRCode
@@ -204,7 +205,11 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
             [ div [ class "d-flex flex-wrap align-items-start justify-content-between gap-3" ]
                 [ div []
                     [ viewBreadcrumb info.breadcrumb
-                    , h2 [ class "mb-0 fw-bold" ] [ text info.title ]
+                    , h2 [ class "mb-0 fw-bold d-flex align-items-center gap-2" ]
+                        (viewIconoDelTitulo currentPath
+                            :: text info.title
+                            :: viewAlertaDelTitulo currentPath store
+                        )
                     , viewBadgeCongelado grupo
                     ]
 
@@ -219,13 +224,20 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                     , viewVerComoWarning currentUser activeUser grupo
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
                         [ viewShareDropdown share
-                        , a
-                            [ class "btn btn-primary d-inline-flex align-items-center"
-                            , PagoDetalleModal.hrefNuevoGasto currentPath
-                            ]
-                            [ i [ class "bi bi-plus-lg me-1" ] []
-                            , text "Agregar gasto"
-                            ]
+
+                        -- Fuera de las secciones con tabs (la repartija) se
+                        -- está mirando un gasto puntual, no cargando gastos.
+                        , if info.showTabs then
+                            a
+                                [ class "btn btn-primary d-inline-flex align-items-center"
+                                , PagoDetalleModal.hrefNuevoGasto currentPath
+                                ]
+                                [ i [ class "bi bi-plus-lg me-1" ] []
+                                , text "Agregar gasto"
+                                ]
+
+                          else
+                            text ""
                         ]
                     ]
                 ]
@@ -264,6 +276,50 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
           else
             text ""
         ]
+
+
+viewIconoDelTitulo : Path.Path -> Html Msg
+viewIconoDelTitulo currentPath =
+    case currentPath of
+        Path.Grupos_GrupoId__Repartijas_RepartijaId_ _ ->
+            span
+                [ class "d-inline-flex align-items-center justify-content-center rounded-circle bg-body-secondary fs-5 flex-shrink-0"
+                , style "width" "2.5rem"
+                , style "height" "2.5rem"
+                , Attr.attribute "aria-hidden" "true"
+                ]
+                [ i [ class "bi bi-people-fill" ] [] ]
+
+        _ ->
+            text ""
+
+
+{-| La alerta al lado del título de la repartija cuando todavía hay items que
+no están bien repartidos.
+-}
+viewAlertaDelTitulo : Path.Path -> Store -> List (Html Msg)
+viewAlertaDelTitulo currentPath store =
+    case currentPath of
+        Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
+            case Store.getRepartija params.repartijaId store of
+                Success repartijaPage ->
+                    if Repartija.hayItemsNoResueltos repartijaPage.repartija then
+                        [ i
+                            [ class "bi bi-exclamation-triangle-fill text-warning fs-4"
+                            , Attr.title "Aún hay items no resueltos"
+                            , Attr.attribute "aria-label" "Aún hay items no resueltos"
+                            ]
+                            []
+                        ]
+
+                    else
+                        []
+
+                _ ->
+                    []
+
+        _ ->
+            []
 
 
 viewBadgeCongelado : Grupo -> Html Msg
@@ -466,7 +522,7 @@ headerInfo currentPath store currentUser grupo =
                                         r.pagoId
                                 }
                         )
-            , title = "Deudores de '" ++ pagoNombre ++ "'"
+            , title = "Repartija"
             , showTabs = False
             , share = { title = "Deudores de " ++ pagoNombre, path = Path.Grupos_GrupoId__Repartijas_RepartijaId_ params }
             }
