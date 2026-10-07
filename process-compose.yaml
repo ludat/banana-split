@@ -10,7 +10,7 @@ processes:
     # browser y termina en la base queda en un solo trace.
     - OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
     - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-    - OTEL_SERVICE_NAME=banana-split-backend
+    - OTEL_SERVICE_NAME=backend
     availability:
       restart: "always"
     depends_on:
