@@ -161,3 +161,45 @@ monto-input {
     }
 }
 
+
+/* Card de un item de la repartija. En una card angosta (mobile, o la columna de
+   items en pantallas medianas) el cuerpo va en dos columnas: a la izquierda cómo
+   se reparte y cuánto va repartido, a la derecha los botones para reclamar y tu
+   participación. Cuando la card tiene lugar se acomoda todo en una sola fila. */
+.repartija-item {
+    container-type: inline-size;
+
+    & .repartija-item-header {
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+
+        @container (min-width: 600px) {
+            flex-direction: row;
+            align-items: center;
+            justify-content: space-between;
+        }
+    }
+
+    & .repartija-item-body {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        grid-template-areas:
+            "reparto reclamar"
+            "estado participacion";
+        gap: 0.75rem 1rem;
+        text-align: center;
+
+        @container (min-width: 600px) {
+            grid-template-columns: repeat(4, 1fr);
+            grid-template-areas: "reparto estado participacion reclamar";
+            align-items: start;
+        }
+    }
+}
+
+.repartija-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}

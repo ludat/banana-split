@@ -71,6 +71,7 @@ export const flags = ({ env }) => {
     offset: - now.getTimezoneOffset(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     lastReadChangelog: lastReadRaw ? parseInt(lastReadRaw, 10) : null,
+    repartijaIntroDismissed: localStorage.getItem("banana-split:repartijaIntroDismissed") !== null,
     origin: window.location.origin,
   };
 };
@@ -120,6 +121,11 @@ export const onReady = ({ app, env }) => {
         case "SAVE_LAST_READ_CHANGELOG":
           // data: null
           localStorage.setItem("banana-split:lastReadChangelog", new Date().getTime().toString());
+          break;
+
+        case "SAVE_REPARTIJA_INTRO_DISMISSED":
+          // data: null
+          localStorage.setItem("banana-split:repartijaIntroDismissed", "true");
           break;
 
         case "SHARE":

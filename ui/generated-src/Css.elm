@@ -1,4 +1,4 @@
-module Css exposing (barras_precio, eje_vertical, barra_inferior_fija, navbar_bottom, navbar_item, navbar_big_button, navbar_more)
+module Css exposing (barras_precio, eje_vertical, barra_inferior_fija, navbar_bottom, navbar_item, navbar_big_button, navbar_more, repartija_item, repartija_label)
 
 import Html
 import Html.Attributes
@@ -37,3 +37,13 @@ navbar_big_button =
 navbar_more : Html.Attribute msg
 navbar_more =
     Html.Attributes.class "navbar-more"
+
+
+repartija_item : Html.Attribute msg
+repartija_item =
+    Html.Attributes.class "repartija-item"
+
+
+repartija_label : Html.Attribute msg
+repartija_label =
+    Html.Attributes.class "repartija-label"
