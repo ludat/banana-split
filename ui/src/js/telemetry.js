@@ -47,6 +47,7 @@ import {
   ATTR_HTTP_REQUEST_METHOD,
   ATTR_HTTP_RESPONSE_STATUS_CODE,
   ATTR_SERVICE_NAME,
+  ATTR_SERVICE_NAMESPACE,
   ATTR_SERVICE_VERSION,
   ATTR_URL_FULL,
   ATTR_USER_AGENT_ORIGINAL,
@@ -66,7 +67,19 @@ import { onCLS, onFCP, onINP, onLCP, onTTFB } from "web-vitals";
 // The `?.` on import.meta.env keeps this module importable from plain node,
 // which is what the tests in tests/telemetry.test.mjs rely on.
 const OTLP_ENDPOINT = import.meta.env?.ELM_LAND_OTLP_ENDPOINT;
-const SERVICE_NAME = "banana-split-ui";
+
+// `service.name` + `service.namespace`: el namespace es lo que agrupa los
+// servicios de esta app, así que el nombre no necesita repetirlo. También se usa
+// como nombre del scope de instrumentación, que con el namespace al lado alcanza
+// para identificar de dónde sale cada señal.
+const SERVICE_NAME = "ui";
+const SERVICE_NAMESPACE = "banana-split";
+
+// El host de producción y los subdominios que son ambientes con nombre propio.
+// Es lo único que no se puede deducir del hostname, así que está acá arriba y en
+// un solo lugar. Cualquier otro subdominio es un review app.
+const PRODUCTION_HOST = "split.ludat.io";
+const NAMED_ENVIRONMENTS = ["dev", "stg"];
 
 // Vite content-hashes the bundle, so the module's own URL already identifies
 // the build exactly: /assets/index-C10GL13Y.js. That makes a decode error
@@ -247,6 +260,29 @@ function telemetryDisabledReason() {
   }
 
   return null;
+}
+
+/* El ambiente sale de la URL, no de una variable de build.
+
+Tiene que ser así: el bundle es **uno solo para todos los ambientes** —se compila
+en la derivación `elm-ui`, ver TELEMETRY.md—, así que cualquier cosa horneada al
+compilar diría `production` también en un review app. `import.meta.env.PROD`
+tiene exactamente ese problema: es verdadero en todo build de producción,
+independientemente de dónde se sirva.
+
+Los review apps salen de la primera etiqueta del hostname, prefijada:
+`lele.split.ludat.io` -> `review-lele`. El prefijo es lo que los deja agrupar y
+descartar de una (`deployment_environment_name=~"review-.*"`) sin tener que saber
+qué ramas existen. La cardinalidad queda en una por rama, no una por host. */
+export function deploymentEnvironment(hostname) {
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+    return "local";
+  }
+  if (hostname === PRODUCTION_HOST) {
+    return "prod";
+  }
+  const label = hostname.split(".")[0].toLowerCase().replace(/[^a-z0-9-]/g, "-");
+  return NAMED_ENVIRONMENTS.includes(label) ? label : `review-${label}`;
 }
 
 function setUpMetrics(resource) {
@@ -577,7 +613,13 @@ export function initTelemetry() {
   }
 
   console.info(`[telemetry] on, exporting to ${OTLP_ENDPOINT}`);
-  window.__telemetry = { on: true, endpoint: OTLP_ENDPOINT, version: buildId() };
+  window.__telemetry = {
+    on: true,
+    endpoint: OTLP_ENDPOINT,
+    service: `${SERVICE_NAMESPACE}/${SERVICE_NAME}`,
+    environment: deploymentEnvironment(window.location.hostname),
+    version: buildId(),
+  };
 
   // Without this the SDK swallows export failures entirely, so a collector that
   // is down or rejecting looks exactly like one that is working. Va prendido en
@@ -589,8 +631,9 @@ export function initTelemetry() {
   const resource = defaultResource().merge(
     resourceFromAttributes({
       [ATTR_SERVICE_NAME]: SERVICE_NAME,
+      [ATTR_SERVICE_NAMESPACE]: SERVICE_NAMESPACE,
       [ATTR_SERVICE_VERSION]: buildId(),
-      [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: import.meta.env?.PROD ? "production" : "development",
+      [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: deploymentEnvironment(window.location.hostname),
     })
   );
 

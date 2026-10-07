@@ -72,6 +72,43 @@ de arriba se rompe:
 
 ## Qué se manda
 
+### Cómo se identifica
+
+| Atributo | Valor |
+|---|---|
+| `service.name` | `ui` |
+| `service.namespace` | `banana-split` |
+| `service.version` | el hash de contenido del bundle (ver más abajo) |
+| `deployment.environment.name` | derivado del hostname |
+
+El namespace es lo que agrupa los servicios de la app, así que el nombre no lo
+repite.
+
+**El ambiente sale de la URL, no de una variable de build**, y tiene que ser así:
+el bundle es uno solo para todos los ambientes (se compila en la derivación
+`elm-ui`), así que cualquier cosa horneada al compilar diría `production` también
+en un review app — `import.meta.env.PROD` tiene exactamente ese problema.
+
+| Hostname | Ambiente |
+|---|---|
+| `localhost`, `127.0.0.1`, `[::1]` | `local` |
+| `split.ludat.io` | `prod` |
+| `dev.split.ludat.io` | `dev` |
+| `stg.split.ludat.io` | `stg` |
+| `lele.split.ludat.io` | `review-lele` |
+
+O sea: la primera etiqueta del hostname, en minúsculas y con todo lo que no sea
+`[a-z0-9-]` pasado a `-`. `dev` y `stg` son ambientes con nombre propio y quedan
+tal cual; **cualquier otra se prefija con `review-`**, que es lo que permite
+agruparlos o descartarlos de una (`deployment_environment_name=~"review-.*"`)
+sin tener que saber qué ramas existen. La cardinalidad queda en una por rama, no
+una por host.
+
+El host de producción y la lista de ambientes con nombre propio son lo único que
+no se deduce del hostname, así que están en dos constantes (`PRODUCTION_HOST`,
+`NAMED_ENVIRONMENTS`) arriba del módulo. Los tests de
+[`tests/telemetry.test.mjs`](tests/telemetry.test.mjs) fijan la derivación.
+
 ### Métricas
 
 Se exportan cada 30 s, con temporalidad **delta** (un contador en el browser

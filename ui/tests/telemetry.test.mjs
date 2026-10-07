@@ -26,6 +26,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import {
   APP_EVENTS,
   createLogProvider,
+  deploymentEnvironment,
   installLogProvider,
   recordAppEvent,
   recordFeedback,
@@ -70,6 +71,31 @@ test("templatePath keeps real route words", () => {
 test("templatePath masks anything long or encoded, as a backstop", () => {
   assert.equal(templatePath("/g/lucas%40gmail.com"), "/g/:id");
   assert.equal(templatePath("/g/" + "a".repeat(21)), "/g/:id");
+});
+
+// El ambiente sale de la URL y no de una variable de build porque el bundle es
+// uno solo para todos los ambientes: algo horneado al compilar diría
+// "production" también en un review app.
+test("deploymentEnvironment derives the environment from the hostname", () => {
+  assert.equal(deploymentEnvironment("split.ludat.io"), "prod");
+  assert.equal(deploymentEnvironment("localhost"), "local");
+  assert.equal(deploymentEnvironment("127.0.0.1"), "local");
+});
+
+// El prefijo es lo que deja agrupar o descartar todos los reviews de una sin
+// saber qué ramas existen.
+test("deploymentEnvironment prefixes review apps", () => {
+  assert.equal(deploymentEnvironment("lele.split.ludat.io"), "review-lele");
+});
+
+// `dev` y `stg` son ambientes con nombre propio, no reviews.
+test("deploymentEnvironment leaves the named environments alone", () => {
+  assert.equal(deploymentEnvironment("dev.split.ludat.io"), "dev");
+  assert.equal(deploymentEnvironment("stg.split.ludat.io"), "stg");
+});
+
+test("deploymentEnvironment keeps the environment usable as a label", () => {
+  assert.equal(deploymentEnvironment("Lele_ABC.split.ludat.io"), "review-lele-abc");
 });
 
 test("scrubUrl drops query strings and fragments", () => {
