@@ -19,7 +19,7 @@ import System.Posix (Handler (..), installHandler, sigTERM)
 
 import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.Receipts (ReceiptsReaderConfig (..))
-import BananaSplit.Telemetry (withTelemetry)
+import BananaSplit.Telemetry (registerRuntimeMetrics, withTelemetry)
 import Site.Auth (mkSessionKey)
 import Site.Config (createConfig)
 import Site.Mailer (mkMailer)
@@ -39,6 +39,8 @@ runBackend = withTelemetry $ \telemetry -> do
   hSetEncoding stderr utf8
   hSetBuffering stdout NoBuffering
   hSetBuffering stderr NoBuffering
+
+  registerRuntimeMetrics telemetry
 
   config <- createConfig "dev"
 
@@ -68,6 +70,8 @@ runBackend = withTelemetry $ \telemetry -> do
           , cookieSecure = cookieSecure'
           , mailer = mailer
           , telemetry = telemetry
+          , logContexts = mempty
+          , logNamespace = mempty
           }
 
   let shutdownAction = Pool.destroyAllResources beamPool

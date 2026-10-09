@@ -27,7 +27,7 @@ import BananaSplit.Persistence (
   recordAttempt,
   updateUser,
  )
-import BananaSplit.Telemetry (logAttr)
+import BananaSplit.Telemetry (logAttr, logDebug, logInfo, logWarn)
 import Preludat
 import Site.Api (
   LoginChallenge (..),
@@ -51,7 +51,7 @@ import Site.Auth (
   shouldRefreshSession,
   verifyRegistrationToken,
  )
-import Site.Handler.Utils (logDebug, logInfo, logWarn, runBeamFastRead, runBeamWrite, throwJsonError)
+import Site.Handler.Utils (runBeamFastRead, runBeamWrite, throwJsonError)
 import Site.Mailer (Mailer (..))
 import Site.Types
 

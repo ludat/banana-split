@@ -95,7 +95,9 @@ function buildId() {
 // it would pull in the whole incubating bundle for one string.
 const ATTR_URL_TEMPLATE = "url.template";
 
-const METRIC_EXPORT_INTERVAL_MS = 30_000;
+const DEVELOPMENT = !import.meta.env?.PROD;
+const METRIC_EXPORT_INTERVAL_MS = DEVELOPMENT ? 500 : 30_000;
+const BATCH_EXPORT_DELAY_MS = DEVELOPMENT ? 500 : 5_000;
 
 // ---------------------------------------------------------------------------
 // URL / route templating
@@ -515,7 +517,9 @@ export function createLogProvider(resource, exporter) {
     resource,
     // Note the options object: BatchLogRecordProcessor takes `{ exporter }`,
     // unlike BatchSpanProcessor, which takes the exporter positionally.
-    processors: [new BatchLogRecordProcessor({ exporter })],
+    processors: [
+      new BatchLogRecordProcessor({ exporter, scheduledDelayMillis: BATCH_EXPORT_DELAY_MS }),
+    ],
   });
 }
 
@@ -648,9 +652,9 @@ export function initTelemetry() {
       new PrivacySpanProcessor((duration, attributes) =>
         instruments.httpDuration.record(duration, attributes)
       ),
-      new BatchSpanProcessor(
-        new OTLPTraceExporter({ url: `${OTLP_ENDPOINT}/v1/traces` })
-      ),
+      new BatchSpanProcessor(new OTLPTraceExporter({ url: `${OTLP_ENDPOINT}/v1/traces` }), {
+        scheduledDelayMillis: BATCH_EXPORT_DELAY_MS,
+      }),
     ],
   });
   tracerProvider.register();

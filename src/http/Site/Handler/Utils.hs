@@ -3,9 +3,6 @@ module Site.Handler.Utils (
   err423,
   inSpan,
   inSpan',
-  logDebug,
-  logInfo,
-  logWarn,
   orElse,
   orElseMay,
   orElse_,
@@ -19,9 +16,9 @@ import Control.Monad.Error.Class
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Data.Aeson
+import Data.Aeson.Types (Pair)
 import Data.Pool qualified as Pool
 import Database.Beam.Postgres qualified as Beam
-import OpenTelemetry.Log (AnyValue)
 import OpenTelemetry.Trace.Core (Span, SpanArguments (..), SpanKind (..))
 import OpenTelemetry.Trace.Core qualified as Otel
 import Servant
@@ -116,33 +113,3 @@ inSpan' name action = do
           $ Otel.setStatus handlerSpan (Otel.Error $ "HTTP " <> show (errHTTPCode err))
     pure result
   either throwError pure outcome
-
--- | Emite un log record por OTLP, correlacionado con el trace: lleva el
--- contexto activo, así que Grafana lo cruza con el span del request (ya está
--- configurado en el datasource de Loki) y se ve el /por qué/ al lado del resto
--- del trace en lugar de suelto en stdout.
---
--- El cuerpo del record es el nombre del evento, nunca prosa: el detalle va en
--- los atributos. Es lo mismo que hace el frontend, y por la misma razón — un
--- nombre estable es lo que se puede consultar.
-logEvent ::
-  (Telemetry -> Text -> [(Text, AnyValue)] -> IO ())
-  -> Text
-  -> [(Text, AnyValue)]
-  -> AppHandler ()
-logEvent emit name attributes = do
-  app <- ask
-  liftIO $ emit app.telemetry name attributes
-
--- | Algo pasó y salió como se esperaba.
-logInfo :: Text -> [(Text, AnyValue)] -> AppHandler ()
-logInfo = logEvent Telemetry.logInfo
-
--- | Algo salió mal pero es una respuesta válida del sistema: un código
--- equivocado, un rate limit, un mail que no se pudo atribuir a nadie.
-logWarn :: Text -> [(Text, AnyValue)] -> AppHandler ()
-logWarn = logEvent Telemetry.logWarn
-
--- | Para lo que pasa seguido y solo importa cuando estás mirando de cerca.
-logDebug :: Text -> [(Text, AnyValue)] -> AppHandler ()
-logDebug = logEvent Telemetry.logDebug

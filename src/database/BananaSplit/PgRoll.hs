@@ -14,7 +14,7 @@ import OpenTelemetry.Trace.Core qualified as Otel
 import Protolude
 import System.Process (callProcess, readProcess)
 
-import BananaSplit.Telemetry (Telemetry, inSpan', logAttr, logError, logInfo)
+import BananaSplit.Telemetry (Telemetry, inSpan', logAttr, logError, logInfo, withLogging)
 
 -- | Corre @pgroll@ con la conexión que sale de la config.
 --
@@ -33,16 +33,16 @@ rawCall telemetry config args = do
   connString <- Conferer.fetchFromConfig "database.url" config
   let connectionArgs = ["--postgres-url", connString ++ "?sslmode=disable"]
       comando = Text.unwords $ fmap toS args
-  outcome <- inSpan' telemetry ("pgroll " <> comando) $ \span -> do
+  outcome <- inSpan' telemetry ("pgroll " <> comando) $ \span -> withLogging telemetry $ do
     Otel.addAttribute span "app.pgroll.args" comando
-    logInfo telemetry "migration.pgroll.start" [logAttr "app.pgroll.args" comando]
-    result <- try @SomeException $ callProcess "pgroll" $ connectionArgs ++ args
+    logInfo "migration.pgroll.start" [logAttr "app.pgroll.args" comando]
+    result <- liftIO $ try @SomeException $ callProcess "pgroll" $ connectionArgs ++ args
     case result of
       Right () ->
-        logInfo telemetry "migration.pgroll.done" [logAttr "app.pgroll.args" comando]
+        logInfo "migration.pgroll.done" [logAttr "app.pgroll.args" comando]
       Left _ -> do
         Otel.setStatus span (Otel.Error "pgroll failed")
-        logError telemetry "migration.pgroll.failed" [logAttr "app.pgroll.args" comando]
+        logError "migration.pgroll.failed" [logAttr "app.pgroll.args" comando]
     pure result
   either throwIO pure outcome
 

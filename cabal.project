@@ -45,6 +45,7 @@ source-repository-package
         exporters/handle
         exporters/in-memory
         exporters/otlp
+        instrumentation/ghc-metrics
         propagators/b3
         propagators/datadog
         propagators/jaeger

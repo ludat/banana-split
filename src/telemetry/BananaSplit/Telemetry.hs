@@ -1,25 +1,8 @@
--- | El setup de OpenTelemetry y los helpers que valen en cualquier parte de la
--- app, sea un handler HTTP o un comando de consola.
---
--- Está en su propia librería interna porque lo usan tanto @database@ (las
--- migraciones) como @http@ (los requests), y @database@ no puede depender de
--- @http@. Lo que es específico de HTTP —el middleware, el 'Site.Mailer'
--- instrumentado— vive en "Site.Telemetry"; lo que hay acá es el único lugar
--- donde se levanta el SDK.
---
--- Se configura con las variables de entorno estándar de OpenTelemetry
--- (@OTEL_EXPORTER_OTLP_ENDPOINT@, @OTEL_SERVICE_NAME@, @OTEL_TRACES_SAMPLER@,
--- etc.) y no con Conferer: son las que entiende cualquier SDK de OTel, las que
--- documenta la especificación y las que ya usa el resto del ecosistema.
---
--- Sin @OTEL_EXPORTER_OTLP_ENDPOINT@ no se exporta nada, igual que en el
--- frontend: un @cabal run@ suelto, sin stack de observabilidad levantado, no
--- tiene que llenar la consola de exports fallidos. Los spans y los log records
--- se siguen creando (contra providers no-op) para que el código instrumentado
--- sea el mismo en los dos casos.
 module BananaSplit.Telemetry (
   Telemetry (..),
+  registerRuntimeMetrics,
   telemetryFromGlobals,
+  withLogging,
   withTelemetry,
 
   -- * Spans
@@ -34,29 +17,43 @@ module BananaSplit.Telemetry (
   logWarn,
 ) where
 
-import Data.HashMap.Strict qualified as HashMap
+import Data.Aeson ((.=))
+import Data.Aeson qualified as Aeson
+import Data.Aeson.Key qualified as Key
+import Data.Aeson.Types (Pair)
+import GHC.Stats (getRTSStatsEnabled)
+import Katip (Environment (..), KatipContext, LogEnv, Namespace (..), Severity (..), Verbosity (..))
+import Katip qualified
 import OpenTelemetry.Attributes (emptyAttributes)
+import OpenTelemetry.Context qualified as Context
 import OpenTelemetry.Context.ThreadLocal qualified as ThreadLocal
-import OpenTelemetry.Log (AnyValue, Logger, SeverityNumber, ToValue)
+import OpenTelemetry.Instrumentation.GHCMetrics qualified as GHCMetrics
+import OpenTelemetry.Instrumentation.ProcessMetrics qualified as ProcessMetrics
+import OpenTelemetry.Log (Logger)
 import OpenTelemetry.Log qualified as Log
 import OpenTelemetry.Metric (Meter)
 import OpenTelemetry.Metric qualified as Metric
 import OpenTelemetry.Propagator (TextMapPropagator)
 import OpenTelemetry.Propagator qualified as Propagator
 import OpenTelemetry.SDK (OTelSignals (..), withOpenTelemetry)
-import OpenTelemetry.Trace.Core (InstrumentationLibrary (..), Span, Tracer)
+import OpenTelemetry.Trace.Core (InstrumentationLibrary (..), Span, SpanContext, Tracer)
 import OpenTelemetry.Trace.Core qualified as Otel
 import Protolude
 import System.Environment (lookupEnv, setEnv)
+
+import BananaSplit.Telemetry.Scribe (LogPayload (..), otelScribe)
 
 -- | Lo que hace falta para instrumentar. Se arma una vez en 'withTelemetry' y se
 -- pasa para abajo.
 data Telemetry = Telemetry
   { tracer :: Tracer
-  , logger :: Logger
-  -- ^ Para log records por OTLP. Los @putText@ que ya había siguen yendo a
-  -- stdout: esto es adicional, no un reemplazo, así que un dev sin stack
-  -- levantado no pierde la consola que tenía.
+  , logEnv :: LogEnv
+  -- ^ El frontend de logging: Katip. Tiene dos scribes colgados, uno a stdout y
+  -- uno a OTLP, así que un log sale por los dos lados y un dev sin stack de
+  -- observabilidad levantado sigue viendo todo en la consola.
+  --
+  -- El 'OpenTelemetry.Log.Logger' que hay del otro lado /no/ está acá a
+  -- propósito: ver la nota del encabezado del módulo.
   , meter :: Meter
   -- ^ Para crear instrumentos. Los instrumentos concretos los crea quien los
   -- usa (ver 'Site.Telemetry.traceApiMiddleware'), porque hay que crearlos una
@@ -107,18 +104,48 @@ telemetryFromGlobals = do
   logger <- Log.getLogger loggerProvider instrumentationLibrary
   meter <- Metric.getMeter meterProvider instrumentationLibrary
   propagators <- Propagator.getGlobalTextMapPropagator
+  logEnv <- mkLogEnv logger
   pure
     Telemetry
       { tracer = Otel.makeTracer tracerProvider instrumentationLibrary Otel.tracerOptions
-      , logger = logger
+      , logEnv = logEnv
       , meter = meter
       , propagators = propagators
       }
+
+-- | El 'LogEnv' de Katip con los dos scribes.
+--
+-- El de stdout va con 'Katip.V2' y formato JSON: en Kubernetes los logs del
+-- contenedor son la red de contención cuando el OTLP no anda, y en JSON siguen
+-- siendo consultables.
+--
+-- El de OTLP es el de "BananaSplit.Telemetry.Scribe". Cuando no hay endpoint el
+-- pipeline de logs del SDK es no-op, así que el scribe queda colgado igual y no
+-- intenta mandar nada: el código instrumentado es el mismo en los dos casos.
+mkLogEnv :: Logger -> IO LogEnv
+mkLogEnv logger = do
+  serviceName <- fromMaybe "banana-split" <$> lookupEnv "OTEL_SERVICE_NAME"
+  -- Solo etiqueta la salida de consola: lo que viaja por OTLP toma el ambiente
+  -- del resource del SDK (@OTEL_RESOURCE_ATTRIBUTES@), no de acá.
+  environment <- fromMaybe "local" <$> lookupEnv "DEPLOYMENT_ENVIRONMENT"
+  base <- Katip.initLogEnv (Namespace [toS serviceName]) (Environment $ toS environment)
+  console <-
+    Katip.mkHandleScribeWithFormatter
+      Katip.jsonFormat
+      (Katip.ColorLog False)
+      stdout
+      (Katip.permitItem InfoS)
+      V2
+  otlp <- otelScribe logger DebugS V2
+  base
+    & Katip.registerScribe "stdout" console Katip.defaultScribeSettings
+      >>= Katip.registerScribe "otlp" otlp Katip.defaultScribeSettings
 
 mkTelemetry :: OTelSignals -> IO Telemetry
 mkTelemetry signals = do
   meter <- Metric.getMeter signals.otelMeterProvider instrumentationLibrary
   logger <- Log.getLogger signals.otelLoggerProvider instrumentationLibrary
+  logEnv <- mkLogEnv logger
   -- OJO: el global, /no/ @signals.otelPropagators@. Ese último viene como un
   -- propagador vacío (@propagatorFields@ da @[]@ y extraer por él no devuelve
   -- ningún span), con lo cual el @traceparent@ del browser se ignora y todos
@@ -134,7 +161,7 @@ mkTelemetry signals = do
   pure
     Telemetry
       { tracer = Otel.makeTracer signals.otelTracerProvider instrumentationLibrary Otel.tracerOptions
-      , logger = logger
+      , logEnv = logEnv
       , meter = meter
       , propagators = propagators
       }
@@ -161,6 +188,15 @@ setDefaultEnv name value = do
   existing <- lookupEnv name
   when (isNothing existing) $ setEnv name value
 
+registerRuntimeMetrics :: Telemetry -> IO ()
+registerRuntimeMetrics telemetry = do
+  rtsEnabled <- getRTSStatsEnabled
+  unless rtsEnabled $
+    putText
+      "[telemetry] warning: el RTS no tiene estadísticas habilitadas (falta -T), no va a haber métricas de runtime"
+  void $ GHCMetrics.registerGHCMetrics telemetry.meter
+  void $ ProcessMetrics.registerProcessMetrics telemetry.meter
+
 -- | Un span alrededor de un pedazo de trabajo en 'IO'. Cuelga de lo que haya
 -- activo en el contexto thread-local, así que anida solo.
 inSpan :: Telemetry -> Text -> IO a -> IO a
@@ -178,36 +214,67 @@ inSpan' telemetry name = Otel.inSpan' telemetry.tracer name Otel.defaultSpanArgu
 -- El cuerpo del record es el nombre del evento, nunca prosa: el detalle va en
 -- los atributos. Es lo mismo que hace el frontend, y por la misma razón — un
 -- nombre estable es lo que se puede consultar.
-logEvent :: SeverityNumber -> Telemetry -> Text -> [(Text, AnyValue)] -> IO ()
-logEvent severity telemetry name attributes = do
+-- | Lo que hacen todos los helpers de abajo: agrega los atributos al contexto de
+-- Katip y emite.
+--
+-- Es 'Katip.katipAddContext' y no 'Katip.runKatipContextT' justamente para no
+-- tapar a Katip: el contexto que haya puesto quien llama —un
+-- 'Katip.katipAddContext' con el user y el grupo al principio del handler, un
+-- 'Katip.katipAddNamespace'— se conserva y se mezcla con esto.
+--
+-- El 'SpanContext' se agrega acá y no se deja al llamador porque es gratis y
+-- siempre correcto: sin él el log record no se cruza con el trace.
+logEvent :: (KatipContext m, HasCallStack) => Severity -> Text -> [Pair] -> m ()
+logEvent severity name attributes = do
+  spanContext <- liftIO currentSpanContext
+  Katip.katipAddContext (LogPayload{spanContext, attributes}) $
+    withFrozenCallStack $
+      Katip.logLocM severity (Katip.ls name)
+
+-- | Establece la mónada de Katip para un bloque de código que corre en 'IO'.
+--
+-- Para los comandos de consola, que no tienen una mónada de aplicación donde
+-- colgar las instancias como la tiene 'Site.Types.AppHandler'. Adentro se usa
+-- Katip normalmente, incluidos 'Katip.katipAddContext' y
+-- 'Katip.katipAddNamespace'.
+--
+-- Es el límite explícito, y la alternativa a envolver cada log en su propio
+-- @runKatipContextT@ —que es lo que había antes y lo que hacía imposible acumular
+-- contexto.
+withLogging :: Telemetry -> Katip.KatipContextT IO a -> IO a
+withLogging telemetry = Katip.runKatipContextT telemetry.logEnv () mempty
+
+-- | El 'SpanContext' activo en /este/ hilo, para que viaje con el item.
+--
+-- Se lee acá y no en el scribe porque el scribe corre en otro hilo: Katip
+-- entrega los items desde un worker propio, donde el contexto thread-local está
+-- vacío. Ver el encabezado de "BananaSplit.Telemetry.Scribe".
+currentSpanContext :: IO (Maybe SpanContext)
+currentSpanContext = do
   context <- ThreadLocal.getContext
-  void $
-    Log.emitLogRecord telemetry.logger $
-      Log.emptyLogRecordArguments
-        { Log.eventName = Just name
-        , Log.body = Log.toValue name
-        , Log.severityNumber = Just severity
-        , Log.context = Just context
-        , Log.attributes = HashMap.fromList attributes
-        }
+  traverse Otel.getSpanContext (Context.lookupSpan context)
 
 -- | Algo pasó y salió como se esperaba.
-logInfo :: Telemetry -> Text -> [(Text, AnyValue)] -> IO ()
-logInfo = logEvent Log.Info
+logInfo :: (KatipContext m, HasCallStack) => Text -> [Pair] -> m ()
+logInfo = withFrozenCallStack (logEvent InfoS)
 
 -- | Algo salió mal pero es una respuesta válida del sistema: un código
 -- equivocado, un rate limit, un mail que no se pudo atribuir a nadie.
-logWarn :: Telemetry -> Text -> [(Text, AnyValue)] -> IO ()
-logWarn = logEvent Log.Warn
+logWarn :: (KatipContext m, HasCallStack) => Text -> [Pair] -> m ()
+logWarn = withFrozenCallStack (logEvent WarningS)
 
 -- | Algo falló y no se pudo hacer el trabajo.
-logError :: Telemetry -> Text -> [(Text, AnyValue)] -> IO ()
-logError = logEvent Log.Error
+logError :: (KatipContext m, HasCallStack) => Text -> [Pair] -> m ()
+logError = withFrozenCallStack (logEvent ErrorS)
 
 -- | Para lo que pasa seguido y solo importa cuando estás mirando de cerca.
-logDebug :: Telemetry -> Text -> [(Text, AnyValue)] -> IO ()
-logDebug = logEvent Log.Debug
+logDebug :: (KatipContext m, HasCallStack) => Text -> [Pair] -> m ()
+logDebug = withFrozenCallStack (logEvent DebugS)
 
 -- | Azúcar para armar los atributos de un log record.
-logAttr :: (ToValue a) => Text -> a -> (Text, AnyValue)
-logAttr name value = (name, Log.toValue value)
+--
+-- El payload de Katip es JSON, así que los atributos son pares de Aeson y lo
+-- que hace falta del valor es 'Aeson.ToJSON'. El scribe los traduce a los tipos
+-- de OTel del otro lado.
+logAttr :: (Aeson.ToJSON a) => Text -> a -> Pair
+logAttr name value = Key.fromText name .= value

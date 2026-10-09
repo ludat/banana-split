@@ -5,12 +5,13 @@ processes:
     command: |
       ghcid --command='cabal repl --enable-multi-repl exe:banana-split lib:banana-split' --reload=./config --run=Main.main --warnings
     environment:
-    # Sin esto el backend no exporta nada (ver Site.Telemetry). Es el mismo
-    # collector al que reporta el frontend, así que un request que arranca en el
-    # browser y termina en la base queda en un solo trace.
     - OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
     - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
     - OTEL_SERVICE_NAME=backend
+    - OTEL_RESOURCE_ATTRIBUTES=service.namespace=banana-split,service.version=latest,deployment.environment.name=local
+    - OTEL_METRIC_EXPORT_INTERVAL=500
+    - OTEL_BSP_SCHEDULE_DELAY=500
+    - OTEL_BLRP_SCHEDULE_DELAY_MILLIS=500
     availability:
       restart: "always"
     depends_on:

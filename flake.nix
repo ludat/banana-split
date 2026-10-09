@@ -85,6 +85,8 @@
               hs-opentelemetry-exporter-handle.source = inputs.hs-opentelemetry + /exporters/handle;
               hs-opentelemetry-exporter-otlp.source = inputs.hs-opentelemetry + /exporters/otlp;
               hs-opentelemetry-exporter-in-memory.source = inputs.hs-opentelemetry + /exporters/in-memory;
+              hs-opentelemetry-instrumentation-ghc-metrics.source =
+                inputs.hs-opentelemetry + /instrumentation/ghc-metrics;
               hs-opentelemetry-propagator-b3.source = inputs.hs-opentelemetry + /propagators/b3;
               hs-opentelemetry-propagator-datadog.source = inputs.hs-opentelemetry + /propagators/datadog;
               hs-opentelemetry-propagator-jaeger.source = inputs.hs-opentelemetry + /propagators/jaeger;

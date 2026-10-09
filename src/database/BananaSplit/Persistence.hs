@@ -11,6 +11,9 @@ module BananaSplit.Persistence (
   deleteOldLoginAttempts,
   conTransaccionDeEscritura,
   conTransaccionDeLecturaRapida,
+  anotarQueriesEnElSpan,
+  registrarStatement,
+  resumirQuery,
   makePool,
   openConnection,
   runMigration,
@@ -59,6 +62,8 @@ module BananaSplit.Persistence (
 ) where
 
 import Conferer qualified
+import Data.HashMap.Strict qualified as HashMap
+import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
@@ -72,6 +77,8 @@ import Database.Beam.Postgres.Full hiding (insert)
 import Database.PostgreSQL.Simple (Only (..), execute, query)
 import Database.PostgreSQL.Simple.Errors (isSerializationError)
 import Database.PostgreSQL.Simple.Transaction qualified as Transaction
+import OpenTelemetry.Context qualified as Context
+import OpenTelemetry.Context.ThreadLocal qualified as ThreadLocal
 import OpenTelemetry.Trace.Core qualified as Otel
 
 import BananaSplit qualified as M
@@ -117,7 +124,7 @@ conTransaccionDeEscritura conn accion =
       }
     isSerializationError
     conn
-    (runBeamPostgres conn accion)
+    (conQueriesEnElSpan conn accion)
 
 -- | La transacción de leer para mostrar, que es lo más barato que hay: no toma
 -- predicate locks, no puede abortar por conflicto y no le agrega trabajo a las
@@ -137,7 +144,95 @@ conTransaccionDeLecturaRapida conn accion =
       , Transaction.readWriteMode = Transaction.ReadOnly
       }
     conn
-    (runBeamPostgres conn accion)
+    (conQueriesEnElSpan conn accion)
+
+conQueriesEnElSpan :: Connection -> Pg a -> IO a
+conQueriesEnElSpan conn accion = do
+  statements <- newIORef []
+  runBeamPostgresDebug (registrarStatement statements) conn accion
+    `finally` anotarQueriesEnElSpan statements
+
+-- | Pasa lo acumulado a atributos del span, en el orden en que corrieron.
+anotarQueriesEnElSpan :: IORef [Text] -> IO ()
+anotarQueriesEnElSpan statements = do
+  queries <- reverse <$> readIORef statements
+  unless (null queries) $ conSpanActivo $ \span ->
+    Otel.addAttributes span
+      $ HashMap.fromList
+        [ ("db.query.summary", Otel.toAttribute $ recortar $ Text.intercalate "; " queries)
+        , ("db.query.count", Otel.toAttribute (fromIntegral (length queries) :: Int64))
+        ]
+
+registrarStatement :: IORef [Text] -> String -> IO ()
+registrarStatement statements sql = do
+  let resumen = resumirQuery (toS sql)
+  modifyIORef' statements (resumen :)
+  conSpanActivo $ \span ->
+    Otel.addEvent span
+      $ Otel.NewEvent
+        { Otel.newEventName = "db.query"
+        , Otel.newEventAttributes =
+            HashMap.fromList [("db.query.summary", Otel.toAttribute resumen)]
+        , Otel.newEventTimestamp = Nothing
+        }
+
+resumirQuery :: Text -> Text
+resumirQuery sql =
+  case palabras of
+    [] -> "(vacía)"
+    (verbo : resto) -> case tabla verbo resto of
+      Just nombre -> acotar (Text.toUpper verbo) <> " " <> acotar nombre
+      Nothing -> acotar (Text.toUpper verbo)
+  where
+    -- Que esto esté acotado es media razón de ser del resumen, así que no
+    -- depende de que el SQL venga con la forma esperada: un token larguísimo se
+    -- corta igual.
+    acotar = Text.take maxLargoToken
+
+    palabras = Text.words $ Text.map (\c -> if c == '\n' || c == '\t' then ' ' else c) sql
+
+    -- Dónde está la tabla depende del verbo, y el nombre viene entrecomillado
+    -- porque Beam siempre cita los identificadores.
+    tabla verbo resto = case Text.toUpper verbo of
+      "SELECT" -> despuesDe "FROM" resto
+      "DELETE" -> despuesDe "FROM" resto
+      "INSERT" -> despuesDe "INTO" resto
+      "UPDATE" -> identificador =<< head resto
+      _ -> Nothing
+
+    despuesDe palabra resto =
+      case dropWhile ((/= palabra) . Text.toUpper) resto of
+        (_ : siguiente : _) -> identificador siguiente
+        _ -> Nothing
+
+    -- Si no es un identificador citado es una subquery, un paréntesis o algo que
+    -- no vale la pena adivinar.
+    identificador palabra = do
+      sinComillas <- Text.stripSuffix "\"" =<< Text.stripPrefix "\"" palabra
+      guard $ not $ Text.null sinComillas
+      pure sinComillas
+
+-- | El span sale del contexto thread-local, que es donde lo dejan
+-- 'Site.Handler.Utils.runBeamWrite' y compañía. Sin span activo —las
+-- migraciones, por ejemplo— no hace nada.
+conSpanActivo :: (Otel.Span -> IO ()) -> IO ()
+conSpanActivo accion = do
+  contexto <- ThreadLocal.getContext
+  for_ (Context.lookupSpan contexto) accion
+
+-- | Un bulk insert renderizado son kilobytes de SQL, y lo que se quiere saber es
+-- qué query es, no el payload entero.
+recortar :: Text -> Text
+recortar texto
+  | Text.length texto <= maxLargoSql = texto
+  | otherwise = Text.take maxLargoSql texto <> "…"
+
+-- | Lo más largo que puede medir un verbo o un nombre de tabla en el resumen.
+maxLargoToken :: Int
+maxLargoToken = 40
+
+maxLargoSql :: Int
+maxLargoSql = 2000
 
 -- | Cada migración queda como un span raíz llamado @migration \<nombre\>@, con
 -- un log de arranque y uno de cierre. Son comandos que se corren a mano y que
@@ -148,20 +243,18 @@ runMigration telemetry config args = do
   conn <- openConnection config
   let nombre = Text.unwords $ fmap toS args
       correr accion =
-        Telemetry.inSpan telemetry ("migration " <> nombre) $ do
-          Telemetry.logInfo telemetry "migration.start" [Telemetry.logAttr "app.migration" nombre]
-          void accion
-          Telemetry.logInfo telemetry "migration.done" [Telemetry.logAttr "app.migration" nombre]
+        Telemetry.inSpan telemetry ("migration " <> nombre) $ Telemetry.withLogging telemetry $ do
+          Telemetry.logInfo "migration.start" [Telemetry.logAttr "app.migration" nombre]
+          liftIO $ void accion
+          Telemetry.logInfo "migration.done" [Telemetry.logAttr "app.migration" nombre]
           putText "Done"
   case args of
     ["fix-pagos-fecha"] -> correr $ runBeamPostgres conn FixDates.run
     ["recompute-pagos"] -> correr $ recomputePagos telemetry conn
     ["prune-login-attempts"] -> correr $ runBeamPostgres conn deleteOldLoginAttempts
     _ -> do
-      Telemetry.logWarn
-        telemetry
-        "migration.unknown"
-        [Telemetry.logAttr "app.migration" nombre]
+      Telemetry.withLogging telemetry
+        $ Telemetry.logWarn "migration.unknown" [Telemetry.logAttr "app.migration" nombre]
       putText $ "Unknown migration: " <> show args
       exitFailure
   close conn
@@ -923,20 +1016,20 @@ recomputePagos telemetry conn = go 1 0 nullUlid
       case resultado of
         Nothing -> do
           putText $ "recompute-pagos: listo, " <> show total <> " pagos recomputados"
-          Telemetry.logInfo
-            telemetry
-            "recompute_pagos.finished"
-            [Telemetry.logAttr "app.recompute.total" (fromIntegral total :: Int64)]
+          Telemetry.withLogging telemetry
+            $ Telemetry.logInfo
+              "recompute_pagos.finished"
+              [Telemetry.logAttr "app.recompute.total" (fromIntegral total :: Int64)]
         Just (procesados, siguienteId) -> do
           let total' = total + procesados
           putText $ "recompute-pagos: lote de " <> show procesados <> " procesado (" <> show total' <> " en total)"
-          Telemetry.logInfo
-            telemetry
-            "recompute_pagos.lote"
-            [ Telemetry.logAttr "app.recompute.lote" (fromIntegral lote :: Int64)
-            , Telemetry.logAttr "app.recompute.pagos" (fromIntegral procesados :: Int64)
-            , Telemetry.logAttr "app.recompute.total" (fromIntegral total' :: Int64)
-            ]
+          Telemetry.withLogging telemetry
+            $ Telemetry.logInfo
+              "recompute_pagos.lote"
+              [ Telemetry.logAttr "app.recompute.lote" (fromIntegral lote :: Int64)
+              , Telemetry.logAttr "app.recompute.pagos" (fromIntegral procesados :: Int64)
+              , Telemetry.logAttr "app.recompute.total" (fromIntegral total' :: Int64)
+              ]
           go (lote + 1) total' siguienteId
 
 saveDistribucion :: M.Moneda -> M.Distribucion -> Pg M.Distribucion

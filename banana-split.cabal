@@ -43,6 +43,7 @@ common base-settings
     file-embed,
     filepath,
     hs-opentelemetry-api,
+    hs-opentelemetry-instrumentation-ghc-metrics,
     hs-opentelemetry-sdk,
     http-api-data,
     http-client,
@@ -50,6 +51,7 @@ common base-settings
     http-media,
     http-types,
     jose,
+    katip,
     mime-mail,
     mtl,
     postgresql-simple,
@@ -66,6 +68,7 @@ common base-settings
     servant-elm,
     servant-foreign,
     servant-server,
+    template-haskell,
     smtp-mail,
     string-conversions,
     string-interpolate,
@@ -84,7 +87,10 @@ common threaded-rts
   ghc-options:
     -threaded
     -rtsopts
-    -with-rtsopts=-N
+    -- `-T` habilita las estadísticas del RTS (`GHC.Stats.getRTSStats`), que es
+    -- de donde salen las métricas de runtime. Sin esto
+    -- 'BananaSplit.Telemetry.registerRuntimeMetrics' no registra nada.
+    "-with-rtsopts=-N -T"
 
 library
   import: base-settings
@@ -112,6 +118,7 @@ library telemetry
   hs-source-dirs: src/telemetry/
   exposed-modules:
     BananaSplit.Telemetry
+    BananaSplit.Telemetry.Scribe
 
 library database
   import: base-settings
@@ -202,6 +209,9 @@ test-suite spec
   other-modules:
     BananaSplit.DeudasSpec
     BananaSplit.MonedaSpec
+    BananaSplit.TelemetrySpec
+    BananaSplit.Telemetry.QueryTracingSpec
+    BananaSplit.Telemetry.ScribeSpec
     BananaSplit.Persistence.GrupoSpec
     BananaSplit.Persistence.LoginAttemptsSpec
     BananaSplit.Persistence.PagosSpec
@@ -224,7 +234,9 @@ test-suite spec
     banana-split:http,
     banana-split:receipts,
     banana-split:telemetry,
+    hs-opentelemetry-exporter-in-memory,
     hspec,
     lens,
+    vector,
 
   build-tool-depends: hspec-discover:hspec-discover
