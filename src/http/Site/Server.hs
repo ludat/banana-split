@@ -101,7 +101,7 @@ proxyApi = Proxy
 -- unhandled exception gets logged with its message instead of disappearing.
 nt :: App -> AppHandler a -> Handler a
 nt s x = do
-  result <- liftIO $ try $ runHandler (runReaderT x s)
+  result <- liftIO $ try $ runHandler (runReaderT (runAppHandler x) s)
   case result of
     Right (Right a) -> pure a
     Right (Left err) -> throwError err

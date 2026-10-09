@@ -54,9 +54,9 @@ import BananaSplit.Receipts (
   ReceiptsReaderConfig (..),
   analyzePagoFromEmail,
  )
-import BananaSplit.Telemetry (logAttr, logInfo, logWarn)
+import BananaSplit.Telemetry (inSpan, logAttr, logInfo, logWarn)
 import Preludat
-import Site.Handler.Utils (inSpan, runBeamFastRead, runBeamWrite)
+import Site.Handler.Utils (runBeamFastRead, runBeamWrite)
 import Site.Mailer (Mailer (..))
 import Site.Types
 

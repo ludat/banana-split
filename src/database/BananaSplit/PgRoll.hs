@@ -10,11 +10,12 @@ module BananaSplit.PgRoll (
 import Conferer
 import Data.String
 import Data.Text qualified as Text
+import Katip (KatipContext)
 import OpenTelemetry.Trace.Core qualified as Otel
 import Protolude
 import System.Process (callProcess, readProcess)
 
-import BananaSplit.Telemetry (Telemetry, inSpan', logAttr, logError, logInfo, withLogging)
+import BananaSplit.Telemetry (MonadTelemetry (..), logAttr, logError, logInfo)
 
 -- | Corre @pgroll@ con la conexión que sale de la config.
 --
@@ -28,12 +29,12 @@ import BananaSplit.Telemetry (Telemetry, inSpan', logAttr, logError, logInfo, wi
 -- mensaje de la 'IOException' incluye el argv completo — con la URL y la
 -- contraseña — y 'inSpan'' graba el mensaje de cualquier excepción que lo cruce
 -- como @exception.message@. Dejándola pasar, la contraseña termina en Tempo.
-rawCall :: Telemetry -> Config -> [String] -> IO ()
-rawCall telemetry config args = do
-  connString <- Conferer.fetchFromConfig "database.url" config
+rawCall :: (MonadTelemetry m, KatipContext m) => Config -> [String] -> m ()
+rawCall config args = do
+  connString <- liftIO $ Conferer.fetchFromConfig "database.url" config
   let connectionArgs = ["--postgres-url", connString ++ "?sslmode=disable"]
       comando = Text.unwords $ fmap toS args
-  outcome <- inSpan' telemetry ("pgroll " <> comando) $ \span -> withLogging telemetry $ do
+  outcome <- inSpan' ("pgroll " <> comando) $ \span -> do
     Otel.addAttribute span "app.pgroll.args" comando
     logInfo "migration.pgroll.start" [logAttr "app.pgroll.args" comando]
     result <- liftIO $ try @SomeException $ callProcess "pgroll" $ connectionArgs ++ args
@@ -44,25 +45,21 @@ rawCall telemetry config args = do
         Otel.setStatus span (Otel.Error "pgroll failed")
         logError "migration.pgroll.failed" [logAttr "app.pgroll.args" comando]
     pure result
-  either throwIO pure outcome
+  liftIO $ either throwIO pure outcome
 
 getLatestSchema :: IO String
 getLatestSchema =
   readProcess "pgroll" ["latest", "schema", "--local", "./migrations"] ""
     <&> filter (not . isControl)
 
-init :: Telemetry -> Config -> IO ()
-init telemetry config = do
-  rawCall telemetry config ["init"]
+init :: (MonadTelemetry m, KatipContext m) => Config -> m ()
+init config = rawCall config ["init"]
 
-start :: Telemetry -> Config -> IO ()
-start telemetry config = do
-  rawCall telemetry config ["migrate", "./migrations"]
+start :: (MonadTelemetry m, KatipContext m) => Config -> m ()
+start config = rawCall config ["migrate", "./migrations"]
 
-rollback :: Telemetry -> Config -> IO ()
-rollback telemetry config = do
-  rawCall telemetry config ["rollback"]
+rollback :: (MonadTelemetry m, KatipContext m) => Config -> m ()
+rollback config = rawCall config ["rollback"]
 
-startAndComplete :: Telemetry -> Config -> IO ()
-startAndComplete telemetry config = do
-  rawCall telemetry config ["migrate", "--complete", "./migrations"]
+startAndComplete :: (MonadTelemetry m, KatipContext m) => Config -> m ()
+startAndComplete config = rawCall config ["migrate", "--complete", "./migrations"]

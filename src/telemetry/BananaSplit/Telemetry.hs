@@ -2,12 +2,11 @@ module BananaSplit.Telemetry (
   Telemetry (..),
   registerRuntimeMetrics,
   telemetryFromGlobals,
-  withLogging,
   withTelemetry,
 
   -- * Spans
-  inSpan,
-  inSpan',
+  MonadTelemetry (..),
+  inSpanConTracer',
 
   -- * Log records
   logAttr,
@@ -17,6 +16,7 @@ module BananaSplit.Telemetry (
   logWarn,
 ) where
 
+import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
 import Data.Aeson.Key qualified as Key
@@ -197,14 +197,40 @@ registerRuntimeMetrics telemetry = do
   void $ GHCMetrics.registerGHCMetrics telemetry.meter
   void $ ProcessMetrics.registerProcessMetrics telemetry.meter
 
--- | Un span alrededor de un pedazo de trabajo en 'IO'. Cuelga de lo que haya
--- activo en el contexto thread-local, así que anida solo.
-inSpan :: Telemetry -> Text -> IO a -> IO a
-inSpan telemetry name = Otel.inSpan telemetry.tracer name Otel.defaultSpanArguments
+-- | Poder abrir spans.
+--
+-- La capacidad, no la implementación: lo que la app necesita de la telemetría para
+-- instrumentarse es esto, y quién sabe abrir un span es cosa de la mónada concreta
+-- que elija cada entry point.
+--
+-- Hay dos implementaciones y son genuinamente distintas, que es lo que justifica
+-- la clase:
+--
+-- * las mónadas con 'MonadUnliftIO' y el 'Telemetry' en el reader la derivan de
+--   'inSpanConTracer'' en una línea;
+-- * 'Site.Types.AppHandler' no tiene 'MonadUnliftIO' —abajo está el @ExceptT@ de
+--   Servant— así que la implementa a mano, corriendo el handler para que un
+--   @ServerError@ no se escape sin cerrar el span.
+--
+-- Las métricas no están acá porque los instrumentos se crean una sola vez al
+-- arrancar, así que nadie los necesita de forma polimórfica. Los logs tampoco: esa
+-- capacidad ya es 'Katip.KatipContext', que es exactamente esta misma idea y la
+-- trae la librería.
+class (Monad m) => MonadTelemetry m where
+  -- | Un span alrededor de un pedazo de trabajo. Cuelga de lo que haya activo en
+  -- el contexto thread-local, así que anida solo.
+  inSpan :: Text -> m a -> m a
+  inSpan name = inSpan' name . const
 
--- | Como 'inSpan', pero te da el span para colgarle atributos.
-inSpan' :: Telemetry -> Text -> (Span -> IO a) -> IO a
-inSpan' telemetry name = Otel.inSpan' telemetry.tracer name Otel.defaultSpanArguments
+  -- | Como 'inSpan', pero te da el span para colgarle atributos.
+  inSpan' :: Text -> (Span -> m a) -> m a
+
+-- | Con qué implementar 'inSpan'' cuando la mónada tiene unlift y el
+-- 'Telemetry' en el reader. El caso de 'AppRunner' y del runner de los tests.
+inSpanConTracer' :: (MonadUnliftIO m, MonadReader Telemetry m) => Text -> (Span -> m a) -> m a
+inSpanConTracer' name action = do
+  telemetry <- ask
+  Otel.inSpan' telemetry.tracer name Otel.defaultSpanArguments action
 
 -- | Emite un log record por OTLP, correlacionado con el trace: lleva el
 -- contexto activo, así que Grafana lo cruza con el span que lo produjo (ya está
@@ -230,19 +256,6 @@ logEvent severity name attributes = do
   Katip.katipAddContext (LogPayload{spanContext, attributes}) $
     withFrozenCallStack $
       Katip.logLocM severity (Katip.ls name)
-
--- | Establece la mónada de Katip para un bloque de código que corre en 'IO'.
---
--- Para los comandos de consola, que no tienen una mónada de aplicación donde
--- colgar las instancias como la tiene 'Site.Types.AppHandler'. Adentro se usa
--- Katip normalmente, incluidos 'Katip.katipAddContext' y
--- 'Katip.katipAddNamespace'.
---
--- Es el límite explícito, y la alternativa a envolver cada log en su propio
--- @runKatipContextT@ —que es lo que había antes y lo que hacía imposible acumular
--- contexto.
-withLogging :: Telemetry -> Katip.KatipContextT IO a -> IO a
-withLogging telemetry = Katip.runKatipContextT telemetry.logEnv () mempty
 
 -- | El 'SpanContext' activo en /este/ hilo, para que viaje con el item.
 --

@@ -4,6 +4,7 @@ module Main (
 
 import Protolude
 
+import AppRunner (runApp)
 import BananaSplit.Elm qualified as Elm
 import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.PgRoll qualified as PgRoll
@@ -30,10 +31,10 @@ main = do
     -- porque su shutdown es el que hace el flush final.
     "migrations" : rest -> withTelemetry $ \telemetry -> do
       config <- createConfig "dev"
-      PgRoll.rawCall telemetry config rest
+      runApp telemetry $ PgRoll.rawCall config rest
     "run-migration" : rest -> withTelemetry $ \telemetry -> do
       config <- createConfig "dev"
-      Persistence.runMigration telemetry config rest
+      runApp telemetry $ Persistence.runMigration config rest
     _ -> do
       putText $ "Unknown command: " <> show args
       exitFailure

@@ -69,6 +69,7 @@ common base-settings
     servant-foreign,
     servant-server,
     template-haskell,
+    unliftio-core,
     smtp-mail,
     string-conversions,
     string-interpolate,
@@ -110,9 +111,6 @@ library
     BananaSplit.User
     Preludat
 
--- El setup del SDK de OpenTelemetry y los helpers que valen en cualquier parte.
--- Está aparte porque lo usan tanto `database` (las migraciones) como `http`
--- (los requests), y `database` no puede depender de `http`.
 library telemetry
   import: base-settings
   hs-source-dirs: src/telemetry/
@@ -195,6 +193,9 @@ executable banana-split
   import: base-settings, threaded-rts
   hs-source-dirs: src/executable/
   main-is: Main.hs
+  other-modules:
+    AppRunner
+
   build-depends:
     banana-split:database,
     banana-split:elm,
@@ -226,6 +227,7 @@ test-suite spec
     Site.AuthSpec
     Site.Handler.InboundEmailSpec
     Site.TelemetrySpec
+    TestRunner
 
   build-depends:
     QuickCheck,

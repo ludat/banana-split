@@ -14,6 +14,7 @@ import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.PgRoll qualified as PgRoll
 import BananaSplit.Telemetry (telemetryFromGlobals)
 import Site.Config qualified as Config
+import TestRunner (runTest)
 
 hook :: SpecWith RunDb -> Spec
 hook =
@@ -27,8 +28,9 @@ setupDb action = do
   -- Los tests no levantan el SDK, así que esto es un no-op: las migraciones
   -- quedan instrumentadas igual pero no sale nada hacia ningún collector.
   telemetry <- telemetryFromGlobals
-  PgRoll.init telemetry config
-  PgRoll.startAndComplete telemetry config
+  runTest telemetry $ do
+    PgRoll.init config
+    PgRoll.startAndComplete config
   pool <- Persistence.makePool config
   Pool.withResource pool $ \conn -> do
     action conn

@@ -26,6 +26,7 @@ import BananaSplit.Telemetry (telemetryFromGlobals)
 import BananaSplit.ULID (ULID, nullUlid)
 import Preludat
 import Site.Config qualified as Config
+import TestRunner (runTest)
 
 -- | Cuántas veces se repite la carrera. La ventana es ancha (el recálculo son
 -- ~10 queries), así que sin aislamiento falla en casi todas: con esto alcanza y
@@ -60,8 +61,9 @@ conConexiones correr = do
   -- haya corrido antes. La base tiene que existir de antes, igual que para el
   -- resto del suite.
   telemetry <- telemetryFromGlobals
-  PgRoll.init telemetry config
-  PgRoll.startAndComplete telemetry config
+  runTest telemetry $ do
+    PgRoll.init config
+    PgRoll.startAndComplete config
   bracket (makePool config) Pool.destroyAllResources $ \pool ->
     -- Anidar dos 'withResource' da dos conexiones distintas —el pool nunca
     -- entrega el mismo recurso a dos tomadores a la vez—, que es justo lo que

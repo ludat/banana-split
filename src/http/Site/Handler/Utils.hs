@@ -1,8 +1,6 @@
 module Site.Handler.Utils (
   err200,
   err423,
-  inSpan,
-  inSpan',
   orElse,
   orElseMay,
   orElse_,
@@ -86,30 +84,3 @@ runBeamFastRead dbAction = do
 -- querés ver cuando un endpoint tarda y las queries son rápidas.
 dbSpanArguments :: SpanArguments
 dbSpanArguments = Otel.defaultSpanArguments{kind = Client}
-
--- | Un span alrededor de un pedazo de handler. Lo que hace falta hacer a mano
--- es que un 'ServerError' lanzado adentro no se escape del span sin cerrarlo:
--- 'AppHandler' no es 'MonadUnliftIO' (abajo tiene un @ExceptT@), así que
--- 'Otel.inSpan' no se le puede aplicar derecho.
---
--- Solo los 5xx marcan el span como error, por lo mismo que en
--- 'Site.Telemetry.traceApiMiddleware': un 401 o un 409 es una respuesta, no una
--- falla. El código igual queda en un atributo, así que se puede filtrar.
-inSpan :: Text -> AppHandler a -> AppHandler a
-inSpan name action = inSpan' name (const action)
-
--- | Como 'inSpan', pero te da el span para colgarle atributos.
-inSpan' :: Text -> (Span -> AppHandler a) -> AppHandler a
-inSpan' name action = do
-  app <- ask
-  outcome <- liftIO $ Otel.inSpan' app.telemetry.tracer name Otel.defaultSpanArguments $ \handlerSpan -> do
-    result <- runHandler $ runReaderT (action handlerSpan) app
-    case result of
-      Right _ -> pure ()
-      Left err -> do
-        Otel.addAttribute handlerSpan "http.response.status_code"
-          $ (fromIntegral (errHTTPCode err) :: Int64)
-        when (errHTTPCode err >= 500)
-          $ Otel.setStatus handlerSpan (Otel.Error $ "HTTP " <> show (errHTTPCode err))
-    pure result
-  either throwError pure outcome

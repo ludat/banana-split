@@ -77,6 +77,7 @@ import Database.Beam.Postgres.Full hiding (insert)
 import Database.PostgreSQL.Simple (Only (..), execute, query)
 import Database.PostgreSQL.Simple.Errors (isSerializationError)
 import Database.PostgreSQL.Simple.Transaction qualified as Transaction
+import Katip (KatipContext)
 import OpenTelemetry.Context qualified as Context
 import OpenTelemetry.Context.ThreadLocal qualified as ThreadLocal
 import OpenTelemetry.Trace.Core qualified as Otel
@@ -238,26 +239,25 @@ maxLargoSql = 2000
 -- un log de arranque y uno de cierre. Son comandos que se corren a mano y que
 -- pueden tardar; sin esto lo único que queda de una corrida es lo que haya
 -- quedado en la terminal de quien la ejecutó.
-runMigration :: Telemetry -> Conferer.Config -> [String] -> IO ()
-runMigration telemetry config args = do
-  conn <- openConnection config
+runMigration :: (Telemetry.MonadTelemetry m, KatipContext m) => Conferer.Config -> [String] -> m ()
+runMigration config args = do
+  conn <- liftIO $ openConnection config
   let nombre = Text.unwords $ fmap toS args
       correr accion =
-        Telemetry.inSpan telemetry ("migration " <> nombre) $ Telemetry.withLogging telemetry $ do
+        Telemetry.inSpan ("migration " <> nombre) $ do
           Telemetry.logInfo "migration.start" [Telemetry.logAttr "app.migration" nombre]
-          liftIO $ void accion
+          void accion
           Telemetry.logInfo "migration.done" [Telemetry.logAttr "app.migration" nombre]
           putText "Done"
   case args of
-    ["fix-pagos-fecha"] -> correr $ runBeamPostgres conn FixDates.run
-    ["recompute-pagos"] -> correr $ recomputePagos telemetry conn
-    ["prune-login-attempts"] -> correr $ runBeamPostgres conn deleteOldLoginAttempts
+    ["fix-pagos-fecha"] -> correr $ liftIO $ runBeamPostgres conn FixDates.run
+    ["recompute-pagos"] -> correr $ recomputePagos conn
+    ["prune-login-attempts"] -> correr $ liftIO $ runBeamPostgres conn deleteOldLoginAttempts
     _ -> do
-      Telemetry.withLogging telemetry
-        $ Telemetry.logWarn "migration.unknown" [Telemetry.logAttr "app.migration" nombre]
+      Telemetry.logWarn "migration.unknown" [Telemetry.logAttr "app.migration" nombre]
       putText $ "Unknown migration: " <> show args
-      exitFailure
-  close conn
+      liftIO exitFailure
+  liftIO $ close conn
 
 makePool :: Conferer.Config -> IO (Pool.Pool Connection)
 makePool config = do
@@ -987,17 +987,19 @@ savePago grupoId pagoWithoutId = do
 -- lote y cuántos pagos procesó. Es lo que hace que una corrida larga se pueda
 -- mirar mientras pasa en lugar de solo al final: en el trace se ve el avance
 -- lote por lote y cuál de ellos se puso lento.
-recomputePagos :: Telemetry -> Connection -> IO ()
-recomputePagos telemetry conn = go 1 0 nullUlid
+-- El 'forall' es para que el 'go' del @where@ hable de la misma @m@ y no
+-- introduzca una propia.
+recomputePagos :: forall m. (Telemetry.MonadTelemetry m, KatipContext m) => Connection -> m ()
+recomputePagos conn = go 1 0 nullUlid
   where
     recomputePagosBatchSize = 100
 
     -- 'total' es la cantidad de pagos ya recomputados (para loguear progreso).
-    go :: Int -> Int -> ULID -> IO ()
+    go :: Int -> Int -> ULID -> m ()
     go lote total ultimoId = do
-      resultado <- Telemetry.inSpan' telemetry "recompute-pagos.lote" $ \span -> do
+      resultado <- Telemetry.inSpan' "recompute-pagos.lote" $ \span -> do
         Otel.addAttribute span "app.recompute.lote" (fromIntegral lote :: Int64)
-        resultado <- runBeamPostgres conn $ do
+        resultado <- liftIO $ runBeamPostgres conn $ do
           batch <- runSelectReturningList $ select $ do
             limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
               p <- all_ db.pagos
@@ -1016,20 +1018,18 @@ recomputePagos telemetry conn = go 1 0 nullUlid
       case resultado of
         Nothing -> do
           putText $ "recompute-pagos: listo, " <> show total <> " pagos recomputados"
-          Telemetry.withLogging telemetry
-            $ Telemetry.logInfo
-              "recompute_pagos.finished"
-              [Telemetry.logAttr "app.recompute.total" (fromIntegral total :: Int64)]
+          Telemetry.logInfo
+            "recompute_pagos.finished"
+            [Telemetry.logAttr "app.recompute.total" (fromIntegral total :: Int64)]
         Just (procesados, siguienteId) -> do
           let total' = total + procesados
           putText $ "recompute-pagos: lote de " <> show procesados <> " procesado (" <> show total' <> " en total)"
-          Telemetry.withLogging telemetry
-            $ Telemetry.logInfo
-              "recompute_pagos.lote"
-              [ Telemetry.logAttr "app.recompute.lote" (fromIntegral lote :: Int64)
-              , Telemetry.logAttr "app.recompute.pagos" (fromIntegral procesados :: Int64)
-              , Telemetry.logAttr "app.recompute.total" (fromIntegral total' :: Int64)
-              ]
+          Telemetry.logInfo
+            "recompute_pagos.lote"
+            [ Telemetry.logAttr "app.recompute.lote" (fromIntegral lote :: Int64)
+            , Telemetry.logAttr "app.recompute.pagos" (fromIntegral procesados :: Int64)
+            , Telemetry.logAttr "app.recompute.total" (fromIntegral total' :: Int64)
+            ]
           go (lote + 1) total' siguienteId
 
 saveDistribucion :: M.Moneda -> M.Distribucion -> Pg M.Distribucion
