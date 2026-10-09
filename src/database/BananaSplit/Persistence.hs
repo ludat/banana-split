@@ -78,8 +78,6 @@ import Database.PostgreSQL.Simple (Only (..), execute, query)
 import Database.PostgreSQL.Simple.Errors (isSerializationError)
 import Database.PostgreSQL.Simple.Transaction qualified as Transaction
 import Katip (KatipContext)
-import OpenTelemetry.Context qualified as Context
-import OpenTelemetry.Context.ThreadLocal qualified as ThreadLocal
 import OpenTelemetry.Trace.Core qualified as Otel
 
 import BananaSplit qualified as M
@@ -88,7 +86,7 @@ import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..))
 import BananaSplit.Persistence.ResumenGuardado qualified as ResumenGuardado
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
-import BananaSplit.Telemetry (Telemetry)
+import BananaSplit.Telemetry (conSpanActivo)
 import BananaSplit.Telemetry qualified as Telemetry
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
@@ -213,14 +211,6 @@ resumirQuery sql =
       guard $ not $ Text.null sinComillas
       pure sinComillas
 
--- | El span sale del contexto thread-local, que es donde lo dejan
--- 'Site.Handler.Utils.runBeamWrite' y compañía. Sin span activo —las
--- migraciones, por ejemplo— no hace nada.
-conSpanActivo :: (Otel.Span -> IO ()) -> IO ()
-conSpanActivo accion = do
-  contexto <- ThreadLocal.getContext
-  for_ (Context.lookupSpan contexto) accion
-
 -- | Un bulk insert renderizado son kilobytes de SQL, y lo que se quiere saber es
 -- qué query es, no el payload entero.
 recortar :: Text -> Text
@@ -248,14 +238,12 @@ runMigration config args = do
           Telemetry.logInfo "migration.start" [Telemetry.logAttr "app.migration" nombre]
           void accion
           Telemetry.logInfo "migration.done" [Telemetry.logAttr "app.migration" nombre]
-          putText "Done"
   case args of
     ["fix-pagos-fecha"] -> correr $ liftIO $ runBeamPostgres conn FixDates.run
     ["recompute-pagos"] -> correr $ recomputePagos conn
     ["prune-login-attempts"] -> correr $ liftIO $ runBeamPostgres conn deleteOldLoginAttempts
     _ -> do
       Telemetry.logWarn "migration.unknown" [Telemetry.logAttr "app.migration" nombre]
-      putText $ "Unknown migration: " <> show args
       liftIO exitFailure
   liftIO $ close conn
 
@@ -1017,13 +1005,11 @@ recomputePagos conn = go 1 0 nullUlid
         pure resultado
       case resultado of
         Nothing -> do
-          putText $ "recompute-pagos: listo, " <> show total <> " pagos recomputados"
           Telemetry.logInfo
             "recompute_pagos.finished"
             [Telemetry.logAttr "app.recompute.total" (fromIntegral total :: Int64)]
         Just (procesados, siguienteId) -> do
           let total' = total + procesados
-          putText $ "recompute-pagos: lote de " <> show procesados <> " procesado (" <> show total' <> " en total)"
           Telemetry.logInfo
             "recompute_pagos.lote"
             [ Telemetry.logAttr "app.recompute.lote" (fromIntegral lote :: Int64)

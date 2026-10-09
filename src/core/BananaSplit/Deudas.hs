@@ -31,6 +31,7 @@ module BananaSplit.Deudas (
 
 import Data.Decimal (Decimal)
 import Data.Decimal qualified as Decimal
+import Data.HashMap.Strict qualified as HashMap
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific)
@@ -40,6 +41,7 @@ import Elm.Derive qualified as Elm
 import Numeric.Optimization.MIP qualified as MIP
 import Numeric.Optimization.MIP.Solver qualified as MIP
 import Numeric.Optimization.MIP.Solver.CBC qualified as CBC
+import OpenTelemetry.Trace.Core qualified as Otel
 import System.IO.Unsafe (unsafePerformIO)
 
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
@@ -47,6 +49,7 @@ import BananaSplit.Monto
 import BananaSplit.Monto qualified as Monto
 import BananaSplit.Participante
 import BananaSplit.Repartija
+import BananaSplit.Telemetry (conSpanActivo)
 import BananaSplit.ULID
 import Preludat
 
@@ -207,11 +210,20 @@ instance HasResumen Repartija where
       netosReclamados = calcularNetosRepartija repartija
       totalReclamado = totalNetos netosReclamados
 
+-- | Las transferencias mínimas, con el algoritmo naíf como red de contención si
+-- el solver no llega.
+--
+-- Que el solver falle no es un error: el resultado naíf es correcto, solo usa más
+-- transferencias. Pero pasaba en silencio —el 'Left' se descartaba— así que nadie
+-- se enteraba de que el grupo congelado tenía más transferencias de las necesarias.
+-- Ahora queda como evento del span activo.
 minimizeTransferencias :: Netos Monto -> [TransferenciaSugerida]
 minimizeTransferencias deudas =
   case solveOptimalTransactions' deudas of
     Right transactions -> transactions
-    Left _err -> resolverNetosNaif deudas
+    Left err -> unsafePerformIO $ do
+      eventoDelSolver "deudas.solver_fallback" err
+      pure $ resolverNetosNaif deudas
 
 solveOptimalTransactions :: Netos Monto -> [TransferenciaSugerida]
 solveOptimalTransactions deudas =
@@ -390,6 +402,16 @@ resolverNetosNaif deudas
              TransferenciaSugerida mayorDeudor mayorPagador mayorPagado
                : resolverNetosNaif deudas''
 
+eventoDelSolver :: Text -> Text -> IO ()
+eventoDelSolver nombre detalle =
+  conSpanActivo $ \span ->
+    Otel.addEvent span
+      $ Otel.NewEvent
+        { Otel.newEventName = nombre
+        , Otel.newEventAttributes = HashMap.fromList [("app.deudas.detalle", Otel.toAttribute detalle)]
+        , Otel.newEventTimestamp = Nothing
+        }
+
 solveOptimalTransactions' :: Netos Monto -> Either Text [TransferenciaSugerida]
 solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
   let maxPrecision =
@@ -475,8 +497,11 @@ solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
         let solverOpts =
               MIP.def
                 { MIP.solveTimeLimit = Just 2.0
-                , MIP.solveLogger = \msg -> putStrLn $ "[CBC] " <> msg -- Debug logging
-                , MIP.solveErrorLogger = \msg -> putStrLn $ "[CBC ERROR] " <> msg -- Debug logging
+                , -- CBC es charlatán y su log de progreso no lo lee nadie: hasta
+                  -- acá se imprimía entero en el stdout del server en cada
+                  -- congelamiento. Los errores sí quedan, como evento del span.
+                  MIP.solveLogger = \_ -> pure ()
+                , MIP.solveErrorLogger = \msg -> eventoDelSolver "deudas.solver_error" (toS msg)
                 , MIP.solveTol =
                     Just
                       MIP.Tol
@@ -518,7 +543,7 @@ solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
 
               if neto /= 0
                 then do
-                  putText $ "[error] Transactions do not balance out: " <> show transactions
+                  eventoDelSolver "deudas.solver_desbalanceado" (show neto)
                   pure $ Left $ "Transactions do not balance, neto is " <> show neto
                 else
                   pure $ Right transactions

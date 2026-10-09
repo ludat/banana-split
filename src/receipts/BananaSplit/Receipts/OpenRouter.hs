@@ -24,16 +24,20 @@ module BananaSplit.Receipts.OpenRouter (
 import Control.Arrow (left)
 import Control.Monad.Error.Class
 import Data.Aeson
+import Data.ByteString qualified as BS
+import Data.HashMap.Strict qualified as HashMap
 import Data.Scientific (Scientific)
 import Data.String.Interpolate (__i)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
 import Data.Text.Encoding.Error (lenientDecode)
 import Network.HTTP.Req
+import OpenTelemetry.Trace.Core qualified as Otel
 import Protolude
 
 import BananaSplit.Receipts.Tesseract (extractTextFromImage)
 import BananaSplit.Receipts.Types
+import BananaSplit.Telemetry (conSpanActivo)
 
 newtype ParsedReceipt = ParsedReceipt
   { items :: [ParsedReceiptItem]
@@ -332,7 +336,13 @@ callOpenRouterJson config systemPrompt userContent =
                     }
                 ]
             }
-    liftIO $ putText $ "[openrouter] request " <> Text.decodeUtf8 (toS (encode requestBody))
+    let requestBytes = BS.length (toS (encode requestBody))
+    liftIO $ conSpanActivo $ \span ->
+      Otel.addAttributes span $
+        HashMap.fromList
+          [ ("app.openrouter.model", Otel.toAttribute model)
+          , ("app.openrouter.request_bytes", Otel.toAttribute (fromIntegral requestBytes :: Int64))
+          ]
     response <-
       req
         POST
@@ -345,7 +355,15 @@ callOpenRouterJson config systemPrompt userContent =
             , header "X-Title" "Banana Split"
             ]
         )
-    liftIO $ putText $ "[openrouter] response " <> Text.decodeUtf8With lenientDecode (responseBody response)
+    liftIO $ conSpanActivo $ \span ->
+      Otel.addAttributes span $
+        HashMap.fromList
+          [
+            ( "app.openrouter.response_bytes"
+            , Otel.toAttribute (fromIntegral (BS.length (responseBody response)) :: Int64)
+            )
+          , ("http.response.status_code", Otel.toAttribute (fromIntegral (responseStatusCode response) :: Int64))
+          ]
 
     openRouterResp <- liftEither $ left Text.pack $ eitherDecodeStrict @OpenRouterResponse $ responseBody response
 

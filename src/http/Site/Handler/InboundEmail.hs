@@ -39,6 +39,7 @@ import Data.Map.Strict qualified as Map
 import Data.Set qualified as Set
 import Data.Text qualified as Text
 import Data.Time (Day, defaultTimeLocale, getCurrentTime, parseTimeM, utctDay)
+import Katip (KatipContext)
 import Network.HTTP.Client (Manager, httpLbs, parseRequest, responseBody)
 import Servant
 
@@ -165,10 +166,8 @@ handleInboundEmail host payload = do
   -- ningún lado.
   case outcome of
     Left reason -> do
-      putText $ "[inbound-email] dropped: " <> reason
       logWarn "email.inbound.dropped" [logAttr "app.email.drop_reason" reason]
     Right report -> do
-      putText $ "[inbound-email] " <> report
       logInfo "email.inbound.saved" [logAttr "app.email.outcome" report]
   -- Always 200: never surface processing failures to the provider, so Maileroo
   -- doesn't retry-storm. User-facing failures will go out as email later.
@@ -209,10 +208,12 @@ processInbound host payload = do
   result <- lift $ runExceptT $ processPago payload fromEmail
   case result of
     Left reason -> do
-      liftIO $ sendReply mailer fromEmail payload (failureEmail reason)
+      liftIO (sendReply mailer fromEmail payload (failureEmail reason))
+        >>= logReplyOutcome fromEmail
       throwError reason
     Right (grupo, saved) -> do
-      liftIO $ sendReply mailer fromEmail payload (successEmail host grupo saved)
+      liftIO (sendReply mailer fromEmail payload (successEmail host grupo saved))
+        >>= logReplyOutcome fromEmail
       pure (savedLog fromEmail grupo saved)
 
 -- | The authenticated pipeline (steps 3–7). Errors thrown here are user-facing
@@ -269,16 +270,24 @@ processPago payload fromEmail = do
 -- | Email the sender an outcome, threading onto the original subject when there
 -- is one. Any mailer failure is logged and swallowed — a failed reply must never
 -- become a 500 for Maileroo.
-sendReply :: Mailer -> Email -> MailerooInbound -> (Text, Text) -> IO ()
+sendReply :: Mailer -> Email -> MailerooInbound -> (Text, Text) -> IO (Either SomeException ())
 sendReply mailer recipient payload (subject, body) = do
   let threadedSubject = case firstHeader "Subject" payload.headers of
         Just original | not (Text.null (Text.strip original)) -> "Re: " <> original
         _ -> subject
-  result <- try $ mailer.sendNotice recipient threadedSubject body
-  case result of
-    Left (e :: SomeException) ->
-      putText $ "[inbound-email] failed to send reply to " <> unEmail recipient <> ": " <> show e
-    Right () -> pure ()
+  try $ mailer.sendNotice recipient threadedSubject body
+
+-- | El desenlace del reply se loguea acá y no en 'sendReply' porque allá no hay
+-- mónada donde loguear; 'sendReply' corre en 'IO' pelado.
+logReplyOutcome :: (KatipContext m, MonadIO m) => Email -> Either SomeException () -> m ()
+logReplyOutcome recipient = \case
+  Right () -> pure ()
+  Left e ->
+    logWarn
+      "email.inbound.reply_failed"
+      [ logAttr "app.email.recipient" (unEmail recipient)
+      , logAttr "exception.message" (show e :: Text)
+      ]
 
 -- | (subject, HTML body) confirming the pago we saved. Includes the parsed
 -- distribución (pagadores / deudores) so the sender can verify the part most

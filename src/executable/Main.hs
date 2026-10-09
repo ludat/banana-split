@@ -29,12 +29,14 @@ main = do
     -- tardar, y sin esto lo único que queda de una corrida es lo que haya
     -- quedado en la terminal de quien la ejecutó. 'withTelemetry' los envuelve
     -- porque su shutdown es el que hace el flush final.
-    "migrations" : rest -> withTelemetry $ \telemetry -> do
+    "migrations" : rest -> do
       config <- createConfig "dev"
-      runApp telemetry $ PgRoll.rawCall config rest
-    "run-migration" : rest -> withTelemetry $ \telemetry -> do
+      withTelemetry config $ \telemetry ->
+        runApp telemetry $ PgRoll.rawCall config rest
+    "run-migration" : rest -> do
       config <- createConfig "dev"
-      runApp telemetry $ Persistence.runMigration config rest
+      withTelemetry config $ \telemetry ->
+        runApp telemetry $ Persistence.runMigration config rest
     _ -> do
       putText $ "Unknown command: " <> show args
       exitFailure

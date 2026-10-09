@@ -16,6 +16,7 @@ import Servant
 import Servant.Server.Generic
 import WaiAppStatic.Types (StaticSettings (..))
 
+import BananaSplit.Telemetry (logAttr, logError, runLogging)
 import Site.Api
 import Site.Auth (AuthContext, authHandler, sessionAuthHandler)
 import Site.Handler.Auth
@@ -106,7 +107,9 @@ nt s x = do
     Right (Right a) -> pure a
     Right (Left err) -> throwError err
     Left (e :: SomeException) -> do
-      liftIO $ putText $ "[handler] unhandled exception: " <> show e
+      liftIO $
+        runLogging s.telemetry $
+          logError "handler.unhandled_exception" [logAttr "exception.message" (show e :: Text)]
       throwError err500
 
 authContext :: App -> Context AuthContext

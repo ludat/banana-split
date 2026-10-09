@@ -6,16 +6,19 @@ module BananaSplit.Telemetry (
 
   -- * Spans
   MonadTelemetry (..),
+  conSpanActivo,
   inSpanConTracer',
 
   -- * Log records
   logAttr,
+  runLogging,
   logDebug,
   logError,
   logInfo,
   logWarn,
 ) where
 
+import Conferer qualified
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Data.Aeson ((.=))
 import Data.Aeson qualified as Aeson
@@ -65,8 +68,8 @@ data Telemetry = Telemetry
 -- baja al salir. El shutdown es lo que hace el flush final, así que tiene que
 -- envolver a todo el trabajo: lo del último request (o el último lote de una
 -- migración) se exporta recién ahí.
-withTelemetry :: (Telemetry -> IO a) -> IO a
-withTelemetry act = do
+withTelemetry :: Conferer.Config -> (Telemetry -> IO a) -> IO a
+withTelemetry config act = do
   endpoint <- telemetryEndpoint
   case endpoint of
     Nothing -> do
@@ -86,7 +89,7 @@ withTelemetry act = do
     start = do
       -- Solo default: si ya viene del ambiente, manda el ambiente.
       setDefaultEnv "OTEL_SERVICE_NAME" "banana-split"
-      withOpenTelemetry (mkTelemetry >=> act)
+      withOpenTelemetry (mkTelemetry config >=> act)
 
 -- | Un 'Telemetry' armado con los providers globales, para código que no quiere
 -- levantar el SDK: los tests, que corren migraciones y no tienen nada que
@@ -96,15 +99,15 @@ withTelemetry act = do
 -- no-ops: instrumentar funciona y no sale nada hacia ningún lado. Si /sí/ hay
 -- uno instalado, esto devuelve el de verdad; no es una forma de apagar la
 -- telemetría, es una forma de no tener que encenderla.
-telemetryFromGlobals :: IO Telemetry
-telemetryFromGlobals = do
+telemetryFromGlobals :: Conferer.Config -> IO Telemetry
+telemetryFromGlobals config = do
   tracerProvider <- Otel.getGlobalTracerProvider
   loggerProvider <- Log.getGlobalLoggerProvider
   meterProvider <- Metric.getGlobalMeterProvider
   logger <- Log.getLogger loggerProvider instrumentationLibrary
   meter <- Metric.getMeter meterProvider instrumentationLibrary
   propagators <- Propagator.getGlobalTextMapPropagator
-  logEnv <- mkLogEnv logger
+  logEnv <- mkLogEnv config logger
   pure
     Telemetry
       { tracer = Otel.makeTracer tracerProvider instrumentationLibrary Otel.tracerOptions
@@ -113,48 +116,85 @@ telemetryFromGlobals = do
       , propagators = propagators
       }
 
--- | El 'LogEnv' de Katip con los dos scribes.
+-- | La configuración de Katip, por Conferer.
 --
--- El de stdout va con 'Katip.V2' y formato JSON: en Kubernetes los logs del
--- contenedor son la red de contención cuando el OTLP no anda, y en JSON siguen
--- siendo consultables.
+-- Esto es configuración de la app, no del SDK de OpenTelemetry, así que va por
+-- el mismo camino que el resto —@config/dev.properties@, variables
+-- @BANANASPLIT_*@, argumentos de línea de comandos— en lugar de leer el ambiente
+-- a mano. Lo del SDK (endpoints, intervalos, exporters) sigue en variables
+-- @OTEL_*@ porque son las que documenta la especificación y las que entiende
+-- cualquier SDK de OTel.
 --
--- El de OTLP es el de "BananaSplit.Telemetry.Scribe". Cuando no hay endpoint el
--- pipeline de logs del SDK es no-op, así que el scribe queda colgado igual y no
--- intenta mandar nada: el código instrumentado es el mismo en los dos casos.
-mkLogEnv :: Logger -> IO LogEnv
-mkLogEnv logger = do
-  serviceName <- fromMaybe "banana-split" <$> lookupEnv "OTEL_SERVICE_NAME"
-  -- Solo etiqueta la salida de consola: lo que viaja por OTLP toma el ambiente
-  -- del resource del SDK (@OTEL_RESOURCE_ATTRIBUTES@), no de acá.
-  environment <- fromMaybe "local" <$> lookupEnv "DEPLOYMENT_ENVIRONMENT"
-  base <- Katip.initLogEnv (Namespace [toS serviceName]) (Environment $ toS environment)
-  console <-
-    Katip.mkHandleScribeWithFormatter
-      Katip.jsonFormat
-      (Katip.ColorLog False)
-      stdout
-      (Katip.permitItem InfoS)
-      V2
-  otlp <- otelScribe logger DebugS V2
-  base
-    & Katip.registerScribe "stdout" console Katip.defaultScribeSettings
-      >>= Katip.registerScribe "otlp" otlp Katip.defaultScribeSettings
+-- Las claves, todas opcionales:
+--
+-- * @log.namespace@ — el namespace raíz de Katip. Default @banana-split@.
+-- * @log.environment@ — la etiqueta de ambiente de Katip. Default @local@.
+-- * @log.severity@ — desde qué severidad se escribe en la terminal. Default
+--   @info@.
+-- * @log.console@ — si además de OTLP se escribe en la terminal. Sin valor, lo
+--   decide 'consolaPedida'.
+data LogConfig = LogConfig
+  { namespace :: Namespace
+  , environment :: Environment
+  , severity :: Severity
+  , console :: Maybe Bool
+  }
 
-mkTelemetry :: OTelSignals -> IO Telemetry
-mkTelemetry signals = do
+fetchLogConfig :: Conferer.Config -> IO LogConfig
+fetchLogConfig config = do
+  namespace <- Conferer.fetchFromConfig @(Maybe Text) "log.namespace" config
+  environment <- Conferer.fetchFromConfig @(Maybe Text) "log.environment" config
+  severityText <- Conferer.fetchFromConfig @(Maybe Text) "log.severity" config
+  console <- Conferer.fetchFromConfig @(Maybe Bool) "log.console" config
+  severity <- case severityText of
+    Nothing -> pure InfoS
+    Just texto ->
+      Katip.textToSeverity texto
+        & maybe
+          ( panic $
+              "unknown log.severity: "
+                <> texto
+                <> " (expected debug, info, notice, warning, error, critical, alert or emergency)"
+          )
+          pure
+  pure
+    LogConfig
+      { namespace = Namespace [fromMaybe "banana-split" namespace]
+      , environment = Environment $ fromMaybe "local" environment
+      , severity = severity
+      , console = console
+      }
+
+mkLogEnv :: Conferer.Config -> Logger -> IO LogEnv
+mkLogEnv config logger = do
+  logConfig <- fetchLogConfig config
+  base <- Katip.initLogEnv logConfig.namespace logConfig.environment
+  otlp <- otelScribe logger DebugS V2
+  conOtlp <- Katip.registerScribe "otlp" otlp Katip.defaultScribeSettings base
+  consola <- consolaPedida logConfig.console
+  if not consola
+    then pure conOtlp
+    else do
+      console <-
+        Katip.mkHandleScribeWithFormatter
+          Katip.bracketFormat
+          Katip.ColorIfTerminal
+          stdout
+          (Katip.permitItem logConfig.severity)
+          V2
+      Katip.registerScribe "stdout" console Katip.defaultScribeSettings conOtlp
+
+consolaPedida :: Maybe Bool -> IO Bool
+consolaPedida = \case
+  Just pedida -> pure pedida
+  Nothing -> isNothing <$> telemetryEndpoint
+
+mkTelemetry :: Conferer.Config -> OTelSignals -> IO Telemetry
+mkTelemetry config signals = do
   meter <- Metric.getMeter signals.otelMeterProvider instrumentationLibrary
   logger <- Log.getLogger signals.otelLoggerProvider instrumentationLibrary
-  logEnv <- mkLogEnv logger
-  -- OJO: el global, /no/ @signals.otelPropagators@. Ese último viene como un
-  -- propagador vacío (@propagatorFields@ da @[]@ y extraer por él no devuelve
-  -- ningún span), con lo cual el @traceparent@ del browser se ignora y todos
-  -- los spans del backend quedan como raíz en lugar de colgar del trace que
-  -- arrancó en el frontend. El que el SDK configura de verdad es este.
+  logEnv <- mkLogEnv config logger
   propagators <- Propagator.getGlobalTextMapPropagator
-  -- Un propagador que no declara nada es el no-op: nada de lo que mande el
-  -- browser se va a continuar. Pasa con @OTEL_PROPAGATORS=none@ y pasaba con
-  -- @signals.otelPropagators@, así que vale avisarlo en voz alta.
   when (null (Propagator.propagatorFields propagators)) $
     putText
       "[telemetry] warning: el propagador no declara nada, los traces del frontend y del backend van a quedar separados"
@@ -225,6 +265,26 @@ class (Monad m) => MonadTelemetry m where
   -- | Como 'inSpan', pero te da el span para colgarle atributos.
   inSpan' :: Text -> (Span -> m a) -> m a
 
+-- | Instrumentar desde código que no tiene una mónada donde pedir
+-- 'MonadTelemetry'.
+--
+-- Le pasa el span que esté activo en el contexto thread-local, o no hace nada si no
+-- hay ninguno. Es el escape hatch para los tres lugares donde no hay alternativa:
+--
+-- * el dominio, donde las funciones son puras y cambiar sus firmas arrastraría a
+--   todos sus tests;
+-- * las acciones de Beam, que corren en 'Database.Beam.Postgres.Pg' y no tienen
+--   dónde colgar las instancias de Katip;
+-- * las librerías que corren en 'IO' pelado, como el cliente de OpenRouter.
+--
+-- Sirve para spans, no para logs: lo que se le puede colgar son atributos y
+-- eventos del span que ya existe. Si hace falta loguear, el dato tiene que llegar
+-- hasta un borde que tenga mónada.
+conSpanActivo :: (MonadIO m) => (Span -> m ()) -> m ()
+conSpanActivo accion = do
+  contexto <- ThreadLocal.getContext
+  for_ (Context.lookupSpan contexto) accion
+
 -- | Con qué implementar 'inSpan'' cuando la mónada tiene unlift y el
 -- 'Telemetry' en el reader. El caso de 'AppRunner' y del runner de los tests.
 inSpanConTracer' :: (MonadUnliftIO m, MonadReader Telemetry m) => Text -> (Span -> m a) -> m a
@@ -283,6 +343,19 @@ logError = withFrozenCallStack (logEvent ErrorS)
 -- | Para lo que pasa seguido y solo importa cuando estás mirando de cerca.
 logDebug :: (KatipContext m, HasCallStack) => Text -> [Pair] -> m ()
 logDebug = withFrozenCallStack (logEvent DebugS)
+
+-- | Loguear desde un callback que una librería invoca desde su propio hilo.
+--
+-- Los dos casos son el @onException@ de Warp y el natural transformation con el
+-- que Servant corre los handlers: los llama la librería, fuera de cualquier
+-- mónada nuestra, y no hay contexto ambiente que heredar.
+--
+-- No es la forma normal de loguear. Para todo lo demás la mónada se establece una
+-- sola vez en el entry point —@AppRunner@, @TestRunner@, 'Site.Types.AppHandler'—
+-- y los logs salen de las instancias de Katip. Envolver cada log en su propio
+-- @runKatipContextT@ es justamente lo que hace imposible acumular contexto.
+runLogging :: Telemetry -> Katip.KatipContextT IO a -> IO a
+runLogging telemetry = Katip.runKatipContextT telemetry.logEnv () mempty
 
 -- | Azúcar para armar los atributos de un log record.
 --

@@ -111,6 +111,9 @@ library
     BananaSplit.User
     Preludat
 
+  build-depends:
+    banana-split:telemetry,
+
 library telemetry
   import: base-settings
   hs-source-dirs: src/telemetry/
@@ -144,7 +147,8 @@ library receipts
     BananaSplit.Receipts
 
   build-depends:
-    banana-split
+    banana-split,
+    banana-split:telemetry,
 
 library elm
   import: base-settings

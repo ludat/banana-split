@@ -60,7 +60,7 @@ conConexiones correr = do
   -- Migrar es idempotente y barato, así que este spec no depende de que otro
   -- haya corrido antes. La base tiene que existir de antes, igual que para el
   -- resto del suite.
-  telemetry <- telemetryFromGlobals
+  telemetry <- telemetryFromGlobals config
   runTest telemetry $ do
     PgRoll.init config
     PgRoll.startAndComplete config

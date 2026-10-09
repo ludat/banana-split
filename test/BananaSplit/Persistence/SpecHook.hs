@@ -27,7 +27,7 @@ setupDb action = do
   config <- Config.createConfig "test"
   -- Los tests no levantan el SDK, así que esto es un no-op: las migraciones
   -- quedan instrumentadas igual pero no sale nada hacia ningún collector.
-  telemetry <- telemetryFromGlobals
+  telemetry <- telemetryFromGlobals config
   runTest telemetry $ do
     PgRoll.init config
     PgRoll.startAndComplete config
