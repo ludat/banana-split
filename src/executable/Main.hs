@@ -29,14 +29,20 @@ main = do
     -- tardar, y sin esto lo único que queda de una corrida es lo que haya
     -- quedado en la terminal de quien la ejecutó. 'withTelemetry' los envuelve
     -- porque su shutdown es el que hace el flush final.
+    --
+    -- La conexión se abre y se cierra acá: es el único lado que tiene por qué saber
+    -- que hay una. Los comandos piden las capacidades que usan y 'AppRunner' es
+    -- quien las cumple.
     "migrations" : rest -> do
       config <- createConfig "dev"
       withTelemetry config $ \telemetry ->
-        runApp telemetry $ PgRoll.rawCall config rest
+        Persistence.conUnaConexion config $ \conn ->
+          runApp telemetry conn $ PgRoll.rawCall config rest
     "run-migration" : rest -> do
       config <- createConfig "dev"
       withTelemetry config $ \telemetry ->
-        runApp telemetry $ Persistence.runMigration config rest
+        Persistence.conUnaConexion config $ \conn ->
+          runApp telemetry conn $ Persistence.runMigration rest
     _ -> do
       putText $ "Unknown command: " <> show args
       exitFailure

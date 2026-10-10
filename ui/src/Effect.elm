@@ -40,6 +40,7 @@ import Shared.Model
 import Shared.Msg
 import Task
 import Url exposing (Url)
+import Utils.Telemetry exposing (TelemetryEvent, severityToString)
 import Utils.Toasts.Types exposing (Toast, ToastMsg)
 
 
@@ -281,33 +282,25 @@ sendFeedback message =
             }
 
 
-{-| Reportar un evento de telemetría.
+telemetryEvent : Maybe TelemetryEvent -> Effect msg
+telemetryEvent maybeEvent =
+    case maybeEvent of
+        Just event ->
+            SendCmd <|
+                outgoing
+                    { tag = "TELEMETRY_EVENT"
+                    , data =
+                        Json.Encode.object
+                            [ ( "name", Json.Encode.string event.name )
+                            , ( "severity", Json.Encode.string (severityToString event.severity) )
+                            , ( "attributes", Json.Encode.object event.attributes )
+                            ]
+                    }
 
-El nombre del evento y los atributos permitidos están declarados en
-`src/js/telemetry.js`: lo que no esté en ese vocabulario se descarta y no se
-manda. No pasar texto escrito por el usuario ni ids por acá; ver
-`Utils.Telemetry` para los helpers de más alto nivel.
-
--}
-telemetryEvent : String -> List ( String, String ) -> Effect msg
-telemetryEvent name attributes =
-    SendCmd <|
-        outgoing
-            { tag = "TELEMETRY_EVENT"
-            , data =
-                Json.Encode.object
-                    [ ( "name", Json.Encode.string name )
-                    , ( "attributes"
-                      , Json.Encode.object <|
-                            List.map (Tuple.mapSecond Json.Encode.string) attributes
-                      )
-                    ]
-            }
+        Nothing ->
+            none
 
 
-{-| Copiar texto al portapapeles, sin pasar por la hoja de compartir. Para
-contenido que no es un link (una dirección de email, por ejemplo).
--}
 copy : String -> Effect msg
 copy text =
     SendCmd <|

@@ -1,69 +1,100 @@
-module Utils.Telemetry exposing (gastoEdicionAbandonada, trackDecodeErrors)
+module Utils.Telemetry exposing (Severity, TelemetryEvent, codigoDeLoginRechazado, gastoEdicionAbandonada, severityToString, trackDecodeErrors)
 
-{-| Lo único que el frontend reporta por su cuenta sobre las respuestas de la
-API: las que no pudo decodificar.
-
-El backend no puede verlas — contestó 200 y lo logeó como éxito — y la causa
-habitual es un cliente corriendo un bundle viejo contra una API más nueva, así
-que el evento se cruza con `service.version`, que lleva el hash del build.
-
-El resto de las fallas HTTP (timeout, error de red, 4xx, 5xx) ya salen solas en
-los spans de la instrumentación de XHR, con `error.type`. No hace falta
-reportarlas desde acá.
-
--}
-
-import Effect exposing (Effect)
 import Http
+import Json.Encode as Json exposing (Value)
 import Models.PagoForm exposing (Section(..))
 import RemoteData exposing (RemoteData(..), WebData)
 
 
-{-| Reporta un evento si la respuesta falló al decodificar, y nada en cualquier
-otro caso.
+type alias TelemetryEvent =
+    { name : String
+    , severity : Severity
+    , attributes : List ( String, Value )
+    }
 
-El `String` de `Http.BadBody` se descarta acá y a propósito: es el mensaje de
-error del decoder, que incluye un fragmento del payload — nombres de
-participantes, montos, descripciones de gastos. Lo único que viaja es el nombre
-de la operación.
 
--}
-trackDecodeErrors : String -> WebData a -> Effect msg
+trackDecodeErrors : String -> WebData a -> Maybe TelemetryEvent
 trackDecodeErrors operation response =
     case response of
         Failure (Http.BadBody _) ->
-            Effect.telemetryEvent "api.decode_error"
-                [ ( "app.api.operation", operation ) ]
+            Just
+                { name = "api.decode_error"
+                , severity = Error
+                , attributes =
+                    [ ( "app.api.operation", Json.string operation ) ]
+                }
 
         _ ->
-            Effect.none
+            Nothing
 
 
-{-| Alguien cargó parte del formulario de un gasto y lo cerró sin guardar.
+codigoDeLoginRechazado : Http.Error -> Maybe TelemetryEvent
+codigoDeLoginRechazado err =
+    let
+        outcome : String
+        outcome =
+            case err of
+                Http.BadStatus 429 ->
+                    "rate_limited"
 
-El backend solo ve los gastos que se guardaron, así que este es el único lugar
-donde aparecen los abandonados. Lo accionable es en qué paso se rindieron.
+                Http.BadStatus 401 ->
+                    "rechazado"
 
--}
-gastoEdicionAbandonada : { esNuevo : Bool, seccion : Section } -> Effect msg
+                _ ->
+                    "otro"
+    in
+    Just
+        { name = "auth.code_rejected"
+        , severity = Warn
+        , attributes =
+            [ ( "outcome", Json.string outcome ) ]
+        }
+
+
+gastoEdicionAbandonada : { esNuevo : Bool, seccion : Section } -> Maybe TelemetryEvent
 gastoEdicionAbandonada { esNuevo, seccion } =
-    Effect.telemetryEvent "gasto.edit_abandoned"
-        [ ( "mode"
-          , if esNuevo then
-                "nuevo"
+    Just
+        { name = "gasto.edit_abandoned"
+        , severity = Info
+        , attributes =
+            [ ( "mode"
+              , Json.string <|
+                    if esNuevo then
+                        "nuevo"
 
-            else
-                "existente"
-          )
-        , ( "section"
-          , case seccion of
-                BasicPagoData ->
-                    "basico"
+                    else
+                        "existente"
+              )
+            , ( "section"
+              , Json.string <|
+                    case seccion of
+                        BasicPagoData ->
+                            "basico"
 
-                PagadoresSection ->
-                    "pagadores"
+                        PagadoresSection ->
+                            "pagadores"
 
-                DeudoresSection ->
-                    "deudores"
-          )
-        ]
+                        DeudoresSection ->
+                            "deudores"
+              )
+            ]
+        }
+
+
+type Severity
+    = Info
+    | Warn
+    | Error
+
+
+severityToString : Severity -> String
+severityToString severity =
+    case severity of
+        Info ->
+            "info"
+
+        Warn ->
+            "warn"
+
+        Error ->
+            "error"

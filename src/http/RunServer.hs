@@ -77,8 +77,6 @@ runBackendCon config telemetry = do
           , cookieSecure = cookieSecure'
           , mailer = mailer
           , telemetry = telemetry
-          , logContexts = mempty
-          , logNamespace = mempty
           }
 
   let shutdownAction = Pool.destroyAllResources beamPool

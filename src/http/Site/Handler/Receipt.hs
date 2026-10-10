@@ -15,7 +15,7 @@ handleReceiptImageParse :: ReceiptImageRequest -> AppHandler ReceiptImageRespons
 handleReceiptImageParse req = do
   config <- asks (.receipts)
 
-  result <- liftIO $ analyzeReceiptImage config req.imageBase64
+  result <- analyzeReceiptImage config req.imageBase64
 
   case result of
     Left err -> pure $ ReceiptImageError{error = err}

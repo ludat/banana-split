@@ -9,13 +9,19 @@ module BananaSplit.Persistence (
   recordAttempt,
   clearAttempts,
   deleteOldLoginAttempts,
+  MonadPg (..),
+  Pg,
+  liftPg,
+  conConexionDelPool,
   conTransaccionDeEscritura,
   conTransaccionDeLecturaRapida,
+  correrEnLaTransaccionDeAfuera,
   anotarQueriesEnElSpan,
   registrarStatement,
   resumirQuery,
   makePool,
   openConnection,
+  conUnaConexion,
   runMigration,
   recomputePagos,
   addParticipante,
@@ -62,31 +68,29 @@ module BananaSplit.Persistence (
 ) where
 
 import Conferer qualified
-import Data.HashMap.Strict qualified as HashMap
-import Data.IORef (IORef, modifyIORef', newIORef, readIORef)
 import Data.List.NonEmpty qualified as NE
 import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
 import Data.String (String)
 import Data.Text qualified as Text
-import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
+import Data.Time (NominalDiffTime, addUTCTime, getCurrentTime)
 import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
-import Database.Beam.Postgres
+-- El 'Pg' que vale acá es el nuestro ("BananaSplit.Persistence.Pg"): el de Beam no
+-- puede instrumentarse. Si hace falta, está como @Beam.Pg@ allá.
+import Database.Beam.Postgres hiding (Pg)
 import Database.Beam.Postgres.Full hiding (insert)
 import Database.PostgreSQL.Simple (Only (..), execute, query)
-import Database.PostgreSQL.Simple.Errors (isSerializationError)
-import Database.PostgreSQL.Simple.Transaction qualified as Transaction
 import Katip (KatipContext)
 import OpenTelemetry.Trace.Core qualified as Otel
 
 import BananaSplit qualified as M
 import BananaSplit.Persistence.Migration_2026_05_26_FixDates qualified as FixDates
+import BananaSplit.Persistence.Pg
 import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..))
 import BananaSplit.Persistence.ResumenGuardado qualified as ResumenGuardado
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
-import BananaSplit.Telemetry (conSpanActivo)
 import BananaSplit.Telemetry qualified as Telemetry
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
@@ -102,136 +106,17 @@ openConnection config = do
   _ <- execute conn "SET search_path TO ?" (Only schema)
   pure conn
 
--- | La transacción de cualquier cosa que escriba.
---
--- Va en SERIALIZABLE porque el cache del resumen de un gasto se calcula leyendo
--- cosas que otra transacción puede estar cambiando al mismo tiempo (los claims
--- de una repartija, sobre todo). Con READ COMMITTED cada statement ve un
--- snapshot nuevo, así que dos escrituras pueden leer los mismos insumos y
--- pisarse; en SERIALIZABLE el resultado tiene que ser equivalente a haberlas
--- corrido una después de la otra, y si no lo es Postgres aborta una.
---
--- De ahí el reintento: fallar con @40001@ es parte del protocolo, no un error.
--- La transacción que aborta no dejó nada escrito, así que volver a correr el
--- bloque entero es seguro.
-conTransaccionDeEscritura :: Connection -> Pg a -> IO a
-conTransaccionDeEscritura conn accion =
-  Transaction.withTransactionModeRetry
-    Transaction.TransactionMode
-      { Transaction.isolationLevel = Transaction.RepeatableRead
-      , Transaction.readWriteMode = Transaction.ReadWrite
-      }
-    isSerializationError
-    conn
-    (conQueriesEnElSpan conn accion)
-
--- | La transacción de leer para mostrar, que es lo más barato que hay: no toma
--- predicate locks, no puede abortar por conflicto y no le agrega trabajo a las
--- escrituras que corren en paralelo.
---
--- El @READ ONLY@ no es sólo una pista: Postgres rechaza cualquier escritura que
--- entre por acá, así que una que se cuele rompe en el momento en vez de perder
--- en silencio las garantías de arriba.
---
--- Lo que se resigna es que cada statement ve un snapshot distinto, así que dos
--- queries de la misma transacción pueden ver estados distintos de la base.
-conTransaccionDeLecturaRapida :: Connection -> Pg a -> IO a
-conTransaccionDeLecturaRapida conn accion =
-  Transaction.withTransactionMode
-    Transaction.TransactionMode
-      { Transaction.isolationLevel = Transaction.ReadCommitted
-      , Transaction.readWriteMode = Transaction.ReadOnly
-      }
-    conn
-    (conQueriesEnElSpan conn accion)
-
-conQueriesEnElSpan :: Connection -> Pg a -> IO a
-conQueriesEnElSpan conn accion = do
-  statements <- newIORef []
-  runBeamPostgresDebug (registrarStatement statements) conn accion
-    `finally` anotarQueriesEnElSpan statements
-
--- | Pasa lo acumulado a atributos del span, en el orden en que corrieron.
-anotarQueriesEnElSpan :: IORef [Text] -> IO ()
-anotarQueriesEnElSpan statements = do
-  queries <- reverse <$> readIORef statements
-  unless (null queries) $ conSpanActivo $ \span ->
-    Otel.addAttributes span
-      $ HashMap.fromList
-        [ ("db.query.summary", Otel.toAttribute $ recortar $ Text.intercalate "; " queries)
-        , ("db.query.count", Otel.toAttribute (fromIntegral (length queries) :: Int64))
-        ]
-
-registrarStatement :: IORef [Text] -> String -> IO ()
-registrarStatement statements sql = do
-  let resumen = resumirQuery (toS sql)
-  modifyIORef' statements (resumen :)
-  conSpanActivo $ \span ->
-    Otel.addEvent span
-      $ Otel.NewEvent
-        { Otel.newEventName = "db.query"
-        , Otel.newEventAttributes =
-            HashMap.fromList [("db.query.summary", Otel.toAttribute resumen)]
-        , Otel.newEventTimestamp = Nothing
-        }
-
-resumirQuery :: Text -> Text
-resumirQuery sql =
-  case palabras of
-    [] -> "(vacía)"
-    (verbo : resto) -> case tabla verbo resto of
-      Just nombre -> acotar (Text.toUpper verbo) <> " " <> acotar nombre
-      Nothing -> acotar (Text.toUpper verbo)
-  where
-    -- Que esto esté acotado es media razón de ser del resumen, así que no
-    -- depende de que el SQL venga con la forma esperada: un token larguísimo se
-    -- corta igual.
-    acotar = Text.take maxLargoToken
-
-    palabras = Text.words $ Text.map (\c -> if c == '\n' || c == '\t' then ' ' else c) sql
-
-    -- Dónde está la tabla depende del verbo, y el nombre viene entrecomillado
-    -- porque Beam siempre cita los identificadores.
-    tabla verbo resto = case Text.toUpper verbo of
-      "SELECT" -> despuesDe "FROM" resto
-      "DELETE" -> despuesDe "FROM" resto
-      "INSERT" -> despuesDe "INTO" resto
-      "UPDATE" -> identificador =<< head resto
-      _ -> Nothing
-
-    despuesDe palabra resto =
-      case dropWhile ((/= palabra) . Text.toUpper) resto of
-        (_ : siguiente : _) -> identificador siguiente
-        _ -> Nothing
-
-    -- Si no es un identificador citado es una subquery, un paréntesis o algo que
-    -- no vale la pena adivinar.
-    identificador palabra = do
-      sinComillas <- Text.stripSuffix "\"" =<< Text.stripPrefix "\"" palabra
-      guard $ not $ Text.null sinComillas
-      pure sinComillas
-
--- | Un bulk insert renderizado son kilobytes de SQL, y lo que se quiere saber es
--- qué query es, no el payload entero.
-recortar :: Text -> Text
-recortar texto
-  | Text.length texto <= maxLargoSql = texto
-  | otherwise = Text.take maxLargoSql texto <> "…"
-
--- | Lo más largo que puede medir un verbo o un nombre de tabla en el resumen.
-maxLargoToken :: Int
-maxLargoToken = 40
-
-maxLargoSql :: Int
-maxLargoSql = 2000
+-- | 'openConnection' y cerrarla al salir. Es lo que usa 'Main' para armarle el
+-- 'PgRunner' a un comando, así que nadie más tiene que nombrar una 'Connection'.
+conUnaConexion :: Conferer.Config -> (Connection -> IO a) -> IO a
+conUnaConexion config = bracket (openConnection config) close
 
 -- | Cada migración queda como un span raíz llamado @migration \<nombre\>@, con
 -- un log de arranque y uno de cierre. Son comandos que se corren a mano y que
 -- pueden tardar; sin esto lo único que queda de una corrida es lo que haya
 -- quedado en la terminal de quien la ejecutó.
-runMigration :: (Telemetry.MonadTelemetry m, KatipContext m) => Conferer.Config -> [String] -> m ()
-runMigration config args = do
-  conn <- liftIO $ openConnection config
+runMigration :: (Telemetry.MonadTelemetry m, KatipContext m, MonadPg m) => [String] -> m ()
+runMigration args = do
   let nombre = Text.unwords $ fmap toS args
       correr accion =
         Telemetry.inSpan ("migration " <> nombre) $ do
@@ -239,13 +124,12 @@ runMigration config args = do
           void accion
           Telemetry.logInfo "migration.done" [Telemetry.logAttr "app.migration" nombre]
   case args of
-    ["fix-pagos-fecha"] -> correr $ liftIO $ runBeamPostgres conn FixDates.run
-    ["recompute-pagos"] -> correr $ recomputePagos conn
-    ["prune-login-attempts"] -> correr $ liftIO $ runBeamPostgres conn deleteOldLoginAttempts
+    ["fix-pagos-fecha"] -> correr $ runBeamWrite $ liftPg FixDates.run
+    ["recompute-pagos"] -> correr recomputePagos
+    ["prune-login-attempts"] -> correr $ runBeamWrite deleteOldLoginAttempts
     _ -> do
       Telemetry.logWarn "migration.unknown" [Telemetry.logAttr "app.migration" nombre]
       liftIO exitFailure
-  liftIO $ close conn
 
 makePool :: Conferer.Config -> IO (Pool.Pool Connection)
 makePool config = do
@@ -969,25 +853,16 @@ savePago grupoId pagoWithoutId = do
   escribirPagadoYConsumido grupoId pagoNuevo resumen
   pure pagoNuevo
 
--- | Recomputa todos los pagos, por lotes.
---
--- Cada lote es su propio span colgado del de la migración, con el número de
--- lote y cuántos pagos procesó. Es lo que hace que una corrida larga se pueda
--- mirar mientras pasa en lugar de solo al final: en el trace se ve el avance
--- lote por lote y cuál de ellos se puso lento.
--- El 'forall' es para que el 'go' del @where@ hable de la misma @m@ y no
--- introduzca una propia.
-recomputePagos :: forall m. (Telemetry.MonadTelemetry m, KatipContext m) => Connection -> m ()
-recomputePagos conn = go 1 0 nullUlid
+recomputePagos :: forall m. (Telemetry.MonadTelemetry m, KatipContext m, MonadPg m) => m ()
+recomputePagos = go 1 0 nullUlid
   where
     recomputePagosBatchSize = 100
 
-    -- 'total' es la cantidad de pagos ya recomputados (para loguear progreso).
     go :: Int -> Int -> ULID -> m ()
     go lote total ultimoId = do
       resultado <- Telemetry.inSpan' "recompute-pagos.lote" $ \span -> do
-        Otel.addAttribute span "app.recompute.lote" (fromIntegral lote :: Int64)
-        resultado <- liftIO $ runBeamPostgres conn $ do
+        Otel.addAttribute span "app.recompute.lote" lote
+        resultado <- runBeamWrite $ do
           batch <- runSelectReturningList $ select $ do
             limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
               p <- all_ db.pagos
@@ -1000,23 +875,22 @@ recomputePagos conn = go 1 0 nullUlid
                 pago <- fetchPago grupoId pagoId
                 void $ savePago grupoId pago
               pure $ Just (NE.length batchNE, fst $ NE.last batchNE)
-        Otel.addAttribute span "app.recompute.pagos"
-          $ (fromIntegral (maybe 0 fst resultado) :: Int64)
+        Otel.addAttribute span "app.recompute.pagos" $ maybe 0 fst resultado
         pure resultado
       case resultado of
         Nothing -> do
           Telemetry.logInfo
             "recompute_pagos.finished"
-            [Telemetry.logAttr "app.recompute.total" (fromIntegral total :: Int64)]
+            [Telemetry.logAttr "app.recompute.total" total]
         Just (procesados, siguienteId) -> do
           let total' = total + procesados
           Telemetry.logInfo
             "recompute_pagos.lote"
-            [ Telemetry.logAttr "app.recompute.lote" (fromIntegral lote :: Int64)
-            , Telemetry.logAttr "app.recompute.pagos" (fromIntegral procesados :: Int64)
-            , Telemetry.logAttr "app.recompute.total" (fromIntegral total' :: Int64)
+            [ Telemetry.logAttr "app.recompute.lote" lote
+            , Telemetry.logAttr "app.recompute.pagos" procesados
+            , Telemetry.logAttr "app.recompute.total" total'
             ]
-          go (lote + 1) total' siguienteId
+          go (succ lote) total' siguienteId
 
 saveDistribucion :: M.Moneda -> M.Distribucion -> Pg M.Distribucion
 saveDistribucion moneda distribucionWithoutId = do
@@ -1446,7 +1320,7 @@ congelarGrupo grupoId = runExceptT $ do
   netosPorMoneda <- fetchNetosEnCadaMoneda
   netosConsolidados <- consolidarNetos grupo netosPorMoneda
 
-  let transferenciasMinimas = M.minimizeTransferencias netosConsolidados
+  transferenciasMinimas <- lift $ M.minimizeTransferencias netosConsolidados
 
   lift $ saveTransferenciasPendientes grupo.monedaPorDefecto transferenciasMinimas
 

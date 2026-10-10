@@ -22,7 +22,7 @@ import BananaSplit qualified as M
 import BananaSplit.Persistence
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
-import BananaSplit.Telemetry (telemetryFromGlobals)
+import BananaSplit.Telemetry (Telemetry, telemetryFromGlobals)
 import BananaSplit.ULID (ULID, nullUlid)
 import Preludat
 import Site.Config qualified as Config
@@ -42,19 +42,19 @@ spec =
     -- otras formas de dejarlo inconsistente.
     describe "dos personas reclamando en la misma repartija"
       $ it "dejan el cache consistente con lo que dicen las distribuciones"
-      $ \(connA, connB, escenario) ->
+      $ \(telemetry, connA, connB, escenario) ->
         replicateM_ vueltas $ do
-          (desdeCache, recalculado) <- correrVueltaDeClaims connA connB escenario
+          (desdeCache, recalculado) <- correrVueltaDeClaims telemetry connA connB escenario
           desdeCache `shouldBe` recalculado
 
     describe "alguien editando el gasto mientras otro reclama"
       $ it "dejan el cache consistente con lo que dicen las distribuciones"
-      $ \(connA, connB, escenario) ->
+      $ \(telemetry, connA, connB, escenario) ->
         replicateM_ vueltas $ do
-          (desdeCache, recalculado) <- correrVueltaDeGuardarYClaim connA connB escenario
+          (desdeCache, recalculado) <- correrVueltaDeGuardarYClaim telemetry connA connB escenario
           desdeCache `shouldBe` recalculado
 
-conConexiones :: ((Connection, Connection, Escenario) -> IO ()) -> IO ()
+conConexiones :: ((Telemetry, Connection, Connection, Escenario) -> IO ()) -> IO ()
 conConexiones correr = do
   config <- Config.createConfig "test"
   -- Migrar es idempotente y barato, así que este spec no depende de que otro
@@ -74,8 +74,8 @@ conConexiones correr = do
         -- filas sin filtrar por grupo: si se cayera sin limpiar, el orden entre
         -- specs decidiría si pasan.
         limpiarTodo connA
-        escenario <- prepararEscenario connA
-        correr (connA, connB, escenario) `finally` limpiarTodo connA
+        escenario <- prepararEscenario telemetry connA
+        correr (telemetry, connA, connB, escenario) `finally` limpiarTodo connA
 
 -- | Vacía la base para que el test de integración arranque siempre del mismo
 -- estado. No puede apoyarse en transacciones que se rollbackeen como el resto
@@ -129,24 +129,25 @@ data Escenario = Escenario
 -- versión rota, sacá el 'lockearPago' de esa función: deja de coincidir en casi
 -- todas las vueltas.
 correrVueltaDeClaims ::
-  Connection
+  Telemetry
+  -> Connection
   -> Connection
   -> Escenario
   -> IO (M.PorMoneda (M.Netos M.Monto), M.PorMoneda (M.Netos M.Monto))
-correrVueltaDeClaims connA connB escenario = do
-  limpiarClaims connA escenario
+correrVueltaDeClaims telemetry connA connB escenario = do
+  limpiarClaims telemetry connA escenario
 
   -- Las dos transacciones arrancan lo más juntas posible y cada una reclama su
   -- item. Sin lock, cada una lee los claims sin ver el de la otra.
   listoA <- newEmptyMVar
   listoB <- newEmptyMVar
-  _ <- forkIO $ reclamar connA escenario.repartijaId escenario.itemA escenario.participanteA >> putMVar listoA ()
-  _ <- forkIO $ reclamar connB escenario.repartijaId escenario.itemB escenario.participanteB >> putMVar listoB ()
+  _ <- forkIO $ reclamar telemetry connA escenario.repartijaId escenario.itemA escenario.participanteA >> putMVar listoA ()
+  _ <- forkIO $ reclamar telemetry connB escenario.repartijaId escenario.itemB escenario.participanteB >> putMVar listoB ()
   takeMVar listoA
   takeMVar listoB
 
-  desdeCache <- conTransaccionDeLecturaRapida connA $ netosDeGrupo escenario.grupoId
-  recalculado <- conTransaccionDeLecturaRapida connA $ do
+  desdeCache <- conTransaccionDeLecturaRapida telemetry connA $ netosDeGrupo escenario.grupoId
+  recalculado <- conTransaccionDeLecturaRapida telemetry connA $ do
     pago <- fetchPago escenario.grupoId escenario.pagoId
     pure $ M.calcularNetosPago pago
   pure (desdeCache, recalculado)
@@ -166,50 +167,51 @@ correrVueltaDeClaims connA connB escenario = do
 -- se las devolvió 'saveDistribucion', sin pasarlas por 'conClaimsGuardados':
 -- el cache queda diciendo que el gasto no cierra.
 correrVueltaDeGuardarYClaim ::
-  Connection
+  Telemetry
+  -> Connection
   -> Connection
   -> Escenario
   -> IO (M.PorMoneda (M.Netos M.Monto), M.PorMoneda (M.Netos M.Monto))
-correrVueltaDeGuardarYClaim connA connB escenario = do
-  limpiarClaims connA escenario
-  reclamar connA escenario.repartijaId escenario.itemA escenario.participanteA
+correrVueltaDeGuardarYClaim telemetry connA connB escenario = do
+  limpiarClaims telemetry connA escenario
+  reclamar telemetry connA escenario.repartijaId escenario.itemA escenario.participanteA
 
   -- El gasto como lo tiene el front antes de mandar la edición. Los claims no
   -- viajan con él, así que da igual cuáles trae: 'savePago' los relee.
-  pago <- conTransaccionDeLecturaRapida connA $ fetchPago escenario.grupoId escenario.pagoId
+  pago <- conTransaccionDeLecturaRapida telemetry connA $ fetchPago escenario.grupoId escenario.pagoId
 
   listoA <- newEmptyMVar
   listoB <- newEmptyMVar
-  _ <- forkIO $ reguardar connA escenario.grupoId pago >> putMVar listoA ()
-  _ <- forkIO $ reclamar connB escenario.repartijaId escenario.itemB escenario.participanteB >> putMVar listoB ()
+  _ <- forkIO $ reguardar telemetry connA escenario.grupoId pago >> putMVar listoA ()
+  _ <- forkIO $ reclamar telemetry connB escenario.repartijaId escenario.itemB escenario.participanteB >> putMVar listoB ()
   takeMVar listoA
   takeMVar listoB
 
-  desdeCache <- conTransaccionDeLecturaRapida connA $ netosDeGrupo escenario.grupoId
-  recalculado <- conTransaccionDeLecturaRapida connA $ do
+  desdeCache <- conTransaccionDeLecturaRapida telemetry connA $ netosDeGrupo escenario.grupoId
+  recalculado <- conTransaccionDeLecturaRapida telemetry connA $ do
     guardado <- fetchPago escenario.grupoId escenario.pagoId
     pure $ M.calcularNetosPago guardado
   pure (desdeCache, recalculado)
 
 -- | Una transacción como la del handler de editar: vuelve a guardar el gasto
 -- con un cambio que no toca el reparto.
-reguardar :: Connection -> ULID -> M.Pago -> IO ()
-reguardar conn unGrupoId pago =
-  conTransaccionDeEscritura conn
+reguardar :: Telemetry -> Connection -> ULID -> M.Pago -> IO ()
+reguardar telemetry conn unGrupoId pago =
+  conTransaccionDeEscritura telemetry conn
     $ void
     $ savePago unGrupoId pago{M.nombre = "Cena editada"}
 
 -- | Una transacción como la del handler: reclamar un item.
-reclamar :: Connection -> ULID -> ULID -> M.ParticipanteId -> IO ()
-reclamar conn unaRepartijaId unItemId participante =
-  conTransaccionDeEscritura conn
+reclamar :: Telemetry -> Connection -> ULID -> ULID -> M.ParticipanteId -> IO ()
+reclamar telemetry conn unaRepartijaId unItemId participante =
+  conTransaccionDeEscritura telemetry conn
     $ void
     $ saveRepartijaClaim unaRepartijaId (M.RepartijaClaim nullUlid participante unItemId Nothing)
 
 -- | Vuelve al estado sin claims, con el cache al día.
-limpiarClaims :: Connection -> Escenario -> IO ()
-limpiarClaims conn escenario =
-  conTransaccionDeEscritura conn $ do
+limpiarClaims :: Telemetry -> Connection -> Escenario -> IO ()
+limpiarClaims telemetry conn escenario =
+  conTransaccionDeEscritura telemetry conn $ do
     runDelete
       $ delete
         db.repartija_claims
@@ -219,8 +221,8 @@ limpiarClaims conn escenario =
         )
     void $ recalcularResumenGasto escenario.grupoId escenario.pagoId
 
-prepararEscenario :: Connection -> IO Escenario
-prepararEscenario conn = conTransaccionDeEscritura conn $ do
+prepararEscenario :: Telemetry -> Connection -> IO Escenario
+prepararEscenario telemetry conn = conTransaccionDeEscritura telemetry conn $ do
   grupo <- createGrupo "Concurrencia" "uno"
   otro <-
     addParticipante grupo.id "otro" >>= \case

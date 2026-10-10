@@ -8,13 +8,13 @@ module Site.Types (
 
 import Control.Monad.Reader
 import Crypto.JWT (JWK)
-import Data.Int (Int64)
 import Data.Pool
 import Database.Beam.Postgres qualified as Beam
 import Katip qualified
 import OpenTelemetry.Trace.Core qualified as Otel
 import Servant
 
+import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.Receipts
 import BananaSplit.Telemetry (Telemetry (..))
 import BananaSplit.Telemetry qualified as Telemetry
@@ -33,19 +33,11 @@ data App = App
   , mailer :: Mailer
   -- ^ Delivers login confirmation codes (console in dev, email in prod).
   , telemetry :: Telemetry
-  , logContexts :: Katip.LogContexts
-  , logNamespace :: Katip.Namespace
+  -- ^ Los providers y el estado de logging de Katip, todo junto: es lo que hace
+  -- que las instancias de abajo sean cirugía sobre un solo campo, y lo único que
+  -- hay que pasarle a 'Persistence.conTransaccionDeEscritura'.
   }
 
--- | La mónada de los handlers.
---
--- Es un newtype y no un sinónimo de @ReaderT App Servant.Handler@ por las
--- instancias de Katip de abajo: con el sinónimo chocaban con la genérica que trae
--- Katip (@instance Katip m => Katip (ReaderT s m)@) y había que resolverlas con
--- @OVERLAPPING@. Un newtype no es un @ReaderT@, así que el solapamiento no existe.
---
--- Lo que el @ReaderT@ daba gratis se deriva: si algún handler necesita una clase
--- que no esté en la lista, GHC lo dice y se agrega ahí.
 newtype AppHandler a = AppHandler {runAppHandler :: ReaderT App Servant.Handler a}
   deriving newtype
     ( Functor
@@ -56,36 +48,44 @@ newtype AppHandler a = AppHandler {runAppHandler :: ReaderT App Servant.Handler 
     , MonadError ServerError
     )
 
+-- | Las de Katip van a mano y no por @deriving via@ 'Telemetry.ConTelemetria'
+-- porque el reader de 'AppHandler' no es el 'Telemetry' sino el 'App' entero.
+-- Siguen siendo una línea cada una: la cirugía la hacen los @sobre*@.
 instance Katip.Katip AppHandler where
   getLogEnv = asks (.telemetry.logEnv)
-  localLogEnv f =
-    local $ \app -> app{telemetry = app.telemetry{Telemetry.logEnv = f app.telemetry.logEnv}}
+  localLogEnv f = sobreTelemetry (Telemetry.sobreLogEnv f)
 
 instance Katip.KatipContext AppHandler where
-  getKatipContext = asks (.logContexts)
-  localKatipContext f = local $ \app -> app{logContexts = f app.logContexts}
-  getKatipNamespace = asks (.logNamespace)
-  localKatipNamespace f = local $ \app -> app{logNamespace = f app.logNamespace}
+  getKatipContext = asks (.telemetry.logContexts)
+  localKatipContext f = sobreTelemetry (Telemetry.sobreLogContexts f)
+  getKatipNamespace = asks (.telemetry.logNamespace)
+  localKatipNamespace f = sobreTelemetry (Telemetry.sobreLogNamespace f)
 
--- | Un span alrededor de un pedazo de handler. Lo que hace falta hacer a mano
--- es que un 'ServerError' lanzado adentro no se escape del span sin cerrarlo:
--- 'AppHandler' no es 'MonadUnliftIO' (abajo tiene un @ExceptT@), así que
--- 'Otel.inSpan' no se le puede aplicar derecho.
---
--- Solo los 5xx marcan el span como error, por lo mismo que en
--- 'Site.Telemetry.traceApiMiddleware': un 401 o un 409 es una respuesta, no una
--- falla. El código igual queda en un atributo, así que se puede filtrar.
+sobreTelemetry :: (Telemetry -> Telemetry) -> AppHandler a -> AppHandler a
+sobreTelemetry f = local $ \app -> app{telemetry = f app.telemetry}
+
+instance Persistence.MonadPg AppHandler where
+  runBeamWrite dbAction = conUnaConexionDelPool $ \telemetry conn ->
+    Persistence.conTransaccionDeEscritura telemetry conn dbAction
+
+  runBeamFastRead dbAction = conUnaConexionDelPool $ \telemetry conn ->
+    Persistence.conTransaccionDeLecturaRapida telemetry conn dbAction
+
+conUnaConexionDelPool :: (Telemetry -> Beam.Connection -> IO a) -> AppHandler a
+conUnaConexionDelPool accion = do
+  app <- ask
+  liftIO
+    $ Persistence.conConexionDelPool app.telemetry app.beamConnectionPool
+    $ accion app.telemetry
+
+instance Telemetry.MonadTracer AppHandler where
+  getTracer = asks (.telemetry.tracer)
+
 instance Telemetry.MonadTelemetry AppHandler where
   inSpan' name action = do
     app <- ask
-    outcome <- liftIO $ Otel.inSpan' app.telemetry.tracer name Otel.defaultSpanArguments $ \handlerSpan -> do
-      result <- runHandler $ runReaderT (runAppHandler (action handlerSpan)) app
-      case result of
-        Right _ -> pure ()
-        Left err -> do
-          Otel.addAttribute handlerSpan "http.response.status_code"
-            $ (fromIntegral (errHTTPCode err) :: Int64)
-          when (errHTTPCode err >= 500)
-            $ Otel.setStatus handlerSpan (Otel.Error $ "HTTP " <> show (errHTTPCode err))
-      pure result
+    outcome <-
+      liftIO
+        $ Otel.inSpan' app.telemetry.tracer name Otel.defaultSpanArguments
+        $ \span -> runHandler $ runReaderT (runAppHandler (action span)) app
     either throwError pure outcome

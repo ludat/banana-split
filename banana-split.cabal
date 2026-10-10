@@ -127,6 +127,7 @@ library database
   exposed-modules:
     BananaSplit.Persistence
     BananaSplit.Persistence.Migration_2026_05_26_FixDates
+    BananaSplit.Persistence.Pg
     BananaSplit.Persistence.ResumenGuardado
     BananaSplit.Persistence.Schema
     BananaSplit.PgRoll
@@ -212,6 +213,7 @@ test-suite spec
   hs-source-dirs: test
   main-is: Spec.hs
   other-modules:
+    BananaSplit.Deudas.TelemetriaSpec
     BananaSplit.DeudasSpec
     BananaSplit.MonedaSpec
     BananaSplit.TelemetrySpec
@@ -220,6 +222,7 @@ test-suite spec
     BananaSplit.Persistence.GrupoSpec
     BananaSplit.Persistence.LoginAttemptsSpec
     BananaSplit.Persistence.PagosSpec
+    Integracion.PgSpec
     BananaSplit.Persistence.SpecHook
     BananaSplit.Persistence.TasasDeCambioSpec
     BananaSplit.Persistence.TransferenciasSpec

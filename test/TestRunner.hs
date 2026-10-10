@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module TestRunner (
@@ -8,11 +9,13 @@ module TestRunner (
 
 import Control.Monad.IO.Unlift (MonadUnliftIO)
 import Katip qualified
+import OpenTelemetry.Trace.Core qualified as Otel
+import OpenTelemetry.Trace.Monad qualified as OtelMonad
 import Protolude
 
-import BananaSplit.Telemetry (MonadTelemetry (..), Telemetry (..), inSpanConTracer')
+import BananaSplit.Telemetry (ConTelemetria (..), MonadTelemetry (..), MonadTracer (..), Telemetry (..))
 
-newtype TestRunner a = TestRunner (Katip.KatipContextT (ReaderT Telemetry IO) a)
+newtype TestRunner a = TestRunner (ReaderT Telemetry IO a)
   deriving newtype
     ( Functor
     , Applicative
@@ -20,13 +23,17 @@ newtype TestRunner a = TestRunner (Katip.KatipContextT (ReaderT Telemetry IO) a)
     , MonadIO
     , MonadUnliftIO
     , MonadReader Telemetry
-    , Katip.Katip
-    , Katip.KatipContext
     )
+  deriving
+    (Katip.Katip, Katip.KatipContext)
+    via (ConTelemetria (ReaderT Telemetry IO))
+
+instance MonadTracer TestRunner where
+  getTracer = asks (.tracer)
 
 instance MonadTelemetry TestRunner where
-  inSpan' = inSpanConTracer'
+  inSpan' nombre = OtelMonad.inSpan' nombre Otel.defaultSpanArguments
 
 runTest :: Telemetry -> TestRunner a -> IO a
 runTest telemetry (TestRunner accion) =
-  runReaderT (Katip.runKatipContextT telemetry.logEnv () mempty accion) telemetry
+  runReaderT accion telemetry

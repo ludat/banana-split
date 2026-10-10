@@ -268,7 +268,9 @@ viewCrearGrupo shared model =
                         , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField participanteField ]
                         ]
             , Bs.btn Bs.Primary
-                [ onClick <| UpdateForm Submit ]
+                [ id "crear-grupo"
+                , onClick <| UpdateForm Submit
+                ]
                 [ text "Crear" ]
             ]
         ]

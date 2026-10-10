@@ -6,7 +6,7 @@ import Generated.Api as Api exposing (Grupo, Pago, RepartijaForFrontend, Resumen
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
-import Utils.Telemetry
+import Utils.Telemetry exposing (trackDecodeErrors)
 
 
 update : StoreMsg -> Store -> ( Store, Effect Shared.Msg.Msg )
@@ -14,7 +14,7 @@ update msg store =
     case msg of
         GrupoFetched grupoId grupo ->
             ( store |> saveGrupo grupoId grupo
-            , Utils.Telemetry.trackDecodeErrors "getGrupoById" grupo
+            , Effect.telemetryEvent <| trackDecodeErrors "getGrupoById" grupo
             )
 
         FetchGrupo grupoId ->
@@ -26,7 +26,7 @@ update msg store =
 
         ResumenFetched grupoId resumen ->
             ( store |> saveResumen grupoId resumen
-            , Utils.Telemetry.trackDecodeErrors "getGrupoByIdResumen" resumen
+            , Effect.telemetryEvent <| trackDecodeErrors "getGrupoByIdResumen" resumen
             )
 
         FetchResumen grupoId ->
@@ -41,7 +41,7 @@ update msg store =
 
         PagosFetched grupoId pagos ->
             ( store |> savePagos grupoId pagos
-            , Utils.Telemetry.trackDecodeErrors "getGrupoByIdPagos" pagos
+            , Effect.telemetryEvent <| trackDecodeErrors "getGrupoByIdPagos" pagos
             )
 
         FetchPagos grupoId participanteId ->
@@ -56,7 +56,7 @@ update msg store =
 
         PagoFetched pagoId pago ->
             ( store |> savePago pagoId pago
-            , Utils.Telemetry.trackDecodeErrors "getGrupoByIdPagosByPagoId" pago
+            , Effect.telemetryEvent <| trackDecodeErrors "getGrupoByIdPagosByPagoId" pago
             )
 
         FetchPago grupoId pagoId ->
@@ -68,7 +68,7 @@ update msg store =
 
         RepartijaFetched repartijaId repartija ->
             ( store |> saveRepartija repartijaId repartija
-            , Utils.Telemetry.trackDecodeErrors "getRepartijasByRepartijaId" repartija
+            , Effect.telemetryEvent <| trackDecodeErrors "getRepartijasByRepartijaId" repartija
             )
 
         FetchRepartija repartijaId ->

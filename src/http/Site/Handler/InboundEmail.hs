@@ -251,12 +251,10 @@ processPago payload fromEmail = do
   -- now). A 'Left' here is the model's own (Spanish) explanation.
   let subject = fromMaybe "" (firstHeader "Subject" payload.headers)
   parsed <-
-    -- El llamado al modelo es lo más lento y lo que falla más seguido de todo
-    -- el pipeline, así que va en su propio span.
-    lift
-      ( inSpan "ai.parse_email_pago"
-          $ liftIO (analyzePagoFromEmail config (mkPagoContext user grupo) subject (bodyText payload))
-      )
+    -- El span lo abre 'analyzePagoFromEmail': es lo más lento y lo que falla más
+    -- seguido de todo el pipeline, y ahora lo dice él mismo en vez de depender de
+    -- que el llamador se acuerde.
+    lift (analyzePagoFromEmail config (mkPagoContext user grupo) subject (bodyText payload))
       `orElse` throwError
 
   -- 6. Resolve the model's output into a real Pago. This is deliberately
@@ -279,7 +277,7 @@ sendReply mailer recipient payload (subject, body) = do
 
 -- | El desenlace del reply se loguea acá y no en 'sendReply' porque allá no hay
 -- mónada donde loguear; 'sendReply' corre en 'IO' pelado.
-logReplyOutcome :: (KatipContext m, MonadIO m) => Email -> Either SomeException () -> m ()
+logReplyOutcome :: (KatipContext m) => Email -> Either SomeException () -> m ()
 logReplyOutcome recipient = \case
   Right () -> pure ()
   Left e ->

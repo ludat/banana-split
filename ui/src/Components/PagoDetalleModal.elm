@@ -54,7 +54,7 @@ import Shared.Model
 import Task
 import Utils.Day as Day
 import Utils.Form exposing (CustomFormError, isDataModifyingEvent)
-import Utils.Telemetry
+import Utils.Telemetry exposing (gastoEdicionAbandonada)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import Utils.Ulid exposing (emptyUlid)
@@ -431,10 +431,11 @@ reportarEdicionAbandonada msg modelAnterior ( model, effect ) =
                 ( model
                 , Effect.batch
                     [ effect
-                    , Utils.Telemetry.gastoEdicionAbandonada
-                        { esNuevo = edicion.pagoId == Nothing
-                        , seccion = edicion.currentSection
-                        }
+                    , Effect.telemetryEvent <|
+                        gastoEdicionAbandonada
+                            { esNuevo = edicion.pagoId == Nothing
+                            , seccion = edicion.currentSection
+                            }
                     ]
                 )
 

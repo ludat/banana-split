@@ -37,7 +37,7 @@ import Protolude
 
 import BananaSplit.Receipts.Tesseract (extractTextFromImage)
 import BananaSplit.Receipts.Types
-import BananaSplit.Telemetry (conSpanActivo)
+import BananaSplit.Telemetry (MonadTelemetry (..))
 
 newtype ParsedReceipt = ParsedReceipt
   { items :: [ParsedReceiptItem]
@@ -199,17 +199,30 @@ newtype ResponseMessage = ResponseMessage
   deriving stock (Show, Generic)
   deriving anyclass (FromJSON)
 
-analyzeReceiptImage :: ReceiptsReaderConfig -> Text -> IO (Either Text ParsedReceipt)
+analyzeReceiptImage ::
+  (MonadTelemetry m, MonadIO m) =>
+  ReceiptsReaderConfig
+  -> Text
+  -> m (Either Text ParsedReceipt)
 analyzeReceiptImage config base64Image =
   analyzeReceiptFromMessage config $ ImageContent (ImageUrl $ "data:" <> base64Image)
 
-analyzeReceiptText :: ReceiptsReaderConfig -> Text -> IO (Either Text ParsedReceipt)
+analyzeReceiptText ::
+  (MonadTelemetry m, MonadIO m) =>
+  ReceiptsReaderConfig
+  -> Text
+  -> m (Either Text ParsedReceipt)
 analyzeReceiptText config base64Image = runExceptT $ do
-  ocrText <- ExceptT $ liftIO $ extractTextFromImage base64Image
+  -- El OCR es otro proceso aparte, así que también va en su propio span.
+  ocrText <- ExceptT $ inSpan "ocr.tesseract" $ liftIO $ extractTextFromImage base64Image
 
   ExceptT $ analyzeReceiptFromMessage config $ TextContent ocrText
 
-analyzeReceiptFromMessage :: ReceiptsReaderConfig -> MessageContent -> IO (Either Text ParsedReceipt)
+analyzeReceiptFromMessage ::
+  (MonadTelemetry m, MonadIO m) =>
+  ReceiptsReaderConfig
+  -> MessageContent
+  -> m (Either Text ParsedReceipt)
 analyzeReceiptFromMessage config msg =
   callOpenRouterJson config systemPrompt [msg]
   where
@@ -238,13 +251,14 @@ analyzeReceiptFromMessage config msg =
 -- body); image attachments are added in a later step. Returns 'Left' with a
 -- (Spanish) explanation when the model can't confidently parse the pago.
 analyzePagoFromEmail ::
+  (MonadTelemetry m, MonadIO m) =>
   ReceiptsReaderConfig
   -> EmailPagoContext
   -> Text
   -- ^ Email subject
   -> Text
   -- ^ Email body (plaintext)
-  -> IO (Either Text ParsedEmailPago)
+  -> m (Either Text ParsedEmailPago)
 analyzePagoFromEmail config context subject body =
   callOpenRouterJson config systemPrompt [TextContent userText]
   where
@@ -311,12 +325,33 @@ exampleParsedEmailPago =
 -- plain-text (non-JSON) answer is surfaced as 'Left' — that is how the prompts
 -- ask the model to report a problem it can't resolve.
 callOpenRouterJson ::
-  (FromJSON a) =>
+  (MonadTelemetry m, MonadIO m, FromJSON a) =>
   ReceiptsReaderConfig
   -> Text
   -> [MessageContent]
-  -> IO (Either Text a)
+  -> m (Either Text a)
 callOpenRouterJson config systemPrompt userContent =
+  -- Su propio span: es la llamada más lenta de la app —un modelo del otro lado de
+  -- internet— y hasta ahora sus atributos se colgaban del span que hubiera activo,
+  -- o de ninguno cuando el llamador no abría uno.
+  inSpan' "openrouter.chat" $ \span ->
+    liftIO $ llamarOpenRouter span config systemPrompt userContent
+
+-- | El round-trip en sí, que corre en 'IO' porque @req@ trae su propia mónada.
+--
+-- Recibe el span en vez de buscar el activo: lo abrió 'callOpenRouterJson', que es
+-- quien sabe qué unidad de trabajo es esto.
+--
+-- Lo que se le cuelga son tamaños, el modelo y el status: nada del contenido ni de
+-- la respuesta del modelo, que llevan la foto del ticket o el texto del mail.
+llamarOpenRouter ::
+  (FromJSON a) =>
+  Otel.Span
+  -> ReceiptsReaderConfig
+  -> Text
+  -> [MessageContent]
+  -> IO (Either Text a)
+llamarOpenRouter span config systemPrompt userContent =
   runReq defaultHttpConfig{httpConfigCheckResponse = \_ _ _ -> Nothing} $ runExceptT $ do
     (model, fallbackModels) <- case config.models of
       [] -> throwError "Reading receipts is not properly configured. Talk to an admin."
@@ -337,7 +372,7 @@ callOpenRouterJson config systemPrompt userContent =
                 ]
             }
     let requestBytes = BS.length (toS (encode requestBody))
-    liftIO $ conSpanActivo $ \span ->
+    liftIO $
       Otel.addAttributes span $
         HashMap.fromList
           [ ("app.openrouter.model", Otel.toAttribute model)
@@ -355,7 +390,7 @@ callOpenRouterJson config systemPrompt userContent =
             , header "X-Title" "Banana Split"
             ]
         )
-    liftIO $ conSpanActivo $ \span ->
+    liftIO $
       Otel.addAttributes span $
         HashMap.fromList
           [

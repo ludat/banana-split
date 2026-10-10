@@ -17,14 +17,13 @@ import {
   ATTR_HTTP_REQUEST_METHOD,
   ATTR_HTTP_RESPONSE_STATUS_CODE,
   ATTR_URL_FULL,
-  ATTR_USER_AGENT_ORIGINAL,
 } from "@opentelemetry/semantic-conventions";
 
+import { SeverityNumber } from "@opentelemetry/api-logs";
 import { InMemoryLogRecordExporter } from "@opentelemetry/sdk-logs";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 
 import {
-  APP_EVENTS,
   createLogProvider,
   deploymentEnvironment,
   installLogProvider,
@@ -34,7 +33,6 @@ import {
   scrubUrl,
   scrubUrlTemplate,
   templatePath,
-  validateEventAttributes,
 } from "../src/js/telemetry.js";
 
 // `currentRoute()` reads window.location; the module only touches it inside
@@ -130,17 +128,15 @@ function tracerWith(recordHttpDuration = () => {}) {
   return { tracer: provider.getTracer("test"), exporter };
 }
 
-test("the exported span has no user agent and no raw url", () => {
+test("the exported span has no raw url", () => {
   const { tracer, exporter } = tracerWith();
 
   const span = tracer.startSpan("GET");
-  span.setAttribute(ATTR_USER_AGENT_ORIGINAL, "Mozilla/5.0 (very identifying)");
   span.setAttribute(ATTR_URL_FULL, `https://split.ludat.io/api/grupo/${ULID}?token=secreto`);
   span.setAttribute(ATTR_HTTP_REQUEST_METHOD, "GET");
   span.end();
 
   const [exported] = exporter.getFinishedSpans();
-  assert.equal(exported.attributes[ATTR_USER_AGENT_ORIGINAL], undefined);
   assert.equal(
     exported.attributes[ATTR_URL_FULL],
     "https://split.ludat.io/api/grupo/:id"
@@ -166,6 +162,63 @@ test("a span named like a url path gets templated too", () => {
   tracer.startSpan(`/grupos/${ULID}/gastos`).end();
 
   assert.equal(exporter.getFinishedSpans()[0].name, "/grupos/:id/gastos");
+});
+
+// The instrumentations name every request span "GET", so without this a trace is
+// a list of indistinguishable "GET"s.
+test("a request span is named after its method and template", () => {
+  const { tracer, exporter } = tracerWith();
+
+  const span = tracer.startSpan("GET");
+  span.setAttribute(ATTR_HTTP_REQUEST_METHOD, "GET");
+  span.setAttribute(ATTR_URL_FULL, `https://split.ludat.io/api/grupo/${ULID}/resumen`);
+  span.end();
+
+  const [exported] = exporter.getFinishedSpans();
+  assert.equal(exported.name, "GET /api/grupo/:id/resumen");
+  // The id is what makes a name unbounded, and it is masked in the name too.
+  assert.ok(!exported.name.includes(ULID), exported.name);
+});
+
+test("a request span name carries no query string", () => {
+  const { tracer, exporter } = tracerWith();
+
+  const span = tracer.startSpan("POST");
+  span.setAttribute(ATTR_HTTP_REQUEST_METHOD, "POST");
+  span.setAttribute(ATTR_URL_FULL, "https://split.ludat.io/api/login?token=secreto");
+  span.end();
+
+  const [exported] = exporter.getFinishedSpans();
+  assert.equal(exported.name, "POST /api/login");
+});
+
+// Un span de click trae la URL de la página, que es la que lleva el ULID del
+// grupo. Es el único dato sensible que agrega la instrumentación de
+// interacciones: el resto es la estructura del DOM.
+test("a click span keeps its name and gets its page url scrubbed", () => {
+  const { tracer, exporter } = tracerWith();
+
+  const span = tracer.startSpan("click");
+  span.setAttribute("event_type", "click");
+  span.setAttribute("target_element", "BUTTON");
+  span.setAttribute("target_xpath", "/html/body/div[2]/button[1]");
+  span.setAttribute(ATTR_URL_FULL, `https://split.ludat.io/grupos/${ULID}/gastos`);
+  span.end();
+
+  const [exported] = exporter.getFinishedSpans();
+  assert.equal(exported.name, "click");
+  assert.equal(exported.attributes[ATTR_URL_FULL], "https://split.ludat.io/grupos/:id/gastos");
+  assert.ok(!JSON.stringify(exported.attributes).includes(ULID));
+});
+
+test("a span with a method but no url keeps its name", () => {
+  const { tracer, exporter } = tracerWith();
+
+  const span = tracer.startSpan("GET");
+  span.setAttribute(ATTR_HTTP_REQUEST_METHOD, "GET");
+  span.end();
+
+  assert.equal(exporter.getFinishedSpans()[0].name, "GET");
 });
 
 test("http client spans produce a duration metric with scrubbed attributes", () => {
@@ -202,64 +255,7 @@ test("trace api is untouched by the processor", () => {
   assert.equal(typeof trace.getTracer, "function");
 });
 
-// --- the app event vocabulary -----------------------------------------------
-
-test("undeclared attribute keys are dropped, not forwarded", () => {
-  const attributes = validateEventAttributes(APP_EVENTS.share.attributes, {
-    outcome: "native",
-    // Everything a careless call site might pass along:
-    grupoNombre: "Viaje a Bariloche",
-    monto: "15000",
-    participanteId: "01JQZ3K9XY4T5V6W7X8Y9Z0ABC",
-  });
-
-  assert.deepEqual(attributes, { outcome: "native" });
-});
-
-test("a value outside the declared set takes the whole event down", () => {
-  assert.equal(
-    validateEventAttributes(APP_EVENTS.share.attributes, { outcome: "whatever" }),
-    null
-  );
-  assert.equal(validateEventAttributes(APP_EVENTS.share.attributes, {}), null);
-});
-
-test("every declared share outcome is accepted", () => {
-  for (const outcome of APP_EVENTS.share.attributes.outcome) {
-    assert.deepEqual(
-      validateEventAttributes(APP_EVENTS.share.attributes, { outcome }),
-      { outcome }
-    );
-  }
-});
-
-test("identifier attributes cannot carry prose", () => {
-  const spec = APP_EVENTS["api.decode_error"].attributes;
-
-  assert.deepEqual(
-    validateEventAttributes(spec, { "app.api.operation": "getGrupoById" }),
-    { "app.api.operation": "getGrupoById" }
-  );
-
-  // This is the shape of an Elm decoder error, which embeds the payload. It
-  // must not be representable as an operation name.
-  const decoderMessage =
-    'Problem with the value at json.pagos[0].monto: expected an INT, got "Asado con Lucas"';
-  assert.equal(validateEventAttributes(spec, { "app.api.operation": decoderMessage }), null);
-  assert.equal(validateEventAttributes(spec, { "app.api.operation": "a b" }), null);
-  assert.equal(validateEventAttributes(spec, { "app.api.operation": "x".repeat(65) }), null);
-  assert.equal(validateEventAttributes(spec, { "app.api.operation": "" }), null);
-});
-
-test("route attributes are templated", () => {
-  const attributes = validateEventAttributes(
-    { "url.template": "route" },
-    { "url.template": `/grupos/${ULID}/gastos` }
-  );
-  assert.deepEqual(attributes, { "url.template": "/grupos/:id/gastos" });
-});
-
-// --- app events and feedback as log records ---------------------------------------------------------------
+// --- app events and feedback as log records ----------------------------------
 
 // Exercises the real wiring from telemetry.js, not a copy of it: passing the
 // exporter positionally used to leave the processor with no exporter at all,
@@ -273,7 +269,7 @@ function logsWith() {
   installLogProvider(provider);
   // The processor batches, so the test has to wait for the flush that
   // recordFeedback fires off.
-  return { exporter, flushed: () => provider.forceFlush() };
+  return { exporter, provider, flushed: () => provider.forceFlush() };
 }
 
 test("feedback is emitted as a log record with the text intact", async () => {
@@ -286,6 +282,48 @@ test("feedback is emitted as a log record with the text intact", async () => {
   assert.equal(record.body, "el boton de saldar no se ve en el celular");
   assert.equal(record.attributes["event.name"], "app.feedback");
   assert.equal(record.attributes["app.page.route"], "/grupos/:id");
+});
+
+// Las instrumentaciones event-based (navigation, web-exception) emiten log
+// records, así que el PrivacySpanProcessor no las ve. Lo que las cubre es
+// PrivacyLogRecordProcessor, y está cableado adentro de createLogProvider, que es
+// lo que estos dos tests ejercitan.
+test("a log record with a page url gets it templated", async () => {
+  const { exporter, provider, flushed } = logsWith();
+
+  provider.getLogger("test").emit({
+    eventName: "browser.navigation",
+    attributes: {
+      [ATTR_URL_FULL]: `https://split.ludat.io/grupos/${ULID}/gastos?x=y`,
+      "browser.navigation.type": "push",
+    },
+  });
+  await flushed();
+
+  const [record] = exporter.getFinishedLogRecords();
+  assert.equal(record.attributes[ATTR_URL_FULL], "https://split.ludat.io/grupos/:id/gastos");
+  assert.equal(record.attributes["browser.navigation.type"], "push");
+});
+
+// Decisión explícita: de una excepción salen el mensaje y el stack enteros. Si
+// alguna vez se vuelve atrás, este test es el que hay que invertir.
+test("an exception record keeps its message and stacktrace", async () => {
+  const { exporter, provider, flushed } = logsWith();
+
+  provider.getLogger("test").emit({
+    eventName: "exception",
+    attributes: {
+      "exception.type": "TypeError",
+      "exception.message": "no se pudo guardar el gasto de Asado",
+      "exception.stacktrace": "at Grupos.update (Main.elm:120)",
+    },
+  });
+  await flushed();
+
+  const [record] = exporter.getFinishedLogRecords();
+  assert.equal(record.attributes["exception.type"], "TypeError");
+  assert.equal(record.attributes["exception.message"], "no se pudo guardar el gasto de Asado");
+  assert.equal(record.attributes["exception.stacktrace"], "at Grupos.update (Main.elm:120)");
 });
 
 test("feedback carries no identifier beyond the route", async () => {
@@ -343,19 +381,35 @@ test("a decode error names the operation and nothing else", async () => {
   ]);
 });
 
-test("an event outside the vocabulary emits nothing at all", async () => {
+// Los atributos pasan tal cual: no hay vocabulario que los filtre. Lo que los
+// acota es el lado Elm, donde `Section` es un custom type y los nombres de
+// operación son literales.
+test("the severity travels by name and defaults to info", async () => {
   const { exporter, flushed } = logsWith();
 
-  recordAppEvent("inventado", { outcome: "native" });
-  recordAppEvent("share", { outcome: "no-existe" });
-  recordAppEvent("share", { outcome: "native", grupoNombre: "Bariloche" });
+  recordAppEvent("api.decode_error", {}, "error");
+  recordAppEvent("share", {});
+  // Una severidad que el mapa no conoce no tira el evento: cae en info.
+  recordAppEvent("share", {}, "inventada");
   await flushed();
 
-  // The third one is valid: the stray attribute is dropped, not the event.
-  const records = exporter.getFinishedLogRecords();
-  assert.equal(records.length, 1);
-  assert.equal(records[0].attributes.outcome, "native");
-  assert.ok(!("grupoNombre" in records[0].attributes));
+  const [unError, sinSeveridad, desconocida] = exporter.getFinishedLogRecords();
+  assert.equal(unError.severityText, "error");
+  assert.equal(unError.severityNumber, SeverityNumber.ERROR);
+  assert.equal(sinSeveridad.severityText, "info");
+  assert.equal(desconocida.severityText, "info");
+  assert.equal(desconocida.severityNumber, SeverityNumber.INFO);
+});
+
+test("the attributes are forwarded as given", async () => {
+  const { exporter, flushed } = logsWith();
+
+  recordAppEvent("share", { outcome: "native", cualquiera: "cosa" });
+  await flushed();
+
+  const [record] = exporter.getFinishedLogRecords();
+  assert.equal(record.attributes.outcome, "native");
+  assert.equal(record.attributes.cualquiera, "cosa");
 });
 
 test("an abandoned gasto edit records the mode and the step", async () => {
@@ -370,12 +424,3 @@ test("an abandoned gasto edit records the mode and the step", async () => {
   assert.equal(record.attributes.section, "deudores");
 });
 
-test("every gasto form step is a declared section value", async () => {
-  // These must stay in step with Models.PagoForm.Section, which the Elm helper
-  // maps onto them. A new step there with no value here drops the event.
-  assert.deepEqual(APP_EVENTS["gasto.edit_abandoned"].attributes.section, [
-    "basico",
-    "pagadores",
-    "deudores",
-  ]);
-});

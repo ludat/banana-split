@@ -172,10 +172,8 @@ export const onReady = ({ app, env }) => {
           break;
 
         case "TELEMETRY_EVENT":
-          // data: { name: string, attributes: { [k: string]: string } }
-          // Anything outside the vocabulary declared in js/telemetry.js is
-          // dropped there, not here.
-          recordAppEvent(data.name, data.attributes);
+          // data: { name: string, attributes: { [k: string]: string }, severity: string }
+          recordAppEvent(data.name, data.attributes, data.severity);
           break;
 
         case "COPY":

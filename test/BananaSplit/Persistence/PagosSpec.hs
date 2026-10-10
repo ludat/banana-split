@@ -9,7 +9,7 @@ import Data.Aeson qualified as Aeson
 import Data.Text qualified as Text
 import Data.Time (fromGregorian)
 import Database.Beam
-import Database.Beam.Postgres (Pg, PgJSONB (..), liftIOWithHandle)
+import Database.Beam.Postgres (liftIOWithHandle)
 import Database.PostgreSQL.Simple qualified as Simple
 import Protolude
 import Test.Hspec
@@ -361,7 +361,7 @@ contarFilasDe pagoId =
 -- justamente lo que acá no queremos.
 ensuciarResumen :: ULID -> Aeson.Value -> Pg ()
 ensuciarResumen pagoId value =
-  liftIOWithHandle $ \conn ->
+  liftPg $ liftIOWithHandle $ \conn ->
     void $
       Simple.execute
         conn
@@ -387,7 +387,7 @@ borrarResumen pagoId = ensuciarResumen pagoId sinCalcularCrudo
 -- | El jsonb del resumen tal cual está guardado, sin pasar por el decoder.
 resumenCrudo :: ULID -> Pg (Maybe Aeson.Value)
 resumenCrudo pagoId =
-  liftIOWithHandle $ \conn -> do
+  liftPg $ liftIOWithHandle $ \conn -> do
     filas <-
       Simple.query
         conn
