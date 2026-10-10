@@ -21,6 +21,7 @@ import Shared
 import Shared.Msg
 import Url
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Telemetry exposing (codigoDeLoginRechazado)
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
@@ -261,7 +262,10 @@ update msg model =
 
         GotVerifyResult (Err err) ->
             ( { model | submitting = False }
-            , Effect.sendToast { level = ToastDanger, content = verifyError err }
+            , Effect.batch
+                [ Effect.sendToast { level = ToastDanger, content = verifyError err }
+                , Effect.telemetryEvent <| codigoDeLoginRechazado err
+                ]
             )
 
         GotRegistered (Ok user) ->
@@ -374,7 +378,7 @@ viewEmailStep model =
                 }
                 (Form.getFieldAsString "email" model.loginForm)
         , Bs.btn Bs.Primary
-            [ type_ "submit", disabled model.submitting ]
+            [ id "login-enviar-codigo", type_ "submit", disabled model.submitting ]
             [ text
                 (if model.submitting then
                     "Enviando…"
@@ -402,7 +406,7 @@ viewCodeStep model =
                 (Form.getFieldAsString "code" model.confirmationForm)
         , div [ class "d-flex gap-2" ]
             [ Bs.btn Bs.Primary
-                [ type_ "submit", disabled model.submitting ]
+                [ id "login-confirmar-codigo", type_ "submit", disabled model.submitting ]
                 [ text
                     (if model.submitting then
                         "Confirmando…"
@@ -433,7 +437,7 @@ viewNameStep model =
                 (Form.getFieldAsString "nombre" model.registrationForm)
         , div [ class "d-flex gap-2" ]
             [ Bs.btn Bs.Primary
-                [ type_ "submit", disabled model.submitting ]
+                [ id "login-registrarse", type_ "submit", disabled model.submitting ]
                 [ text
                     (if model.submitting then
                         "Creando…"

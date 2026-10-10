@@ -220,7 +220,9 @@ view store currentUser model =
                                     [ Html.map ParticipanteForm <|
                                         viewNombreField (Form.getFieldAsString "nombre" model.participanteForm)
                                     , Bs.btn Bs.Primary
-                                        [ onClick (ParticipanteForm Form.Submit) ]
+                                        [ id "agregar-participante"
+                                        , onClick (ParticipanteForm Form.Submit)
+                                        ]
                                         [ text "Agregar" ]
                                     ]
                                 ]

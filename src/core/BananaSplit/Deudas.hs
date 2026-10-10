@@ -14,6 +14,7 @@ module BananaSplit.Deudas (
   getNetosResumen,
   HasResumen (..),
   minimizeTransferencias,
+  minimizeTransferenciasPuro,
   mkDeuda,
   netosDeTransferencia,
   Netos (..),
@@ -31,15 +32,18 @@ module BananaSplit.Deudas (
 
 import Data.Decimal (Decimal)
 import Data.Decimal qualified as Decimal
+import Data.HashMap.Strict qualified as HashMap
 import Data.List qualified as List
 import Data.Map.Strict qualified as Map
 import Data.Scientific (Scientific)
 import Data.Scientific qualified as Scientific
 import Data.Time (UTCTime)
 import Elm.Derive qualified as Elm
+import Katip (KatipContext)
 import Numeric.Optimization.MIP qualified as MIP
 import Numeric.Optimization.MIP.Solver qualified as MIP
 import Numeric.Optimization.MIP.Solver.CBC qualified as CBC
+import OpenTelemetry.Trace.Core qualified as Otel
 import System.IO.Unsafe (unsafePerformIO)
 
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
@@ -47,6 +51,7 @@ import BananaSplit.Monto
 import BananaSplit.Monto qualified as Monto
 import BananaSplit.Participante
 import BananaSplit.Repartija
+import BananaSplit.Telemetry (MonadTelemetry (..), logAttr, logWarn, runSinTelemetria)
 import BananaSplit.ULID
 import Preludat
 
@@ -207,15 +212,53 @@ instance HasResumen Repartija where
       netosReclamados = calcularNetosRepartija repartija
       totalReclamado = totalNetos netosReclamados
 
-minimizeTransferencias :: Netos Monto -> [TransferenciaSugerida]
+-- | Las transferencias mínimas, con el algoritmo naíf como red de contención si
+-- el solver no llega.
+--
+-- Que el solver falle no es un error: el resultado naíf es correcto, solo usa más
+-- transferencias. Pero pasaba en silencio —el 'Left' se descartaba— así que nadie se
+-- enteraba de que un grupo congelado tenía más transferencias de las necesarias.
+-- Ahora el span dice con qué algoritmo se resolvió, así que se puede medir cada
+-- cuánto el solver no llega.
+--
+-- Pide 'MonadTelemetry' porque abre su propio span —la parte lenta de congelar un
+-- grupo suele ser esta, y sin span propio queda escondida dentro del de la
+-- transacción— y 'KatipContext' para loguear el fallback. Corre IO (CBC es un
+-- proceso externo), pero no hace falta pedir 'MonadIO': es superclase de
+-- 'KatipContext'.
+minimizeTransferencias ::
+  (MonadTelemetry m, KatipContext m) => Netos Monto -> m [TransferenciaSugerida]
 minimizeTransferencias deudas =
-  case solveOptimalTransactions' deudas of
-    Right transactions -> transactions
-    Left _err -> resolverNetosNaif deudas
+  inSpan' "deudas.minimizar" $ \span -> do
+    resultado <- solveOptimalTransactions' deudas
+    case resultado of
+      Right transferencias -> do
+        Otel.addAttribute span "app.deudas.algoritmo" ("optimo" :: Text)
+        pure transferencias
+      Left _err -> do
+        -- El motivo ya lo logueó 'solveOptimalTransactions'', acá solo queda decir
+        -- con qué se resolvió al final.
+        Otel.addAttribute span "app.deudas.algoritmo" ("naif" :: Text)
+        pure $ resolverNetosNaif deudas
+
+-- | 'minimizeTransferencias' corrida sin telemetría, y por lo tanto pura.
+--
+-- No es una segunda implementación: es la misma función en 'SinTelemetria', una
+-- mónada que cumple las dos capacidades y las descarta —los spans no graban, los
+-- logs se tiran. El 'unsafePerformIO' es para correr CBC, que es lo único que hace
+-- IO acá.
+--
+-- Para los contextos donde no hay mónada que pueda dar telemetría: las acciones de
+-- Beam, que corren en 'Database.Beam.Postgres.Pg', y los tests, que comparan
+-- resultados. Si tenés mónada, usá 'minimizeTransferencias': el fallback al
+-- algoritmo naíf es justo lo que no se quiere perder de vista.
+minimizeTransferenciasPuro :: Netos Monto -> [TransferenciaSugerida]
+minimizeTransferenciasPuro =
+  unsafePerformIO . runSinTelemetria . minimizeTransferencias
 
 solveOptimalTransactions :: Netos Monto -> [TransferenciaSugerida]
 solveOptimalTransactions deudas =
-  case solveOptimalTransactions' deudas of
+  case unsafePerformIO (runSinTelemetria (solveOptimalTransactions' deudas)) of
     Right transactions -> transactions
     Left err -> panic err
 
@@ -390,144 +433,173 @@ resolverNetosNaif deudas
              TransferenciaSugerida mayorDeudor mayorPagador mayorPagado
                : resolverNetosNaif deudas''
 
-solveOptimalTransactions' :: Netos Monto -> Either Text [TransferenciaSugerida]
-solveOptimalTransactions' (Netos oldBalances) = unsafePerformIO $ do
-  let maxPrecision =
-        oldBalances
-          & Map.elems
-          & fmap Monto.getLugaresDespuesDeLaComa
-          & \case
-            [] -> 0
-            xs -> maximum xs
-      balances :: Map ParticipanteId Scientific
-      balances = fmap (realToFrac . (* 10 ^ maxPrecision)) oldBalances
+-- | El solver, instrumentado: abre su propio span y cuelga de ahí lo que tiene para
+-- contar de sí mismo.
+--
+-- Corre CBC, así que hace IO —'MonadIO' viene de regalo con 'KatipContext'—. Los
+-- dos lugares que tienen algo que contar están en los callbacks de la librería de
+-- MIP, que corren en 'IO' pelado: le pegan eventos al span directamente, que es lo
+-- que se puede hacer sin 'MonadUnliftIO'.
+solveOptimalTransactions' ::
+  (MonadTelemetry m, KatipContext m) =>
+  Netos Monto
+  -> m (Either Text [TransferenciaSugerida])
+solveOptimalTransactions' (Netos oldBalances) = inSpan' "deudas.solver" $ \span -> do
+  let diagnostico :: Text -> Text -> IO ()
+      diagnostico nombre detalle =
+        Otel.addEvent span
+          $ Otel.NewEvent
+            { Otel.newEventName = nombre
+            , Otel.newEventAttributes = HashMap.fromList [("app.deudas.detalle", Otel.toAttribute detalle)]
+            , Otel.newEventTimestamp = Nothing
+            }
+  resultado <- liftIO $ do
+    let maxPrecision =
+          oldBalances
+            & Map.elems
+            & fmap Monto.getLugaresDespuesDeLaComa
+            & \case
+              [] -> 0
+              xs -> maximum xs
+        balances :: Map ParticipanteId Scientific
+        balances = fmap (realToFrac . (* 10 ^ maxPrecision)) oldBalances
 
-      balanceSum = sum $ Map.elems balances
-      debtorMap = Map.filter (< 0) balances
-      creditorMap = Map.filter (> 0) balances
-      debtors = Map.keys debtorMap
-      creditors = Map.keys creditorMap
+        balanceSum = sum $ Map.elems balances
+        debtorMap = Map.filter (< 0) balances
+        creditorMap = Map.filter (> 0) balances
+        debtors = Map.keys debtorMap
+        creditors = Map.keys creditorMap
 
-  -- If no debts, no transactions needed
-  if
-    | balanceSum /= 0 -> panic $ "Balance is not 0, instead is: " <> show balanceSum
-    | Map.null debtorMap -> pure $ Right []
-    | otherwise -> do
-        -- A "big M" value, larger than any possible transaction
-        let bigM = balances & Map.elems & filter (> 0) & sum
+    -- If no debts, no transactions needed
+    if
+      | balanceSum /= 0 -> panic $ "Balance is not 0, instead is: " <> show balanceSum
+      | Map.null debtorMap -> pure $ Right []
+      | otherwise -> do
+          -- A "big M" value, larger than any possible transaction
+          let bigM = balances & Map.elems & filter (> 0) & sum
 
-        -- Create mappings from (debtor, creditor) pairs to variable names
-        let d_c_pairs = [(d, c) | d <- debtors, c <- creditors]
+          -- Create mappings from (debtor, creditor) pairs to variable names
+          let d_c_pairs = [(d, c) | d <- debtors, c <- creditors]
 
-        -- Create variable name helpers
-        let tVar d c = "t_" <> show d <> "_" <> show c :: Text
-            eVar d c = "e_" <> show d <> "_" <> show c :: Text
+          -- Create variable name helpers
+          let tVar d c = "t_" <> show d <> "_" <> show c :: Text
+              eVar d c = "e_" <> show d <> "_" <> show c :: Text
 
-        -- All variable names
-        let allTVars = [tVar d c | (d, c) <- d_c_pairs]
-            allEVars = [eVar d c | (d, c) <- d_c_pairs]
+          -- All variable names
+          let allTVars = [tVar d c | (d, c) <- d_c_pairs]
+              allEVars = [eVar d c | (d, c) <- d_c_pairs]
 
-        -- Build variable domains
-        let varDomains =
-              Map.fromList
-                $
-                -- Transaction variables (continuous, >= 0)
-                [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.PosInf))) | v <- allTVars]
-                ++
-                -- Binary edge variables (represented as integer variables with bounds 0 and 1)
-                [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.Finite 1))) | v <- allEVars]
+          -- Build variable domains
+          let varDomains =
+                Map.fromList
+                  $
+                  -- Transaction variables (continuous, >= 0)
+                  [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.PosInf))) | v <- allTVars]
+                  ++
+                  -- Binary edge variables (represented as integer variables with bounds 0 and 1)
+                  [(MIP.Var v, (MIP.IntegerVariable, (MIP.Finite 0, MIP.Finite 1))) | v <- allEVars]
 
-        -- Build objective: minimize sum of binary edge variables
-        let objective =
-              MIP.def
-                { MIP.objDir = MIP.OptMin
-                , MIP.objExpr = sum [MIP.varExpr (MIP.Var (eVar d c)) | (d, c) <- d_c_pairs]
-                }
+          -- Build objective: minimize sum of binary edge variables
+          let objective =
+                MIP.def
+                  { MIP.objDir = MIP.OptMin
+                  , MIP.objExpr = sum [MIP.varExpr (MIP.Var (eVar d c)) | (d, c) <- d_c_pairs]
+                  }
 
-        -- Build constraints
-        let constraints =
-              -- Debtor constraints: sum of outgoing transactions should equal their debt
-              [ sum [MIP.varExpr (MIP.Var (tVar debtor c)) | c <- creditors]
-                  MIP..==. MIP.constExpr (negate $ balances Map.! debtor)
-              | debtor <- debtors
-              ]
-                ++
-                -- Creditor constraints: sum of incoming transactions should equal their credit
-                [ sum [MIP.varExpr (MIP.Var (tVar d creditor)) | d <- debtors]
-                    MIP..==. MIP.constExpr (balances Map.! creditor)
-                | creditor <- creditors
+          -- Build constraints
+          let constraints =
+                -- Debtor constraints: sum of outgoing transactions should equal their debt
+                [ sum [MIP.varExpr (MIP.Var (tVar debtor c)) | c <- creditors]
+                    MIP..==. MIP.constExpr (negate $ balances Map.! debtor)
+                | debtor <- debtors
                 ]
-                ++
-                -- Big-M constraints: t_d_c <= bigM * e_d_c (transaction only if edge is active)
-                [ MIP.varExpr (MIP.Var (tVar d c)) MIP..<=. MIP.constExpr bigM * MIP.varExpr (MIP.Var (eVar d c))
-                | (d, c) <- d_c_pairs
-                ]
+                  ++
+                  -- Creditor constraints: sum of incoming transactions should equal their credit
+                  [ sum [MIP.varExpr (MIP.Var (tVar d creditor)) | d <- debtors]
+                      MIP..==. MIP.constExpr (balances Map.! creditor)
+                  | creditor <- creditors
+                  ]
+                  ++
+                  -- Big-M constraints: t_d_c <= bigM * e_d_c (transaction only if edge is active)
+                  [ MIP.varExpr (MIP.Var (tVar d c)) MIP..<=. MIP.constExpr bigM * MIP.varExpr (MIP.Var (eVar d c))
+                  | (d, c) <- d_c_pairs
+                  ]
 
-        -- Create the problem
-        let prob =
-              MIP.def
-                { MIP.objectiveFunction = objective
-                , MIP.constraints = constraints
-                , MIP.varDomains = varDomains
-                }
+          -- Create the problem
+          let prob =
+                MIP.def
+                  { MIP.objectiveFunction = objective
+                  , MIP.constraints = constraints
+                  , MIP.varDomains = varDomains
+                  }
 
-        -- Solve using CBC with timeout protection and optimality gap tolerance
-        let solverOpts =
-              MIP.def
-                { MIP.solveTimeLimit = Just 2.0
-                , MIP.solveLogger = \msg -> putStrLn $ "[CBC] " <> msg -- Debug logging
-                , MIP.solveErrorLogger = \msg -> putStrLn $ "[CBC ERROR] " <> msg -- Debug logging
-                , MIP.solveTol =
-                    Just
-                      MIP.Tol
-                        { integralityTol = 0
-                        , feasibilityTol = 0
-                        , optimalityTol = 0
-                        }
-                }
-        -- Configure CBC to stop after finding a good solution
-        -- For transaction minimization, first feasible solution is often near-optimal
-        let solver = CBC.cbc
-        sol <- MIP.solve solver solverOpts prob
+          -- Solve using CBC with timeout protection and optimality gap tolerance
+          let solverOpts =
+                MIP.def
+                  { MIP.solveTimeLimit = Just 2.0
+                  , -- CBC es charlatán y su log de progreso no lo lee nadie: hasta
+                    -- acá se imprimía entero en el stdout del server en cada
+                    -- congelamiento. Los errores sí quedan, como evento del span.
+                    MIP.solveLogger = \_ -> pure ()
+                  , MIP.solveErrorLogger = \msg -> diagnostico "deudas.solver_error" (toS msg)
+                  , MIP.solveTol =
+                      Just
+                        MIP.Tol
+                          { integralityTol = 0
+                          , feasibilityTol = 0
+                          , optimalityTol = 0
+                          }
+                  }
+          -- Configure CBC to stop after finding a good solution
+          -- For transaction minimization, first feasible solution is often near-optimal
+          let solver = CBC.cbc
+          sol <- MIP.solve solver solverOpts prob
 
-        -- Helper to extract and verify transactions
-        let extractAndVerifyTransactions solVars = do
-              let transactions =
-                    d_c_pairs
-                      & mapMaybe
-                        ( \(d, c) ->
-                            solVars
-                              & Map.lookup (MIP.Var (tVar d c))
-                              & mfilter (/= 0)
-                              & fmap
-                                ( \v ->
-                                    TransferenciaSugerida
-                                      { from = d
-                                      , to = c
-                                      , monto = Monto $ Decimal.Decimal maxPrecision (round $ Scientific.toRealFloat @Double v)
-                                      }
-                                )
-                        )
+          -- Helper to extract and verify transactions
+          let extractAndVerifyTransactions solVars = do
+                let transactions =
+                      d_c_pairs
+                        & mapMaybe
+                          ( \(d, c) ->
+                              solVars
+                                & Map.lookup (MIP.Var (tVar d c))
+                                & mfilter (/= 0)
+                                & fmap
+                                  ( \v ->
+                                      TransferenciaSugerida
+                                        { from = d
+                                        , to = c
+                                        , monto = Monto $ Decimal.Decimal maxPrecision (round $ Scientific.toRealFloat @Double v)
+                                        }
+                                  )
+                          )
 
-              -- Verify: apply transactions and check all balances become zero
-              let neto =
-                    transactions
-                      & fmap (\t -> mkDeuda t.from -t.monto <> mkDeuda t.to t.monto)
-                      & mconcat
-                      & totalNetos
+                -- Verify: apply transactions and check all balances become zero
+                let neto =
+                      transactions
+                        & fmap (\t -> mkDeuda t.from -t.monto <> mkDeuda t.to t.monto)
+                        & mconcat
+                        & totalNetos
 
-              if neto /= 0
-                then do
-                  putText $ "[error] Transactions do not balance out: " <> show transactions
-                  pure $ Left $ "Transactions do not balance, neto is " <> show neto
-                else
-                  pure $ Right transactions
+                if neto /= 0
+                  then do
+                    diagnostico "deudas.solver_desbalanceado" (show neto)
+                    pure $ Left $ "Transactions do not balance, neto is " <> show neto
+                  else
+                    pure $ Right transactions
 
-        case MIP.solStatus sol of
-          MIP.StatusOptimal -> extractAndVerifyTransactions (MIP.solVariables sol)
-          MIP.StatusInfeasible -> pure $ Left "LP solver found the problem infeasible"
-          MIP.StatusUnknown -> extractAndVerifyTransactions (MIP.solVariables sol)
-          status -> pure $ Left $ "Failed resolving deudas: " <> show status
+          case MIP.solStatus sol of
+            MIP.StatusOptimal -> extractAndVerifyTransactions (MIP.solVariables sol)
+            MIP.StatusInfeasible -> pure $ Left "LP solver found the problem infeasible"
+            MIP.StatusUnknown -> extractAndVerifyTransactions (MIP.solVariables sol)
+            status -> pure $ Left $ "Failed resolving deudas: " <> show status
+
+  -- Que el solver no llegue no es un error del sistema, pero sí algo que hay que
+  -- poder ver: el llamador va a caer al algoritmo naíf y usar más transferencias
+  -- de las necesarias.
+  for_ (leftToMaybe resultado) $ \err ->
+    logWarn "deudas.solver_error" [logAttr "app.deudas.detalle" err]
+  pure resultado
 
 totalRepartija :: Repartija -> Monto
 totalRepartija repartija =

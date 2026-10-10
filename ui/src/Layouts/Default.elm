@@ -7,16 +7,17 @@ import Date exposing (Date)
 import Dict
 import Effect exposing (Effect, Location)
 import Generated.Api exposing (User)
-import Html exposing (Html, a, button, div, h5, hr, i, li, span, text, ul)
+import Html exposing (Html, a, button, div, h5, hr, i, li, span, text, textarea, ul)
 import Html.Attributes as Attr exposing (class, classList, type_)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onInput)
 import Layout exposing (Layout)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared.Model as Shared
 import Shared.Msg as Shared
-import Utils.Toasts.Types exposing (ToastMsg, Toasts)
+import Utils.Toasts
+import Utils.Toasts.Types exposing (ToastLevel(..), ToastMsg, Toasts)
 import View exposing (View)
 
 
@@ -46,6 +47,8 @@ currentLocation route =
 type alias Model =
     { navBarOpen : Bool
     , changelogOpen : Bool
+    , feedbackOpen : Bool
+    , feedbackText : String
     }
 
 
@@ -53,6 +56,8 @@ init : ( Model, Effect Msg )
 init =
     ( { navBarOpen = False
       , changelogOpen = False
+      , feedbackOpen = False
+      , feedbackText = ""
       }
     , Effect.none
     )
@@ -70,6 +75,10 @@ type Msg
     | OpenChangelog
     | CloseChangelog
     | MarkChangelogReadAndClose
+    | OpenFeedback
+    | CloseFeedback
+    | FeedbackChanged String
+    | SendFeedback
     | DoLogout
 
 
@@ -113,6 +122,32 @@ update msg model =
         MarkChangelogReadAndClose ->
             ( { model | changelogOpen = False }
             , Effect.sendSharedMsg Shared.MarkChangelogRead
+            )
+
+        OpenFeedback ->
+            ( { model | navBarOpen = False, feedbackOpen = True }
+            , Effect.none
+            )
+
+        CloseFeedback ->
+            ( { model | feedbackOpen = False, feedbackText = "" }
+            , Effect.none
+            )
+
+        FeedbackChanged texto ->
+            ( { model | feedbackText = texto }
+            , Effect.none
+            )
+
+        SendFeedback ->
+            -- No hay confirmación de entrega posible: el comentario se va por
+            -- telemetría, no por la API, así que el toast dice que se mandó y
+            -- nada más.
+            ( { model | feedbackOpen = False, feedbackText = "" }
+            , Effect.batch
+                [ Effect.sendFeedback model.feedbackText
+                , Utils.Toasts.pushToast ToastSuccess "¡Gracias! Comentario enviado."
+                ]
             )
 
         DoLogout ->
@@ -164,6 +199,8 @@ view location toasts lastReadChangelog now currentUser { toContentMsg, model, co
             viewOffcanvas location model unread currentUser
         , Html.map toContentMsg <|
             viewChangelogModal model.changelogOpen modalEntries
+        , Html.map toContentMsg <|
+            viewFeedbackModal model
         , Html.map toContentMsg <|
             Components.Toasts.view ToastMsg toasts
         ]
@@ -321,7 +358,7 @@ viewOffcanvas location model unread currentUser =
                         ]
                     , menuPlaceholder "Ajustes generales"
                     , menuPlaceholder "Consejos"
-                    , menuPlaceholder "Enviar comentarios"
+                    , menuLink OpenFeedback [ text "Enviar comentarios" ]
                     , menuPlaceholder "Documentación"
                     ]
                 , div [ class "nav nav-pills flex-column border-top pt-2 mt-2" ]
@@ -345,6 +382,39 @@ viewOffcanvas location model unread currentUser =
                 ]
             ]
         ]
+
+
+viewFeedbackModal : Model -> Html Msg
+viewFeedbackModal model =
+    Bs.modal
+        { isOpen = model.feedbackOpen
+        , onClose = CloseFeedback
+        , title = "Enviar comentarios"
+        , centered = False
+        , body =
+            [ Html.p [ class "text-muted small" ]
+                [ text "Contanos qué te gustaría que mejore, o qué encontraste roto." ]
+            , textarea
+                [ class "form-control"
+                , Attr.rows 5
+                , Attr.maxlength 2000
+                , Attr.placeholder "Escribí acá..."
+                , Attr.value model.feedbackText
+                , onInput FeedbackChanged
+                ]
+                []
+            , Html.p [ class "text-muted small mt-2 mb-0" ]
+                [ text "Esto se manda a quienes desarrollan Banana Split. No lleva tus datos ni tu sesión, así que no podemos responderte — si querés respuesta, dejanos cómo contactarte." ]
+            ]
+        , footer =
+            [ Bs.btn Bs.Transparent [ onClick CloseFeedback ] [ text "Cancelar" ]
+            , Bs.btn Bs.Primary
+                [ onClick SendFeedback
+                , Attr.disabled (String.trim model.feedbackText == "")
+                ]
+                [ text "Enviar" ]
+            ]
+        }
 
 
 viewChangelogModal : Bool -> List Changelog.Entry -> Html Msg

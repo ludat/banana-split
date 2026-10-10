@@ -34,6 +34,7 @@ common base-settings
     beam-core,
     beam-postgres,
     bytestring,
+    case-insensitive,
     conferer,
     conferer-warp,
     containers,
@@ -41,12 +42,16 @@ common base-settings
     elm-bridge,
     file-embed,
     filepath,
+    hs-opentelemetry-api,
+    hs-opentelemetry-instrumentation-ghc-metrics,
+    hs-opentelemetry-sdk,
     http-api-data,
     http-client,
     http-client-tls,
     http-media,
     http-types,
     jose,
+    katip,
     mime-mail,
     mtl,
     postgresql-simple,
@@ -63,6 +68,8 @@ common base-settings
     servant-elm,
     servant-foreign,
     servant-server,
+    template-haskell,
+    unliftio-core,
     smtp-mail,
     string-conversions,
     string-interpolate,
@@ -81,7 +88,10 @@ common threaded-rts
   ghc-options:
     -threaded
     -rtsopts
-    -with-rtsopts=-N
+    -- `-T` habilita las estadísticas del RTS (`GHC.Stats.getRTSStats`), que es
+    -- de donde salen las métricas de runtime. Sin esto
+    -- 'BananaSplit.Telemetry.registerRuntimeMetrics' no registra nada.
+    "-with-rtsopts=-N -T"
 
 library
   import: base-settings
@@ -101,18 +111,30 @@ library
     BananaSplit.User
     Preludat
 
+  build-depends:
+    banana-split:telemetry,
+
+library telemetry
+  import: base-settings
+  hs-source-dirs: src/telemetry/
+  exposed-modules:
+    BananaSplit.Telemetry
+    BananaSplit.Telemetry.Scribe
+
 library database
   import: base-settings
   hs-source-dirs: src/database/
   exposed-modules:
     BananaSplit.Persistence
     BananaSplit.Persistence.Migration_2026_05_26_FixDates
+    BananaSplit.Persistence.Pg
     BananaSplit.Persistence.ResumenGuardado
     BananaSplit.Persistence.Schema
     BananaSplit.PgRoll
 
   build-depends:
-    banana-split
+    banana-split,
+    banana-split:telemetry,
 
 library receipts
   import: base-settings
@@ -126,7 +148,8 @@ library receipts
     BananaSplit.Receipts
 
   build-depends:
-    banana-split
+    banana-split,
+    banana-split:telemetry,
 
 library elm
   import: base-settings
@@ -156,12 +179,14 @@ library http
     Site.Handler.Utils
     Site.Mailer
     Site.Server
+    Site.Telemetry
     Site.Types
 
   build-depends:
     banana-split,
     banana-split:database,
     banana-split:receipts,
+    banana-split:telemetry,
     cookie,
     crypton,
     jose,
@@ -173,10 +198,14 @@ executable banana-split
   import: base-settings, threaded-rts
   hs-source-dirs: src/executable/
   main-is: Main.hs
+  other-modules:
+    AppRunner
+
   build-depends:
     banana-split:database,
     banana-split:elm,
     banana-split:http,
+    banana-split:telemetry,
 
 test-suite spec
   import: base-settings, threaded-rts
@@ -184,11 +213,16 @@ test-suite spec
   hs-source-dirs: test
   main-is: Spec.hs
   other-modules:
+    BananaSplit.Deudas.TelemetriaSpec
     BananaSplit.DeudasSpec
     BananaSplit.MonedaSpec
+    BananaSplit.TelemetrySpec
+    BananaSplit.Telemetry.QueryTracingSpec
+    BananaSplit.Telemetry.ScribeSpec
     BananaSplit.Persistence.GrupoSpec
     BananaSplit.Persistence.LoginAttemptsSpec
     BananaSplit.Persistence.PagosSpec
+    Integracion.PgSpec
     BananaSplit.Persistence.SpecHook
     BananaSplit.Persistence.TasasDeCambioSpec
     BananaSplit.Persistence.TransferenciasSpec
@@ -199,6 +233,8 @@ test-suite spec
     Integracion.ConcurrenciaSpec
     Site.AuthSpec
     Site.Handler.InboundEmailSpec
+    Site.TelemetrySpec
+    TestRunner
 
   build-depends:
     QuickCheck,
@@ -206,7 +242,10 @@ test-suite spec
     banana-split:database,
     banana-split:http,
     banana-split:receipts,
+    banana-split:telemetry,
+    hs-opentelemetry-exporter-in-memory,
     hspec,
     lens,
+    vector,
 
   build-tool-depends: hspec-discover:hspec-discover

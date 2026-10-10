@@ -16,7 +16,8 @@
     "start": "concurrently pnpm:start:elm pnpm:start:css",
     "start:elm": "elm-land server",
     "start:css": "css-in-elm watch src/styles.css generated-src/Css.elm",
-    "test": "elm-test",
+    "test": "elm-test && pnpm test:js",
+    "test:js": "node --test tests/*.test.mjs",
     "postinstall": "pnpm run inject",
     "inject": "elm-sideload install --always"
   },
@@ -28,6 +29,22 @@
     "elm-test": "^0.19.1-revision12"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-logs-otlp-http": "^0.222.0",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/instrumentation": "^0.222.0",
+    "@opentelemetry/instrumentation-browser-navigation": "^0.16.0",
+    "@opentelemetry/instrumentation-document-load": "^0.67.0",
+    "@opentelemetry/instrumentation-fetch": "^0.222.0",
+    "@opentelemetry/instrumentation-user-interaction": "^0.67.0",
+    "@opentelemetry/instrumentation-web-exception": "^0.16.0",
+    "@opentelemetry/instrumentation-xml-http-request": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-logs": "^0.222.0",
+    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/sdk-trace-web": "^2.11.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
     "@ryannhg/css-in-elm": "^1.0.0",
     "autonumeric": "^4.10.10",
     "bootstrap": "^5.3.8",
@@ -37,7 +54,8 @@
     "elm-format": "^0.8.8",
     "elm-json": "^0.2.13",
     "elm-land": "^0.20.1",
-    "modern-normalize": "^3.0.1"
+    "modern-normalize": "^3.0.1",
+    "web-vitals": "^6.2.2"
   },
   "pnpm": {
     "overrides": {

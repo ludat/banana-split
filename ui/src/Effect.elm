@@ -18,6 +18,7 @@ port module Effect exposing
     , saveCurrentUser
     , saveLastReadChangelog
     , sendCmd
+    , sendFeedback
     , sendMsg
     , sendSharedMsg
     , sendStoreMsg
@@ -25,6 +26,7 @@ port module Effect exposing
     , sendToastMsg
     , setUnsavedChangesWarning
     , share
+    , telemetryEvent
     , toCmd
     )
 
@@ -38,6 +40,7 @@ import Shared.Model
 import Shared.Msg
 import Task
 import Url exposing (Url)
+import Utils.Telemetry exposing (TelemetryEvent, severityToString)
 import Utils.Toasts.Types exposing (Toast, ToastMsg)
 
 
@@ -263,9 +266,41 @@ share { title, url } =
             }
 
 
-{-| Copiar texto al portapapeles, sin pasar por la hoja de compartir. Para
-contenido que no es un link (una dirección de email, por ejemplo).
+{-| Mandar un comentario escrito por la persona.
+
+Es el único lugar de la app por el que sale texto libre, y va como log record a
+la telemetría, no a la API. No hay forma de responderlo: no se adjunta ningún
+identificador. La pantalla que lo use tiene que decir que se manda.
+
 -}
+sendFeedback : String -> Effect msg
+sendFeedback message =
+    SendCmd <|
+        outgoing
+            { tag = "SEND_FEEDBACK"
+            , data = Json.Encode.object [ ( "message", Json.Encode.string message ) ]
+            }
+
+
+telemetryEvent : Maybe TelemetryEvent -> Effect msg
+telemetryEvent maybeEvent =
+    case maybeEvent of
+        Just event ->
+            SendCmd <|
+                outgoing
+                    { tag = "TELEMETRY_EVENT"
+                    , data =
+                        Json.Encode.object
+                            [ ( "name", Json.Encode.string event.name )
+                            , ( "severity", Json.Encode.string (severityToString event.severity) )
+                            , ( "attributes", Json.Encode.object event.attributes )
+                            ]
+                    }
+
+        Nothing ->
+            none
+
+
 copy : String -> Effect msg
 copy text =
     SendCmd <|

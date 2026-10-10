@@ -13,6 +13,22 @@
       url = "github:ludat/conferer";
       flake = false;
     };
+    # Los de nixpkgs son de 2023 (solo traces, otro layout de módulos) o están
+    # marcados como broken. El pin tiene que coincidir con el
+    # `source-repository-package` de `cabal.project`.
+    hs-opentelemetry = {
+      url = "github:iand675/hs-opentelemetry";
+      flake = false;
+    };
+    # `hs-opentelemetry-api` necesita >= 0.4.1.1 (ver el comentario del override
+    # más abajo), y esa versión es más nueva que el snapshot de
+    # `all-cabal-hashes` que trae nuestro nixpkgs. Pedirla como
+    # `source = "0.4.1.1"` falla con
+    # "thread-utils-context.cabal: Not found in archive", así que va del repo.
+    thread-utils = {
+      url = "github:iand675/thread-utils";
+      flake = false;
+    };
   };
 
   outputs =
@@ -57,6 +73,38 @@
               conferer.source = inputs.conferer + /packages/conferer;
               conferer-warp.source = inputs.conferer + /packages/warp;
               jose.source = "0.12";
+
+              # Los mismos subdirectorios, y en el mismo commit, que el
+              # `source-repository-package` de `cabal.project`. Si se agrega uno
+              # en un lado, va también en el otro.
+              hs-opentelemetry-api.source = inputs.hs-opentelemetry + /api;
+              hs-opentelemetry-api-types.source = inputs.hs-opentelemetry + /api-types;
+              hs-opentelemetry-semantic-conventions.source = inputs.hs-opentelemetry + /semantic-conventions;
+              hs-opentelemetry-otlp.source = inputs.hs-opentelemetry + /otlp;
+              hs-opentelemetry-sdk.source = inputs.hs-opentelemetry + /sdk;
+              hs-opentelemetry-exporter-handle.source = inputs.hs-opentelemetry + /exporters/handle;
+              hs-opentelemetry-exporter-otlp.source = inputs.hs-opentelemetry + /exporters/otlp;
+              hs-opentelemetry-exporter-in-memory.source = inputs.hs-opentelemetry + /exporters/in-memory;
+              hs-opentelemetry-instrumentation-ghc-metrics.source =
+                inputs.hs-opentelemetry + /instrumentation/ghc-metrics;
+              hs-opentelemetry-propagator-b3.source = inputs.hs-opentelemetry + /propagators/b3;
+              hs-opentelemetry-propagator-datadog.source = inputs.hs-opentelemetry + /propagators/datadog;
+              hs-opentelemetry-propagator-jaeger.source = inputs.hs-opentelemetry + /propagators/jaeger;
+              hs-opentelemetry-propagator-w3c.source = inputs.hs-opentelemetry + /propagators/w3c;
+              hs-opentelemetry-propagator-xray.source = inputs.hs-opentelemetry + /propagators/xray;
+
+              # `hs-opentelemetry-api` usa la API de `Ref` de este paquete, que
+              # apareció en 0.4.1.1, pero declara `>= 0.3 && < 0.5`. Con ese
+              # bound el solver puede elegir 0.3.0.4 y la compilación de otel
+              # falla con "Variable not in scope: ensureRef" — un error que
+              # parece de otel y es de resolución.
+              #
+              # Va del repo y no como `source = "0.4.1.1"` porque esa versión es
+              # más nueva que el snapshot de `all-cabal-hashes` que trae nuestro
+              # nixpkgs, y pedirla por versión falla con
+              # "thread-utils-context.cabal: Not found in archive".
+              # `cabal.project` lo pinnea en el mismo commit.
+              thread-utils-context.source = inputs.thread-utils + /thread-utils-context;
             };
 
             # my-haskell-package development shell configuration
@@ -132,6 +180,16 @@
                 git
                 cacert
               ];
+
+              # A dónde reporta la telemetría del frontend. Vite sustituye esto
+              # en el bundle al compilar, así que es build-time y no runtime: el
+              # valor queda fijo en la imagen y cambiarlo es un rebuild. Está
+              # declarada en `ui/elm-land.json`, que es lo que hace que llegue al
+              # código como `import.meta.env.ELM_LAND_OTLP_ENDPOINT`.
+              #
+              # Si se saca, el frontend no instrumenta nada (no hay default
+              # hardcodeado a propósito, ver `ui/src/js/telemetry.js`).
+              OTLP_ENDPOINT = "https://otlp.ludat.io";
 
               buildPhase = ''
                 export HOME=$PWD

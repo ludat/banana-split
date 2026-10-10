@@ -3,7 +3,6 @@ module BananaSplit.Persistence.TransferenciasSpec (
 ) where
 
 import Data.Time (fromGregorian)
-import Database.Beam.Postgres (Pg)
 import Protolude
 import Test.Hspec
 

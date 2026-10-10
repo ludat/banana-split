@@ -9,10 +9,19 @@ module BananaSplit.Persistence (
   recordAttempt,
   clearAttempts,
   deleteOldLoginAttempts,
+  MonadPg (..),
+  Pg,
+  liftPg,
+  conConexionDelPool,
   conTransaccionDeEscritura,
   conTransaccionDeLecturaRapida,
+  correrEnLaTransaccionDeAfuera,
+  anotarQueriesEnElSpan,
+  registrarStatement,
+  resumirQuery,
   makePool,
   openConnection,
+  conUnaConexion,
   runMigration,
   recomputePagos,
   addParticipante,
@@ -64,21 +73,25 @@ import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
 import Data.String (String)
 import Data.Text qualified as Text
-import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
+import Data.Time (NominalDiffTime, addUTCTime, getCurrentTime)
 import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
-import Database.Beam.Postgres
+-- El 'Pg' que vale acá es el nuestro ("BananaSplit.Persistence.Pg"): el de Beam no
+-- puede instrumentarse. Si hace falta, está como @Beam.Pg@ allá.
+import Database.Beam.Postgres hiding (Pg)
 import Database.Beam.Postgres.Full hiding (insert)
 import Database.PostgreSQL.Simple (Only (..), execute, query)
-import Database.PostgreSQL.Simple.Errors (isSerializationError)
-import Database.PostgreSQL.Simple.Transaction qualified as Transaction
+import Katip (KatipContext)
+import OpenTelemetry.Trace.Core qualified as Otel
 
 import BananaSplit qualified as M
 import BananaSplit.Persistence.Migration_2026_05_26_FixDates qualified as FixDates
+import BananaSplit.Persistence.Pg
 import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..))
 import BananaSplit.Persistence.ResumenGuardado qualified as ResumenGuardado
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
+import BananaSplit.Telemetry qualified as Telemetry
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
 import Preludat
@@ -93,66 +106,30 @@ openConnection config = do
   _ <- execute conn "SET search_path TO ?" (Only schema)
   pure conn
 
--- | La transacción de cualquier cosa que escriba.
---
--- Va en SERIALIZABLE porque el cache del resumen de un gasto se calcula leyendo
--- cosas que otra transacción puede estar cambiando al mismo tiempo (los claims
--- de una repartija, sobre todo). Con READ COMMITTED cada statement ve un
--- snapshot nuevo, así que dos escrituras pueden leer los mismos insumos y
--- pisarse; en SERIALIZABLE el resultado tiene que ser equivalente a haberlas
--- corrido una después de la otra, y si no lo es Postgres aborta una.
---
--- De ahí el reintento: fallar con @40001@ es parte del protocolo, no un error.
--- La transacción que aborta no dejó nada escrito, así que volver a correr el
--- bloque entero es seguro.
-conTransaccionDeEscritura :: Connection -> Pg a -> IO a
-conTransaccionDeEscritura conn accion =
-  Transaction.withTransactionModeRetry
-    Transaction.TransactionMode
-      { Transaction.isolationLevel = Transaction.RepeatableRead
-      , Transaction.readWriteMode = Transaction.ReadWrite
-      }
-    isSerializationError
-    conn
-    (runBeamPostgres conn accion)
+-- | 'openConnection' y cerrarla al salir. Es lo que usa 'Main' para armarle el
+-- 'PgRunner' a un comando, así que nadie más tiene que nombrar una 'Connection'.
+conUnaConexion :: Conferer.Config -> (Connection -> IO a) -> IO a
+conUnaConexion config = bracket (openConnection config) close
 
--- | La transacción de leer para mostrar, que es lo más barato que hay: no toma
--- predicate locks, no puede abortar por conflicto y no le agrega trabajo a las
--- escrituras que corren en paralelo.
---
--- El @READ ONLY@ no es sólo una pista: Postgres rechaza cualquier escritura que
--- entre por acá, así que una que se cuele rompe en el momento en vez de perder
--- en silencio las garantías de arriba.
---
--- Lo que se resigna es que cada statement ve un snapshot distinto, así que dos
--- queries de la misma transacción pueden ver estados distintos de la base.
-conTransaccionDeLecturaRapida :: Connection -> Pg a -> IO a
-conTransaccionDeLecturaRapida conn accion =
-  Transaction.withTransactionMode
-    Transaction.TransactionMode
-      { Transaction.isolationLevel = Transaction.ReadCommitted
-      , Transaction.readWriteMode = Transaction.ReadOnly
-      }
-    conn
-    (runBeamPostgres conn accion)
-
-runMigration :: Conferer.Config -> [String] -> IO ()
-runMigration config args = do
-  conn <- openConnection config
+-- | Cada migración queda como un span raíz llamado @migration \<nombre\>@, con
+-- un log de arranque y uno de cierre. Son comandos que se corren a mano y que
+-- pueden tardar; sin esto lo único que queda de una corrida es lo que haya
+-- quedado en la terminal de quien la ejecutó.
+runMigration :: (Telemetry.MonadTelemetry m, KatipContext m, MonadPg m) => [String] -> m ()
+runMigration args = do
+  let nombre = Text.unwords $ fmap toS args
+      correr accion =
+        Telemetry.inSpan ("migration " <> nombre) $ do
+          Telemetry.logInfo "migration.start" [Telemetry.logAttr "app.migration" nombre]
+          void accion
+          Telemetry.logInfo "migration.done" [Telemetry.logAttr "app.migration" nombre]
   case args of
-    ["fix-pagos-fecha"] -> do
-      runBeamPostgres conn FixDates.run
-      putText "Done"
-    ["recompute-pagos"] -> do
-      recomputePagos conn
-      putText "Done"
-    ["prune-login-attempts"] -> do
-      runBeamPostgres conn deleteOldLoginAttempts
-      putText "Done"
+    ["fix-pagos-fecha"] -> correr $ runBeamWrite $ liftPg FixDates.run
+    ["recompute-pagos"] -> correr recomputePagos
+    ["prune-login-attempts"] -> correr $ runBeamWrite deleteOldLoginAttempts
     _ -> do
-      putText $ "Unknown migration: " <> show args
-      exitFailure
-  close conn
+      Telemetry.logWarn "migration.unknown" [Telemetry.logAttr "app.migration" nombre]
+      liftIO exitFailure
 
 makePool :: Conferer.Config -> IO (Pool.Pool Connection)
 makePool config = do
@@ -876,33 +853,44 @@ savePago grupoId pagoWithoutId = do
   escribirPagadoYConsumido grupoId pagoNuevo resumen
   pure pagoNuevo
 
-recomputePagos :: Connection -> IO ()
-recomputePagos conn = go 0 nullUlid
+recomputePagos :: forall m. (Telemetry.MonadTelemetry m, KatipContext m, MonadPg m) => m ()
+recomputePagos = go 1 0 nullUlid
   where
     recomputePagosBatchSize = 100
 
-    -- 'total' es la cantidad de pagos ya recomputados (para loguear progreso).
-    go :: Int -> ULID -> IO ()
-    go total ultimoId = do
-      resultado <- runBeamPostgres conn $ do
-        lote <- runSelectReturningList $ select $ do
-          limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
-            p <- all_ db.pagos
-            guard_ (p.pagoId >. val_ ultimoId)
-            pure (p.pagoId, p.pagoGrupo)
-        case NE.nonEmpty lote of
-          Nothing -> pure Nothing
-          Just loteNE -> do
-            forM_ loteNE $ \(pagoId, GrupoId grupoId) -> do
-              pago <- fetchPago grupoId pagoId
-              void $ savePago grupoId pago
-            pure $ Just (NE.length loteNE, fst $ NE.last loteNE)
+    go :: Int -> Int -> ULID -> m ()
+    go lote total ultimoId = do
+      resultado <- Telemetry.inSpan' "recompute-pagos.lote" $ \span -> do
+        Otel.addAttribute span "app.recompute.lote" lote
+        resultado <- runBeamWrite $ do
+          batch <- runSelectReturningList $ select $ do
+            limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
+              p <- all_ db.pagos
+              guard_ (p.pagoId >. val_ ultimoId)
+              pure (p.pagoId, p.pagoGrupo)
+          case NE.nonEmpty batch of
+            Nothing -> pure Nothing
+            Just batchNE -> do
+              forM_ batchNE $ \(pagoId, GrupoId grupoId) -> do
+                pago <- fetchPago grupoId pagoId
+                void $ savePago grupoId pago
+              pure $ Just (NE.length batchNE, fst $ NE.last batchNE)
+        Otel.addAttribute span "app.recompute.pagos" $ maybe 0 fst resultado
+        pure resultado
       case resultado of
-        Nothing -> putText $ "recompute-pagos: listo, " <> show total <> " pagos recomputados"
+        Nothing -> do
+          Telemetry.logInfo
+            "recompute_pagos.finished"
+            [Telemetry.logAttr "app.recompute.total" total]
         Just (procesados, siguienteId) -> do
           let total' = total + procesados
-          putText $ "recompute-pagos: lote de " <> show procesados <> " procesado (" <> show total' <> " en total)"
-          go total' siguienteId
+          Telemetry.logInfo
+            "recompute_pagos.lote"
+            [ Telemetry.logAttr "app.recompute.lote" lote
+            , Telemetry.logAttr "app.recompute.pagos" procesados
+            , Telemetry.logAttr "app.recompute.total" total'
+            ]
+          go (succ lote) total' siguienteId
 
 saveDistribucion :: M.Moneda -> M.Distribucion -> Pg M.Distribucion
 saveDistribucion moneda distribucionWithoutId = do
@@ -1332,7 +1320,7 @@ congelarGrupo grupoId = runExceptT $ do
   netosPorMoneda <- fetchNetosEnCadaMoneda
   netosConsolidados <- consolidarNetos grupo netosPorMoneda
 
-  let transferenciasMinimas = M.minimizeTransferencias netosConsolidados
+  transferenciasMinimas <- lift $ M.minimizeTransferencias netosConsolidados
 
   lift $ saveTransferenciasPendientes grupo.monedaPorDefecto transferenciasMinimas
 

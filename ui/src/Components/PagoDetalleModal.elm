@@ -54,6 +54,7 @@ import Shared.Model
 import Task
 import Utils.Day as Day
 import Utils.Form exposing (CustomFormError, isDataModifyingEvent)
+import Utils.Telemetry exposing (gastoEdicionAbandonada)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import Utils.Ulid exposing (emptyUlid)
@@ -389,6 +390,7 @@ update : Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
 update ctx store msg model =
     updateInterno ctx store msg model
         |> apagarAvisoSiSeCerroLaEdicion model
+        |> reportarEdicionAbandonada msg model
 
 
 {-| El aviso del browser ("tenés cambios sin guardar") lo prende el formulario,
@@ -402,6 +404,46 @@ apagarAvisoSiSeCerroLaEdicion modelAnterior ( model, effect ) =
 
     else
         ( model, effect )
+
+
+{-| Si la edición se cerró teniendo cambios sin guardar, se perdió lo que la
+persona había cargado. Guardar y borrar también cierran la edición, y no son
+abandonos, así que se excluyen por mensaje: el resto —el botón de cerrar, el
+botón atrás, descartar— sí lo es.
+-}
+reportarEdicionAbandonada : Msg -> Model -> ( Model, Effect Msg ) -> ( Model, Effect Msg )
+reportarEdicionAbandonada msg modelAnterior ( model, effect ) =
+    case modelAnterior.edicion of
+        Just edicion ->
+            let
+                terminoBien =
+                    case msg of
+                        GuardadoPagoResponse (Ok _) ->
+                            True
+
+                        DeleteResponse (Ok _) ->
+                            True
+
+                        _ ->
+                            False
+            in
+            if not (estaEditando model) && edicion.hasUnsavedChanges && not terminoBien then
+                ( model
+                , Effect.batch
+                    [ effect
+                    , Effect.telemetryEvent <|
+                        gastoEdicionAbandonada
+                            { esNuevo = edicion.pagoId == Nothing
+                            , seccion = edicion.currentSection
+                            }
+                    ]
+                )
+
+            else
+                ( model, effect )
+
+        Nothing ->
+            ( model, effect )
 
 
 updateInterno : Context -> Store -> Msg -> Model -> ( Model, Effect Msg )

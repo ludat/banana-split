@@ -16,6 +16,7 @@ import Servant
 import Servant.Server.Generic
 import WaiAppStatic.Types (StaticSettings (..))
 
+import BananaSplit.Telemetry (logAttr, logError, runLogging)
 import Site.Api
 import Site.Auth (AuthContext, authHandler, sessionAuthHandler)
 import Site.Handler.Auth
@@ -101,12 +102,14 @@ proxyApi = Proxy
 -- unhandled exception gets logged with its message instead of disappearing.
 nt :: App -> AppHandler a -> Handler a
 nt s x = do
-  result <- liftIO $ try $ runHandler (runReaderT x s)
+  result <- liftIO $ try $ runHandler (runReaderT (runAppHandler x) s)
   case result of
     Right (Right a) -> pure a
     Right (Left err) -> throwError err
     Left (e :: SomeException) -> do
-      liftIO $ putText $ "[handler] unhandled exception: " <> show e
+      liftIO $
+        runLogging s.telemetry $
+          logError "handler.unhandled_exception" [logAttr "exception.message" (show e :: Text)]
       throwError err500
 
 authContext :: App -> Context AuthContext
