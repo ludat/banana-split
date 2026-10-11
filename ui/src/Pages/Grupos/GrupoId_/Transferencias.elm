@@ -492,7 +492,8 @@ viewBannerCongelado model =
                 , p [ class "fw-bold mb-2" ] [ text "Cambios experimentados por todos los participantes:" ]
                 , ul [ class "mb-3" ] viewCambiosAlCongelar
                 , Bs.btn Bs.CongeladoInverso
-                    [ class "w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                    [ Attr.id "dejar-de-saldar-deudas"
+                    , class "w-100 py-2 d-flex align-items-center justify-content-center gap-2"
                     , onClick DescongelarGrupo
                     , Attr.disabled desactivando
                     ]
@@ -1012,7 +1013,9 @@ viewNuevaTransferenciaModal from grupo nuevaForm =
                 [ onClick CerrarNuevaTransferencia ]
                 [ text "Cancelar" ]
             , Bs.btn Bs.Primary
-                [ onClick (NuevaForm Form.Submit) ]
+                [ Attr.id "registrar-transferencia"
+                , onClick (NuevaForm Form.Submit)
+                ]
                 [ text "Registrar" ]
             ]
         }

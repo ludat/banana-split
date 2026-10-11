@@ -248,4 +248,4 @@ constraints: any.Boolean ==0.2.4,
              any.xml-conduit ==1.10.1.0,
              any.xml-types ==0.3.8,
              any.zlib ==0.7.1.1
-index-state: hackage.haskell.org 2026-01-30T07:05:28Z
+index-state: hackage.haskell.org 2026-10-02T22:18:55Z

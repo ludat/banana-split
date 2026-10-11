@@ -19,10 +19,12 @@ import System.Posix (Handler (..), installHandler, sigTERM)
 
 import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.Receipts (ReceiptsReaderConfig (..))
+import BananaSplit.Telemetry (Telemetry, logAttr, logError, logInfo, registerRuntimeMetrics, runLogging, withTelemetry)
 import Site.Auth (mkSessionKey)
 import Site.Config (createConfig)
 import Site.Mailer (mkMailer)
 import Site.Server qualified
+import Site.Telemetry (traceApiMiddleware, tracedMailer)
 import Site.Types
 
 runBackend :: IO ()
@@ -38,7 +40,16 @@ runBackend = do
   hSetBuffering stdout NoBuffering
   hSetBuffering stderr NoBuffering
 
+  -- La config va antes de la telemetría porque Katip se configura desde ahí
+  -- (ver 'BananaSplit.Telemetry.fetchLogConfig').
   config <- createConfig "dev"
+
+  withTelemetry config (runBackendCon config)
+
+-- | El resto del arranque, con la config y la telemetría ya armadas.
+runBackendCon :: Conferer.Config -> Telemetry -> IO ()
+runBackendCon config telemetry = do
+  registerRuntimeMetrics telemetry
 
   openRouterKey <- Conferer.fetchFromConfig "openrouter.apikey" config
   openRouterModels <- Conferer.fetchFromConfig "openrouter.models" config
@@ -50,7 +61,7 @@ runBackend = do
 
   httpManager <- newManager tlsManagerSettings
 
-  mailer <- mkMailer config
+  mailer <- tracedMailer telemetry <$> mkMailer config
 
   let appState =
         App
@@ -65,6 +76,7 @@ runBackend = do
           , authPepper = encodeUtf8 jwtSecret
           , cookieSecure = cookieSecure'
           , mailer = mailer
+          , telemetry = telemetry
           }
 
   let shutdownAction = Pool.destroyAllResources beamPool
@@ -81,18 +93,29 @@ runBackend = do
   -- Force this regardless of whatever Conferer.FromConfig.Warp derives for
   -- it: unhandled exceptions must always be logged, and that shouldn't be
   -- something that silently depends on config plumbing.
-  let settings = Warp.setOnException logWarpException fetchedSettings
+  let settings = Warp.setOnException (logWarpException telemetry) fetchedSettings
 
-  putText [i|Listening on port #{Warp.getPort settings}...|]
-  Warp.runSettings settings $ Site.Server.app appState
+  traceMiddleware <- traceApiMiddleware telemetry
+
+  runLogging telemetry $
+    logInfo "server.started" [logAttr "server.port" (fromIntegral (Warp.getPort settings) :: Int64)]
+  Warp.runSettings settings $ traceMiddleware $ Site.Server.app appState
 
 -- | Log unhandled exceptions Warp catches outside of Servant's own handler
 -- dispatch (e.g. while streaming a response, or in a WAI middleware). Site.Server
 -- already catches and logs everything that escapes a handler, but this is a
 -- second net for whatever falls outside that.
-logWarpException :: Maybe Request -> SomeException -> IO ()
-logWarpException mRequest e
-  | Warp.defaultShouldDisplayException e = do
-      let context = maybe "" (\r -> " " <> show (requestMethod r) <> " " <> show (rawPathInfo r)) mRequest
-      putText $ "[warp] unhandled exception" <> context <> ": " <> show e
+logWarpException :: Telemetry -> Maybe Request -> SomeException -> IO ()
+logWarpException telemetry mRequest e
+  | Warp.defaultShouldDisplayException e =
+      runLogging telemetry $
+        logError "server.unhandled_exception" $
+          [logAttr "exception.message" (show e :: Text)]
+            <> foldMap
+              ( \r ->
+                  [ logAttr "http.request.method" (decodeUtf8 (requestMethod r))
+                  , logAttr "url.path" (decodeUtf8 (rawPathInfo r))
+                  ]
+              )
+              mRequest
   | otherwise = pure ()
