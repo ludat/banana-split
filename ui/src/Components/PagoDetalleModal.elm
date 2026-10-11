@@ -54,6 +54,7 @@ import Shared.Model
 import Task
 import Utils.Day as Day
 import Utils.Form exposing (CustomFormError, isDataModifyingEvent)
+import Utils.Telemetry exposing (gastoEdicionAbandonada)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import Utils.Ulid exposing (emptyUlid)
@@ -625,13 +626,33 @@ updateInterno ctx store msg model =
                 Nothing ->
                     -- Todavía no se armó el formulario del gasto nuevo: no hay
                     -- nada que descartar, se cierra y listo.
-                    ( cerrado model, syncUrl ctx.path Nothing )
+                    ( cerrado model
+                    , Effect.batch
+                        [ syncUrl ctx.path Nothing
+                        , Effect.setUnsavedChangesWarning False
+                        ]
+                    )
 
         CancelDiscardEdit ->
             ( { model | confirmingDiscard = False }, Effect.none )
 
         ConfirmDiscardEdit ->
-            salirDeLaEdicion ctx { model | confirmingDiscard = False }
+            ( cerrado model
+            , Effect.batch
+                [ case model.edicion of
+                    Just edicion ->
+                        Effect.telemetryEvent <|
+                            gastoEdicionAbandonada
+                                { esNuevo = edicion.pagoId == Nothing
+                                , seccion = edicion.currentSection
+                                }
+
+                    Nothing ->
+                        Effect.none
+                , Effect.setUnsavedChangesWarning False
+                , syncUrl ctx.path Nothing
+                ]
+            )
 
 
 

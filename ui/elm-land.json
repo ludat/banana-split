@@ -4,7 +4,9 @@
       "development": { "debugger": true },
       "production": { "debugger": false }
     },
-    "env": [],
+    "env": [
+      "OTLP_ENDPOINT"
+    ],
     "html": {
       "attributes": {
         "html": { "lang": "en" },

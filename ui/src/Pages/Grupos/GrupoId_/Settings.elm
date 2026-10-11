@@ -1075,7 +1075,8 @@ viewFreezeButton : Grupo -> Bool -> WebData Grupo -> Html Msg
 viewFreezeButton grupo sePuedeCongelar congelamiento =
     if estaCongelado grupo then
         button
-            [ type_ "button"
+            [ id "descongelar-grupo"
+            , type_ "button"
             , class "btn btn-outline-secondary"
             , onClick UnfreezeGrupo
             ]
@@ -1089,7 +1090,8 @@ viewFreezeButton grupo sePuedeCongelar congelamiento =
         in
         div [ class "d-flex gap-2 align-items-center" ]
             [ Bs.btn Bs.Primary
-                [ onClick FreezeGrupo
+                [ id "congelar-grupo"
+                , onClick FreezeGrupo
                 , disabled (not sePuedeCongelar || congelando)
                 ]
                 [ text <|
