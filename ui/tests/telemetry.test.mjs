@@ -26,6 +26,7 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import {
   createLogProvider,
   deploymentEnvironment,
+  displayMode,
   installLogProvider,
   recordAppEvent,
   recordFeedback,
@@ -155,6 +156,33 @@ test("the page route is attached and is itself templated", () => {
 
   const [exported] = exporter.getFinishedSpans();
   assert.equal(exported.attributes["app.page.route"], "/grupos/:id");
+});
+
+function withMatchingDisplayMode(mode, body) {
+  window.matchMedia = (query) => ({ matches: query === `(display-mode: ${mode})` });
+  try {
+    return body();
+  } finally {
+    delete window.matchMedia;
+  }
+}
+
+test("display mode is browser when nothing says otherwise", () => {
+  assert.equal(displayMode(), "browser");
+  assert.equal(withMatchingDisplayMode("browser", displayMode), "browser");
+});
+
+test("display mode reports an installed PWA", () => {
+  assert.equal(withMatchingDisplayMode("standalone", displayMode), "standalone");
+  assert.equal(withMatchingDisplayMode("minimal-ui", displayMode), "minimal-ui");
+});
+
+test("display mode is attached to spans", () => {
+  const { tracer, exporter } = tracerWith();
+  withMatchingDisplayMode("standalone", () => tracer.startSpan("documentLoad").end());
+
+  const [exported] = exporter.getFinishedSpans();
+  assert.equal(exported.attributes["app.display_mode"], "standalone");
 });
 
 test("a span named like a url path gets templated too", () => {
@@ -332,7 +360,11 @@ test("feedback carries no identifier beyond the route", async () => {
   await flushed();
 
   const [record] = exporter.getFinishedLogRecords();
-  assert.deepEqual(Object.keys(record.attributes).sort(), ["app.page.route", "event.name"]);
+  assert.deepEqual(Object.keys(record.attributes).sort(), [
+    "app.display_mode",
+    "app.page.route",
+    "event.name",
+  ]);
 });
 
 test("empty feedback is not sent", async () => {
@@ -376,6 +408,7 @@ test("a decode error names the operation and nothing else", async () => {
   assert.equal(record.attributes["app.api.operation"], "getGrupoByIdPagos");
   assert.deepEqual(Object.keys(record.attributes).sort(), [
     "app.api.operation",
+    "app.display_mode",
     "app.page.route",
     "event.name",
   ]);
@@ -423,4 +456,3 @@ test("an abandoned gasto edit records the mode and the step", async () => {
   assert.equal(record.attributes.mode, "nuevo");
   assert.equal(record.attributes.section, "deudores");
 });
-

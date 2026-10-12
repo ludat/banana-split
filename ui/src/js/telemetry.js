@@ -100,6 +100,25 @@ function currentRoute() {
   return templatePath(window.location.pathname);
 }
 
+const ATTR_DISPLAY_MODE = "app.display_mode";
+const STANDALONE_DISPLAY_MODES = ["window-controls-overlay", "fullscreen", "standalone", "minimal-ui"];
+
+export function displayMode() {
+  if (globalThis.navigator?.standalone === true) return "standalone";
+  if (typeof window.matchMedia !== "function") return "browser";
+  return (
+    STANDALONE_DISPLAY_MODES.find((mode) => window.matchMedia(`(display-mode: ${mode})`).matches) ??
+    "browser"
+  );
+}
+
+function contextAttributes() {
+  return {
+    "app.page.route": currentRoute(),
+    [ATTR_DISPLAY_MODE]: displayMode(),
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Span scrubbing
 // ---------------------------------------------------------------------------
@@ -133,7 +152,7 @@ export class PrivacySpanProcessor {
       span.updateName(templatePath(span.name));
     }
 
-    span.setAttribute("app.page.route", currentRoute());
+    span.setAttributes(contextAttributes());
   }
 
   onEnd(span) {
@@ -143,7 +162,12 @@ export class PrivacySpanProcessor {
     // Attributes are copied only when present: an `undefined` value would
     // still create its own time series.
     const attributes = { [ATTR_HTTP_REQUEST_METHOD]: method };
-    for (const key of [ATTR_HTTP_RESPONSE_STATUS_CODE, ATTR_URL_TEMPLATE, ATTR_ERROR_TYPE]) {
+    for (const key of [
+      ATTR_HTTP_RESPONSE_STATUS_CODE,
+      ATTR_URL_TEMPLATE,
+      ATTR_ERROR_TYPE,
+      ATTR_DISPLAY_MODE,
+    ]) {
       const value = span.attributes[key];
       if (value !== undefined) attributes[key] = value;
     }
@@ -259,7 +283,7 @@ export function recordAppEvent(name, attributes = {}, severity = "info") {
     attributes: {
       ...attributes,
       "event.name": `app.${name}`,
-      "app.page.route": currentRoute(),
+      ...contextAttributes(),
     },
   });
 }
@@ -282,7 +306,7 @@ export function recordFeedback(message) {
     body: text.slice(0, FEEDBACK_MAX_LENGTH),
     attributes: {
       "event.name": "app.feedback",
-      "app.page.route": currentRoute(),
+      ...contextAttributes(),
     },
   });
 
@@ -336,6 +360,7 @@ function trackWebVitals(webVitals) {
     histogram.record(metric.value, {
       "web_vitals.rating": metric.rating,
       [ATTR_URL_TEMPLATE]: currentRoute(),
+      [ATTR_DISPLAY_MODE]: displayMode(),
     });
   };
 
@@ -416,7 +441,7 @@ export function initTelemetry() {
         sanitizeUrl: scrubUrl,
       }),
       new ExceptionInstrumentation({
-        applyCustomAttributes: () => ({ "app.page.route": currentRoute() }),
+        applyCustomAttributes: contextAttributes,
       }),
     ],
   });
