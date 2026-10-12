@@ -4,7 +4,7 @@ services:
       repository: ghcr.io/ludat/banana-split
       source:
         type: lexical
-        pattern: '^$(slug)-\d{8}-\d{6}$'
+        pattern: '^$(branch_slug)-\d{8}-\d{6}$'
     port: 8000
     secrets:
       - config
