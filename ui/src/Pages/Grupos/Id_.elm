@@ -276,7 +276,6 @@ viewLeftColumn store zone userId model grupo =
 
                         TabMoneda _ ->
                             text ""
-
                     , div [ class "mb-4", classList [ ( "pt-4", List.length monedasDisponibles > 1 ) ] ]
                         [ div [ class "mb-4" ]
                             [ div [ class "fw-bold mb-3" ] [ text "Netos" ]
