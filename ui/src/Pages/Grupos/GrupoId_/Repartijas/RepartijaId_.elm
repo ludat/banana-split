@@ -278,41 +278,48 @@ view userId store model =
             in
             { title = grupo.nombre ++ ": " ++ repartija.nombre
             , body =
-                [ viewParticipantes grupo repartija
-                , viewRepartijaItems userId grupo repartija
-                , viewRepartirModal model.repartirModalItem
+                [ div [ class "container-fluid py-3" ]
+                    [ viewParticipantes grupo repartija
+                    , viewRepartijaItems userId grupo repartija
+                    , viewRepartirModal model.repartirModalItem
+                    ]
                 ]
             }
 
         ( Failure e1, Failure e2 ) ->
             { title = ""
             , body =
-                [ text "falle"
-                , viewHttpError e1
-                , viewHttpError e2
+                [ div [ class "container-fluid py-3" ]
+                    [ text "falle"
+                    , viewHttpError e1
+                    , viewHttpError e2
+                    ]
                 ]
             }
 
         ( Failure e, _ ) ->
             { title = ""
             , body =
-                [ text "falle"
-                , viewHttpError e
+                [ div [ class "container-fluid py-3" ]
+                    [ text "falle"
+                    , viewHttpError e
+                    ]
                 ]
             }
 
         ( _, Failure e ) ->
             { title = ""
             , body =
-                [ text "falle"
-                , viewHttpError e
+                [ div [ class "container-fluid py-3" ]
+                    [ text "falle"
+                    , viewHttpError e
+                    ]
                 ]
             }
 
         _ ->
             { title = ""
-            , body =
-                [ text "cargando" ]
+            , body = [ div [ class "container-fluid py-3" ] [ text "cargando" ] ]
             }
 
 

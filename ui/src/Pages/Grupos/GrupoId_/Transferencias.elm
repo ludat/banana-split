@@ -323,18 +323,11 @@ view store zone ahora yo model =
                 [ div [ class "container-fluid py-3" ]
                     [ div [ class "row justify-content-center" ]
                         [ div [ class "col-md-10 col-lg-7 col-xl-5" ]
-                            [ viewContent store zone ahora yo model grupo
-                            , espacioParaLaBarraInferior
-                            ]
+                            [ viewContent store zone ahora yo model grupo ]
                         ]
                     ]
                 ]
             }
-
-
-espacioParaLaBarraInferior : Html msg
-espacioParaLaBarraInferior =
-    div [ class "d-md-none", Attr.style "height" "7rem" ] []
 
 
 iconoCongelado : String

@@ -169,22 +169,39 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
 
             _ ->
                 text ""
-        , case ( activeUser, remoteGrupo ) of
-            ( Nothing, Success grupo ) ->
-                if List.isEmpty grupo.participantes then
-                    div [ class "container-fluid py-3" ] content.body
+        ]
+            ++ (case ( activeUser, remoteGrupo ) of
+                    ( Nothing, Success grupo ) ->
+                        if List.isEmpty grupo.participantes then
+                            content.body
 
-                else
-                    Html.map toContentMsg <|
-                        div [ class "container-fluid py-5 text-center" ]
-                            [ p [ class "mb-3" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
-                            , div [ class "mx-auto", style "max-width" "20rem" ]
-                                [ viewGlobalUserSelector activeUser grupo ]
+                        else
+                            [ Html.map toContentMsg <|
+                                div [ class "container-fluid py-5 text-center" ]
+                                    [ p [ class "mb-3" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
+                                    , div [ class "mx-auto", style "max-width" "20rem" ]
+                                        [ viewGlobalUserSelector activeUser grupo ]
+                                    ]
                             ]
 
-            _ ->
-                div [ class "container-fluid py-3" ] content.body
-        ]
+                    _ ->
+                        content.body
+               )
+            ++ [ case remoteGrupo of
+                    Success grupo ->
+                        if (headerInfo currentPath store currentUser grupo).showTabs then
+                            div
+                                [ class "d-md-none"
+                                , style "height" "calc(var(--navbar-bottom-height) + 1.55rem + env(safe-area-inset-bottom))"
+                                ]
+                                []
+
+                        else
+                            text ""
+
+                    _ ->
+                        text ""
+               ]
     }
 
 
