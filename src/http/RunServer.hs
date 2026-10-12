@@ -7,7 +7,6 @@ module RunServer (
 import Conferer qualified
 import Conferer.FromConfig.Warp ()
 import Data.Pool qualified as Pool
-import Data.String.Interpolate (i)
 import Network.HTTP.Client (newManager)
 import Network.HTTP.Client.TLS (tlsManagerSettings)
 import Network.Wai (Request, rawPathInfo, requestMethod)
@@ -79,8 +78,15 @@ runBackendCon config telemetry = do
           , telemetry = telemetry
           }
 
-  let shutdownAction = Pool.destroyAllResources beamPool
-  let shutdownHandler closeSocket = void $ installHandler sigTERM (Catch $ shutdownAction >> closeSocket) Nothing
+  let shutdownHandler closeSocket =
+        void $
+          installHandler
+            sigTERM
+            (Catch $ do
+              runLogging telemetry $ logInfo "server.stopping" []
+              closeSocket
+            )
+            Nothing
   fetchedSettings <-
     liftIO $
       Conferer.fetchKey @Settings
@@ -89,6 +95,7 @@ runBackendCon config telemetry = do
         ( Warp.defaultSettings
             & Warp.setInstallShutdownHandler shutdownHandler
             & Warp.setPort 8000
+            & Warp.setGracefulShutdownTimeout (Just 15)
         )
   -- Force this regardless of whatever Conferer.FromConfig.Warp derives for
   -- it: unhandled exceptions must always be logged, and that shouldn't be
@@ -99,7 +106,9 @@ runBackendCon config telemetry = do
 
   runLogging telemetry $
     logInfo "server.started" [logAttr "server.port" (fromIntegral (Warp.getPort settings) :: Int64)]
-  Warp.runSettings settings $ traceMiddleware $ Site.Server.app appState
+  Warp.runSettings settings (traceMiddleware $ Site.Server.app appState)
+    `finally` Pool.destroyAllResources beamPool
+  runLogging telemetry $ logInfo "server.stopped" []
 
 -- | Log unhandled exceptions Warp catches outside of Servant's own handler
 -- dispatch (e.g. while streaming a response, or in a WAI middleware). Site.Server

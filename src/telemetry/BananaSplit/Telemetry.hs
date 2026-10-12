@@ -122,7 +122,11 @@ withTelemetry config act = do
     start = do
       -- Solo default: si ya viene del ambiente, manda el ambiente.
       setDefaultEnv "OTEL_SERVICE_NAME" "banana-split"
-      withOpenTelemetry (mkTelemetry config >=> act)
+      -- Los scribes de Katip escriben desde una cola propia: hay que cerrarlos
+      -- (que vacía la cola) antes de bajar los providers, o lo último que se
+      -- logueó no llega al logger de OTel a tiempo para el flush final.
+      withOpenTelemetry $ \signals ->
+        bracket (mkTelemetry config signals) (Katip.closeScribes . (.logEnv)) act
 
 -- | Un 'Telemetry' armado con los providers globales, para código que no quiere
 -- levantar el SDK: los tests, que corren migraciones y no tienen nada que
