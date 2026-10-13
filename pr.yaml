@@ -10,7 +10,7 @@ services:
       - config
     dependencies: [pg]
     routes:
-      - host: $(slug).split.ludat.io
+      - host: $(branch_slug).split.ludat.io
 
 dependencies:
   pg:
