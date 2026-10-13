@@ -26,12 +26,14 @@ import Elm.Derive qualified as Elm
 
 import BananaSplit.Deudas (
   Netos,
+  comoPorParticipante,
   distribuirEntrePonderados,
   filterNetos,
   totalNetos,
  )
 import BananaSplit.Moneda (Moneda, PorMoneda (..))
 import BananaSplit.Monto (Monto (..), inMonto)
+import BananaSplit.Ponderaciones qualified as Ponderaciones
 import BananaSplit.ULID (ULID)
 import Preludat
 
@@ -166,7 +168,9 @@ convertirNetos factor netos =
       | totalNetos lado == 0 = mempty
       | otherwise =
           lado
+            & comoPorParticipante
             & fmap inMonto
+            & Ponderaciones.desde
             & distribuirEntrePonderados total
 
 Elm.deriveBoth Elm.defaultOptions ''TasaDeCambio

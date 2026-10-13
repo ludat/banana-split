@@ -21,6 +21,7 @@ import Servant.Elm
 import Servant.Foreign (Foreign, HasForeign (..))
 
 import BananaSplit
+import BananaSplit.PorParticipante (PorParticipante)
 import Site.Api
 
 -- | servant-elm has no 'HasForeign' instance for 'AuthProtect', so codegen
@@ -84,6 +85,7 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy ResumenGrupo)
     , DefineElm (Proxy :: Proxy ResumenAbierto)
     , DefineElm (Proxy :: Proxy ResumenCongelado)
+    , DefineElm (Proxy :: Proxy (PorParticipante Monto))
     , DefineElm (Proxy :: Proxy (Netos Monto))
     , DefineElm (Proxy :: Proxy (PorMoneda (Netos Monto)))
     , DefineElm (Proxy :: Proxy TasaDeCambio)
@@ -114,6 +116,9 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy RepartijaClaim)
     , DefineElm (Proxy :: Proxy ShallowRepartija)
     , DefineElm (Proxy :: Proxy RepartijaForFrontend)
+    , DefineElm (Proxy :: Proxy DetalleRepartija)
+    , DefineElm (Proxy :: Proxy DetalleDeItem)
+    , DefineElm (Proxy :: Proxy DetalleSinReclamar)
     ]
     (Proxy :: Proxy (ToServantApi Api))
 

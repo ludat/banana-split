@@ -99,7 +99,10 @@ library
     BananaSplit.Email
     BananaSplit.Monto
     BananaSplit.Moneda
+    BananaSplit.Netos
     BananaSplit.Participante
+    BananaSplit.Ponderaciones
+    BananaSplit.PorParticipante
     BananaSplit.Repartija
     BananaSplit.TasaDeCambio
     BananaSplit.TestUtils

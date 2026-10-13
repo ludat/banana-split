@@ -5,6 +5,8 @@
 
 module BananaSplit.Deudas (
   calcularNetosRepartija,
+  comoPorParticipante,
+  detalleRepartija,
   deudoresNoNulos,
   Distribucion (..),
   distribuirEntrePonderados,
@@ -21,6 +23,7 @@ module BananaSplit.Deudas (
   Parte (..),
   relabelError,
   Repartija (..),
+  repartijaForFrontend,
   ResumenNetos (..),
   TipoDistribucion (..),
   TipoErrorResumen (..),
@@ -49,7 +52,11 @@ import System.IO.Unsafe (unsafePerformIO)
 import BananaSplit.Moneda (Moneda, PorMoneda, enMoneda)
 import BananaSplit.Monto
 import BananaSplit.Monto qualified as Monto
+import BananaSplit.Netos
 import BananaSplit.Participante
+import BananaSplit.Ponderaciones (Ponderaciones)
+import BananaSplit.Ponderaciones qualified as Ponderaciones
+import BananaSplit.PorParticipante qualified as PorParticipante
 import BananaSplit.Repartija
 import BananaSplit.Telemetry (MonadTelemetry (..), logAttr, logWarn, runSinTelemetria)
 import BananaSplit.ULID
@@ -171,12 +178,12 @@ instance HasResumen DistribucionPartes where
         distribucion.partes
           & foldMap
             ( \case
-                Ponderado n p | n > 0 -> mkDeuda p n
-                PonderadoYMontoFijo _ n p | n > 0 -> mkDeuda p n
+                Ponderado n p | n > 0 -> Ponderaciones.ponderar p n
+                PonderadoYMontoFijo _ n p | n > 0 -> Ponderaciones.ponderar p n
                 _ -> mempty
             )
       totalFijos = totalNetos netosFijos
-      totalPonderaciones = totalNetos ponderados
+      totalPonderaciones = Ponderaciones.total ponderados
       netosPonderados =
         ponderados
           & fmap fromIntegral
@@ -307,84 +314,49 @@ netosDeTransferencia transferencia =
   )
     `enMoneda` transferencia.moneda
 
-deudoresNoNulos :: Netos Monto -> Int
-deudoresNoNulos (Netos deudasMap) =
-  deudasMap
-    & Map.filter (/= 0)
-    & length
-
-filterNetos :: (a -> Bool) -> Netos a -> Netos a
-filterNetos f (Netos deudasMap) =
-  deudasMap
-    & Map.filter f
-    & Netos
-
-newtype Netos a = Netos (Map ParticipanteId a)
-  deriving newtype (Show, Eq, Functor)
-
-deudasToPairs :: (Ord a) => Netos a -> [(ParticipanteId, a)]
-deudasToPairs (Netos deudasMap) =
-  deudasMap
-    & Map.toAscList
-    & sortOn (\(p, m) -> (Down m, p))
-
-instance (Num a) => Monoid (Netos a) where
-  mempty = Netos Map.empty
-
-instance (Num a) => Semigroup (Netos a) where
-  Netos d1 <> Netos d2 = Netos $ Map.unionWith (+) d1 d2
-
-totalNetos :: (Num a) => Netos a -> a
-totalNetos (Netos deudasMap) =
-  deudasMap
-    & Map.elems
-    & sum
-
-mkDeuda :: ParticipanteId -> a -> Netos a
-mkDeuda participanteId monto =
-  Netos $ Map.singleton participanteId monto
-
-distribuirEntrePonderados :: Monto -> Netos Decimal -> Netos Monto
-distribuirEntrePonderados (Monto total) deudas =
-  let deudaPairs = deudas & deudasToPairs
-      cuotas = deudaPairs & fmap snd
+distribuirEntrePonderados :: Monto -> Ponderaciones Decimal -> Netos Monto
+distribuirEntrePonderados (Monto total) ponderaciones =
+  let pares = ponderaciones & Ponderaciones.aPares
+      cuotas = pares & fmap snd
       maxPrecision =
         cuotas
           & fmap Decimal.decimalPlaces
           & maximum
-      participantes = deudaPairs & fmap fst
+      participantes = pares & fmap fst
   in cuotas
        & fmap (Decimal.decimalMantissa . Decimal.roundTo maxPrecision)
        & Decimal.allocate total
        & fmap Monto
        & zip participantes
-       & Map.fromList
+       & PorParticipante.desdePares
        & Netos
 
 extraerMaximoDeudor :: Netos Monto -> (ParticipanteId, Monto)
-extraerMaximoDeudor (Netos deudasMap) =
-  deudasMap
-    & Map.filter (< 0)
+extraerMaximoDeudor deudas =
+  deudas
+    & filterNetos (< 0)
     & fmap (* -1)
-    & Map.toList
+    & comoPorParticipante
+    & PorParticipante.aPares
     & List.maximumBy (compare `on` snd)
 
 extraerMaximoPagador :: Netos Monto -> (ParticipanteId, Monto)
-extraerMaximoPagador (Netos deudasMap) =
-  deudasMap
-    & Map.filter (> 0)
-    & Map.toList
+extraerMaximoPagador deudas =
+  deudas
+    & filterNetos (> 0)
+    & comoPorParticipante
+    & PorParticipante.aPares
     & List.maximumBy (compare `on` snd)
 
 extraerDeudor :: (Num a) => ParticipanteId -> Netos a -> (a, Netos a)
-extraerDeudor unId (Netos deudasMap) =
-  ( deudasMap & Map.findWithDefault 0 unId
-  , Netos $ deudasMap & Map.delete unId
+extraerDeudor unId deudas =
+  ( deudas & comoPorParticipante & PorParticipante.buscar unId & fromMaybe 0
+  , removerDeudor unId deudas
   )
 
 removerDeudor :: ParticipanteId -> Netos m -> Netos m
-removerDeudor participanteId (Netos deudasMap) =
-  Netos $ Map.delete participanteId deudasMap
+removerDeudor participanteId (Netos ps) =
+  Netos $ PorParticipante.sacar participanteId ps
 
 resolverNetosNaif :: Netos Monto -> [TransferenciaSugerida]
 resolverNetosNaif deudas
@@ -417,7 +389,8 @@ solveOptimalTransactions' ::
   (MonadTelemetry m, KatipContext m) =>
   Netos Monto
   -> m (Either Text [TransferenciaSugerida])
-solveOptimalTransactions' (Netos oldBalances) = inSpan' "deudas.solver" $ \span -> do
+solveOptimalTransactions' netos = inSpan' "deudas.solver" $ \span -> do
+  let oldBalances = netos & comoPorParticipante & PorParticipante.comoMapa
   let diagnostico :: Text -> Text -> IO ()
       diagnostico nombre detalle =
         Otel.addEvent span
@@ -583,63 +556,136 @@ totalRepartija repartija =
 
 calcularNetosRepartija :: Repartija -> Netos Monto
 calcularNetosRepartija repartija =
-  let netosIncluyendoNoRepartido =
+  (detalleRepartija repartija).totales
+
+-- | El participante al que se le anota lo que nadie reclamó, para poder
+-- repartir un item y sacarle después la parte que quedó sin dueño.
+nadie :: ParticipanteId
+nadie = ParticipanteId nullUlid
+
+-- | Lo que el frontend recibe de una repartija. Pasa por acá para que el
+-- desglose no pueda quedar desfasado de los claims con los que se calculó.
+repartijaForFrontend :: ULID -> Text -> Repartija -> RepartijaForFrontend
+repartijaForFrontend pagoId pagoNombre repartija =
+  RepartijaForFrontend
+    { repartija = repartija
+    , pagoId = pagoId
+    , pagoNombre = pagoNombre
+    , detalle = detalleRepartija repartija
+    }
+
+-- | El desglose de una repartija: cuánto le toca a cada participante de cada
+-- item, de la propina y de lo que nadie reclamó.
+--
+-- De acá salen tanto los números que muestra el frontend como los netos que se
+-- le cobran a cada uno ('calcularNetosRepartija'), así que la cuenta está escrita
+-- una sola vez.
+detalleRepartija :: Repartija -> DetalleRepartija
+detalleRepartija repartija =
+  let repartidos =
         repartija.items
-          & fmap
-            ( \item ->
-                let claims =
-                      repartija.claims
-                        & filter ((== item.id) . (.itemId))
-                in if
-                     | all tieneCantidad claims ->
-                         let claimsExplicitos =
-                               claims
-                                 & fmap
-                                   ( \claim ->
-                                       mkDeuda claim.participante (fromMaybe (panic "tieneCantidad") claim.cantidad)
-                                   )
-                             claimsSobrante = item.cantidad - totalNetos (mconcat claimsExplicitos)
-                         in claimsExplicitos
-                              & mconcat
-                              & (<> if claimsSobrante > 0 then mkDeuda (ParticipanteId nullUlid) claimsSobrante else mempty)
-                              & fmap fromIntegral
-                              & distribuirEntrePonderados item.monto
-                     | (not (any tieneCantidad claims)) ->
-                         claims
-                           & fmap
-                             ( \claim ->
-                                 mkDeuda claim.participante (maybe 1 fromIntegral claim.cantidad)
-                             )
-                           & mconcat
-                           & distribuirEntrePonderados item.monto
-                     | otherwise -> mempty
-            )
-        where
-          tieneCantidad :: RepartijaClaim -> Bool
-          tieneCantidad = isJust . (.cantidad)
-      (montoNoRepartido, netos) =
-        netosIncluyendoNoRepartido
-          & fmap (extraerDeudor (ParticipanteId nullUlid))
-          & unzip
-      extraARepartirPonerado =
-        case repartija.distribucionDeSobras of
-          SobrasNoDistribuir ->
-            repartija.extra
-          SobrasProporcional ->
-            repartija.extra + sum montoNoRepartido
-      deudasDelExtraPonderado =
-        netos
-          & mconcat
+          & fmap (repartirItem repartija)
+      consumos =
+        repartidos
+          & foldMap (.consumos)
+      montoSinReclamar =
+        repartidos
+          & foldMap (.montoSinDueño)
+      -- La propina y lo que nadie reclamó se reparten en proporción a lo que
+      -- consumió cada uno, así que los dos se ponderan igual.
+      -- Lo que ya consumió cada uno es el peso con el que entra en lo que
+      -- queda por repartir.
+      entreLosQueConsumieron monto =
+        consumos
+          & comoPorParticipante
           & fmap inMonto
-          & distribuirEntrePonderados extraARepartirPonerado
+          & Ponderaciones.desde
+          & Ponderaciones.filtrar (/= 0)
+          & distribuirEntrePonderados monto
           & filterNetos (/= 0)
-  in netos
-       & mconcat
-       & (<> deudasDelExtraPonderado)
+      propina = entreLosQueConsumieron repartija.extra
+      sobras =
+        case repartija.distribucionDeSobras of
+          SobrasNoDistribuir -> mempty
+          SobrasProporcional -> entreLosQueConsumieron montoSinReclamar
+  in DetalleRepartija
+       { porItem =
+           repartidos
+             & fmap
+               ( \repartido ->
+                   DetalleDeItem
+                     { itemId = repartido.item.id
+                     , consumos = repartido.consumos
+                     , montoSinReclamar = repartido.montoSinDueño
+                     }
+               )
+       , propina = propina
+       , sinReclamar =
+           DetalleSinReclamar
+             { cantidadDeItems =
+                 repartidos
+                   & filter (\repartido -> repartido.montoSinDueño > 0)
+                   & length
+             , montoTotal = montoSinReclamar
+             , porParticipante = sobras
+             }
+       , totales = consumos <> propina <> sobras
+       }
+
+-- | Cómo quedó repartido un item: cuánto le toca a cada uno de los que lo
+-- reclamaron y cuánta de su plata quedó sin dueño, que es lo que después se
+-- reparte —o no— según 'DistribucionDeSobras'.
+data ItemRepartido = ItemRepartido
+  { item :: RepartijaItem
+  , consumos :: Netos Monto
+  , montoSinDueño :: Monto
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Cómo se reparte un item entre los que lo reclamaron.
+repartirItem :: Repartija -> RepartijaItem -> ItemRepartido
+repartirItem repartija item =
+  let claims =
+        repartija.claims
+          & filter ((== item.id) . (.itemId))
+      tieneCantidad :: RepartijaClaim -> Bool
+      tieneCantidad = isJust . (.cantidad)
+      repartidoEntre consumos montoSinDueño =
+        ItemRepartido{item = item, consumos = consumos, montoSinDueño = montoSinDueño}
+  in if
+       -- Por cantidad. Las unidades que no reclamó nadie se le anotan a
+       -- 'nadie' para que entren en el reparto del monto y se puedan separar
+       -- después.
+       | all tieneCantidad claims ->
+           let unidadesReclamadas =
+                 claims
+                   & foldMap
+                     ( \claim ->
+                         Ponderaciones.ponderar claim.participante (fromMaybe (panic "tieneCantidad") claim.cantidad)
+                     )
+               unidadesSobrantes = item.cantidad - Ponderaciones.total unidadesReclamadas
+               (sinDueño, consumos) =
+                 unidadesReclamadas
+                   & (<> if unidadesSobrantes > 0 then Ponderaciones.ponderar nadie unidadesSobrantes else mempty)
+                   & fmap fromIntegral
+                   & distribuirEntrePonderados item.monto
+                   & extraerDeudor nadie
+           in repartidoEntre consumos sinDueño
+       -- En partes iguales entre los que participan: no queda nada sin dueño.
+       | not (any tieneCantidad claims) ->
+           claims
+             & foldMap
+               ( \claim ->
+                   Ponderaciones.ponderar claim.participante (maybe 1 fromIntegral claim.cantidad)
+               )
+             & distribuirEntrePonderados item.monto
+             & (\consumos -> repartidoEntre consumos 0)
+       -- Reclamado por cantidad y en partes iguales a la vez: así no define
+       -- ningún reparto, y el item no se le cobra a nadie.
+       | otherwise -> repartidoEntre mempty 0
 
 Elm.deriveBoth Elm.defaultOptions ''Transferencia
 
-Elm.deriveBoth Elm.defaultOptions ''Netos
 Elm.deriveBoth Elm.defaultOptions ''Parte
 Elm.deriveBoth Elm.defaultOptions ''DistribucionPartes
 Elm.deriveBoth Elm.defaultOptions ''TipoDistribucion

@@ -16,6 +16,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared.Model as Shared
 import Shared.Msg as Shared
+import Utils.Telemetry
 import Utils.Toasts
 import Utils.Toasts.Types exposing (ToastLevel(..), ToastMsg, Toasts)
 import View exposing (View)
@@ -145,7 +146,7 @@ update msg model =
             -- nada más.
             ( { model | feedbackOpen = False, feedbackText = "" }
             , Effect.batch
-                [ Effect.sendFeedback model.feedbackText
+                [ Effect.sendFeedback Utils.Telemetry.feedbackGeneral model.feedbackText
                 , Utils.Toasts.pushToast ToastSuccess "¡Gracias! Comentario enviado."
                 ]
             )

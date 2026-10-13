@@ -82,9 +82,9 @@ runBackendCon config telemetry = do
         void $
           installHandler
             sigTERM
-            (Catch $ do
-              runLogging telemetry $ logInfo "server.stopping" []
-              closeSocket
+            ( Catch $ do
+                runLogging telemetry $ logInfo "server.stopping" []
+                closeSocket
             )
             Nothing
   fetchedSettings <-

@@ -350,14 +350,25 @@ jsonEncResumenCongelado  val =
    (Json.Encode.list jsonEncTransferencia) val.transferencias
 
 
-type alias Netos a = (List (ParticipanteId, a))
+type alias PorParticipante a = (List (ParticipanteId, a))
+
+jsonDecPorParticipante : Json.Decode.Decoder a -> Json.Decode.Decoder ( PorParticipante a )
+jsonDecPorParticipante localDecoder_a =
+    Json.Decode.list (Json.Decode.map2 tuple2 (Json.Decode.index 0 (jsonDecParticipanteId)) (Json.Decode.index 1 (localDecoder_a)))
+
+jsonEncPorParticipante : (a -> Value) -> PorParticipante a -> Value
+jsonEncPorParticipante localEncoder_a val = (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(jsonEncParticipanteId) t1,(localEncoder_a) t2])) val
+
+
+
+type alias Netos a = (PorParticipante a)
 
 jsonDecNetos : Json.Decode.Decoder a -> Json.Decode.Decoder ( Netos a )
 jsonDecNetos localDecoder_a =
-    Json.Decode.list (Json.Decode.map2 tuple2 (Json.Decode.index 0 (jsonDecParticipanteId)) (Json.Decode.index 1 (localDecoder_a)))
+    jsonDecPorParticipante (localDecoder_a)
 
 jsonEncNetos : (a -> Value) -> Netos a -> Value
-jsonEncNetos localEncoder_a val = (Json.Encode.list (\(t1,t2) -> Json.Encode.list identity [(jsonEncParticipanteId) t1,(localEncoder_a) t2])) val
+jsonEncNetos localEncoder_a val = (jsonEncPorParticipante (localEncoder_a)) val
 
 
 
@@ -1043,14 +1054,16 @@ type alias RepartijaForFrontend  =
    { repartija: Repartija
    , pagoId: ULID
    , pagoNombre: String
+   , detalle: DetalleRepartija
    }
 
 jsonDecRepartijaForFrontend : Json.Decode.Decoder ( RepartijaForFrontend )
 jsonDecRepartijaForFrontend =
-   Json.Decode.succeed (\prepartija ppagoId ppagoNombre -> {repartija = prepartija, pagoId = ppagoId, pagoNombre = ppagoNombre})
+   Json.Decode.succeed (\prepartija ppagoId ppagoNombre pdetalle -> {repartija = prepartija, pagoId = ppagoId, pagoNombre = ppagoNombre, detalle = pdetalle})
    |> required "repartija" (jsonDecRepartija)
    |> required "pagoId" (jsonDecULID)
    |> required "pagoNombre" (Json.Decode.string)
+   |> required "detalle" (jsonDecDetalleRepartija)
 
 jsonEncRepartijaForFrontend : RepartijaForFrontend -> Value
 jsonEncRepartijaForFrontend  val =
@@ -1058,6 +1071,79 @@ jsonEncRepartijaForFrontend  val =
    [ ("repartija", jsonEncRepartija val.repartija)
    , ("pagoId", jsonEncULID val.pagoId)
    , ("pagoNombre", Json.Encode.string val.pagoNombre)
+   , ("detalle", jsonEncDetalleRepartija val.detalle)
+   ]
+
+
+
+type alias DetalleRepartija  =
+   { porItem: (List DetalleDeItem)
+   , propina: (Netos Monto)
+   , sinReclamar: DetalleSinReclamar
+   , totales: (Netos Monto)
+   }
+
+jsonDecDetalleRepartija : Json.Decode.Decoder ( DetalleRepartija )
+jsonDecDetalleRepartija =
+   Json.Decode.succeed (\pporItem ppropina psinReclamar ptotales -> {porItem = pporItem, propina = ppropina, sinReclamar = psinReclamar, totales = ptotales})
+   |> required "porItem" (Json.Decode.list (jsonDecDetalleDeItem))
+   |> required "propina" (jsonDecNetos (jsonDecMonto))
+   |> required "sinReclamar" (jsonDecDetalleSinReclamar)
+   |> required "totales" (jsonDecNetos (jsonDecMonto))
+
+jsonEncDetalleRepartija : DetalleRepartija -> Value
+jsonEncDetalleRepartija  val =
+   Json.Encode.object
+   [ ("porItem", (Json.Encode.list jsonEncDetalleDeItem) val.porItem)
+   , ("propina", (jsonEncNetos (jsonEncMonto)) val.propina)
+   , ("sinReclamar", jsonEncDetalleSinReclamar val.sinReclamar)
+   , ("totales", (jsonEncNetos (jsonEncMonto)) val.totales)
+   ]
+
+
+
+type alias DetalleDeItem  =
+   { itemId: ULID
+   , consumos: (Netos Monto)
+   , montoSinReclamar: Monto
+   }
+
+jsonDecDetalleDeItem : Json.Decode.Decoder ( DetalleDeItem )
+jsonDecDetalleDeItem =
+   Json.Decode.succeed (\pitemId pconsumos pmontoSinReclamar -> {itemId = pitemId, consumos = pconsumos, montoSinReclamar = pmontoSinReclamar})
+   |> required "itemId" (jsonDecULID)
+   |> required "consumos" (jsonDecNetos (jsonDecMonto))
+   |> required "montoSinReclamar" (jsonDecMonto)
+
+jsonEncDetalleDeItem : DetalleDeItem -> Value
+jsonEncDetalleDeItem  val =
+   Json.Encode.object
+   [ ("itemId", jsonEncULID val.itemId)
+   , ("consumos", (jsonEncNetos (jsonEncMonto)) val.consumos)
+   , ("montoSinReclamar", jsonEncMonto val.montoSinReclamar)
+   ]
+
+
+
+type alias DetalleSinReclamar  =
+   { cantidadDeItems: Int
+   , montoTotal: Monto
+   , porParticipante: (Netos Monto)
+   }
+
+jsonDecDetalleSinReclamar : Json.Decode.Decoder ( DetalleSinReclamar )
+jsonDecDetalleSinReclamar =
+   Json.Decode.succeed (\pcantidadDeItems pmontoTotal pporParticipante -> {cantidadDeItems = pcantidadDeItems, montoTotal = pmontoTotal, porParticipante = pporParticipante})
+   |> required "cantidadDeItems" (Json.Decode.int)
+   |> required "montoTotal" (jsonDecMonto)
+   |> required "porParticipante" (jsonDecNetos (jsonDecMonto))
+
+jsonEncDetalleSinReclamar : DetalleSinReclamar -> Value
+jsonEncDetalleSinReclamar  val =
+   Json.Encode.object
+   [ ("cantidadDeItems", Json.Encode.int val.cantidadDeItems)
+   , ("montoTotal", jsonEncMonto val.montoTotal)
+   , ("porParticipante", (jsonEncNetos (jsonEncMonto)) val.porParticipante)
    ]
 
 

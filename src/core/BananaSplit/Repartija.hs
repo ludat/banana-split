@@ -9,6 +9,7 @@ import Elm.Derive qualified as Elm
 import Protolude
 
 import BananaSplit.Monto (Monto)
+import BananaSplit.Netos (Netos)
 import BananaSplit.Participante (ParticipanteId)
 import BananaSplit.ULID (ULID)
 
@@ -48,6 +49,46 @@ data RepartijaForFrontend = RepartijaForFrontend
   { repartija :: Repartija
   , pagoId :: ULID
   , pagoNombre :: Text
+  , detalle :: DetalleRepartija
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Los números de una repartija ya calculados: cuánto consumió cada
+-- participante en cada item, cuánto le toca de la propina y de lo que nadie
+-- reclamó, y cuánto suma todo eso.
+--
+-- Los campos no se llaman como los de 'Repartija' —'porItem' y no 'items',
+-- 'montoTotal' y no 'monto'— porque un nombre repetido deja ambiguo cualquier
+-- record update de los otros tipos.
+--
+-- Viene con todos los participantes y no con uno solo porque el frontend deja
+-- cambiar de quién sos sin volver a pedir la repartija. Lo calcula
+-- 'BananaSplit.Deudas.detalleRepartija', que es de donde salen también los
+-- netos que se le cobran a cada uno: el frontend muestra estos números en vez
+-- de rehacer la cuenta por su cuenta.
+data DetalleRepartija = DetalleRepartija
+  { porItem :: [DetalleDeItem]
+  , propina :: Netos Monto
+  , sinReclamar :: DetalleSinReclamar
+  , totales :: Netos Monto
+  }
+  deriving (Show, Eq, Generic)
+
+data DetalleDeItem = DetalleDeItem
+  { itemId :: ULID
+  , consumos :: Netos Monto
+  , montoSinReclamar :: Monto
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Lo que quedó sin dueño: los items que nadie reclamó y las unidades que
+-- faltan reclamar en los que se reparten por cantidad. Según
+-- 'DistribucionDeSobras' eso se reparte entre los que sí reclamaron algo
+-- ('porParticipante') o no se le cobra a nadie, y ahí viene vacío.
+data DetalleSinReclamar = DetalleSinReclamar
+  { cantidadDeItems :: Int
+  , montoTotal :: Monto
+  , porParticipante :: Netos Monto
   }
   deriving (Show, Eq, Generic)
 
@@ -57,6 +98,9 @@ data DistribucionDeSobras
   deriving (Show, Eq, Generic)
 
 Elm.deriveBoth Elm.defaultOptions ''DistribucionDeSobras
+Elm.deriveBoth Elm.defaultOptions ''DetalleDeItem
+Elm.deriveBoth Elm.defaultOptions ''DetalleSinReclamar
+Elm.deriveBoth Elm.defaultOptions ''DetalleRepartija
 Elm.deriveBoth Elm.defaultOptions ''RepartijaItem
 Elm.deriveBoth Elm.defaultOptions ''RepartijaClaim
 Elm.deriveBoth Elm.defaultOptions ''ShallowRepartija
