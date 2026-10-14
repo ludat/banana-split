@@ -27,5 +27,6 @@ type alias Model =
     , timezoneName : String
     , timezoneOffset : Int
     , lastReadChangelog : Maybe Date
+    , repartijaIntroDismissed : Bool
     , origin : String
     }

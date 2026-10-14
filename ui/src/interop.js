@@ -74,6 +74,7 @@ export const flags = ({ env }) => {
     offset: - now.getTimezoneOffset(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     lastReadChangelog: lastReadRaw ? parseInt(lastReadRaw, 10) : null,
+    repartijaIntroDismissed: localStorage.getItem("banana-split:repartijaIntroDismissed") !== null,
     origin: window.location.origin,
   };
 };
@@ -125,6 +126,11 @@ export const onReady = ({ app, env }) => {
           localStorage.setItem("banana-split:lastReadChangelog", new Date().getTime().toString());
           break;
 
+        case "SAVE_REPARTIJA_INTRO_DISMISSED":
+          // data: null
+          localStorage.setItem("banana-split:repartijaIntroDismissed", "true");
+          break;
+
         case "SHARE":
           // data: { title: string, url: string }
           {
@@ -162,12 +168,12 @@ export const onReady = ({ app, env }) => {
           break;
 
         case "SEND_FEEDBACK":
-          // data: { message: string }
+          // data: { message: string, name: string, attributes: { [k: string]: string } }
           // El único texto libre que sale del browser, y porque la persona lo
           // escribió y apretó un botón. Ver js/telemetry.js.
           app.ports.incoming.send({
             tag: "FEEDBACK_SENT",
-            data: { accepted: recordFeedback(data.message) },
+            data: { accepted: recordFeedback(data.message, data.name, data.attributes) },
           });
           break;
 

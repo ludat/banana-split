@@ -293,7 +293,7 @@ const FEEDBACK_MAX_LENGTH = 2000;
 let appLogger = null;
 let logProvider = null;
 
-export function recordFeedback(message) {
+export function recordFeedback(message, name = "feedback", attributes = {}) {
   if (!appLogger) return false;
   if (typeof message !== "string") return false;
 
@@ -305,7 +305,8 @@ export function recordFeedback(message) {
     severityText: "INFO",
     body: text.slice(0, FEEDBACK_MAX_LENGTH),
     attributes: {
-      "event.name": "app.feedback",
+      ...attributes,
+      "event.name": `app.${name}`,
       ...contextAttributes(),
     },
   });

@@ -1,4 +1,4 @@
-module Utils.Telemetry exposing (Severity, TelemetryEvent, codigoDeLoginRechazado, gastoEdicionAbandonada, severityToString, trackDecodeErrors)
+module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, codigoDeLoginRechazado, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaFiltro, repartijaModoDeVista, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, severityToString, trackDecodeErrors)
 
 import Http
 import Json.Encode as Json exposing (Value)
@@ -77,6 +77,112 @@ gastoEdicionAbandonada { esNuevo, seccion } =
                         DeudoresSection ->
                             "deudores"
               )
+            ]
+        }
+
+
+{-| De qué es un comentario escrito por la persona (`Effect.sendFeedback`): el
+texto va en el body y esto en el nombre del evento y los atributos.
+-}
+type alias Feedback =
+    { name : String
+    , attributes : List ( String, Value )
+    }
+
+
+{-| El comentario libre del menú, que no es sobre nada en particular.
+-}
+feedbackGeneral : Feedback
+feedbackGeneral =
+    { name = "feedback"
+    , attributes = []
+    }
+
+
+{-| Qué le pareció el rediseño de la repartija comparado con la pantalla
+anterior. La opinión es una de "mejor", "igual" o "peor": sin texto libre, que
+va aparte en `repartijaRedisenoComentario` y solo si la persona escribe uno.
+-}
+repartijaRediseno : String -> Maybe TelemetryEvent
+repartijaRediseno opinion =
+    Just
+        { name = "repartija.redesign_feedback"
+        , severity = Info
+        , attributes =
+            [ ( "app.feedback.opinion", Json.string opinion ) ]
+        }
+
+
+{-| El por qué de una opinión sobre el rediseño. Lleva la misma opinión como
+atributo que `repartijaRediseno`, así los comentarios se pueden agrupar por
+respuesta.
+-}
+repartijaRedisenoComentario : String -> Feedback
+repartijaRedisenoComentario opinion =
+    { name = "repartija.redesign_feedback.comment"
+    , attributes =
+        [ ( "app.feedback.opinion", Json.string opinion ) ]
+    }
+
+
+{-| Qué tanto se usa el modo avanzado de la repartija. Va también cuando se
+vuelve al simple, con el modo que quedó de atributo, así se puede ver cuántos lo
+prenden y lo apagan enseguida.
+-}
+repartijaModoDeVista : Bool -> Maybe TelemetryEvent
+repartijaModoDeVista avanzado =
+    Just
+        { name = "repartija.view_mode"
+        , severity = Info
+        , attributes =
+            [ ( "app.repartija.modo"
+              , Json.string <|
+                    if avanzado then
+                        "avanzado"
+
+                    else
+                        "simple"
+              )
+            ]
+        }
+
+
+repartijaFiltro : { filtro : String, activo : Bool } -> Maybe TelemetryEvent
+repartijaFiltro { filtro, activo } =
+    Just
+        { name = "repartija.filter_toggled"
+        , severity = Info
+        , attributes =
+            [ ( "app.repartija.filtro", Json.string filtro )
+            , ( "app.repartija.activo", Json.bool activo )
+            ]
+        }
+
+
+{-| Que alguien abrió la lista de quiénes ya reclamaron. Cerrarla no se cuenta:
+lo que se quiere saber es cuántos la necesitan.
+-}
+repartijaParticipantesExpandidos : Bool -> Maybe TelemetryEvent
+repartijaParticipantesExpandidos expandido =
+    if expandido then
+        Just
+            { name = "repartija.participants_expanded"
+            , severity = Info
+            , attributes = []
+            }
+
+    else
+        Nothing
+
+
+repartijaAyudaAbierta : { ayuda : String, origen : String } -> Maybe TelemetryEvent
+repartijaAyudaAbierta { ayuda, origen } =
+    Just
+        { name = "repartija.help_opened"
+        , severity = Info
+        , attributes =
+            [ ( "app.repartija.ayuda", Json.string ayuda )
+            , ( "app.repartija.origen", Json.string origen )
             ]
         }
 

@@ -89,6 +89,7 @@ import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..))
 import BananaSplit.Persistence.ResumenGuardado qualified as ResumenGuardado
 import BananaSplit.Persistence.Schema
 import BananaSplit.PgRoll qualified as PgRoll
+import BananaSplit.PorParticipante qualified as PorParticipante
 import BananaSplit.Telemetry qualified as Telemetry
 import BananaSplit.ULID (ULID, nullUlid)
 import BananaSplit.ULID qualified as ULID
@@ -400,13 +401,14 @@ contarGastos grupoId = do
 
 escribirPagadoYConsumido :: ULID -> M.Pago -> M.ResumenGasto -> Pg ()
 escribirPagadoYConsumido grupoId pago resumen = do
-  let M.Netos pagado = resumen.pagado
-      M.Netos consumido = resumen.consumido
+  let pagado = M.comoPorParticipante resumen.pagado
+      consumido = M.comoPorParticipante resumen.consumido
+      montoDe participante = fromMaybe 0 . PorParticipante.buscar participante
       filas
         | not (M.resumenGastoEsValido resumen) = []
         | otherwise =
-            Map.union pagado consumido
-              & Map.keys
+            PorParticipante.combinarCon const pagado consumido
+              & PorParticipante.participantes
               & fmap
                 ( \participante ->
                     PagadoYConsumidoEnGasto
@@ -415,9 +417,9 @@ escribirPagadoYConsumido grupoId pago resumen = do
                       , grupo = GrupoId grupoId
                       , moneda = pago.moneda
                       , pagado_en_unidades_minimas =
-                          aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante pagado
+                          aUnidadesMinimas pago.moneda $ montoDe participante pagado
                       , consumido_en_unidades_minimas =
-                          aUnidadesMinimas pago.moneda $ Map.findWithDefault 0 participante consumido
+                          aUnidadesMinimas pago.moneda $ montoDe participante consumido
                       }
                 )
 
@@ -1115,28 +1117,24 @@ fetchRepartija unRepartijaId = do
   claims <- claimsDeItems (fmap (RepartijaItemId . (.repartijaitemId)) items)
 
   pure
-    $ M.RepartijaForFrontend
-      { repartija =
-          M.Repartija
-            { id = repartija.id
-            , nombre = pagoNombre
-            , extra = desdeUnidadesMinimas moneda repartija.extra_en_unidades_minimas
-            , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
-            , claims = claims
-            , items =
-                items
-                  & fmap
-                    ( \dbItem ->
-                        M.RepartijaItem
-                          { M.id = dbItem.repartijaitemId
-                          , M.nombre = dbItem.repartijaitemNombre
-                          , M.monto = desdeUnidadesMinimas moneda dbItem.repartijaitemMontoEnUnidadesMinimas
-                          , M.cantidad = fromIntegral dbItem.repartijaitemCantidad
-                          }
-                    )
-            }
-      , pagoId = pagoId
-      , pagoNombre = pagoNombre
+    $ M.repartijaForFrontend pagoId pagoNombre
+    $ M.Repartija
+      { id = repartija.id
+      , nombre = pagoNombre
+      , extra = desdeUnidadesMinimas moneda repartija.extra_en_unidades_minimas
+      , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
+      , claims = claims
+      , items =
+          items
+            & fmap
+              ( \dbItem ->
+                  M.RepartijaItem
+                    { M.id = dbItem.repartijaitemId
+                    , M.nombre = dbItem.repartijaitemNombre
+                    , M.monto = desdeUnidadesMinimas moneda dbItem.repartijaitemMontoEnUnidadesMinimas
+                    , M.cantidad = fromIntegral dbItem.repartijaitemCantidad
+                    }
+              )
       }
 
 claimDesdeFila :: RepartijaClaim -> M.RepartijaClaim
@@ -1187,12 +1185,7 @@ saveRepartijaClaim repartijaId repartijaClaim = do
       case repartijaDePago repartijaId pago of
         Nothing -> fetchRepartija repartijaId
         Just repartija ->
-          pure
-            $ M.RepartijaForFrontend
-              { repartija = repartija
-              , pagoId = pago.pagoId
-              , pagoNombre = pago.nombre
-              }
+          pure $ M.repartijaForFrontend pago.pagoId pago.nombre repartija
 
 -- | La repartija de un gasto, buscándola en las dos distribuciones (puede estar
 -- tanto del lado de los pagadores como del de los deudores).
