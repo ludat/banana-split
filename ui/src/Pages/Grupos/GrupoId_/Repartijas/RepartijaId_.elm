@@ -995,6 +995,12 @@ viewItemCard model userId detalle repartija item =
                 Nothing ->
                     NoOp
 
+        botonesDeCantidad =
+            div [ class "d-flex flex-nowrap gap-2" ]
+                [ botonDeCantidad "bi-plus-circle" 1 True
+                , botonDeCantidad "bi-dash-circle" -1 tieneCantidad
+                ]
+
         -- Los botones salen del reparto que ya tiene el item: solo se elige
         -- cómo repartirlo cuando todavía no lo tocó nadie.
         botones =
@@ -1003,9 +1009,7 @@ viewItemCard model userId detalle repartija item =
                     [ boton "btn-primary" [ text "Repartir" ] (OpenRepartirModal item) True ]
 
                 RepartidoExactamente _ ->
-                    [ botonDeCantidad "bi-plus-circle" 1 True
-                    , botonDeCantidad "bi-dash-circle" -1 tieneCantidad
-                    ]
+                    [ botonesDeCantidad ]
 
                 RepartidoEquitativamenteEntre _ ->
                     if participaEquitativo then
@@ -1015,8 +1019,7 @@ viewItemCard model userId detalle repartija item =
                         [ boton "btn-primary" [ text "Participar" ] (JoinCurrentClaim item) True ]
 
                 RepartidoIncorrectamente ->
-                    [ botonDeCantidad "bi-plus-circle" 1 True
-                    , botonDeCantidad "bi-dash-circle" -1 tieneCantidad
+                    [ botonesDeCantidad
                     , if participaEquitativo then
                         boton "btn-secondary" [ text "Salirse" ] salirse True
 
@@ -1097,8 +1100,6 @@ viewItemCard model userId detalle repartija item =
                       else
                         []
 
-                    -- Apilados en mobile, donde no entran de a dos al lado de
-                    -- la columna de texto.
                     , [ div
                             [ class "ms-auto d-flex flex-column flex-sm-row flex-wrap align-items-end justify-content-end gap-2" ]
                             botones
