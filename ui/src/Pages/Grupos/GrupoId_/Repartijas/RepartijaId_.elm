@@ -1052,25 +1052,15 @@ viewItemCard model userId detalle repartija item =
                         ]
     in
     div [ class "card mb-3" ]
-        [ div [ class "card-header d-flex flex-wrap align-items-center justify-content-between gap-2" ]
-            -- El estado del reparto va al lado del nombre, y cuando no entra al
-            -- lado se baja solo debajo de él.
-            (div [ class "d-flex flex-wrap align-items-center gap-2" ]
+        [ div [ class "card-header" ]
+            [ div [ class "d-flex flex-wrap align-items-center gap-2" ]
                 (h6 [ class "fs-5 mb-0" ] [ text item.nombre ] :: badgesDeItem estado)
-                :: (if model.modoAvanzado then
-                        [ div [ class "text-nowrap" ]
-                            [ strong [] [ text "Cantidad: " ]
-                            , text (String.fromInt item.cantidad)
-                            , span [ class "text-body-tertiary mx-2" ] [ text "|" ]
-                            , strong [] [ text "Total: " ]
-                            , text ("$ " ++ Monto.toString item.monto)
-                            ]
-                        ]
-
-                    else
-                        []
-                   )
-            )
+            , div [ class "small text-body-secondary" ]
+                [ text (unidades item.cantidad)
+                , span [ class "mx-2" ] [ text "·" ]
+                , text ("$ " ++ Monto.toString item.monto)
+                ]
+            ]
         , div [ class "card-body" ]
             [ div [ class "d-flex flex-wrap align-items-start gap-3" ]
                 (List.concat
