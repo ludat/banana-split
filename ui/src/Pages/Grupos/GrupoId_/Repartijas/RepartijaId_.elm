@@ -1099,7 +1099,6 @@ viewItemCard model userId detalle repartija item =
 
                       else
                         []
-
                     , [ div
                             [ class "ms-auto d-flex flex-column flex-sm-row flex-wrap align-items-end justify-content-end gap-2" ]
                             botones
