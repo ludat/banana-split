@@ -428,7 +428,7 @@ acción, así que no entra como un caso más acá adentro.
 
 -}
 type AccionDelBreadcrumb
-    = Volver Crumb
+    = Volver (List Crumb)
     | InvitarASesion PagoDetalleModal.Ruta
 
 
@@ -470,9 +470,10 @@ headerInfo currentPath store currentUser grupo =
         volverAlGrupo =
             Just <|
                 Volver
-                    { label = "Grupo: " ++ grupo.nombre
-                    , ruta = sinQuery (Path.Grupos_Id_ { id = grupo.id })
-                    }
+                    [ { label = "Grupo: " ++ grupo.nombre
+                      , ruta = sinQuery (Path.Grupos_Id_ { id = grupo.id })
+                      }
+                    ]
 
         grupoShare =
             { title = grupo.nombre, path = Path.Grupos_Id_ { id = grupo.id } }
@@ -532,12 +533,16 @@ headerInfo currentPath store currentUser grupo =
                     |> Maybe.map
                         (\r ->
                             Volver
-                                { label = "Gasto: " ++ pagoNombre
-                                , ruta =
-                                    PagoDetalleModal.rutaGasto
-                                        (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
-                                        r.pagoId
-                                }
+                                [ { label = "Gastos:"
+                                  , ruta = sinQuery (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+                                  }
+                                , { label = pagoNombre
+                                  , ruta =
+                                        PagoDetalleModal.rutaGasto
+                                            (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+                                            r.pagoId
+                                  }
+                                ]
                         )
             , title = "Repartija"
             , showTabs = False
@@ -592,7 +597,7 @@ headerInfo currentPath store currentUser grupo =
             { breadcrumb =
                 case currentUser of
                     Success _ ->
-                        Just <| Volver { label = "Tus grupos", ruta = sinQuery Path.Home_ }
+                        Just <| Volver [ { label = "Tus grupos", ruta = sinQuery Path.Home_ } ]
 
                     Failure _ ->
                         Just <| InvitarASesion (rutaDeLogin currentPath)
@@ -637,8 +642,9 @@ headerInfo currentPath store currentUser grupo =
 
 
 {-| La vuelta a la entidad de la que colgás, con forma de "‹ Grupo: Salidita de
-Jueves". No es un camino desde la raíz sino un solo salto para atrás, así que se
-pinta como un link y no como una lista de migajas.
+Jueves". No es un camino desde la raíz sino un solo salto para atrás; cuando
+tiene más de un crumb (la sección y la entidad, "‹ Gastos: Cena") cada parte es
+su propio link.
 
 La invitación a tener cuenta ocupa el mismo lugar pero no lleva el "‹": no te
 devuelve a ningún lado, te ofrece algo.
@@ -653,16 +659,28 @@ viewBreadcrumb accion =
         Nothing ->
             text ""
 
-        Just (Volver crumbDeVuelta) ->
-            Html.nav [ Attr.attribute "aria-label" "breadcrumb", class "mb-1" ]
-                [ Html.a
-                    [ Route.href crumbDeVuelta.ruta
-                    , class "text-decoration-none d-inline-flex align-items-center gap-1"
-                    ]
-                    [ Html.span [ Attr.attribute "aria-hidden" "true" ] [ text "‹" ]
-                    , Html.span [] [ text crumbDeVuelta.label ]
-                    ]
-                ]
+        -- Cada crumb es su propio link: en "‹ Gastos: Cena" la sección lleva a
+        -- la lista y el nombre a ese gasto dentro de ella. El "‹" va una sola
+        -- vez, adentro del primer link.
+        Just (Volver crumbs) ->
+            Html.nav [ Attr.attribute "aria-label" "breadcrumb", class "mb-1 d-flex align-items-center gap-1" ]
+                (List.indexedMap
+                    (\indice crumb ->
+                        Html.a
+                            [ Route.href crumb.ruta
+                            , class "text-decoration-none d-inline-flex align-items-center gap-1"
+                            ]
+                            (if indice == 0 then
+                                [ Html.span [ Attr.attribute "aria-hidden" "true" ] [ text "‹" ]
+                                , Html.span [] [ text crumb.label ]
+                                ]
+
+                             else
+                                [ text crumb.label ]
+                            )
+                    )
+                    crumbs
+                )
 
         Just (InvitarASesion rutaLogin) ->
             div [ class "mb-1" ]
