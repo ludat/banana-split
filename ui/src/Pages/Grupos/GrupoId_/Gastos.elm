@@ -24,7 +24,7 @@ page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
         { init = \() -> init route shared.store
-        , update = \_ model -> ( model, Effect.none )
+        , update = update
         , subscriptions = subscriptions
         , view = view (Shared.currentParticipante shared route.params.grupoId) shared.store
         }
@@ -36,8 +36,15 @@ type alias Model =
     }
 
 
-type alias Msg =
-    ()
+type Msg
+    = AbrirPopup PagoDetalleModal.Ruta
+
+
+update : Msg -> Model -> ( Model, Effect Msg )
+update msg model =
+    case msg of
+        AbrirPopup ruta ->
+            ( model, Effect.replaceRoute ruta )
 
 
 init : Route { grupoId : String } -> Store -> ( Model, Effect Msg )
@@ -101,7 +108,7 @@ viewPagos participanteId store model grupo =
                 Bs.alert Bs.AlertInfo
                     []
                     [ text "Todavía no hay gastos registrados. "
-                    , a [ PagoDetalleModal.hrefNuevoGasto <| Path.Grupos_GrupoId__Gastos { grupoId = grupo.id } ]
+                    , a (PagoDetalleModal.linkANuevoGasto AbrirPopup <| Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
                         [ text "¡Agregá el primer gasto para empezar a dividir!" ]
                     ]
 
@@ -123,9 +130,9 @@ viewPago participanteId grupoId monedaPorDefecto pago =
     Bs.listGroupItem
         [ class "list-group-item-action p-0" ]
         [ a
-            [ class "d-flex align-items-center gap-3 px-3 py-2 text-reset text-decoration-none"
-            , PagoDetalleModal.hrefPago (Path.Grupos_GrupoId__Gastos { grupoId = grupoId }) pago.pagoId
-            ]
+            (class "d-flex align-items-center gap-3 px-3 py-2 text-reset text-decoration-none"
+                :: PagoDetalleModal.linkAGasto AbrirPopup (Path.Grupos_GrupoId__Gastos { grupoId = grupoId }) pago.pagoId
+            )
             [ div
                 [ class "text-center border rounded px-2 py-1 flex-shrink-0"
                 , style "min-width" "2.5rem"

@@ -75,6 +75,7 @@ type Msg
     | OpenQrShare { title : String, url : String }
     | CloseQrShare
     | PagoModalMsg PagoDetalleModal.Msg
+    | AbrirPopup PagoDetalleModal.Ruta
 
 
 update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
@@ -86,6 +87,9 @@ update ctx store msg model =
                     PagoDetalleModal.update ctx store subMsg model.pagoModal
             in
             ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
+
+        AbrirPopup ruta ->
+            ( model, Effect.replaceRoute ruta )
 
         ForwardSharedMessage sharedMsg ->
             ( model
@@ -246,9 +250,9 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                         -- está mirando un gasto puntual, no cargando gastos.
                         , if info.showTabs then
                             a
-                                [ class "btn btn-primary d-inline-flex align-items-center"
-                                , PagoDetalleModal.hrefNuevoGasto currentPath
-                                ]
+                                (class "btn btn-primary d-inline-flex align-items-center"
+                                    :: PagoDetalleModal.linkANuevoGasto AbrirPopup currentPath
+                                )
                                 [ i [ class "bi bi-plus-lg me-1" ] []
                                 , text "Agregar gasto"
                                 ]
@@ -759,9 +763,7 @@ viewBottomNav currentPath share grupo =
         [ item "bi-house-door" "Resumen" (Path.Grupos_Id_ { id = grupo.id })
         , item "bi-card-list" "Gastos" (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
         , a
-            [ Css.navbar_item
-            , PagoDetalleModal.hrefNuevoGasto currentPath
-            ]
+            (Css.navbar_item :: PagoDetalleModal.linkANuevoGasto AbrirPopup currentPath)
             [ Html.span [ Css.navbar_big_button ]
                 [ i [ class "bi bi-plus-lg" ] [] ]
             , Html.span [] [ text "Ingresar gasto" ]

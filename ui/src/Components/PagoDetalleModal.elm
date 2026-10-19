@@ -1,4 +1,4 @@
-module Components.PagoDetalleModal exposing (Context, Edicion, Model, Msg, Overlay, ReceiptReadingState, Ruta, context, hrefNuevoGasto, hrefPago, init, onUrlChanged, rutaGasto, rutaNuevoGasto, update, view)
+module Components.PagoDetalleModal exposing (Context, Edicion, Model, Msg, Overlay, ReceiptReadingState, Ruta, context, init, linkAGasto, linkANuevoGasto, onUrlChanged, rutaGasto, rutaNuevoGasto, update, view)
 
 {-| El popup de un gasto: muestra su detalle y, cuando se edita o se crea uno,
 el formulario completo en su lugar.
@@ -12,6 +12,13 @@ de gráficos. Acá es todo una sola máquina de estados.
 Como el popup ya es un modal de Bootstrap, nada de lo que abre por encima puede
 ser otro (no se anidan): los gráficos en grande y el selector de participantes
 de mobile son overlays propios.
+
+Lo que el popup muestra está en la URL (`?gasto=`), así se puede compartir y
+sobrevive a una recarga, pero abrirlo y cerrarlo **reemplaza** la entrada del
+historial en vez de agregar una: el popup no es una página, y "atrás" tiene que
+llevar a la página anterior, no ir deshaciendo cada gasto que se miró. El botón
+atrás de mobile igual lo cierra, pero por otro lado: es un pedido de cierre
+(`PedidoDeCierre`, ver `viewCloseWatcher`), que no toca el historial.
 
 -}
 
@@ -139,7 +146,7 @@ queryGastoNuevo =
     "nuevo"
 
 
-{-| Una ruta con su query, como la quieren `Route.href` y `Effect.pushRoute`.
+{-| Una ruta con su query, como la quieren `Route.href` y `Effect.replaceRoute`.
 -}
 type alias Ruta =
     { path : Path.Path, query : Dict String String, hash : Maybe String }
@@ -155,11 +162,6 @@ rutaGasto path pagoId =
 rutaNuevoGasto : Path.Path -> Ruta
 rutaNuevoGasto path =
     rutaDelPopup path (Just queryGastoNuevo)
-
-
-hrefNuevoGasto : Path.Path -> Html.Attribute msg
-hrefNuevoGasto desde =
-    Route.href (rutaNuevoGasto desde)
 
 
 onUrlChanged : { from : Route (), to : Route () } -> Msg
@@ -210,7 +212,36 @@ a un detalle intermedio que nadie pidió ver.
 -}
 salirDeLaEdicion : Context -> Model -> ( Model, Effect Msg )
 salirDeLaEdicion ctx model =
+    cerrarPopup ctx model
+
+
+cerrarPopup : Context -> Model -> ( Model, Effect Msg )
+cerrarPopup ctx model =
     ( cerrado model, syncUrl ctx.path Nothing )
+
+
+{-| La X de la edición: con cambios sin guardar pregunta antes de descartarlos,
+sin cambios sale directo.
+-}
+pedirDescartarEdicion : Context -> Model -> ( Model, Effect Msg )
+pedirDescartarEdicion ctx model =
+    case model.edicion of
+        Just edicion ->
+            if edicion.hasUnsavedChanges then
+                ( { model | confirmingDiscard = True }, Effect.none )
+
+            else
+                salirDeLaEdicion ctx model
+
+        Nothing ->
+            -- Todavía no se armó el formulario del gasto nuevo: no hay nada
+            -- que descartar, se cierra y listo.
+            ( cerrado model
+            , Effect.batch
+                [ syncUrl ctx.path Nothing
+                , Effect.setUnsavedChangesWarning False
+                ]
+            )
 
 
 {-| Arma el formulario sobre el gasto dado, o vacío si es uno nuevo.
@@ -266,11 +297,10 @@ hayCambiosSinGuardar model =
             False
 
 
-{-| El botón atrás del navegador saca el `?gasto=` de la URL y con eso cerraría
-la edición sin preguntar. Como la navegación ya pasó, la única forma de
-frenarla es volver a poner la URL del gasto y mostrar la misma confirmación que
-la X. Cada "atrás" agrega una entrada al historial, así que después de
-descartar puede hacer falta más de un "atrás" para salir de la lista.
+{-| Si la URL pierde el `?gasto=` por fuera del popup —un "atrás" que el
+`CloseWatcher` no atajó, como el gesto de iOS— la edición se cerraría sin
+preguntar. Como la navegación ya pasó, la única forma de frenarla es volver a
+poner el gasto en la URL y mostrar la misma confirmación que la X.
 -}
 volverAlGastoEnEdicion : Context -> Model -> ( Model, Effect Msg )
 volverAlGastoEnEdicion ctx model =
@@ -311,23 +341,54 @@ waitForPago =
     Effect.sendCmd <| Task.perform (\_ -> CheckPagoPresent) (Process.sleep 100)
 
 
-{-| Link a un gasto: la misma URL que el popup deja en la barra (`?gasto=`), así
-ctrl+click, el botón del medio y "abrir en otra pestaña" funcionan solos.
-
-No hace falta manejar el click: el link navega (sin recargar, como cualquier
-link interno) y el popup se abre desde `onUrlChanged`. Manejarlo además por
-nuestra cuenta dejaba dos entradas en el historial por cada gasto abierto,
-porque Elm intercepta el click igual aunque le hagamos `preventDefault`.
-
+{-| Link que abre el popup en un gasto. `abrir` es el mensaje de quien lo
+dibuja, que tiene que responderlo con `Effect.replaceRoute`: el popup se abre
+desde `onUrlChanged`, como cuando se entra por un link compartido.
 -}
-hrefPago : Path.Path -> ULID -> Html.Attribute msg
-hrefPago path pagoId =
-    Route.href (rutaGasto path pagoId)
+linkAGasto : (Ruta -> msg) -> Path.Path -> ULID -> List (Html.Attribute msg)
+linkAGasto abrir path pagoId =
+    linkAlPopup abrir (rutaGasto path pagoId)
+
+
+linkANuevoGasto : (Ruta -> msg) -> Path.Path -> List (Html.Attribute msg)
+linkANuevoGasto abrir desde =
+    linkAlPopup abrir (rutaNuevoGasto desde)
+
+
+linkAlPopup : (Ruta -> msg) -> Ruta -> List (Html.Attribute msg)
+linkAlPopup abrir ruta =
+    [ Route.href ruta
+    , target "_self"
+    , Html.Events.preventDefaultOn "click"
+        (clickSinModificadores |> Decode.map (\_ -> ( abrir ruta, True )))
+    ]
+
+
+{-| Falla con cualquier tecla modificadora o un botón que no sea el principal,
+así esos clicks siguen siendo del browser.
+-}
+clickSinModificadores : Decode.Decoder ()
+clickSinModificadores =
+    Decode.map5
+        (\ctrl meta shift alt boton -> not (ctrl || meta || shift || alt) && boton == 0)
+        (Decode.field "ctrlKey" Decode.bool)
+        (Decode.field "metaKey" Decode.bool)
+        (Decode.field "shiftKey" Decode.bool)
+        (Decode.field "altKey" Decode.bool)
+        (Decode.field "button" Decode.int)
+        |> Decode.andThen
+            (\esSimple ->
+                if esSimple then
+                    Decode.succeed ()
+
+                else
+                    Decode.fail "click con modificadores"
+            )
 
 
 {-| La ruta de una página con el popup abierto en lo que diga el parámetro (un
 id de gasto o `nuevo`), o cerrado si no hay ninguno. Es el único lugar donde se
-arma el `?gasto=`, así los links y los `pushRoute` no se pueden desincronizar.
+arma el `?gasto=`, así los links y los `replaceRoute` no se pueden desincronizar.
 -}
 rutaDelPopup : Path.Path -> Maybe String -> Ruta
 rutaDelPopup path param =
@@ -342,7 +403,7 @@ rutaDelPopup path param =
 
 syncUrl : Path.Path -> Maybe String -> Effect Msg
 syncUrl path param =
-    Effect.pushRoute (rutaDelPopup path param)
+    Effect.replaceRoute (rutaDelPopup path param)
 
 
 
@@ -352,6 +413,7 @@ syncUrl path param =
 type Msg
     = NoOp
     | Close
+    | PedidoDeCierre
     | QueryChanged (Maybe ULID)
     | CheckPagoPresent
     | ResumenFetched (Result Http.Error ResumenPago)
@@ -412,7 +474,34 @@ updateInterno ctx store msg model =
             ( model, Effect.none )
 
         Close ->
-            ( cerrado model, syncUrl ctx.path Nothing )
+            cerrarPopup ctx model
+
+        PedidoDeCierre ->
+            -- El "atrás" de mobile o Escape: cierra lo de más arriba, igual
+            -- que su X o su "cancelar", así la edición pregunta antes de
+            -- descartar.
+            if model.confirmingDiscard then
+                ( { model | confirmingDiscard = False }, Effect.none )
+
+            else if model.activeOverlay /= Nothing then
+                ( { model | activeOverlay = Nothing }, Effect.none )
+
+            else if model.confirmingDelete then
+                ( { model | confirmingDelete = False }, Effect.none )
+
+            else
+                case model.edicion of
+                    Just edicion ->
+                        if edicion.selectorAbierto /= Nothing then
+                            ( { model | edicion = Just { edicion | selectorAbierto = Nothing } }
+                            , Effect.none
+                            )
+
+                        else
+                            pedirDescartarEdicion ctx model
+
+                    Nothing ->
+                        cerrarPopup ctx model
 
         QueryChanged maybePagoId ->
             case maybePagoId of
@@ -615,23 +704,7 @@ updateInterno ctx store msg model =
             enElFormulario ctx store msg model
 
         AskDiscardEdit ->
-            case model.edicion of
-                Just edicion ->
-                    if edicion.hasUnsavedChanges then
-                        ( { model | confirmingDiscard = True }, Effect.none )
-
-                    else
-                        salirDeLaEdicion ctx model
-
-                Nothing ->
-                    -- Todavía no se armó el formulario del gasto nuevo: no hay
-                    -- nada que descartar, se cierra y listo.
-                    ( cerrado model
-                    , Effect.batch
-                        [ syncUrl ctx.path Nothing
-                        , Effect.setUnsavedChangesWarning False
-                        ]
-                    )
+            pedirDescartarEdicion ctx model
 
         CancelDiscardEdit ->
             ( { model | confirmingDiscard = False }, Effect.none )
@@ -734,7 +807,24 @@ view store grupo model =
             , div [ class "modal-backdrop show" ] []
             , overlays
             , viewDescartarOverlay model
+            , viewCloseWatcher
             ]
+
+
+{-| Mientras el popup está abierto, el botón atrás de mobile (y Escape en
+desktop) no navega: llega como `PedidoDeCierre`, sin tocar el historial. Es la
+[CloseWatcher API][cw], que envuelve el elemento `<close-watcher>` de
+`interop.js`; qué cerrar lo decide `update`.
+
+Donde no hay `CloseWatcher` (Safari, browsers viejos) el elemento no hace nada
+y "atrás" navega como en cualquier página.
+
+[cw]: https://developer.mozilla.org/en-US/docs/Web/API/CloseWatcher
+
+-}
+viewCloseWatcher : Html Msg
+viewCloseWatcher =
+    Html.node "close-watcher" [ on "close" (Decode.succeed PedidoDeCierre) ] []
 
 
 {-| Los `Form` guardan funciones adentro, así que el modelo de la edición no se

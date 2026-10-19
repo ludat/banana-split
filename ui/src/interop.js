@@ -79,6 +79,39 @@ export const flags = ({ env }) => {
   };
 };
 
+// Mientras está en la página, cada pedido de cierre (el botón atrás de
+// Android, Escape en desktop) se convierte en un evento `close` sobre el
+// elemento, sin tocar el historial. Qué cerrar lo decide quien lo escucha.
+//
+// Un CloseWatcher sirve para un solo pedido, así que después de cada uno se
+// arma otro mientras el elemento siga montado: sacarlo de la página es lo que
+// devuelve el "atrás" a la navegación. Donde no existe la API no hace nada.
+customElements.define(
+  "close-watcher",
+  class extends HTMLElement {
+    connectedCallback() {
+      this.watch();
+    }
+
+    disconnectedCallback() {
+      if (this.watcher) this.watcher.destroy();
+      this.watcher = null;
+    }
+
+    watch() {
+      if (typeof CloseWatcher === "undefined") return;
+      const watcher = new CloseWatcher();
+      watcher.onclose = () => {
+        if (this.watcher !== watcher) return;
+        this.watcher = null;
+        this.dispatchEvent(new CustomEvent("close"));
+        if (this.isConnected) this.watch();
+      };
+      this.watcher = watcher;
+    }
+  }
+);
+
 export const onReady = ({ app, env }) => {
   if (app.ports && app.ports.outgoing) {
     app.ports.outgoing.subscribe(({ tag, data }) => {
