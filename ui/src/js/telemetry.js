@@ -48,7 +48,15 @@ import {
 import { onCLS, onFCP, onINP, onLCP, onTTFB } from "web-vitals";
 import Bowser from "bowser";
 
-const OTLP_ENDPOINT = import.meta.env?.ELM_LAND_OTLP_ENDPOINT;
+// In development, with no endpoint set, report to the collector on the host
+// that served the page, so a phone on the network that opens
+// http://192.168.x.x:1234 also sends its telemetry (localhost would be the
+// phone itself). A production build still needs it set explicitly.
+const OTLP_ENDPOINT =
+  import.meta.env?.ELM_LAND_OTLP_ENDPOINT ||
+  (import.meta.env?.PROD || !globalThis.location
+    ? undefined
+    : `${globalThis.location.protocol}//${globalThis.location.hostname}:4318`);
 
 const SERVICE_NAME = "ui";
 const SERVICE_NAMESPACE = "banana-split";
@@ -233,6 +241,10 @@ function telemetryDisabledReason() {
 
 export function deploymentEnvironment(hostname) {
   if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]") {
+    return "local";
+  }
+  // Another device on the network opening the dev server by IP.
+  if (/^(10\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.)/.test(hostname)) {
     return "local";
   }
   if (hostname === PRODUCTION_HOST) {

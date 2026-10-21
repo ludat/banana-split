@@ -81,6 +81,13 @@ test("deploymentEnvironment derives the environment from the hostname", () => {
   assert.equal(deploymentEnvironment("127.0.0.1"), "local");
 });
 
+// Un teléfono en la misma red que abre el dev server por IP.
+test("deploymentEnvironment treats private network addresses as local", () => {
+  assert.equal(deploymentEnvironment("192.168.1.34"), "local");
+  assert.equal(deploymentEnvironment("10.0.0.5"), "local");
+  assert.equal(deploymentEnvironment("172.20.1.1"), "local");
+});
+
 // El prefijo es lo que deja agrupar o descartar todos los reviews de una sin
 // saber qué ramas existen.
 test("deploymentEnvironment prefixes review apps", () => {

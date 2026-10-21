@@ -172,11 +172,20 @@ export const onReady = ({ app, env }) => {
                 () => recordAppEvent("share", { outcome: "native" }),
                 (err) => {
                   // AbortError happens when the user dismisses the share sheet.
+                  // On Android it's also what some share targets answer when
+                  // they fail, hence the message.
                   if (err && err.name === "AbortError") {
-                    recordAppEvent("share", { outcome: "dismissed" });
+                    recordAppEvent("share", {
+                      outcome: "dismissed",
+                      "error.message": String(err.message),
+                    });
                     return;
                   }
-                  recordAppEvent("share", { outcome: "failed" });
+                  recordAppEvent("share", {
+                    outcome: "failed",
+                    "error.type": String(err && err.name),
+                    "error.message": String(err && err.message),
+                  });
                   console.warn("Share failed:", err);
                 },
               );
@@ -190,7 +199,12 @@ export const onReady = ({ app, env }) => {
                   });
                 },
                 (err) => {
-                  recordAppEvent("share", { outcome: "failed" });
+                  recordAppEvent("share", {
+                    outcome: "failed",
+                    method: "clipboard",
+                    "error.type": String(err && err.name),
+                    "error.message": String(err && err.message),
+                  });
                   console.warn("Clipboard write failed:", err);
                 },
               );

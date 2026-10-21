@@ -29,7 +29,8 @@ processes:
     # - LAUNCH_EDITOR=zeditor
     environment:
     - LAUNCH_EDITOR=idea
-    - OTLP_ENDPOINT=http://localhost:4318
+    # Sin OTLP_ENDPOINT el frontend manda al mismo host que sirvió la página,
+    # puerto 4318 (ver ui/src/js/telemetry.js).
     working_dir: ./ui
     availability:
       restart: "always"
