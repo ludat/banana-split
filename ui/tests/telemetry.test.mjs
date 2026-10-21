@@ -7,23 +7,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { trace } from "@opentelemetry/api";
+import { SeverityNumber, trace } from "@opentelemetry/api";
 import {
   InMemorySpanExporter,
   SimpleSpanProcessor,
-  BasicTracerProvider,
-} from "@opentelemetry/sdk-trace-base";
+  TracerProvider,
+} from "@opentelemetry/sdk-trace";
 import {
   ATTR_HTTP_REQUEST_METHOD,
   ATTR_HTTP_RESPONSE_STATUS_CODE,
   ATTR_URL_FULL,
 } from "@opentelemetry/semantic-conventions";
 
-import { SeverityNumber } from "@opentelemetry/api-logs";
 import { InMemoryLogRecordExporter } from "@opentelemetry/sdk-logs";
 import { resourceFromAttributes } from "@opentelemetry/resources";
 
 import {
+  browserAttributes,
   createLogProvider,
   deploymentEnvironment,
   displayMode,
@@ -120,10 +120,10 @@ test("scrubUrl never throws on junk", () => {
 
 function tracerWith(recordHttpDuration = () => {}) {
   const exporter = new InMemorySpanExporter();
-  const provider = new BasicTracerProvider({
+  const provider = new TracerProvider({
     spanProcessors: [
       new PrivacySpanProcessor(recordHttpDuration),
-      new SimpleSpanProcessor(exporter),
+      new SimpleSpanProcessor({ exporter }),
     ],
   });
   return { tracer: provider.getTracer("test"), exporter };
@@ -183,6 +183,87 @@ test("display mode is attached to spans", () => {
 
   const [exported] = exporter.getFinishedSpans();
   assert.equal(exported.attributes["app.display_mode"], "standalone");
+});
+
+const USER_AGENTS = {
+  chromeWindows:
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+  chromeAndroid:
+    "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36",
+  chromeIos:
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/130.0.6723.90 Mobile/15E148 Safari/604.1",
+  edge: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0",
+  samsung:
+    "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) SamsungBrowser/26.0 Chrome/122.0.0.0 Mobile Safari/537.36",
+  firefoxLinux: "Mozilla/5.0 (X11; Linux x86_64; rv:131.0) Gecko/20100101 Firefox/131.0",
+  safariMac:
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Safari/605.1.15",
+  safariIphone:
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+  androidTablet:
+    "Mozilla/5.0 (Linux; Android 13; SM-X700) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36",
+};
+
+function describe(userAgent, extra = {}) {
+  return browserAttributes({ userAgent, language: "es-AR", ...extra });
+}
+
+test("the browser is named by its brand, not by the engine it claims", () => {
+  const name = (userAgent) => describe(userAgent)["user_agent.name"];
+  assert.equal(name(USER_AGENTS.chromeWindows), "Chrome");
+  assert.equal(name(USER_AGENTS.chromeIos), "Chrome");
+  assert.equal(name(USER_AGENTS.edge), "Microsoft Edge");
+  assert.equal(name(USER_AGENTS.samsung), "Samsung Internet for Android");
+  assert.equal(name(USER_AGENTS.firefoxLinux), "Firefox");
+  assert.equal(name(USER_AGENTS.safariIphone), "Safari");
+});
+
+test("the operating system is named without its version", () => {
+  const os = (userAgent) => describe(userAgent)["os.name"];
+  assert.equal(os(USER_AGENTS.chromeWindows), "Windows");
+  assert.equal(os(USER_AGENTS.chromeAndroid), "Android");
+  assert.equal(os(USER_AGENTS.safariIphone), "iOS");
+  assert.equal(os(USER_AGENTS.safariMac), "macOS");
+  assert.equal(os(USER_AGENTS.firefoxLinux), "Linux");
+});
+
+test("the device type tells phones, tablets and computers apart", () => {
+  const type = (userAgent) => describe(userAgent)["app.device_type"];
+  assert.equal(type(USER_AGENTS.chromeWindows), "desktop");
+  assert.equal(type(USER_AGENTS.safariMac), "desktop");
+  assert.equal(type(USER_AGENTS.chromeAndroid), "mobile");
+  assert.equal(type(USER_AGENTS.safariIphone), "mobile");
+  assert.equal(type(USER_AGENTS.androidTablet), "tablet");
+});
+
+test("the language is the one the browser reports", () => {
+  const language = (tag) => describe(USER_AGENTS.firefoxLinux, { language: tag })["browser.language"];
+  assert.equal(language("es-AR"), "es-AR");
+  assert.equal(language("en"), "en");
+  assert.equal(language(undefined), "unknown");
+});
+
+test("nothing that narrows down a user gets through", () => {
+  const attributes = describe(USER_AGENTS.chromeAndroid);
+  assert.deepEqual(Object.keys(attributes).sort(), [
+    "app.device_type",
+    "browser.language",
+    "os.name",
+    "user_agent.name",
+  ]);
+  for (const value of Object.values(attributes)) {
+    assert.doesNotMatch(value, /\d/, `"${value}" carries a version`);
+  }
+});
+
+test("a missing user agent is unknown instead of breaking telemetry", () => {
+  assert.deepEqual(browserAttributes({}), {
+    "user_agent.name": "unknown",
+    "os.name": "unknown",
+    "app.device_type": "unknown",
+    "browser.language": "unknown",
+  });
+  assert.equal(browserAttributes({ userAgent: "" })["user_agent.name"], "unknown");
 });
 
 test("a span named like a url path gets templated too", () => {

@@ -1,9 +1,23 @@
-import { DiagConsoleLogger, DiagLogLevel, diag, metrics } from "@opentelemetry/api";
-import { SeverityNumber, logs } from "@opentelemetry/api-logs";
+import {
+  DiagConsoleLogger,
+  DiagLogLevel,
+  SeverityNumber,
+  context,
+  diag,
+  logs,
+  metrics,
+  propagation,
+  trace,
+} from "@opentelemetry/api";
+import {
+  CompositePropagator,
+  W3CBaggagePropagator,
+  W3CTraceContextPropagator,
+} from "@opentelemetry/core";
 import { BatchLogRecordProcessor, LoggerProvider } from "@opentelemetry/sdk-logs";
 import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-http";
 import { defaultResource, resourceFromAttributes } from "@opentelemetry/resources";
-import { BatchSpanProcessor, WebTracerProvider } from "@opentelemetry/sdk-trace-web";
+import { BatchSpanProcessor, StackContextManager, TracerProvider } from "@opentelemetry/sdk-trace";
 import {
   AggregationType,
   MeterProvider,
@@ -32,6 +46,7 @@ import {
   ATTR_URL_FULL,
 } from "@opentelemetry/semantic-conventions";
 import { onCLS, onFCP, onINP, onLCP, onTTFB } from "web-vitals";
+import Bowser from "bowser";
 
 const OTLP_ENDPOINT = import.meta.env?.ELM_LAND_OTLP_ENDPOINT;
 
@@ -116,6 +131,23 @@ function contextAttributes() {
   return {
     "app.page.route": currentRoute(),
     [ATTR_DISPLAY_MODE]: displayMode(),
+  };
+}
+
+export function browserAttributes(nav = globalThis.navigator) {
+  const userAgent = nav?.userAgent;
+  const parser =
+    typeof userAgent === "string" && userAgent !== ""
+      ? Bowser.getParser(userAgent, nav.userAgentData ?? null)
+      : null;
+
+  return {
+    "user_agent.name": parser?.getBrowserName() || "unknown",
+    "os.name": parser?.getOSName() || "unknown",
+    // `getPlatformType(true)` no: si no reconoce la plataforma devuelve el
+    // string "undefined", y los tipos ya vienen en minúscula.
+    "app.device_type": parser?.getPlatformType() || "unknown",
+    "browser.language": nav?.language || "unknown",
   };
 }
 
@@ -398,6 +430,7 @@ export function initTelemetry() {
       [ATTR_SERVICE_NAMESPACE]: SERVICE_NAMESPACE,
       [ATTR_SERVICE_VERSION]: buildId(),
       [ATTR_DEPLOYMENT_ENVIRONMENT_NAME]: deploymentEnvironment(window.location.hostname),
+      ...browserAttributes(),
     })
   );
 
@@ -406,18 +439,28 @@ export function initTelemetry() {
   const instruments = createInstruments(meter);
   setUpLogs(resource);
 
-  const tracerProvider = new WebTracerProvider({
+  const tracerProvider = new TracerProvider({
     resource,
     spanProcessors: [
       new PrivacySpanProcessor((duration, attributes) =>
         instruments.httpDuration.record(duration, attributes)
       ),
-      new BatchSpanProcessor(new OTLPTraceExporter({ url: `${OTLP_ENDPOINT}/v1/traces` }), {
+      new BatchSpanProcessor({
+        exporter: new OTLPTraceExporter({ url: `${OTLP_ENDPOINT}/v1/traces` }),
         scheduledDelayMillis: BATCH_EXPORT_DELAY_MS,
       }),
     ],
   });
-  tracerProvider.register();
+  // Lo que antes hacía `WebTracerProvider.register()`. El propagator es lo que
+  // manda el `traceparent` que el backend usa para colgar sus spans de los del
+  // navegador.
+  context.setGlobalContextManager(new StackContextManager().enable());
+  propagation.setGlobalPropagator(
+    new CompositePropagator({
+      propagators: [new W3CTraceContextPropagator(), new W3CBaggagePropagator()],
+    })
+  );
+  trace.setGlobalTracerProvider(tracerProvider);
 
   const ignoreUrls = [new RegExp(`^${OTLP_ENDPOINT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)];
 
