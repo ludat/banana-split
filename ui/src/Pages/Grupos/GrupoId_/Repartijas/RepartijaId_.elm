@@ -2,7 +2,7 @@ module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Ayuda, Feedback, 
 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (DetalleRepartija, DistribucionDeSobras(..), Repartija, RepartijaClaim, RepartijaItem, ULID)
+import Generated.Api as Api exposing (DetalleDeItem, DetalleRepartija, DiferenciaDeUnidades(..), DistribucionDeSobras(..), EstadoDeItem(..), Repartija, RepartijaClaim, RepartijaItem, ResolucionDeItem(..), ULID)
 import Html exposing (Html, button, div, h5, h6, i, input, li, p, span, strong, text, ul)
 import Html.Attributes as Attr exposing (class, classList, disabled, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
@@ -10,7 +10,7 @@ import Layouts
 import List.Extra exposing (find)
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
-import Models.Repartija as Repartija exposing (Delta(..), ItemRepartidoState(..))
+import Models.Repartija as Repartija
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
@@ -526,7 +526,7 @@ view userId { introDismissed } store model =
                               else
                                 div [ class "order-0" ] [ viewIntro ]
                             , div [ class "order-1" ]
-                                [ viewAlertaNoResueltos model repartija
+                                [ viewAlertaNoResueltos model detalle repartija
                                 , viewLinksDeAyuda
                                 ]
                             , div [ class "order-2 d-lg-none mb-3" ] [ viewParticipantes model grupo repartija ]
@@ -547,7 +547,7 @@ view userId { introDismissed } store model =
                             ]
                         ]
                     , viewRepartirModal model.repartirModalItem
-                    , viewDetalleModal grupo repartija model.detalleModalItem
+                    , viewDetalleModal grupo detalle repartija model.detalleModalItem
                     , viewAyudaModal model.ayuda
                     ]
                 ]
@@ -636,11 +636,11 @@ viewIntro =
         ]
 
 
-viewAlertaNoResueltos : Model -> Repartija -> Html Msg
-viewAlertaNoResueltos model repartija =
+viewAlertaNoResueltos : Model -> DetalleRepartija -> Repartija -> Html Msg
+viewAlertaNoResueltos model detalle repartija =
     let
         noResueltos =
-            Repartija.itemsNoResueltos repartija
+            Repartija.itemsNoResueltos detalle
     in
     if noResueltos == 0 then
         text ""
@@ -662,7 +662,7 @@ viewAlertaNoResueltos model repartija =
                     )
                 , onClick ToggleAlerta
                 ]
-                [ Bs.badge "text-bg-warning rounded-pill text-nowrap"
+                [ Bs.badge "text-bg-danger rounded-pill text-nowrap"
                     []
                     [ text (String.fromInt noResueltos ++ " de " ++ String.fromInt (List.length repartija.items)) ]
                 , span [ class "flex-grow-1" ] [ text "Items aún no resueltos" ]
@@ -680,11 +680,15 @@ viewAlertaNoResueltos model repartija =
             , if model.alertaExpandida then
                 div [ class "px-3 pb-3 d-flex flex-wrap align-items-center gap-3" ]
                     [ p [ class "flex-grow-1 mb-0", Attr.style "min-width" "14rem" ]
-                        [ text "Para que esta repartija sea válida y pueda ser tomada en cuenta en las divisiones es necesario resolver cada situación presente en todos los items que tengan la etiqueta \"No resuelto\". Pueden conocer el problema tocando las etiquetas en los items correspondientes." ]
+                        [ text "Para que esta repartija sea válida y pueda ser tomada en cuenta en las divisiones es necesario resolver todos los items con la etiqueta en rojo. Los que están en amarillo tienen algo raro, pero se pueden repartir así como están. Pueden conocer el problema pasando por encima de las etiquetas en los items correspondientes." ]
                     , div [ class "d-flex align-items-center gap-2 mx-auto" ]
-                        [ Bs.badge "text-bg-warning rounded-pill text-nowrap" [] [ text "No resuelto" ]
+                        [ Bs.badge "text-bg-danger rounded-pill text-nowrap d-inline-flex align-items-center gap-1"
+                            []
+                            [ i [ class "bi bi-x-circle-fill" ] [], text "Sin reclamar" ]
                         , i [ class "bi bi-arrow-right" ] []
-                        , Bs.badge "text-bg-success rounded-pill text-nowrap" [] [ text "Repartido" ]
+                        , Bs.badge "text-bg-success rounded-pill text-nowrap d-inline-flex align-items-center gap-1"
+                            []
+                            [ i [ class "bi bi-check-circle-fill" ] [], text "Repartido" ]
                         ]
                     ]
 
@@ -894,8 +898,8 @@ viewFiltros userId grupo filtros =
         ]
 
 
-cumpleFiltros : Maybe ULID -> Filtros -> Repartija -> RepartijaItem -> Bool
-cumpleFiltros userId filtros repartija item =
+cumpleFiltros : Maybe ULID -> Filtros -> Repartija -> ( RepartijaItem, DetalleDeItem ) -> Bool
+cumpleFiltros userId filtros repartija ( item, deItem ) =
     let
         reclamadoPor participanteId =
             Repartija.claimsDeItem repartija item
@@ -906,13 +910,24 @@ cumpleFiltros userId filtros repartija item =
                 || (participanteId |> Maybe.map reclamadoPor |> Maybe.withDefault False)
     in
     cumple filtros.reclamadosPorVos userId
-        && (not filtros.noResueltos || not (Repartija.estaResuelto (Repartija.estadoDeItem repartija item)))
+        && (not filtros.noResueltos || deItem.resolucion == ItemNoResuelto)
         && cumple (filtros.porParticipante /= Nothing) filtros.porParticipante
 
 
 viewItems : Model -> Maybe ULID -> DetalleRepartija -> Repartija -> Html Msg
 viewItems model userId detalle repartija =
-    case List.filter (cumpleFiltros userId model.filtros repartija) repartija.items of
+    let
+        -- Cada item con lo que calculó el backend de él. El detalle trae todos
+        -- los items de la repartija, así que acá no se pierde ninguno.
+        conDetalle =
+            repartija.items
+                |> List.filterMap
+                    (\item ->
+                        Repartija.detalleDeItem detalle item.id
+                            |> Maybe.map (\deItem -> ( item, deItem ))
+                    )
+    in
+    case List.filter (cumpleFiltros userId model.filtros repartija) conDetalle of
         [] ->
             p [ class "text-muted text-center py-4" ]
                 [ if List.isEmpty repartija.items then
@@ -925,7 +940,7 @@ viewItems model userId detalle repartija =
         items ->
             div []
                 (items
-                    |> List.map (viewItemCard model userId detalle repartija)
+                    |> List.map (\( item, deItem ) -> viewItemCard model userId detalle repartija item deItem)
                 )
 
 
@@ -938,14 +953,14 @@ unidades n =
         String.fromInt n ++ " unidades"
 
 
-viewItemCard : Model -> Maybe ULID -> DetalleRepartija -> Repartija -> RepartijaItem -> Html Msg
-viewItemCard model userId detalle repartija item =
+viewItemCard : Model -> Maybe ULID -> DetalleRepartija -> Repartija -> RepartijaItem -> DetalleDeItem -> Html Msg
+viewItemCard model userId detalle repartija item deItem =
     let
         claims =
             Repartija.claimsDeItem repartija item
 
         estado =
-            Repartija.estadoDeItem repartija item
+            deItem.estado
 
         userClaim =
             claims |> find (\c -> Just c.participante == userId)
@@ -1005,20 +1020,20 @@ viewItemCard model userId detalle repartija item =
         -- cómo repartirlo cuando todavía no lo tocó nadie.
         botones =
             case estado of
-                SinRepartir ->
+                EstadoSinReclamar ->
                     [ boton "btn-primary" [ text "Repartir" ] (OpenRepartirModal item) True ]
 
-                RepartidoExactamente _ ->
+                EstadoRepartidoPorCantidad _ ->
                     [ botonesDeCantidad ]
 
-                RepartidoEquitativamenteEntre _ ->
+                EstadoRepartidoEquitativamente _ ->
                     if participaEquitativo then
                         [ boton "btn-secondary" [ text "Salirse" ] salirse True ]
 
                     else
                         [ boton "btn-primary" [ text "Participar" ] (JoinCurrentClaim item) True ]
 
-                RepartidoIncorrectamente ->
+                EstadoRepartoIncorrecto ->
                     [ botonesDeCantidad
                     , if participaEquitativo then
                         boton "btn-secondary" [ text "Salirse" ] salirse True
@@ -1057,7 +1072,7 @@ viewItemCard model userId detalle repartija item =
     div [ class "card mb-3" ]
         [ div [ class "card-header" ]
             [ div [ class "d-flex flex-wrap align-items-center gap-2" ]
-                (h6 [ class "fs-5 mb-0" ] [ text item.nombre ] :: badgesDeItem estado)
+                [ h6 [ class "fs-5 mb-0" ] [ text item.nombre ], badgeDeItem deItem ]
             , div [ class "small text-body-secondary" ]
                 [ text (unidades item.cantidad)
                 , span [ class "mx-2" ] [ text "·" ]
@@ -1085,13 +1100,13 @@ viewItemCard model userId detalle repartija item =
                                 div [ class "flex-grow-1", Attr.style "min-width" "11rem" ]
                                     [ div [ class "fw-semibold" ] [ text "Modo de reparto" ]
                                     , case estado of
-                                        SinRepartir ->
+                                        EstadoSinReclamar ->
                                             div [ class "text-secondary" ] [ text "Aún no definido" ]
 
                                         _ ->
                                             div []
                                                 [ linkConAyuda (AbrirAyuda ComoDividirUnItem DesdeItem) (nombreDelReparto estado)
-                                                , linkConAyuda (AbrirDetalleDeItem item) (progresoDelReparto estado item)
+                                                , linkConAyuda (AbrirDetalleDeItem item) (progresoDelReparto estado)
                                                 ]
                                     ]
                         in
@@ -1111,44 +1126,50 @@ viewItemCard model userId detalle repartija item =
         ]
 
 
-nombreDelReparto : ItemRepartidoState -> String
+nombreDelReparto : EstadoDeItem -> String
 nombreDelReparto estado =
     case estado of
-        SinRepartir ->
+        EstadoSinReclamar ->
             "Aún no definido"
 
-        RepartidoExactamente _ ->
+        EstadoRepartidoPorCantidad _ ->
             "Por cantidad"
 
-        RepartidoEquitativamenteEntre _ ->
+        EstadoRepartidoEquitativamente _ ->
             "Equitativo"
 
-        RepartidoIncorrectamente ->
+        EstadoRepartoIncorrecto ->
             "Por cantidad y equitativo a la vez"
 
 
-progresoDelReparto : ItemRepartidoState -> RepartijaItem -> String
-progresoDelReparto estado item =
+progresoDelReparto : EstadoDeItem -> String
+progresoDelReparto estado =
     case estado of
-        RepartidoExactamente { cantidadReclamada } ->
-            "Repartidos " ++ String.fromInt cantidadReclamada ++ " de " ++ String.fromInt item.cantidad
+        EstadoRepartidoPorCantidad UnidadesExactas ->
+            "Todas las unidades repartidas"
 
-        RepartidoEquitativamenteEntre { cantidadDeParticipantes } ->
-            "Dividido entre " ++ String.fromInt cantidadDeParticipantes
+        EstadoRepartidoPorCantidad (FaltanUnidades n) ->
+            "Faltan repartir " ++ unidades n
 
-        RepartidoIncorrectamente ->
+        EstadoRepartidoPorCantidad (SobranUnidades n) ->
+            "Sobran " ++ unidades n
+
+        EstadoRepartidoEquitativamente personas ->
+            "Dividido entre " ++ String.fromInt personas
+
+        EstadoRepartoIncorrecto ->
             "Ver quién reclamó qué"
 
-        SinRepartir ->
+        EstadoSinReclamar ->
             "Todavía no lo reclamó nadie"
 
 
-explicacionDeConsumo : ItemRepartidoState -> RepartijaItem -> String
+explicacionDeConsumo : EstadoDeItem -> RepartijaItem -> String
 explicacionDeConsumo estado item =
     case estado of
-        RepartidoEquitativamenteEntre { cantidadDeParticipantes } ->
+        EstadoRepartidoEquitativamente personas ->
             "El item se divide en partes iguales entre las "
-                ++ String.fromInt cantidadDeParticipantes
+                ++ String.fromInt personas
                 ++ " personas que están participando."
 
         _ ->
@@ -1157,70 +1178,81 @@ explicacionDeConsumo estado item =
                 ++ " del item. Las unidades que no reclamó nadie no te cuentan acá."
 
 
-{-| Las etiquetas que acompañan al nombre del item: qué le falta al reparto y si
-toda la plata del item quedó repartida. Que lo hayas reclamado o no ya lo dice el
-cuerpo de la card, así que acá no se repite.
+{-| La etiqueta que acompaña al nombre del item. El color dice si hay algo que
+hacer: verde si está repartido, amarillo si hay algo raro pero se puede repartir
+así, rojo si alguien tiene que hacer algo para que la repartija sea válida. Qué
+pasa con el item y de qué color va lo decide el backend
+(`BananaSplit.Deudas.detalleRepartija`); acá solo se elige cómo contarlo. El
+texto dice qué es lo raro o lo que falta, y el `title` lo explica. Que lo hayas
+reclamado o no ya lo dice el cuerpo de la card, así que acá no se repite.
 -}
-badgesDeItem : ItemRepartidoState -> List (Html Msg)
-badgesDeItem estado =
+badgeDeItem : DetalleDeItem -> Html Msg
+badgeDeItem deItem =
     let
-        badge colorClass contenido =
-            Bs.badge (colorClass ++ " rounded-pill text-nowrap") [] contenido
-
         -- En pantallas chicas la etiqueta se queda con lo imprescindible: el
         -- resto la haría entrar en dos renglones o empujar al resto afuera.
         conDetalle corto largo =
             [ text corto, span [ class "d-none d-sm-inline" ] [ text largo ] ]
 
-        detalle =
-            case estado of
-                RepartidoExactamente { deltaDeCantidad } ->
-                    case Repartija.compararConCero deltaDeCantidad of
-                        QuedaCortoPor n ->
-                            Just
-                                (badge "text-bg-secondary"
-                                    (conDetalle ("Faltan " ++ String.fromInt n) " por repartir")
-                                )
+        explicacionDeLoNoReclamado =
+            case deItem.resolucion of
+                ItemNoResuelto ->
+                    "Lo que no se reclama no se le cobra a nadie: hay que reclamarlo para que la repartija sea válida."
 
-                        SePasaPor n ->
-                            Just
-                                (badge "text-bg-danger"
-                                    (conDetalle ("Sobran " ++ String.fromInt n)
-                                        (if n == 1 then
-                                            " unidad"
+                _ ->
+                    "Lo que no se reclama se reparte en proporción entre los que consumieron."
 
-                                         else
-                                            " unidades"
-                                        )
-                                    )
-                                )
+        ( contenido, explicacion ) =
+            case deItem.estado of
+                EstadoRepartidoPorCantidad UnidadesExactas ->
+                    ( [ text "Repartido" ], "Se reclamaron exactamente las unidades que hay." )
 
-                        ExactamenteCero ->
-                            Nothing
+                EstadoRepartidoPorCantidad (FaltanUnidades n) ->
+                    ( conDetalle ("Faltan " ++ String.fromInt n) " por repartir"
+                    , explicacionDeLoNoReclamado
+                    )
 
-                RepartidoEquitativamenteEntre { cantidadDeParticipantes } ->
-                    if cantidadDeParticipantes < 2 then
-                        Just (badge "text-bg-danger" (conDetalle "Solo 1 persona" " está participando"))
+                EstadoRepartidoPorCantidad (SobranUnidades n) ->
+                    ( conDetalle ("Sobran " ++ String.fromInt n)
+                        (if n == 1 then
+                            " unidad"
 
-                    else
-                        Nothing
+                         else
+                            " unidades"
+                        )
+                    , "Se reclamaron más unidades de las que hay: el total del item se reparte en proporción a lo que reclamó cada uno."
+                    )
 
-                RepartidoIncorrectamente ->
-                    Just (badge "text-bg-danger" [ text "Error" ])
+                EstadoRepartidoEquitativamente 1 ->
+                    ( conDetalle "Solo 1 persona" " está participando"
+                    , "El item lo paga entero la única persona que está participando."
+                    )
 
-                SinRepartir ->
-                    Nothing
+                EstadoRepartidoEquitativamente n ->
+                    ( [ text "Repartido" ], "El item se divide en partes iguales entre " ++ String.fromInt n ++ " personas." )
+
+                EstadoRepartoIncorrecto ->
+                    ( conDetalle "Error" " de reparto"
+                    , "Hay reclamos por cantidad y en partes iguales a la vez, y así el item no se le cobra a nadie: tienen que repartirlo de una sola forma."
+                    )
+
+                EstadoSinReclamar ->
+                    ( [ text "Sin reclamar" ], explicacionDeLoNoReclamado )
+
+        ( colorClass, icono ) =
+            case deItem.resolucion of
+                ItemResuelto ->
+                    ( "text-bg-success", "bi-check-circle-fill" )
+
+                ItemConAdvertencia ->
+                    ( "text-bg-warning", "bi-exclamation-triangle-fill" )
+
+                ItemNoResuelto ->
+                    ( "text-bg-danger", "bi-x-circle-fill" )
     in
-    List.filterMap identity
-        [ detalle
-        , Just
-            (if Repartija.estaResuelto estado then
-                badge "text-bg-success" [ text "Repartido" ]
-
-             else
-                badge "text-bg-warning" [ text "No resuelto" ]
-            )
-        ]
+    Bs.badge (colorClass ++ " rounded-pill text-nowrap d-inline-flex align-items-center gap-1")
+        [ Attr.title explicacion ]
+        (i [ class ("bi " ++ icono) ] [] :: contenido)
 
 
 viewAcciones : Maybe ULID -> List RepartijaClaim -> Maybe RepartijaClaim -> RepartijaItem -> Html Msg
@@ -1551,8 +1583,8 @@ viewRepartirModal maybeItem =
 {-| Quién reclamó qué en un item, que es lo que hay detrás del "Repartidos 3 de
 5" de la card.
 -}
-viewDetalleModal : GrupoLike g -> Repartija -> Maybe RepartijaItem -> Html Msg
-viewDetalleModal grupo repartija maybeItem =
+viewDetalleModal : GrupoLike g -> DetalleRepartija -> Repartija -> Maybe RepartijaItem -> Html Msg
+viewDetalleModal grupo detalle repartija maybeItem =
     Bs.modal
         { isOpen = maybeItem /= Nothing
         , onClose = CerrarDetalleDeItem
@@ -1566,7 +1598,9 @@ viewDetalleModal grupo repartija maybeItem =
                             Repartija.claimsDeItem repartija item
 
                         estado =
-                            Repartija.estadoDeItem repartija item
+                            Repartija.detalleDeItem detalle item.id
+                                |> Maybe.map .estado
+                                |> Maybe.withDefault EstadoSinReclamar
                     in
                     [ p []
                         [ strong [] [ text "Cantidad: " ]
@@ -1630,7 +1664,7 @@ viewAyudaModal ayuda =
                     [ p [] [ text "La repartija divide un gasto según lo que consumió cada uno. Cada participante busca en la lista los items en los que participó y los reclama." ]
                     , p [] [ text "El primero en reclamar un item decide cómo se reparte: por cantidad o en partes iguales. Los demás se suman a esa forma de reparto." ]
                     , p [] [ text "La propina se reparte en proporción a lo que consumió cada uno. A la derecha vas a ver cuánto te toca a vos." ]
-                    , p [ class "mb-0" ] [ text "Los items con la etiqueta \"No resuelto\" todavía no están bien repartidos: revisalos hasta que no quede ninguno." ]
+                    , p [ class "mb-0" ] [ text "La etiqueta de cada item dice cómo quedó: en verde está repartido, en amarillo tiene algo raro pero se puede repartir así, y en rojo todavía no está bien repartido: revisalos hasta que no quede ninguno en rojo." ]
                     ]
 
                 Just ComoDividirUnItem ->
@@ -1647,7 +1681,7 @@ viewAyudaModal ayuda =
                     , h6 [ class "fw-semibold" ] [ text "Proporcional" ]
                     , p [] [ text "Esa plata se reparte entre los que sí reclamaron items, en proporción a lo que consumió cada uno." ]
                     , h6 [ class "fw-semibold" ] [ text "No se distribuyen" ]
-                    , p [ class "mb-0" ] [ text "Esa plata no se le cobra a nadie: queda a cargo de quienes pagaron el gasto." ]
+                    , p [ class "mb-0" ] [ text "Esa plata no se reparte sola: los que consumieron tienen que reclamar lo que falta para que la repartija sea válida." ]
                     ]
 
                 Nothing ->

@@ -320,9 +320,9 @@ viewAlertaDelTitulo currentPath store =
         Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
             case Store.getRepartija params.repartijaId store of
                 Success repartijaPage ->
-                    if Repartija.hayItemsNoResueltos repartijaPage.repartija then
+                    if Repartija.hayItemsNoResueltos repartijaPage.detalle then
                         [ i
-                            [ class "bi bi-exclamation-triangle-fill text-warning fs-4"
+                            [ class "bi bi-exclamation-triangle-fill text-danger fs-4"
                             , Attr.title "Aún hay items no resueltos"
                             , Attr.attribute "aria-label" "Aún hay items no resueltos"
                             ]

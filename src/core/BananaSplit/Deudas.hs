@@ -608,6 +608,25 @@ detalleRepartija repartija =
         case repartija.distribucionDeSobras of
           SobrasNoDistribuir -> mempty
           SobrasProporcional -> entreLosQueConsumieron montoSinReclamar
+      -- Lo que nadie reclamó solo se cobra si se reparte y hay entre quiénes:
+      -- si no, la plata repartida no llega al total del pago.
+      lasSobrasTienenDueño =
+        case repartija.distribucionDeSobras of
+          SobrasNoDistribuir -> False
+          SobrasProporcional -> deudoresNoNulos consumos > 0
+      sinDueño =
+        if lasSobrasTienenDueño then ItemConAdvertencia else ItemNoResuelto
+      -- Reclamar de más y repartir en partes iguales con una sola persona son
+      -- raros, pero no dejan plata sin dueño.
+      resolucionDe = \case
+        EstadoSinReclamar -> sinDueño
+        EstadoRepartidoPorCantidad UnidadesExactas -> ItemResuelto
+        EstadoRepartidoPorCantidad (FaltanUnidades _) -> sinDueño
+        EstadoRepartidoPorCantidad (SobranUnidades _) -> ItemConAdvertencia
+        EstadoRepartidoEquitativamente personas
+          | personas > 1 -> ItemResuelto
+          | otherwise -> ItemConAdvertencia
+        EstadoRepartoIncorrecto -> ItemNoResuelto
   in DetalleRepartija
        { porItem =
            repartidos
@@ -617,6 +636,8 @@ detalleRepartija repartija =
                      { itemId = repartido.item.id
                      , consumos = repartido.consumos
                      , montoSinReclamar = repartido.montoSinDueño
+                     , estado = repartido.estado
+                     , resolucion = resolucionDe repartido.estado
                      }
                )
        , propina = propina
@@ -639,6 +660,7 @@ data ItemRepartido = ItemRepartido
   { item :: RepartijaItem
   , consumos :: Netos Monto
   , montoSinDueño :: Monto
+  , estado :: EstadoDeItem
   }
   deriving (Show, Eq, Generic)
 
@@ -650,8 +672,13 @@ repartirItem repartija item =
           & filter ((== item.id) . (.itemId))
       tieneCantidad :: RepartijaClaim -> Bool
       tieneCantidad = isJust . (.cantidad)
-      repartidoEntre consumos montoSinDueño =
-        ItemRepartido{item = item, consumos = consumos, montoSinDueño = montoSinDueño}
+      repartidoEntre estado consumos montoSinDueño =
+        ItemRepartido
+          { item = item
+          , consumos = consumos
+          , montoSinDueño = montoSinDueño
+          , estado = estado
+          }
   in if
        -- Por cantidad. Las unidades que no reclamó nadie se le anotan a
        -- 'nadie' para que entren en el reparto del monto y se puedan separar
@@ -670,19 +697,32 @@ repartirItem repartija item =
                    & fmap fromIntegral
                    & distribuirEntrePonderados item.monto
                    & extraerDeudor nadie
-           in repartidoEntre consumos sinDueño
+               -- Un item sin claims también entra por acá, con todas sus
+               -- unidades sin dueño. Ojo con los nombres: 'unidadesSobrantes'
+               -- son las que sobran del item, o sea las que faltan reclamar.
+               estado =
+                 if
+                   | null claims -> EstadoSinReclamar
+                   | otherwise -> EstadoRepartidoPorCantidad diferencia
+               diferencia =
+                 if
+                   | unidadesSobrantes > 0 -> FaltanUnidades unidadesSobrantes
+                   | unidadesSobrantes < 0 -> SobranUnidades (negate unidadesSobrantes)
+                   | otherwise -> UnidadesExactas
+           in repartidoEntre estado consumos sinDueño
        -- En partes iguales entre los que participan: no queda nada sin dueño.
-       | not (any tieneCantidad claims) ->
-           claims
-             & foldMap
-               ( \claim ->
-                   Ponderaciones.ponderar claim.participante (maybe 1 fromIntegral claim.cantidad)
-               )
-             & distribuirEntrePonderados item.monto
-             & (\consumos -> repartidoEntre consumos 0)
+       | all (not . tieneCantidad) claims ->
+           let estado = EstadoRepartidoEquitativamente (length claims)
+           in claims
+                & foldMap
+                  ( \claim ->
+                      Ponderaciones.ponderar claim.participante (maybe 1 fromIntegral claim.cantidad)
+                  )
+                & distribuirEntrePonderados item.monto
+                & (\consumos -> repartidoEntre estado consumos 0)
        -- Reclamado por cantidad y en partes iguales a la vez: así no define
        -- ningún reparto, y el item no se le cobra a nadie.
-       | otherwise -> repartidoEntre mempty 0
+       | otherwise -> repartidoEntre EstadoRepartoIncorrecto mempty 0
 
 Elm.deriveBoth Elm.defaultOptions ''Transferencia
 

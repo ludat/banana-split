@@ -160,3 +160,81 @@ spec = describe "validar repartija" $ do
             }
     calcularNetosRepartija repartijaConCantidades
       `shouldBe` calcularNetosRepartija repartijaConParticipacion
+  describe "estado de cada item" $ do
+    let participante1 = participante 32
+    let participante2 = participante 33
+    let birrita = fakeUlid 2
+    let papitas = fakeUlid 3
+    let claim n p item cantidad = RepartijaClaim (fakeUlid n) p item cantidad
+    it "reclamar exactamente las unidades que hay lo deja repartido" $ do
+      revisar
+        fakeRepartija
+          { items = [RepartijaItem birrita "Birrita" 200 2]
+          , claims = [claim 100 participante1 birrita (Just 1), claim 101 participante2 birrita (Just 1)]
+          }
+        `shouldBe` ([(EstadoRepartidoPorCantidad UnidadesExactas, ItemResuelto)], True)
+    it "en partes iguales entre dos o más lo deja repartido" $ do
+      revisar
+        fakeRepartija
+          { items = [RepartijaItem birrita "Birrita" 200 2]
+          , claims = [claim 100 participante1 birrita Nothing, claim 101 participante2 birrita Nothing]
+          }
+        `shouldBe` ([(EstadoRepartidoEquitativamente 2, ItemResuelto)], True)
+    it "reclamar de más se reparte igual, con advertencia" $ do
+      revisar
+        fakeRepartija
+          { items = [RepartijaItem birrita "Birrita" 200 2]
+          , claims = [claim 100 participante1 birrita (Just 2), claim 101 participante2 birrita (Just 1)]
+          }
+        `shouldBe` ([(EstadoRepartidoPorCantidad (SobranUnidades 1), ItemConAdvertencia)], True)
+    it "en partes iguales con una sola persona se reparte igual, con advertencia" $ do
+      revisar
+        fakeRepartija
+          { items = [RepartijaItem birrita "Birrita" 200 2]
+          , claims = [claim 100 participante1 birrita Nothing]
+          }
+        `shouldBe` ([(EstadoRepartidoEquitativamente 1, ItemConAdvertencia)], True)
+    it "las unidades sin reclamar se reparten si las sobras se distribuyen" $ do
+      revisar
+        fakeRepartija
+          { distribucionDeSobras = SobrasProporcional
+          , items = [RepartijaItem birrita "Birrita" 200 2, RepartijaItem papitas "Papitas" 300 1]
+          , claims = [claim 100 participante1 birrita (Just 1)]
+          }
+        `shouldBe` ([(EstadoRepartidoPorCantidad (FaltanUnidades 1), ItemConAdvertencia), (EstadoSinReclamar, ItemConAdvertencia)], True)
+    it "las unidades sin reclamar no se resuelven si las sobras no se distribuyen" $ do
+      revisar
+        fakeRepartija
+          { distribucionDeSobras = SobrasNoDistribuir
+          , items = [RepartijaItem birrita "Birrita" 200 2, RepartijaItem papitas "Papitas" 300 1]
+          , claims = [claim 100 participante1 birrita (Just 1)]
+          }
+        `shouldBe` ([(EstadoRepartidoPorCantidad (FaltanUnidades 1), ItemNoResuelto), (EstadoSinReclamar, ItemNoResuelto)], False)
+    it "si nadie reclamó nada, las sobras no tienen a quién ir" $ do
+      revisar
+        fakeRepartija
+          { distribucionDeSobras = SobrasProporcional
+          , items = [RepartijaItem birrita "Birrita" 200 2]
+          }
+        `shouldBe` ([(EstadoSinReclamar, ItemNoResuelto)], False)
+    it "reclamar por cantidad y en partes iguales a la vez no se resuelve" $ do
+      revisar
+        fakeRepartija
+          { distribucionDeSobras = SobrasProporcional
+          , items = [RepartijaItem birrita "Birrita" 200 2, RepartijaItem papitas "Papitas" 300 1]
+          , claims =
+              [ claim 100 participante1 birrita (Just 1)
+              , claim 101 participante2 birrita Nothing
+              , claim 102 participante1 papitas (Just 1)
+              ]
+          }
+        `shouldBe` ([(EstadoRepartoIncorrecto, ItemNoResuelto), (EstadoRepartidoPorCantidad UnidadesExactas, ItemResuelto)], False)
+
+-- | El estado y la resolución de cada item, y si la repartija es válida. Que
+-- haya algún 'ItemNoResuelto' tiene que coincidir con que no lo sea.
+revisar :: Repartija -> ([(EstadoDeItem, ResolucionDeItem)], Bool)
+revisar repartija =
+  ( (detalleRepartija repartija).porItem
+      & fmap (\detalle -> (detalle.estado, detalle.resolucion))
+  , null (getResumen (sum (fmap (.monto) repartija.items) + repartija.extra) repartija).errores
+  )

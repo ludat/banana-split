@@ -1106,14 +1106,18 @@ type alias DetalleDeItem  =
    { itemId: ULID
    , consumos: (Netos Monto)
    , montoSinReclamar: Monto
+   , estado: EstadoDeItem
+   , resolucion: ResolucionDeItem
    }
 
 jsonDecDetalleDeItem : Json.Decode.Decoder ( DetalleDeItem )
 jsonDecDetalleDeItem =
-   Json.Decode.succeed (\pitemId pconsumos pmontoSinReclamar -> {itemId = pitemId, consumos = pconsumos, montoSinReclamar = pmontoSinReclamar})
+   Json.Decode.succeed (\pitemId pconsumos pmontoSinReclamar pestado presolucion -> {itemId = pitemId, consumos = pconsumos, montoSinReclamar = pmontoSinReclamar, estado = pestado, resolucion = presolucion})
    |> required "itemId" (jsonDecULID)
    |> required "consumos" (jsonDecNetos (jsonDecMonto))
    |> required "montoSinReclamar" (jsonDecMonto)
+   |> required "estado" (jsonDecEstadoDeItem)
+   |> required "resolucion" (jsonDecResolucionDeItem)
 
 jsonEncDetalleDeItem : DetalleDeItem -> Value
 jsonEncDetalleDeItem  val =
@@ -1121,7 +1125,79 @@ jsonEncDetalleDeItem  val =
    [ ("itemId", jsonEncULID val.itemId)
    , ("consumos", (jsonEncNetos (jsonEncMonto)) val.consumos)
    , ("montoSinReclamar", jsonEncMonto val.montoSinReclamar)
+   , ("estado", jsonEncEstadoDeItem val.estado)
+   , ("resolucion", jsonEncResolucionDeItem val.resolucion)
    ]
+
+
+
+type EstadoDeItem  =
+    EstadoSinReclamar 
+    | EstadoRepartidoPorCantidad DiferenciaDeUnidades
+    | EstadoRepartidoEquitativamente Int
+    | EstadoRepartoIncorrecto 
+
+jsonDecEstadoDeItem : Json.Decode.Decoder ( EstadoDeItem )
+jsonDecEstadoDeItem =
+    let jsonDecDictEstadoDeItem = Dict.fromList
+            [ ("EstadoSinReclamar", Json.Decode.lazy (\_ -> Json.Decode.succeed EstadoSinReclamar))
+            , ("EstadoRepartidoPorCantidad", Json.Decode.lazy (\_ -> Json.Decode.map EstadoRepartidoPorCantidad (jsonDecDiferenciaDeUnidades)))
+            , ("EstadoRepartidoEquitativamente", Json.Decode.lazy (\_ -> Json.Decode.map EstadoRepartidoEquitativamente (Json.Decode.int)))
+            , ("EstadoRepartoIncorrecto", Json.Decode.lazy (\_ -> Json.Decode.succeed EstadoRepartoIncorrecto))
+            ]
+    in  decodeSumObjectWithSingleField  "EstadoDeItem" jsonDecDictEstadoDeItem
+
+jsonEncEstadoDeItem : EstadoDeItem -> Value
+jsonEncEstadoDeItem  val =
+    let keyval v = case v of
+                    EstadoSinReclamar  -> ("EstadoSinReclamar", encodeValue (Json.Encode.list identity []))
+                    EstadoRepartidoPorCantidad v1 -> ("EstadoRepartidoPorCantidad", encodeValue (jsonEncDiferenciaDeUnidades v1))
+                    EstadoRepartidoEquitativamente v1 -> ("EstadoRepartidoEquitativamente", encodeValue (Json.Encode.int v1))
+                    EstadoRepartoIncorrecto  -> ("EstadoRepartoIncorrecto", encodeValue (Json.Encode.list identity []))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type DiferenciaDeUnidades  =
+    UnidadesExactas 
+    | FaltanUnidades Int
+    | SobranUnidades Int
+
+jsonDecDiferenciaDeUnidades : Json.Decode.Decoder ( DiferenciaDeUnidades )
+jsonDecDiferenciaDeUnidades =
+    let jsonDecDictDiferenciaDeUnidades = Dict.fromList
+            [ ("UnidadesExactas", Json.Decode.lazy (\_ -> Json.Decode.succeed UnidadesExactas))
+            , ("FaltanUnidades", Json.Decode.lazy (\_ -> Json.Decode.map FaltanUnidades (Json.Decode.int)))
+            , ("SobranUnidades", Json.Decode.lazy (\_ -> Json.Decode.map SobranUnidades (Json.Decode.int)))
+            ]
+    in  decodeSumObjectWithSingleField  "DiferenciaDeUnidades" jsonDecDictDiferenciaDeUnidades
+
+jsonEncDiferenciaDeUnidades : DiferenciaDeUnidades -> Value
+jsonEncDiferenciaDeUnidades  val =
+    let keyval v = case v of
+                    UnidadesExactas  -> ("UnidadesExactas", encodeValue (Json.Encode.list identity []))
+                    FaltanUnidades v1 -> ("FaltanUnidades", encodeValue (Json.Encode.int v1))
+                    SobranUnidades v1 -> ("SobranUnidades", encodeValue (Json.Encode.int v1))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type ResolucionDeItem  =
+    ItemResuelto 
+    | ItemConAdvertencia 
+    | ItemNoResuelto 
+
+jsonDecResolucionDeItem : Json.Decode.Decoder ( ResolucionDeItem )
+jsonDecResolucionDeItem = 
+    let jsonDecDictResolucionDeItem = Dict.fromList [("ItemResuelto", ItemResuelto), ("ItemConAdvertencia", ItemConAdvertencia), ("ItemNoResuelto", ItemNoResuelto)]
+    in  decodeSumUnaries "ResolucionDeItem" jsonDecDictResolucionDeItem
+
+jsonEncResolucionDeItem : ResolucionDeItem -> Value
+jsonEncResolucionDeItem  val =
+    case val of
+        ItemResuelto -> Json.Encode.string "ItemResuelto"
+        ItemConAdvertencia -> Json.Encode.string "ItemConAdvertencia"
+        ItemNoResuelto -> Json.Encode.string "ItemNoResuelto"
 
 
 

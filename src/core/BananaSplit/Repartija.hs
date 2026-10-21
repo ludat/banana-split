@@ -78,7 +78,45 @@ data DetalleDeItem = DetalleDeItem
   { itemId :: ULID
   , consumos :: Netos Monto
   , montoSinReclamar :: Monto
+  , estado :: EstadoDeItem
+  , resolucion :: ResolucionDeItem
   }
+  deriving (Show, Eq, Generic)
+
+-- | Cómo se está repartiendo un item según sus claims. Es lo que el frontend
+-- usa para elegir los botones del item y para contar en qué quedó.
+data EstadoDeItem
+  = -- | Nadie lo reclamó: todo el item queda sin dueño.
+    EstadoSinReclamar
+  | -- | Por cantidad: cómo quedan las unidades reclamadas entre todos contra
+    -- las que tiene el item.
+    EstadoRepartidoPorCantidad DiferenciaDeUnidades
+  | -- | En partes iguales entre esta cantidad de personas.
+    EstadoRepartidoEquitativamente Int
+  | -- | Reclamado por cantidad y en partes iguales a la vez: así no define
+    -- ningún reparto y no se le cobra a nadie.
+    EstadoRepartoIncorrecto
+  deriving (Show, Eq, Generic)
+
+data DiferenciaDeUnidades
+  = UnidadesExactas
+  | -- | Unidades que no reclamó nadie: lo que valen queda sin dueño.
+    FaltanUnidades Int
+  | -- | Más unidades reclamadas de las que tiene el item. El monto se reparte
+    -- igual, en proporción a lo que reclamó cada uno.
+    SobranUnidades Int
+  deriving (Show, Eq, Generic)
+
+-- | Si un item deja la repartija lista para repartir.
+--
+-- 'ItemNoResuelto' es lo que hace que la plata repartida no llegue al total
+-- del pago —y por eso la repartija no valga—: un reparto incorrecto, o lo que nadie
+-- reclamó cuando no hay a quién pasárselo. 'ItemConAdvertencia' es algo raro
+-- que igual se reparte así como está.
+data ResolucionDeItem
+  = ItemResuelto
+  | ItemConAdvertencia
+  | ItemNoResuelto
   deriving (Show, Eq, Generic)
 
 -- | Lo que quedó sin dueño: los items que nadie reclamó y las unidades que
@@ -98,6 +136,9 @@ data DistribucionDeSobras
   deriving (Show, Eq, Generic)
 
 Elm.deriveBoth Elm.defaultOptions ''DistribucionDeSobras
+Elm.deriveBoth Elm.defaultOptions ''DiferenciaDeUnidades
+Elm.deriveBoth Elm.defaultOptions ''EstadoDeItem
+Elm.deriveBoth Elm.defaultOptions ''ResolucionDeItem
 Elm.deriveBoth Elm.defaultOptions ''DetalleDeItem
 Elm.deriveBoth Elm.defaultOptions ''DetalleSinReclamar
 Elm.deriveBoth Elm.defaultOptions ''DetalleRepartija

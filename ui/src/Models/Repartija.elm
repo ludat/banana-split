@@ -1,66 +1,28 @@
 module Models.Repartija exposing
-    ( Delta(..)
-    , ItemRepartidoState(..)
-    , claimsDeItem
-    , compararConCero
+    ( claimsDeItem
     , consumoDeItem
-    , estaResuelto
-    , estadoDeItem
+    , detalleDeItem
     , hayItemsNoResueltos
     , itemsNoResueltos
     , parteDe
     , total
     )
 
-{-| En qué estado quedó cada item de una repartija según sus claims, que es lo
-que decide qué botones y qué etiquetas mostrar.
+{-| Lo que la página de la repartija y el header del layout leen de una
+repartija.
 
-La plata no se calcula acá: cuánto le toca a cada participante de cada item, de
-la propina y de lo que nadie reclamó viene resuelto del backend, en el `detalle`
-de la repartija (`BananaSplit.Deudas.detalleRepartija`). Este módulo solo lo lee,
-porque tener la cuenta escrita dos veces es tenerla mal en una.
-
-Lo usan la página de la repartija y el header del layout, que muestra una alerta
-en el título cuando todavía hay items sin resolver.
+Acá no se interpreta nada: cuánto le toca a cada participante de cada item, de
+la propina y de lo que nadie reclamó, cómo se está repartiendo cada item y si
+deja la repartija lista para repartir vienen resueltos del backend, en el
+`detalle` de la repartija (`BananaSplit.Deudas.detalleRepartija`). Este módulo
+solo lo busca, porque tener las reglas escritas dos veces es tenerlas mal en
+una.
 
 -}
 
-import Generated.Api exposing (DetalleRepartija, Monto, ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ULID)
+import Generated.Api exposing (DetalleDeItem, DetalleRepartija, Monto, ParticipanteId, Repartija, RepartijaClaim, RepartijaItem, ResolucionDeItem(..), ULID)
 import List.Extra
 import Models.Monto as Monto
-
-
-type ItemClaimsState
-    = MixedClaims
-    | OnlyExactClaims (List ( Int, RepartijaClaim ))
-    | OnlyParticipationClaims (List RepartijaClaim)
-    | NoClaims
-
-
-type ItemRepartidoState
-    = SinRepartir
-    | RepartidoIncorrectamente
-    | RepartidoExactamente { cantidadReclamada : Int, deltaDeCantidad : Int }
-    | RepartidoEquitativamenteEntre { cantidadDeParticipantes : Int }
-
-
-type Delta
-    = SePasaPor Int
-    | QuedaCortoPor Int
-    | ExactamenteCero
-
-
-compararConCero : Int -> Delta
-compararConCero n =
-    case compare n 0 of
-        GT ->
-            SePasaPor n
-
-        EQ ->
-            ExactamenteCero
-
-        LT ->
-            QuedaCortoPor <| negate n
 
 
 claimsDeItem : Repartija -> RepartijaItem -> List RepartijaClaim
@@ -69,93 +31,27 @@ claimsDeItem repartija item =
         |> List.filter (\claim -> claim.itemId == item.id)
 
 
-interpretClaims : List RepartijaClaim -> ItemClaimsState
-interpretClaims originalClaims =
-    let
-        folder : RepartijaClaim -> ItemClaimsState -> ItemClaimsState
-        folder claim claimsState =
-            case ( claimsState, claim.cantidad ) of
-                ( NoClaims, Just n ) ->
-                    OnlyExactClaims [ ( n, claim ) ]
-
-                ( NoClaims, Nothing ) ->
-                    OnlyParticipationClaims [ claim ]
-
-                ( MixedClaims, _ ) ->
-                    MixedClaims
-
-                ( OnlyExactClaims _, Nothing ) ->
-                    MixedClaims
-
-                ( OnlyExactClaims claims, Just n ) ->
-                    OnlyExactClaims (claims ++ [ ( n, claim ) ])
-
-                ( OnlyParticipationClaims claims, Nothing ) ->
-                    OnlyParticipationClaims <| claims ++ [ claim ]
-
-                ( OnlyParticipationClaims _, Just _ ) ->
-                    MixedClaims
-    in
-    List.foldl folder NoClaims originalClaims
-
-
-estadoDeItem : Repartija -> RepartijaItem -> ItemRepartidoState
-estadoDeItem repartija item =
-    case interpretClaims (claimsDeItem repartija item) of
-        MixedClaims ->
-            RepartidoIncorrectamente
-
-        OnlyExactClaims exactClaims ->
-            let
-                cantidadReclamada =
-                    exactClaims |> List.map Tuple.first |> List.sum
-            in
-            RepartidoExactamente
-                { cantidadReclamada = cantidadReclamada
-                , deltaDeCantidad = cantidadReclamada - item.cantidad
-                }
-
-        OnlyParticipationClaims repartijaClaims ->
-            RepartidoEquitativamenteEntre { cantidadDeParticipantes = List.length repartijaClaims }
-
-        NoClaims ->
-            SinRepartir
-
-
-{-| Un item está repartido cuando toda su plata tiene dueño. Lo que no llega a
-eso lleva la etiqueta "No resuelto" y entra en la cuenta de la alerta de arriba.
-
-Reclamar de más no deja plata sin dueño —el backend la reparte en proporción—,
-así que cuenta como repartido; que sobren unidades se avisa aparte. Un item
-repartido entre cantidades y partes iguales a la vez, en cambio, el backend no
-se lo cobra a nadie.
-
+{-| Lo que el backend calculó de un item: cuánto le toca a cada uno, cómo se
+está repartiendo y si deja la repartija lista para repartir.
 -}
-estaResuelto : ItemRepartidoState -> Bool
-estaResuelto estado =
-    case estado of
-        SinRepartir ->
-            False
-
-        RepartidoIncorrectamente ->
-            False
-
-        RepartidoExactamente { deltaDeCantidad } ->
-            deltaDeCantidad >= 0
-
-        RepartidoEquitativamenteEntre { cantidadDeParticipantes } ->
-            cantidadDeParticipantes >= 1
+detalleDeItem : DetalleRepartija -> ULID -> Maybe DetalleDeItem
+detalleDeItem detalle itemId =
+    detalle.porItem
+        |> List.Extra.find (\deItem -> deItem.itemId == itemId)
 
 
-hayItemsNoResueltos : Repartija -> Bool
-hayItemsNoResueltos repartija =
-    itemsNoResueltos repartija > 0
+hayItemsNoResueltos : DetalleRepartija -> Bool
+hayItemsNoResueltos detalle =
+    itemsNoResueltos detalle > 0
 
 
-itemsNoResueltos : Repartija -> Int
-itemsNoResueltos repartija =
-    repartija.items
-        |> List.filter (\item -> not (estaResuelto (estadoDeItem repartija item)))
+{-| Los items que hay que arreglar para que la repartija sea válida. Los que
+tienen algo raro pero se reparten igual (`ItemConAdvertencia`) no cuentan.
+-}
+itemsNoResueltos : DetalleRepartija -> Int
+itemsNoResueltos detalle =
+    detalle.porItem
+        |> List.filter (\deItem -> deItem.resolucion == ItemNoResuelto)
         |> List.length
 
 
@@ -187,7 +83,6 @@ parteDe participanteId reparto =
 -}
 consumoDeItem : DetalleRepartija -> ULID -> Maybe ParticipanteId -> Monto
 consumoDeItem detalle itemId participanteId =
-    detalle.porItem
-        |> List.Extra.find (\detalleDeItem -> detalleDeItem.itemId == itemId)
+    detalleDeItem detalle itemId
         |> Maybe.map (.consumos >> parteDe participanteId)
         |> Maybe.withDefault Monto.zero
