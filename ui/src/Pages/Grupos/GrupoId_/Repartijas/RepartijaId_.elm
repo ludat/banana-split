@@ -136,8 +136,7 @@ type Msg
     | ChangeCurrentClaim RepartijaItem Int
     | JoinCurrentClaim RepartijaItem
     | LeaveCurrentClaim RepartijaClaim
-    | CreateRepartijaClaimResponded (WebData Api.RepartijaForFrontend)
-    | DeleteRepartijaClaimResponded ULID (WebData String)
+    | RepartijaClaimResponded (WebData Api.RepartijaForFrontend)
     | ToggleFiltroReclamadosPorVos
     | ToggleFiltroNoResueltos
     | SetFiltroParticipante (Maybe ULID)
@@ -346,7 +345,9 @@ update maybeParticipanteId store msg model =
                 SinResponder ->
                     ( model, Effect.none )
 
-        CreateRepartijaClaimResponded webDataRepartija ->
+        -- Crear, cambiar o borrar un claim contesta la repartija como quedó,
+        -- con su detalle recalculado: se guarda tal cual, sin tocar nada acá.
+        RepartijaClaimResponded webDataRepartija ->
             case webDataRepartija of
                 Success repartija ->
                     ( { model | pendingItemOperation = Nothing }
@@ -362,32 +363,6 @@ update maybeParticipanteId store msg model =
                     , Effect.batch
                         [ Store.refreshRepartija model.repartijaId
                         ]
-                    )
-
-        DeleteRepartijaClaimResponded claimId webDataResponse ->
-            case ( webDataResponse, Store.getRepartija model.repartijaId store ) of
-                ( Success _, Success repartijaPage ) ->
-                    let
-                        repartija =
-                            repartijaPage.repartija
-
-                        updatedRepartija =
-                            { repartija
-                                | claims = repartija.claims |> List.filter (\c -> c.id /= claimId)
-                            }
-                    in
-                    ( { model | pendingItemOperation = Nothing }
-                    , Effect.batch
-                        [ Store.updateRepartijaForFrontend model.repartijaId { repartijaPage | repartija = updatedRepartija }
-                        , Store.invalidateResumen model.grupoId
-                        , Store.invalidatePagos model.grupoId
-                        , Store.refreshRepartija model.repartijaId
-                        ]
-                    )
-
-                _ ->
-                    ( { model | pendingItemOperation = Nothing }
-                    , Effect.batch [ Store.refreshRepartija model.repartijaId ]
                     )
 
         ChangeCurrentClaim item deltaCantidad ->
@@ -426,12 +401,12 @@ update maybeParticipanteId store msg model =
                                                 , itemId = item.id
                                                 , cantidad = Just <| newCantidad
                                                 }
-                                                (RemoteData.fromResult >> CreateRepartijaClaimResponded)
+                                                (RemoteData.fromResult >> RepartijaClaimResponded)
 
                                       else
                                         Effect.sendCmd <|
                                             Api.deleteRepartijasClaimsByClaimId oldClaim.id
-                                                (RemoteData.fromResult >> DeleteRepartijaClaimResponded oldClaim.id)
+                                                (RemoteData.fromResult >> RepartijaClaimResponded)
                                     )
 
                                 Nothing ->
@@ -444,7 +419,7 @@ update maybeParticipanteId store msg model =
                                                 , itemId = item.id
                                                 , cantidad = Just deltaCantidad
                                                 }
-                                                (RemoteData.fromResult >> CreateRepartijaClaimResponded)
+                                                (RemoteData.fromResult >> RepartijaClaimResponded)
 
                                       else
                                         Effect.none
@@ -467,7 +442,7 @@ update maybeParticipanteId store msg model =
                             , itemId = item.id
                             , cantidad = Nothing
                             }
-                            (RemoteData.fromResult >> CreateRepartijaClaimResponded)
+                            (RemoteData.fromResult >> RepartijaClaimResponded)
                     )
 
                 Nothing ->
@@ -479,7 +454,7 @@ update maybeParticipanteId store msg model =
                     ( { model | pendingItemOperation = Just item.itemId }
                     , Effect.sendCmd <|
                         Api.deleteRepartijasClaimsByClaimId item.id
-                            (RemoteData.fromResult >> DeleteRepartijaClaimResponded item.id)
+                            (RemoteData.fromResult >> RepartijaClaimResponded)
                     )
 
                 Nothing ->

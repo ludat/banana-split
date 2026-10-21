@@ -1671,7 +1671,7 @@ putRepartijasByRepartijaId capture_repartijaId body toMsg =
                 Nothing
             }
 
-deleteRepartijasClaimsByClaimId : ULID -> (Result Http.Error  (String)  -> msg) -> Cmd msg
+deleteRepartijasClaimsByClaimId : ULID -> (Result Http.Error  (RepartijaForFrontend)  -> msg) -> Cmd msg
 deleteRepartijasClaimsByClaimId capture_claimId toMsg =
     let
         params =
@@ -1694,7 +1694,7 @@ deleteRepartijasClaimsByClaimId capture_claimId toMsg =
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg Json.Decode.string
+                Http.expectJson toMsg jsonDecRepartijaForFrontend
             , timeout =
                 Nothing
             , tracker =

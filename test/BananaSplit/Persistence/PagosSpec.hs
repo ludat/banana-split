@@ -106,7 +106,8 @@ spec =
       shallowValid <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido shallowValid `shouldBe` [True]
 
-      runDb $ deleteRepartijaClaim (primerClaim repartijaConClaim).id
+      repartijaSinClaim <- runDb $ deleteRepartijaClaim (primerClaim repartijaConClaim).id
+      repartijaSinClaim.repartija.claims `shouldBe` []
       shallowInvalid <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido shallowInvalid `shouldBe` [False]
 
@@ -135,7 +136,7 @@ spec =
       repartijaConClaim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
       runDb (contarFilasDe pago.pagoId) `shouldReturn` 1
 
-      runDb $ deleteRepartijaClaim (primerClaim repartijaConClaim).id
+      _ <- runDb $ deleteRepartijaClaim (primerClaim repartijaConClaim).id
       -- Vuelve a ser inválido, y el cache lo dice ya mismo.
       runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Just sinCalcularCrudo
       runDb (contarFilasDe pago.pagoId) `shouldReturn` 0

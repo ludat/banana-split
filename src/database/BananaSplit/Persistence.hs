@@ -1177,6 +1177,13 @@ saveRepartijaClaim repartijaId repartijaClaim = do
       onConflictUpdateAll
   -- (onConflictUpdateSet (\fields _oldValues ->
   --   repartijaClaimCantidad fields <-. val_ (fromIntegral <$> M.repartijaClaimCantidad claim')))
+  recalcularRepartija grupoId repartijaId
+
+-- | Lo que le contesta al frontend una mutación de los claims de una
+-- repartija: la repartija como quedó, con el resumen de su gasto ya
+-- recalculado y guardado.
+recalcularRepartija :: ULID -> ULID -> Pg M.RepartijaForFrontend
+recalcularRepartija grupoId repartijaId = do
   maybePagoId <- fetchPagoIdFromRepartija repartijaId
   case maybePagoId of
     Nothing -> fetchRepartija repartijaId
@@ -1200,10 +1207,12 @@ repartijaDePago repartijaId pago =
       )
     & head
 
-deleteRepartijaClaim :: ULID -> Pg ()
+deleteRepartijaClaim :: ULID -> Pg M.RepartijaForFrontend
 deleteRepartijaClaim claimId = do
-  -- Resolve the owning pago before deleting, since we navigate through the claim.
-  pagoId <- fetchPagoIdFromClaim claimId
+  -- Resolve the owning repartija before deleting, since we navigate through the claim.
+  repartijaId <-
+    fetchRepartijaIdFromClaim claimId
+      `orElseMay` panic "repartijaId not found"
   grupoId <-
     fetchGrupoIdFromClaim claimId
       `orElseMay` panic "grupoId not found"
@@ -1211,7 +1220,7 @@ deleteRepartijaClaim claimId = do
     $ delete
       db.repartija_claims
       (\c -> c.repartijaclaimId ==. val_ claimId)
-  forM_ pagoId $ void . recalcularResumenGasto grupoId
+  recalcularRepartija grupoId repartijaId
 
 -- | Recalcula y guarda el resumen de un gasto. Llamalo desde cualquier mutación
 -- que pueda cambiar el reparto sin pasar por 'savePago' (editar los claims de
@@ -1260,14 +1269,21 @@ pagoDeClaimId ::
   (HasSqlEqualityCheck be ULID, BeamSqlBackendCanSerialize be ULID) =>
   ULID
   -> Q be BananaSplitDb s (PagoT (QExpr be s))
-pagoDeClaimId claimId = do
+pagoDeClaimId claimId =
+  repartijaDeClaimId claimId >>= pagoDeRepartija
+
+repartijaDeClaimId ::
+  (HasSqlEqualityCheck be ULID, BeamSqlBackendCanSerialize be ULID) =>
+  ULID
+  -> Q be BananaSplitDb s (DistribucionRepartijaT (QExpr be s))
+repartijaDeClaimId claimId = do
   claim <- all_ db.repartija_claims
   guard_ (claim.repartijaclaimId ==. val_ claimId)
   item <- all_ db.repartija_items
   guard_ (claim.repartijaclaimRepartijaItem `references_` item)
   repartija <- all_ db.repartijas
   guard_ (item.repartijaitemRepartija `references_` repartija)
-  pagoDeRepartija repartija
+  pure repartija
 
 grupoIdDePago :: PagoT (QExpr be s) -> QExpr be s ULID
 grupoIdDePago pago = let GrupoId grupoId = pago.pagoGrupo in grupoId
@@ -1276,9 +1292,9 @@ fetchPagoIdFromRepartija :: ULID -> Pg (Maybe ULID)
 fetchPagoIdFromRepartija repartijaId =
   runSelectReturningOne $ select $ (.pagoId) <$> pagoDeRepartijaId repartijaId
 
-fetchPagoIdFromClaim :: ULID -> Pg (Maybe ULID)
-fetchPagoIdFromClaim claimId =
-  runSelectReturningOne $ select $ (.pagoId) <$> pagoDeClaimId claimId
+fetchRepartijaIdFromClaim :: ULID -> Pg (Maybe ULID)
+fetchRepartijaIdFromClaim claimId =
+  runSelectReturningOne $ select $ (.id) <$> repartijaDeClaimId claimId
 
 claimToRow :: M.RepartijaClaim -> RepartijaClaim
 claimToRow claim =
