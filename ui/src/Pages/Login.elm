@@ -21,7 +21,7 @@ import Shared
 import Shared.Msg
 import Url
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
-import Utils.Telemetry exposing (codigoDeLoginRechazado)
+import Utils.Telemetry as Telemetry exposing (codigoDeLoginRechazado)
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
@@ -368,7 +368,7 @@ view model =
 
 viewEmailStep : Model -> Html Msg
 viewEmailStep model =
-    Html.form [ onSubmit (LoginFormMsg Form.Submit) ]
+    Html.form [ id "login-paso-email", onSubmit (LoginFormMsg Form.Submit) ]
         [ Html.map LoginFormMsg <|
             viewTextField
                 { label = "Email"
@@ -378,7 +378,7 @@ viewEmailStep model =
                 }
                 (Form.getFieldAsString "email" model.loginForm)
         , Bs.btn Bs.Primary
-            [ id "login-enviar-codigo", type_ "submit", disabled model.submitting ]
+            [ id "login-enviar-codigo", Telemetry.click "login.send_code", type_ "submit", disabled model.submitting ]
             [ text
                 (if model.submitting then
                     "Enviando…"
@@ -392,7 +392,7 @@ viewEmailStep model =
 
 viewCodeStep : Model -> Html Msg
 viewCodeStep model =
-    Html.form [ onSubmit (ConfirmationFormMsg Form.Submit) ]
+    Html.form [ id "login-paso-codigo", onSubmit (ConfirmationFormMsg Form.Submit) ]
         [ Html.map ConfirmationFormMsg <|
             viewTextField
                 { label = "Código"
@@ -406,7 +406,7 @@ viewCodeStep model =
                 (Form.getFieldAsString "code" model.confirmationForm)
         , div [ class "d-flex gap-2" ]
             [ Bs.btn Bs.Primary
-                [ id "login-confirmar-codigo", type_ "submit", disabled model.submitting ]
+                [ id "login-confirmar-codigo", Telemetry.click "login.confirm_code", type_ "submit", disabled model.submitting ]
                 [ text
                     (if model.submitting then
                         "Confirmando…"
@@ -416,7 +416,7 @@ viewCodeStep model =
                     )
                 ]
             , Bs.btn Bs.Transparent
-                [ type_ "button", onClick BackToEmail ]
+                [ type_ "button", Telemetry.click "login.change_email", onClick BackToEmail ]
                 [ text "Cambiar email" ]
             ]
         ]
@@ -424,7 +424,7 @@ viewCodeStep model =
 
 viewNameStep : Model -> Html Msg
 viewNameStep model =
-    Html.form [ onSubmit (RegistrationFormMsg Form.Submit) ]
+    Html.form [ id "login-paso-nombre", onSubmit (RegistrationFormMsg Form.Submit) ]
         [ p [ class "mb-3" ]
             [ text ("Confirmamos " ++ model.email ++ ". Elegí un nombre para tu cuenta.") ]
         , Html.map RegistrationFormMsg <|
@@ -437,7 +437,7 @@ viewNameStep model =
                 (Form.getFieldAsString "nombre" model.registrationForm)
         , div [ class "d-flex gap-2" ]
             [ Bs.btn Bs.Primary
-                [ id "login-registrarse", type_ "submit", disabled model.submitting ]
+                [ id "login-registrarse", Telemetry.click "login.register", type_ "submit", disabled model.submitting ]
                 [ text
                     (if model.submitting then
                         "Creando…"
@@ -447,7 +447,7 @@ viewNameStep model =
                     )
                 ]
             , Bs.btn Bs.Transparent
-                [ type_ "button", onClick BackToEmail ]
+                [ type_ "button", Telemetry.click "login.change_email", onClick BackToEmail ]
                 [ text "Cambiar email" ]
             ]
         ]

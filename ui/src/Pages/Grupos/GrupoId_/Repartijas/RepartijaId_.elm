@@ -499,24 +499,24 @@ view userId { introDismissed } store model =
                                 text ""
 
                               else
-                                div [ class "order-0" ] [ viewIntro ]
-                            , div [ class "order-1" ]
+                                div [ Attr.id "repartija-intro", class "order-0" ] [ viewIntro ]
+                            , div [ Attr.id "repartija-alertas", class "order-1" ]
                                 [ viewAlertaNoResueltos model detalle repartija
                                 , viewLinksDeAyuda
                                 ]
-                            , div [ class "order-2 d-lg-none mb-3" ] [ viewParticipantes model grupo repartija ]
-                            , div [ class "order-3 order-lg-4" ]
+                            , div [ Attr.id "repartija-participantes-mobile", class "order-2 d-lg-none mb-3" ] [ viewParticipantes model grupo repartija ]
+                            , div [ Attr.id "repartija-filtros", class "order-3 order-lg-4" ]
                                 [ if model.modoAvanzado then
                                     viewFiltros userId grupo model.filtros
 
                                   else
                                     text ""
                                 ]
-                            , div [ class "order-4 order-lg-3" ] [ viewItemsHeader model ]
-                            , div [ class "order-5" ] [ viewItems model userId detalle repartija ]
+                            , div [ Attr.id "repartija-items-header", class "order-4 order-lg-3" ] [ viewItemsHeader model ]
+                            , div [ Attr.id "repartija-items", class "order-5" ] [ viewItems model userId detalle repartija ]
                             ]
-                        , div [ class "col-12 col-lg-4" ]
-                            [ div [ class "d-none d-lg-block mb-3" ] [ viewParticipantes model grupo repartija ]
+                        , div [ Attr.id "repartija-lateral", class "col-12 col-lg-4" ]
+                            [ div [ Attr.id "repartija-participantes", class "d-none d-lg-block mb-3" ] [ viewParticipantes model grupo repartija ]
                             , viewTotales userId detalle repartija
                             , viewFeedback model.feedback
                             ]
@@ -570,6 +570,7 @@ linkDeAyuda ayuda origen label =
     button
         [ type_ "button"
         , class "btn btn-link p-0 text-decoration-underline d-inline-flex align-items-center gap-1"
+        , Telemetry.click "repartija.help_open"
         , onClick (AbrirAyuda ayuda origen)
         ]
         [ i [ class "bi bi-info-circle" ] []
@@ -605,6 +606,7 @@ viewIntro =
             [ type_ "button"
             , class "btn-close"
             , Attr.attribute "aria-label" "Cerrar"
+            , Telemetry.click "repartija.intro_dismiss"
             , onClick DismissIntro
             ]
             []
@@ -635,6 +637,7 @@ viewAlertaNoResueltos model detalle repartija =
                      else
                         "false"
                     )
+                , Telemetry.click "repartija.toggle_alert"
                 , onClick ToggleAlerta
                 ]
                 [ Bs.badge "text-bg-danger rounded-pill text-nowrap"
@@ -704,6 +707,7 @@ viewParticipantes model grupo repartija =
                     , ( "btn-outline-primary", model.filtros.porParticipante /= Just p.id )
                     ]
                 , Attr.title ("Ver los items que reclamó " ++ p.nombre)
+                , Telemetry.click "repartija.filter_by_participante"
                 , onClick (VerItemsDe p.id)
                 ]
                 [ i [ class "bi bi-eye" ] [], text p.nombre ]
@@ -720,6 +724,7 @@ viewParticipantes model grupo repartija =
                      else
                         "false"
                     )
+                , Telemetry.click "repartija.toggle_participantes"
                 , onClick ToggleParticipantes
                 ]
                 [ h6 [ class "mb-0 flex-grow-1 text-start fw-semibold" ] [ text "Quiénes ya reclamaron" ]
@@ -762,6 +767,13 @@ viewItemsHeader model =
                     [ type_ "button"
                     , class "dropdown-item d-flex align-items-center gap-2"
                     , classList [ ( "active", model.modoAvanzado == avanzado ) ]
+                    , Telemetry.click
+                        (if avanzado then
+                            "repartija.mode_advanced"
+
+                         else
+                            "repartija.mode_simple"
+                        )
                     , onClick (SetModoAvanzado avanzado)
                     ]
                     [ i
@@ -943,17 +955,24 @@ viewItemCard model userId detalle repartija item deItem =
         pending =
             model.pendingItemOperation == Just item.id || userId == Nothing
 
-        boton variant contenido msg habilitado =
+        boton track variant contenido msg habilitado =
             button
                 [ type_ "button"
                 , class ("btn " ++ variant)
                 , disabled (pending || not habilitado)
+                , Telemetry.click track
                 , onClick msg
                 ]
                 contenido
 
         botonDeCantidad icono delta habilitado =
             boton
+                (if delta > 0 then
+                    "repartija.item_increase"
+
+                 else
+                    "repartija.item_decrease"
+                )
                 (if delta > 0 then
                     "btn-primary"
 
@@ -996,25 +1015,25 @@ viewItemCard model userId detalle repartija item deItem =
         botones =
             case estado of
                 EstadoSinReclamar ->
-                    [ boton "btn-primary" [ text "Repartir" ] (OpenRepartirModal item) True ]
+                    [ boton "repartija.item_split" "btn-primary" [ text "Repartir" ] (OpenRepartirModal item) True ]
 
                 EstadoRepartidoPorCantidad _ ->
                     [ botonesDeCantidad ]
 
                 EstadoRepartidoEquitativamente _ ->
                     if participaEquitativo then
-                        [ boton "btn-secondary" [ text "Salirse" ] salirse True ]
+                        [ boton "repartija.item_leave" "btn-secondary" [ text "Salirse" ] salirse True ]
 
                     else
-                        [ boton "btn-primary" [ text "Participar" ] (JoinCurrentClaim item) True ]
+                        [ boton "repartija.item_join" "btn-primary" [ text "Participar" ] (JoinCurrentClaim item) True ]
 
                 EstadoRepartoIncorrecto ->
                     [ botonesDeCantidad
                     , if participaEquitativo then
-                        boton "btn-secondary" [ text "Salirse" ] salirse True
+                        boton "repartija.item_leave" "btn-secondary" [ text "Salirse" ] salirse True
 
                       else
-                        boton "btn-primary" [ text "Participar" ] (JoinCurrentClaim item) True
+                        boton "repartija.item_join" "btn-primary" [ text "Participar" ] (JoinCurrentClaim item) True
                     ]
 
         tuParticipacion =
@@ -1064,10 +1083,11 @@ viewItemCard model userId detalle repartija item deItem =
                             -- y cuánto va repartido, cada uno con su link a la explicación.
                             modoDeReparto =
                                 let
-                                    linkConAyuda ayuda label =
+                                    linkConAyuda track ayuda label =
                                         button
                                             [ type_ "button"
                                             , class "btn btn-link p-0 text-start d-flex align-items-start gap-1"
+                                            , Telemetry.click track
                                             , onClick ayuda
                                             ]
                                             [ i [ class "bi bi-question-circle-fill mt-1" ] [], span [] [ text label ] ]
@@ -1080,8 +1100,8 @@ viewItemCard model userId detalle repartija item deItem =
 
                                         _ ->
                                             div []
-                                                [ linkConAyuda (AbrirAyuda ComoDividirUnItem DesdeItem) (nombreDelReparto estado)
-                                                , linkConAyuda (AbrirDetalleDeItem item) (progresoDelReparto estado)
+                                                [ linkConAyuda "repartija.item_split_mode_help" (AbrirAyuda ComoDividirUnItem DesdeItem) (nombreDelReparto estado)
+                                                , linkConAyuda "repartija.item_detail" (AbrirDetalleDeItem item) (progresoDelReparto estado)
                                                 ]
                                     ]
                         in
@@ -1238,20 +1258,20 @@ viewAcciones userId claims userClaim item =
         soloReclamoYo =
             not (List.isEmpty claims) && List.all (\c -> Just c.participante == userId) claims
 
-        accion icono label msg =
+        accion track icono label msg =
             li []
-                [ button [ type_ "button", class "dropdown-item", onClick msg ]
+                [ button [ type_ "button", class "dropdown-item", Telemetry.click track, onClick msg ]
                     [ i [ class ("bi me-2 " ++ icono) ] [], text label ]
                 ]
 
         acciones =
             List.filterMap identity
                 [ if soloReclamoYo then
-                    Just (accion "bi-arrow-left-right" "Cambiar forma de reparto" (OpenRepartirModal item))
+                    Just (accion "repartija.item_change_split" "bi-arrow-left-right" "Cambiar forma de reparto" (OpenRepartirModal item))
 
                   else
                     Nothing
-                , userClaim |> Maybe.map (\claim -> accion "bi-x-circle" "Quitar mi reclamo" (LeaveCurrentClaim claim))
+                , userClaim |> Maybe.map (\claim -> accion "repartija.item_remove_claim" "bi-x-circle" "Quitar mi reclamo" (LeaveCurrentClaim claim))
                 ]
     in
     div [ class "dropdown" ]
@@ -1303,7 +1323,7 @@ viewTotales userId detalle repartija =
         sinReclamar =
             detalle.sinReclamar
     in
-    div []
+    div [ Attr.id "repartija-totales" ]
         [ tarjeta
             [ text "Propina" ]
             [ fila [] [ text ("$ " ++ Monto.toString repartija.extra) ]
@@ -1408,16 +1428,18 @@ viewFeedback feedback =
         opcion opinion =
             Bs.btn Bs.Secondary
                 [ class "flex-grow-1 d-flex flex-column align-items-center gap-1"
+                , Telemetry.click "repartija.redesign_opinion"
                 , onClick (ResponderFeedback opinion)
                 ]
                 [ i [ class ("bi fs-4 " ++ opinionIcono opinion) ] []
                 , span [] [ text (opinionLabel opinion) ]
                 ]
 
-        linkChico icono label msg =
+        linkChico track icono label msg =
             button
                 [ type_ "button"
                 , class "btn btn-link btn-sm p-0 d-inline-flex align-items-center gap-1"
+                , Telemetry.click track
                 , onClick msg
                 ]
                 [ i [ class ("bi " ++ icono) ] []
@@ -1426,7 +1448,7 @@ viewFeedback feedback =
     in
     case feedback of
         SinResponder ->
-            Bs.card [ class "mb-3" ]
+            Bs.card [ Attr.id "repartija-feedback", class "mb-3" ]
                 [ Bs.cardHeader [ class "d-flex align-items-center gap-2" ]
                     [ i [ class "bi bi-chat-left-heart" ] []
                     , span [ class "fw-semibold" ] [ text "¿Qué te pareció esta pantalla?" ]
@@ -1445,7 +1467,7 @@ viewFeedback feedback =
                 ]
 
         Respondido respuesta ->
-            Bs.card [ class "mb-3" ]
+            Bs.card [ Attr.id "repartija-feedback", class "mb-3" ]
                 [ Bs.cardBody [ class "py-4 text-center" ]
                     [ i [ class ("bi fs-1 text-success " ++ opinionIcono respuesta.opinion) ] []
                     , p [ class "fw-semibold fs-5 mb-1 mt-2" ] [ text "¡Listo, gracias!" ]
@@ -1476,6 +1498,7 @@ viewFeedback feedback =
                                 [ Bs.btn Bs.Secondary
                                     [ class "btn-sm mt-2"
                                     , disabled (String.trim respuesta.comentario == "")
+                                    , Telemetry.click "repartija.redesign_send_comment"
                                     , onClick EnviarComentarioFeedback
                                     ]
                                     [ text "Enviar comentario" ]
@@ -1489,8 +1512,8 @@ viewFeedback feedback =
                             text ""
 
                           else
-                            linkChico "bi-chat-left-text" "Agregar un comentario" AbrirComentarioFeedback
-                        , linkChico "bi-arrow-counterclockwise" "Cambiar respuesta" VolverAOpinar
+                            linkChico "repartija.redesign_add_comment" "bi-chat-left-text" "Agregar un comentario" AbrirComentarioFeedback
+                        , linkChico "repartija.redesign_change_answer" "bi-arrow-counterclockwise" "Cambiar respuesta" VolverAOpinar
                         ]
                     ]
                 ]
@@ -1509,10 +1532,11 @@ nombreDistribucion distribucion =
 viewRepartirModal : Maybe RepartijaItem -> Html Msg
 viewRepartirModal maybeItem =
     let
-        opcion icono titulo descripcion msg =
+        opcion track icono titulo descripcion msg =
             button
                 [ type_ "button"
                 , class "btn btn-outline-primary w-100 text-start d-flex align-items-center gap-3 p-3 mb-2"
+                , Telemetry.click track
                 , onClick msg
                 ]
                 [ i [ class ("bi fs-1 " ++ icono) ] []
@@ -1523,7 +1547,8 @@ viewRepartirModal maybeItem =
                 ]
     in
     Bs.modal
-        { isOpen = maybeItem /= Nothing
+        { id = "repartija-modal-repartir"
+        , isOpen = maybeItem /= Nothing
         , onClose = CloseRepartirModal
         , title = "Reclamar item"
         , centered = False
@@ -1538,11 +1563,13 @@ viewRepartirModal maybeItem =
                         ]
                     , p []
                         [ text "Podés cambiarla una vez realizada, pero una vez que otros también reclamen este item ya no podrás revertir esta decisión." ]
-                    , opcion "bi-people-fill"
+                    , opcion "repartija.split_by_quantity"
+                        "bi-people-fill"
                         "Por cantidad"
                         "Cada participante indica cuántas unidades consumió."
                         (ChangeCurrentClaim item 1)
-                    , opcion "bi-arrows-angle-contract"
+                    , opcion "repartija.split_equally"
+                        "bi-arrows-angle-contract"
                         "División equitativa"
                         "Se divide en partes iguales entre los participantes que reclamen este item."
                         (JoinCurrentClaim item)
@@ -1551,7 +1578,7 @@ viewRepartirModal maybeItem =
                 Nothing ->
                     []
         , footer =
-            [ Bs.btn Bs.Transparent [ onClick CloseRepartirModal ] [ text "Cancelar" ] ]
+            [ Bs.btn Bs.Transparent [ Telemetry.click "repartija.split_cancel", onClick CloseRepartirModal ] [ text "Cancelar" ] ]
         }
 
 
@@ -1561,7 +1588,8 @@ viewRepartirModal maybeItem =
 viewDetalleModal : GrupoLike g -> DetalleRepartija -> Repartija -> Maybe RepartijaItem -> Html Msg
 viewDetalleModal grupo detalle repartija maybeItem =
     Bs.modal
-        { isOpen = maybeItem /= Nothing
+        { id = "repartija-modal-detalle-item"
+        , isOpen = maybeItem /= Nothing
         , onClose = CerrarDetalleDeItem
         , centered = False
         , title = maybeItem |> Maybe.map .nombre |> Maybe.withDefault ""
@@ -1613,14 +1641,15 @@ viewDetalleModal grupo detalle repartija maybeItem =
                 Nothing ->
                     []
         , footer =
-            [ Bs.btn Bs.Transparent [ onClick CerrarDetalleDeItem ] [ text "Cerrar" ] ]
+            [ Bs.btn Bs.Transparent [ Telemetry.click "repartija.item_detail_close", onClick CerrarDetalleDeItem ] [ text "Cerrar" ] ]
         }
 
 
 viewAyudaModal : Maybe Ayuda -> Html Msg
 viewAyudaModal ayuda =
     Bs.modal
-        { isOpen = ayuda /= Nothing
+        { id = "repartija-modal-ayuda"
+        , isOpen = ayuda /= Nothing
         , onClose = CerrarAyuda
         , centered = False
         , title =
@@ -1662,5 +1691,5 @@ viewAyudaModal ayuda =
                 Nothing ->
                     []
         , footer =
-            [ Bs.btn Bs.Transparent [ onClick CerrarAyuda ] [ text "Cerrar" ] ]
+            [ Bs.btn Bs.Transparent [ Telemetry.click "repartija.help_close", onClick CerrarAyuda ] [ text "Cerrar" ] ]
         }

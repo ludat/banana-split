@@ -16,6 +16,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Telemetry as Telemetry
 import View exposing (View)
 
 
@@ -183,7 +184,7 @@ its grupo page and showing which participante they are there.
 -}
 viewMisGrupos : WebData (List GrupoParaUsuario) -> Html Msg
 viewMisGrupos misGrupos =
-    Bs.card []
+    Bs.card [ id "home-mis-grupos" ]
         [ Bs.cardHeader [] [ text "Mis grupos" ]
         , case misGrupos of
             Success [] ->
@@ -212,6 +213,7 @@ viewMisGruposItem grupo =
     a
         [ class "list-group-item list-group-item-action d-flex justify-content-between align-items-center"
         , Path.href <| Path.Grupos_Id_ { id = grupo.id }
+        , Telemetry.click "home.open_grupo"
         ]
         [ text grupo.nombre
         , Html.small [ class "text-muted" ] [ text ("como " ++ grupo.participanteNombre) ]
@@ -224,7 +226,7 @@ viewCrearGrupo shared model =
         nombreField =
             Form.getFieldAsString "nombre" model.form
     in
-    Bs.card []
+    Bs.card [ id "home-crear-grupo" ]
         [ Bs.cardHeader [] [ text "Crear grupo" ]
         , Bs.cardBody []
             [ div [ class "mb-3" ]
@@ -269,6 +271,7 @@ viewCrearGrupo shared model =
                         ]
             , Bs.btn Bs.Primary
                 [ id "crear-grupo"
+                , Telemetry.click "home.create_grupo"
                 , onClick <| UpdateForm Submit
                 ]
                 [ text "Crear" ]

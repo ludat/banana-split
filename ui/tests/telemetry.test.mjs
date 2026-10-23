@@ -25,14 +25,17 @@ import { resourceFromAttributes } from "@opentelemetry/resources";
 import {
   browserAttributes,
   createLogProvider,
+  createSession,
   deploymentEnvironment,
   displayMode,
   installLogProvider,
-  recordAppEvent,
+  nameClickSpan,
+  recordEvent,
   recordFeedback,
   PrivacySpanProcessor,
   scrubUrl,
   scrubUrlTemplate,
+  startSession,
   templatePath,
 } from "../src/js/telemetry.js";
 
@@ -376,11 +379,12 @@ test("trace api is untouched by the processor", () => {
 // Exercises the real wiring from telemetry.js, not a copy of it: passing the
 // exporter positionally used to leave the processor with no exporter at all,
 // and the only symptom was a TypeError in the browser console.
-function logsWith() {
+function logsWith(sessionProvider = null) {
   const exporter = new InMemoryLogRecordExporter();
   const provider = createLogProvider(
     resourceFromAttributes({ "service.name": "test" }),
-    exporter
+    exporter,
+    sessionProvider
   );
   installLogProvider(provider);
   // The processor batches, so the test has to wait for the flush that
@@ -476,11 +480,11 @@ test("feedback is capped so it cannot be used to ship a payload", async () => {
 test("an app event is emitted as a log record with no free text", async () => {
   const { exporter, flushed } = logsWith();
 
-  recordAppEvent("share", { outcome: "clipboard" });
+  recordEvent("app.share", { outcome: "clipboard" });
   await flushed();
 
   const [record] = exporter.getFinishedLogRecords();
-  assert.equal(record.body, "share");
+  assert.equal(record.body, "app.share");
   assert.equal(record.attributes["event.name"], "app.share");
   assert.equal(record.attributes.outcome, "clipboard");
   assert.equal(record.attributes["app.page.route"], "/grupos/:id");
@@ -489,7 +493,7 @@ test("an app event is emitted as a log record with no free text", async () => {
 test("a decode error names the operation and nothing else", async () => {
   const { exporter, flushed } = logsWith();
 
-  recordAppEvent("api.decode_error", { "app.api.operation": "getGrupoByIdPagos" });
+  recordEvent("app.api.decode_error", { "app.api.operation": "getGrupoByIdPagos" });
   await flushed();
 
   const [record] = exporter.getFinishedLogRecords();
@@ -508,10 +512,10 @@ test("a decode error names the operation and nothing else", async () => {
 test("the severity travels by name and defaults to info", async () => {
   const { exporter, flushed } = logsWith();
 
-  recordAppEvent("api.decode_error", {}, "error");
-  recordAppEvent("share", {});
+  recordEvent("app.api.decode_error", {}, "error");
+  recordEvent("app.share", {});
   // Una severidad que el mapa no conoce no tira el evento: cae en info.
-  recordAppEvent("share", {}, "inventada");
+  recordEvent("app.share", {}, "inventada");
   await flushed();
 
   const [unError, sinSeveridad, desconocida] = exporter.getFinishedLogRecords();
@@ -525,7 +529,7 @@ test("the severity travels by name and defaults to info", async () => {
 test("the attributes are forwarded as given", async () => {
   const { exporter, flushed } = logsWith();
 
-  recordAppEvent("share", { outcome: "native", cualquiera: "cosa" });
+  recordEvent("app.share", { outcome: "native", cualquiera: "cosa" });
   await flushed();
 
   const [record] = exporter.getFinishedLogRecords();
@@ -536,11 +540,104 @@ test("the attributes are forwarded as given", async () => {
 test("an abandoned gasto edit records the mode and the step", async () => {
   const { exporter, flushed } = logsWith();
 
-  recordAppEvent("gasto.edit_abandoned", { mode: "nuevo", section: "deudores" });
+  recordEvent("app.gasto.edit_abandoned", { mode: "nuevo", section: "deudores" });
   await flushed();
 
   const [record] = exporter.getFinishedLogRecords();
   assert.equal(record.attributes["event.name"], "app.gasto.edit_abandoned");
   assert.equal(record.attributes.mode, "nuevo");
   assert.equal(record.attributes.section, "deudores");
+});
+
+// --- session -----------------------------------------------------------------
+
+test("an event name goes out as given, with no prefix added", async () => {
+  const { exporter, flushed } = logsWith();
+
+  recordEvent("session.end");
+  await flushed();
+
+  const [record] = exporter.getFinishedLogRecords();
+  assert.equal(record.body, "session.end");
+  assert.equal(record.attributes["event.name"], "session.end");
+});
+
+test("log records carry the session id", async () => {
+  const { exporter, flushed } = logsWith({ getSessionId: () => "abc123" });
+
+  recordEvent("app.share");
+  await flushed();
+
+  const [record] = exporter.getFinishedLogRecords();
+  assert.equal(record.attributes["session.id"], "abc123");
+});
+
+// The point of keeping the session in memory is that it needs no consent
+// banner, so the test fails if anything reaches for browser storage.
+test("the session starts synchronously and never touches browser storage", async (t) => {
+  for (const name of ["localStorage", "sessionStorage"]) {
+    Object.defineProperty(globalThis, name, {
+      configurable: true,
+      get() {
+        throw new Error(`the session must not use ${name}`);
+      },
+    });
+    t.after(() => delete globalThis[name]);
+  }
+  window.__telemetry = {};
+
+  const session = createSession();
+  t.after(() => session.shutdown());
+  const { exporter, flushed } = logsWith(session);
+
+  startSession(session);
+  const id = session.getSessionId();
+  await flushed();
+
+  assert.match(id, /^[0-9a-f]{32}$/);
+  assert.equal(window.__telemetry.session, id);
+  const [record] = exporter.getFinishedLogRecords();
+  assert.equal(record.attributes["event.name"], "session.start");
+  assert.equal(record.attributes["session.id"], id);
+});
+
+// --- click names ---------------------------------------------------------------
+
+// Just enough of an element for `closest("[data-track]")`.
+function elementInside(track) {
+  const button = {
+    getAttribute: (name) => (name === "data-track" ? track : null),
+    closest: () => (track ? button : null),
+  };
+  return { closest: (selector) => button.closest(selector) };
+}
+
+function fakeSpan() {
+  return {
+    name: "click",
+    attributes: {},
+    setAttribute(key, value) {
+      this.attributes[key] = value;
+    },
+    updateName(name) {
+      this.name = name;
+    },
+  };
+}
+
+test("a click inside a tracked button is named after it", () => {
+  const span = fakeSpan();
+  nameClickSpan(elementInside("transferencias.saldar"), span);
+
+  assert.equal(span.name, "click transferencias.saldar");
+  assert.equal(span.attributes["app.click.target"], "transferencias.saldar");
+});
+
+test("a click outside any tracked element is left alone", () => {
+  const span = fakeSpan();
+  nameClickSpan(elementInside(null), span);
+  nameClickSpan(undefined, span);
+
+  assert.equal(span.name, "click");
+  assert.deepEqual(span.attributes, {});
 });

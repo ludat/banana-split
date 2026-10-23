@@ -1,5 +1,7 @@
-module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, codigoDeLoginRechazado, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaFiltro, repartijaModoDeVista, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, severityToString, trackDecodeErrors)
+module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, click, codigoDeLoginRechazado, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaFiltro, repartijaModoDeVista, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, severityToString, trackDecodeErrors)
 
+import Html
+import Html.Attributes
 import Http
 import Json.Encode as Json exposing (Value)
 import Models.PagoForm exposing (Section(..))
@@ -13,12 +15,26 @@ type alias TelemetryEvent =
     }
 
 
+{-| Nombre estable para los clicks en este elemento: el span del click pasa a
+llamarse `click <nombre>` y lo lleva en `app.click.target` (ver
+`js/telemetry.js`). Vale también para lo que se toque adentro, como el ícono de
+un botón.
+
+Es `<pantalla>.<acción>`, siempre un literal: botones repetidos en una lista
+comparten el nombre, nunca llevan un id ni nada de la persona.
+
+-}
+click : String -> Html.Attribute msg
+click nombre =
+    Html.Attributes.attribute "data-track" nombre
+
+
 trackDecodeErrors : String -> WebData a -> Maybe TelemetryEvent
 trackDecodeErrors operation response =
     case response of
         Failure (Http.BadBody _) ->
             Just
-                { name = "api.decode_error"
+                { name = "app.api.decode_error"
                 , severity = Error
                 , attributes =
                     [ ( "app.api.operation", Json.string operation ) ]
@@ -44,7 +60,7 @@ codigoDeLoginRechazado err =
                     "otro"
     in
     Just
-        { name = "auth.code_rejected"
+        { name = "app.auth.code_rejected"
         , severity = Warn
         , attributes =
             [ ( "outcome", Json.string outcome ) ]
@@ -54,7 +70,7 @@ codigoDeLoginRechazado err =
 gastoEdicionAbandonada : { esNuevo : Bool, seccion : Section } -> Maybe TelemetryEvent
 gastoEdicionAbandonada { esNuevo, seccion } =
     Just
-        { name = "gasto.edit_abandoned"
+        { name = "app.gasto.edit_abandoned"
         , severity = Info
         , attributes =
             [ ( "mode"
@@ -94,7 +110,7 @@ type alias Feedback =
 -}
 feedbackGeneral : Feedback
 feedbackGeneral =
-    { name = "feedback"
+    { name = "app.feedback"
     , attributes = []
     }
 
@@ -106,7 +122,7 @@ va aparte en `repartijaRedisenoComentario` y solo si la persona escribe uno.
 repartijaRediseno : String -> Maybe TelemetryEvent
 repartijaRediseno opinion =
     Just
-        { name = "repartija.redesign_feedback"
+        { name = "app.repartija.redesign_feedback"
         , severity = Info
         , attributes =
             [ ( "app.feedback.opinion", Json.string opinion ) ]
@@ -119,7 +135,7 @@ respuesta.
 -}
 repartijaRedisenoComentario : String -> Feedback
 repartijaRedisenoComentario opinion =
-    { name = "repartija.redesign_feedback.comment"
+    { name = "app.repartija.redesign_feedback.comment"
     , attributes =
         [ ( "app.feedback.opinion", Json.string opinion ) ]
     }
@@ -132,7 +148,7 @@ prenden y lo apagan enseguida.
 repartijaModoDeVista : Bool -> Maybe TelemetryEvent
 repartijaModoDeVista avanzado =
     Just
-        { name = "repartija.view_mode"
+        { name = "app.repartija.view_mode"
         , severity = Info
         , attributes =
             [ ( "app.repartija.modo"
@@ -150,7 +166,7 @@ repartijaModoDeVista avanzado =
 repartijaFiltro : { filtro : String, activo : Bool } -> Maybe TelemetryEvent
 repartijaFiltro { filtro, activo } =
     Just
-        { name = "repartija.filter_toggled"
+        { name = "app.repartija.filter_toggled"
         , severity = Info
         , attributes =
             [ ( "app.repartija.filtro", Json.string filtro )
@@ -166,7 +182,7 @@ repartijaParticipantesExpandidos : Bool -> Maybe TelemetryEvent
 repartijaParticipantesExpandidos expandido =
     if expandido then
         Just
-            { name = "repartija.participants_expanded"
+            { name = "app.repartija.participants_expanded"
             , severity = Info
             , attributes = []
             }
@@ -178,7 +194,7 @@ repartijaParticipantesExpandidos expandido =
 repartijaAyudaAbierta : { ayuda : String, origen : String } -> Maybe TelemetryEvent
 repartijaAyudaAbierta { ayuda, origen } =
     Just
-        { name = "repartija.help_opened"
+        { name = "app.repartija.help_opened"
         , severity = Info
         , attributes =
             [ ( "app.repartija.ayuda", Json.string ayuda )

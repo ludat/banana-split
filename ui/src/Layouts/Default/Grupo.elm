@@ -23,6 +23,7 @@ import Route.Path as Path
 import Shared.Model as Shared
 import Shared.Msg as Shared
 import Svg.Attributes as SvgAttr
+import Utils.Telemetry as Telemetry
 import View exposing (View)
 
 
@@ -182,7 +183,7 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
 
                         else
                             [ Html.map toContentMsg <|
-                                div [ class "container-fluid py-5 text-center" ]
+                                div [ Attr.id "grupo-elegir-participante", class "container-fluid py-5 text-center" ]
                                     [ p [ class "mb-3" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
                                     , div [ class "mx-auto", style "max-width" "20rem" ]
                                         [ viewGlobalUserSelector activeUser grupo ]
@@ -221,7 +222,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
             , url = origin ++ Path.toString info.share.path
             }
     in
-    div [ class "border-bottom" ]
+    div [ Attr.id "grupo-header", class "border-bottom" ]
         [ div [ class "container-fluid py-3" ]
             [ div [ class "d-flex flex-wrap align-items-start justify-content-between gap-3" ]
                 [ div []
@@ -237,7 +238,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                 -- Solo desktop. En mobile el "Ver como" baja a su propia banda
                 -- y las acciones se van a la navbar de abajo: compartir al menú
                 -- "Más", y agregar gasto al botón del medio.
-                , div [ class "d-none d-md-flex flex-column align-items-end gap-2" ]
+                , div [ Attr.id "grupo-header-acciones", class "d-none d-md-flex flex-column align-items-end gap-2" ]
                     [ label [ class "d-flex align-items-center gap-2 small text-muted text-nowrap" ]
                         [ text "Ver como:"
                         , viewGlobalUserSelector activeUser grupo
@@ -251,6 +252,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                         , if info.showTabs then
                             a
                                 (class "btn btn-primary d-inline-flex align-items-center"
+                                    :: Telemetry.click "grupo.new_gasto"
                                     :: PagoDetalleModal.linkANuevoGasto AbrirPopup currentPath
                                 )
                                 [ i [ class "bi bi-plus-lg me-1" ] []
@@ -266,7 +268,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
 
         -- La banda de "Ver como" de mobile: separada del título por su propio
         -- borde, como en el diseño.
-        , div [ class "d-md-none border-top" ]
+        , div [ Attr.id "grupo-header-mobile", class "d-md-none border-top" ]
             [ div [ class "container-fluid py-2 d-flex align-items-center flex-wrap gap-2" ]
                 [ label [ class "d-flex align-items-center gap-2 small text-muted text-nowrap mb-0" ]
                     [ text "Ver como:"
@@ -286,7 +288,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                 ]
             ]
         , if info.showTabs then
-            div [ class "container-fluid d-none d-md-block" ]
+            div [ Attr.id "grupo-tabs", class "container-fluid d-none d-md-block" ]
                 [ viewTabNav currentPath grupo ]
 
           else
@@ -386,6 +388,7 @@ viewVerComoWarning currentUser activeUser grupo =
                                         [ button
                                             [ type_ "button"
                                             , class "btn btn-sm btn-link p-0 text-decoration-none align-baseline"
+                                            , Telemetry.click "grupo.claim_from_warning"
                                             , onClick
                                                 (ForwardSharedMessage <|
                                                     Shared.ClaimParticipante { grupoId = grupo.id, participanteId = p.id }
@@ -667,12 +670,13 @@ viewBreadcrumb accion =
         -- la lista y el nombre a ese gasto dentro de ella. El "‹" va una sola
         -- vez, adentro del primer link.
         Just (Volver crumbs) ->
-            Html.nav [ Attr.attribute "aria-label" "breadcrumb", class "mb-1 d-flex align-items-center gap-1" ]
+            Html.nav [ Attr.id "grupo-breadcrumb", Attr.attribute "aria-label" "breadcrumb", class "mb-1 d-flex align-items-center gap-1" ]
                 (List.indexedMap
                     (\indice crumb ->
                         Html.a
                             [ Route.href crumb.ruta
                             , class "text-decoration-none d-inline-flex align-items-center gap-1"
+                            , Telemetry.click "grupo.breadcrumb"
                             ]
                             (if indice == 0 then
                                 [ Html.span [ Attr.attribute "aria-hidden" "true" ] [ text "‹" ]
@@ -687,10 +691,11 @@ viewBreadcrumb accion =
                 )
 
         Just (InvitarASesion rutaLogin) ->
-            div [ class "mb-1" ]
+            div [ Attr.id "grupo-breadcrumb", class "mb-1" ]
                 [ Html.a
                     [ Route.href rutaLogin
                     , class "text-decoration-none d-inline-flex align-items-center gap-1 small"
+                    , Telemetry.click "grupo.breadcrumb_login"
                     , Attr.title "Con una cuenta ves todos los grupos en los que participás, sin tener que acordarte las URLs."
                     ]
                     [ i [ class "bi bi-person-circle" ] []
@@ -704,27 +709,27 @@ viewTabNav currentPath grupo =
     Bs.navTabs [ class "border-0 mb-0" ]
         [ Bs.navTab
             { active = currentPath == Path.Grupos_Id_ { id = grupo.id }
-            , attrs = [ Path.href <| Path.Grupos_Id_ { id = grupo.id } ]
+            , attrs = [ Path.href <| Path.Grupos_Id_ { id = grupo.id }, Telemetry.click "nav_tabs.resumen" ]
             }
             [ text "Resumen" ]
         , Bs.navTab
             { active = currentPath == Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }
-            , attrs = [ Path.href <| Path.Grupos_GrupoId__Gastos { grupoId = grupo.id } ]
+            , attrs = [ Path.href <| Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }, Telemetry.click "nav_tabs.gastos" ]
             }
             [ text "Gastos" ]
         , Bs.navTab
             { active = currentPath == Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id }
-            , attrs = [ Path.href <| Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id } ]
+            , attrs = [ Path.href <| Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id }, Telemetry.click "nav_tabs.transferencias" ]
             }
             [ text "Transferencias" ]
         , Bs.navTab
             { active = currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id }
-            , attrs = [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.id } ]
+            , attrs = [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.id }, Telemetry.click "nav_tabs.participantes" ]
             }
             [ text "Participantes" ]
         , Bs.navTab
             { active = currentPath == Path.Grupos_GrupoId__Settings { grupoId = grupo.id }
-            , attrs = [ Path.href <| Path.Grupos_GrupoId__Settings { grupoId = grupo.id } ]
+            , attrs = [ Path.href <| Path.Grupos_GrupoId__Settings { grupoId = grupo.id }, Telemetry.click "nav_tabs.settings" ]
             }
             [ text "Ajustes" ]
         ]
@@ -746,10 +751,11 @@ viewBottomNav :
     -> Html Msg
 viewBottomNav currentPath share grupo =
     let
-        item icon label path =
+        item track icon label path =
             a
                 [ classList [ ( "navbar-item", True ), ( "active", currentPath == path ) ]
                 , Path.href path
+                , Telemetry.click track
                 ]
                 [ i [ class ("bi " ++ icon) ] []
                 , Html.span [ class "text-truncate" ] [ text label ]
@@ -759,16 +765,19 @@ viewBottomNav currentPath share grupo =
             (currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id })
                 || (currentPath == Path.Grupos_GrupoId__Settings { grupoId = grupo.id })
     in
-    Html.nav [ Css.navbar_bottom, Css.barra_inferior_fija ]
-        [ item "bi-house-door" "Resumen" (Path.Grupos_Id_ { id = grupo.id })
-        , item "bi-card-list" "Gastos" (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+    Html.nav [ Attr.id "grupo-nav-inferior", Css.navbar_bottom, Css.barra_inferior_fija ]
+        [ item "nav_bottom.resumen" "bi-house-door" "Resumen" (Path.Grupos_Id_ { id = grupo.id })
+        , item "nav_bottom.gastos" "bi-card-list" "Gastos" (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
         , a
-            (Css.navbar_item :: PagoDetalleModal.linkANuevoGasto AbrirPopup currentPath)
+            (Css.navbar_item
+                :: Telemetry.click "nav_bottom.new_gasto"
+                :: PagoDetalleModal.linkANuevoGasto AbrirPopup currentPath
+            )
             [ Html.span [ Css.navbar_big_button ]
                 [ i [ class "bi bi-plus-lg" ] [] ]
             , Html.span [] [ text "Ingresar gasto" ]
             ]
-        , item "bi-wallet2" "Transferencias" (Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id })
+        , item "nav_bottom.transferencias" "bi-wallet2" "Transferencias" (Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id })
         , div [ Css.navbar_more, class "dropup" ]
             [ a
                 [ classList [ ( "navbar-item", True ), ( "active", masActive ) ]
@@ -785,6 +794,7 @@ viewBottomNav currentPath share grupo =
                         [ class "dropdown-item"
                         , classList [ ( "active", currentPath == Path.Grupos_GrupoId__Participantes { grupoId = grupo.id } ) ]
                         , Path.href (Path.Grupos_GrupoId__Participantes { grupoId = grupo.id })
+                        , Telemetry.click "nav_bottom.participantes"
                         ]
                         [ i [ class "bi bi-people me-2" ] []
                         , text "Participantes"
@@ -795,6 +805,7 @@ viewBottomNav currentPath share grupo =
                         [ class "dropdown-item"
                         , classList [ ( "active", currentPath == Path.Grupos_GrupoId__Settings { grupoId = grupo.id } ) ]
                         , Path.href (Path.Grupos_GrupoId__Settings { grupoId = grupo.id })
+                        , Telemetry.click "nav_bottom.settings"
                         ]
                         [ i [ class "bi bi-gear me-2" ] []
                         , text "Ajustes"
@@ -805,6 +816,7 @@ viewBottomNav currentPath share grupo =
                     [ a
                         [ class "dropdown-item"
                         , Attr.href "#"
+                        , Telemetry.click "nav_bottom.share_link"
                         , preventDefaultOn "click"
                             (Decode.succeed ( ShareUrl share, True ))
                         ]
@@ -816,6 +828,7 @@ viewBottomNav currentPath share grupo =
                     [ a
                         [ class "dropdown-item"
                         , Attr.href "#"
+                        , Telemetry.click "nav_bottom.share_qr"
                         , preventDefaultOn "click"
                             (Decode.succeed ( OpenQrShare share, True ))
                         ]
@@ -850,6 +863,7 @@ viewShareDropdown { title, url } =
                 [ a
                     [ class "dropdown-item"
                     , Attr.href "#"
+                    , Telemetry.click "grupo.share_link"
                     , preventDefaultOn "click"
                         (Decode.succeed ( ShareUrl { title = title, url = url }, True ))
                     ]
@@ -861,6 +875,7 @@ viewShareDropdown { title, url } =
                 [ a
                     [ class "dropdown-item"
                     , Attr.href "#"
+                    , Telemetry.click "grupo.share_qr"
                     , preventDefaultOn "click"
                         (Decode.succeed ( OpenQrShare { title = title, url = url }, True ))
                     ]
@@ -888,7 +903,8 @@ viewQrModal qrShare =
                 |> Result.withDefault (text "No se pudo generar el código QR")
     in
     Bs.modal
-        { isOpen = qrShare /= Nothing
+        { id = "modal-qr"
+        , isOpen = qrShare /= Nothing
         , onClose = CloseQrShare
         , centered = False
         , title =
@@ -911,7 +927,7 @@ viewQrModal qrShare =
                 Nothing ->
                     []
         , footer =
-            [ Bs.btn Bs.Transparent [ onClick CloseQrShare ] [ text "Cerrar" ] ]
+            [ Bs.btn Bs.Transparent [ Telemetry.click "grupo.qr_close", onClick CloseQrShare ] [ text "Cerrar" ] ]
         }
 
 

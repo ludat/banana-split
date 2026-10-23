@@ -37,6 +37,7 @@ import Html.Events exposing (on, onClick, onInput)
 import Html.Keyed as Keyed
 import Json.Decode as Decode
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Telemetry as Telemetry
 
 
 navbar : List (Attribute msg) -> List (Html msg) -> Html msg
@@ -226,7 +227,8 @@ navTab { active, attrs } children =
 
 
 modal :
-    { isOpen : Bool
+    { id : String
+    , isOpen : Bool
     , onClose : msg
     , title : String
     , body : List (Html msg)
@@ -234,11 +236,16 @@ modal :
     , centered : Bool
     }
     -> Html msg
-modal { isOpen, onClose, title, body, footer, centered } =
+modal config =
+    let
+        { isOpen, onClose, title, body, footer, centered } =
+            config
+    in
     if isOpen then
         div []
             [ div
-                [ class "modal d-block"
+                [ id config.id
+                , class "modal d-block"
                 , attribute "tabindex" "-1"
                 , attribute "aria-modal" "true"
                 , attribute "role" "dialog"
@@ -251,6 +258,7 @@ modal { isOpen, onClose, title, body, footer, centered } =
                                 [ type_ "button"
                                 , class "btn-close"
                                 , attribute "aria-label" "Cerrar"
+                                , Telemetry.click "modal.close"
                                 , onClick onClose
                                 ]
                                 []

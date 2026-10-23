@@ -23,6 +23,7 @@ import Shared
 import Shared.Msg
 import Task
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Telemetry as Telemetry
 import Utils.Toasts exposing (pushToast)
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
@@ -204,7 +205,7 @@ view store currentUser model =
                 [ div [ class "container py-4" ]
                     [ div [ class "row justify-content-center" ]
                         [ div [ class "col-lg-6" ]
-                            [ div [ class "card mb-4" ]
+                            [ div [ id "participantes-lista", class "card mb-4" ]
                                 [ div [ class "card-header" ] [ text "Participantes" ]
                                 , Bs.listGroup [ class "list-group-flush" ]
                                     (grupo.participantes
@@ -212,7 +213,8 @@ view store currentUser model =
                                     )
                                 ]
                             , Html.form
-                                [ onSubmit (ParticipanteForm Form.Submit)
+                                [ id "participantes-agregar"
+                                , onSubmit (ParticipanteForm Form.Submit)
                                 , class "card"
                                 ]
                                 [ div [ class "card-header" ] [ text "Agregar Participante" ]
@@ -221,6 +223,7 @@ view store currentUser model =
                                         viewNombreField (Form.getFieldAsString "nombre" model.participanteForm)
                                     , Bs.btn Bs.Primary
                                         [ id "agregar-participante"
+                                        , Telemetry.click "participantes.add"
                                         , onClick (ParticipanteForm Form.Submit)
                                         ]
                                         [ text "Agregar" ]
@@ -247,7 +250,7 @@ viewParticipanteItem currentUser ownsOne p =
         , div [ class "d-flex align-items-center gap-2" ]
             [ viewClaimAction currentUser ownsOne p
             , Bs.btn Bs.Danger
-                [ onClick (DeleteParticipante p.id) ]
+                [ Telemetry.click "participantes.delete", onClick (DeleteParticipante p.id) ]
                 [ text "Borrar" ]
             ]
         ]
@@ -294,7 +297,7 @@ viewClaimAction currentUser ownsOne p =
         Success u ->
             if isOwnedBy u.id p then
                 Bs.btn Bs.Secondary
-                    [ class "btn-sm", onClick (UnclaimParticipante p.id) ]
+                    [ class "btn-sm", Telemetry.click "participantes.unclaim", onClick (UnclaimParticipante p.id) ]
                     [ text "Dejar de reclamar" ]
 
             else
@@ -308,7 +311,7 @@ viewClaimAction currentUser ownsOne p =
 
                         else
                             Bs.btn Bs.Primary
-                                [ class "btn-sm", onClick (ClaimParticipante p.id) ]
+                                [ class "btn-sm", Telemetry.click "participantes.claim", onClick (ClaimParticipante p.id) ]
                                 [ text "Reclamar" ]
 
         _ ->

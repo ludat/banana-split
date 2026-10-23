@@ -61,7 +61,7 @@ import Shared.Model
 import Task
 import Utils.Day as Day
 import Utils.Form exposing (CustomFormError, isDataModifyingEvent)
-import Utils.Telemetry exposing (gastoEdicionAbandonada)
+import Utils.Telemetry as Telemetry exposing (gastoEdicionAbandonada)
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import Utils.Ulid exposing (emptyUlid)
@@ -859,6 +859,7 @@ viewHeaderEdicion model =
             [ type_ "button"
             , class "btn-close"
             , attribute "aria-label" "Cerrar"
+            , Telemetry.click "gasto.edit_close"
             , onClick AskDiscardEdit
             ]
             []
@@ -881,7 +882,8 @@ viewDescartarOverlay model =
     else
         div []
             [ div
-                [ class "modal d-block"
+                [ id "gasto-descartar"
+                , class "modal d-block"
                 , id descartarOverlayId
                 , style "z-index" "1070"
                 , tabindex -1
@@ -898,10 +900,10 @@ viewDescartarOverlay model =
                             ]
                         , div [ class "modal-footer border-top-0" ]
                             [ Bs.btn Bs.Transparent
-                                [ onClick CancelDiscardEdit ]
+                                [ Telemetry.click "gasto.discard_cancel", onClick CancelDiscardEdit ]
                                 [ text "Seguir editando" ]
                             , Bs.btn Bs.Danger
-                                [ onClick ConfirmDiscardEdit ]
+                                [ Telemetry.click "gasto.discard_confirm", onClick ConfirmDiscardEdit ]
                                 [ text "Descartar" ]
                             ]
                         ]
@@ -923,6 +925,7 @@ viewEstado icono titulo mensaje =
             [ type_ "button"
             , class "btn-close ms-auto"
             , attribute "aria-label" "Cerrar"
+            , Telemetry.click "gasto.close"
             , onClick Close
             ]
             []
@@ -1032,6 +1035,7 @@ viewOverlayChrome titulo cuerpo =
                             [ type_ "button"
                             , class "btn-close"
                             , attribute "aria-label" "Cerrar"
+                            , Telemetry.click "gasto.overlay_close"
                             , onClick CloseOverlay
                             ]
                             []
@@ -1046,7 +1050,7 @@ viewOverlayChrome titulo cuerpo =
 
 viewHeader : Pago -> ResumenPago -> Model -> Html Msg
 viewHeader pago resumen model =
-    div [ class "modal-header flex-column align-items-stretch border-bottom-0 pb-0" ]
+    div [ id "gasto-header", class "modal-header flex-column align-items-stretch border-bottom-0 pb-0" ]
         [ div [ class "d-flex justify-content-between align-items-start" ]
             [ div []
                 [ div [ class "text-muted text-uppercase fw-semibold small" ] [ text "Gasto compartido" ]
@@ -1060,6 +1064,7 @@ viewHeader pago resumen model =
                 [ type_ "button"
                 , class "btn-close"
                 , attribute "aria-label" "Cerrar"
+                , Telemetry.click "gasto.close"
                 , onClick Close
                 ]
                 []
@@ -1070,9 +1075,9 @@ viewHeader pago resumen model =
 
 viewActions : Model -> Html Msg
 viewActions model =
-    div [ class "d-flex align-items-center gap-2 mt-3" ]
+    div [ id "gasto-acciones", class "d-flex align-items-center gap-2 mt-3" ]
         [ Bs.btn Bs.SecondarySolid
-            [ class "rounded-pill px-4", onClick StartEdit ]
+            [ class "rounded-pill px-4", Telemetry.click "gasto.edit", onClick StartEdit ]
             [ text "Editar" ]
         , viewActionsMenu model
         ]
@@ -1098,10 +1103,10 @@ viewActionsMenu model =
                     [ div [ class "small text-danger mb-2" ] [ text "¿Eliminar este gasto? No se puede deshacer." ]
                     , div [ class "d-flex gap-2" ]
                         [ Bs.btn Bs.Transparent
-                            [ onClick CancelDelete, disabled model.deleting ]
+                            [ Telemetry.click "gasto.delete_cancel", onClick CancelDelete, disabled model.deleting ]
                             [ text "Cancelar" ]
                         , Bs.btn Bs.Danger
-                            [ onClick ConfirmDelete, disabled model.deleting ]
+                            [ Telemetry.click "gasto.delete_confirm", onClick ConfirmDelete, disabled model.deleting ]
                             [ text "Eliminar" ]
                         ]
                     ]
@@ -1111,6 +1116,7 @@ viewActionsMenu model =
                 [ button
                     [ type_ "button"
                     , class "dropdown-item text-danger"
+                    , Telemetry.click "gasto.delete"
                     , onClick AskDelete
                     ]
                     [ i [ class "bi bi-trash me-2" ] [], text "Eliminar" ]
@@ -1145,6 +1151,7 @@ errorToggle key expanded errores =
                  else
                     "false"
                 )
+            , Telemetry.click "gasto.toggle_errors"
             , onClick (ToggleErrors key)
             ]
             [ i [ class "bi bi-exclamation-triangle-fill" ] [] ]
@@ -1177,6 +1184,7 @@ viewInfo grupo pago resumen =
             [ type_ "button"
             , class "btn p-0 border-0"
             , attribute "aria-label" "Ver balance"
+            , Telemetry.click "gasto.open_balance_graph"
             , onClick (OpenOverlay BalanceGraphOverlay)
             ]
             [ viewNetosBarrasMini resumen.resumen.netos ]
@@ -1195,7 +1203,7 @@ viewBalance grupo resumen =
 
 viewReparto : Grupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewReparto grupo pago resumen model =
-    Bs.card [ class "mt-3" ]
+    Bs.card [ id "gasto-reparto", class "mt-3" ]
         [ Bs.cardBody []
             [ div [ class "d-flex justify-content-between align-items-start mb-2" ]
                 [ div [ class "text-muted text-uppercase fw-semibold small" ]
@@ -1204,6 +1212,7 @@ viewReparto grupo pago resumen model =
                     [ type_ "button"
                     , class "btn p-0 border-0"
                     , attribute "aria-label" "Ver gráfico del reparto"
+                    , Telemetry.click "gasto.open_deudores_graph"
                     , onClick (OpenOverlay DeudoresGraphOverlay)
                     ]
                     [ GraficoTorta.viewTortaMini
@@ -1376,10 +1385,12 @@ viewRepartoRepartija grupo repartija =
             [ a
                 [ Path.href repartijaPath
                 , class "btn btn-secondary rounded-pill"
+                , Telemetry.click "gasto.repartija_claim_items"
                 ]
                 [ i [ class "bi bi-card-checklist me-1" ] [], text "Reclamar items" ]
             , Bs.btn Bs.Primary
                 [ class "rounded-pill"
+                , Telemetry.click "gasto.repartija_share"
                 , onClick (Share { title = repartija.nombre, path = repartijaPath })
                 ]
                 [ i [ class "bi bi-share me-1" ] [], text "Invitar a colaborar" ]
@@ -1418,7 +1429,7 @@ viewRepartoRepartija grupo repartija =
 
 viewPago : Grupo -> Pago -> ResumenPago -> Model -> Html Msg
 viewPago grupo pago resumen model =
-    Bs.card [ class "mt-3" ]
+    Bs.card [ id "gasto-pagadores", class "mt-3" ]
         [ Bs.cardBody []
             [ div [ class "d-flex justify-content-between align-items-start mb-2" ]
                 [ div [ class "text-muted text-uppercase fw-semibold small" ]
@@ -1427,6 +1438,7 @@ viewPago grupo pago resumen model =
                     [ type_ "button"
                     , class "btn p-0 border-0"
                     , attribute "aria-label" "Ver gráfico del reparto"
+                    , Telemetry.click "gasto.open_pagadores_graph"
                     , onClick (OpenOverlay PagadoresGraphOverlay)
                     ]
                     [ GraficoTorta.viewTortaMini
@@ -1963,6 +1975,7 @@ viewTortaFooter grupo paso model =
         [ type_ "button"
         , class "btn p-0 border-0 flex-shrink-0 d-flex align-items-center"
         , Attr.attribute "aria-label" "Ver el gráfico en grande"
+        , Telemetry.click "gasto.edit_open_graph"
         , onClick (OpenOverlay (overlayDelPaso paso))
         ]
         [ GraficoTorta.viewTortaMini (porcionesTorta grupo paso model) ]
@@ -2017,6 +2030,7 @@ viewStepTabs model =
                         -- en vez de como error, así no aparece "en rojo" al inicio.
                         , ( "text-body-tertiary", not active && sectionIncomplete model section )
                         ]
+                    , Telemetry.click "gasto.edit_step_tab"
                     , onClick (SelectSection section)
                     ]
                     (text label
@@ -2029,7 +2043,7 @@ viewStepTabs model =
                     )
                 ]
     in
-    div [ class "d-flex align-items-end mb-4" ]
+    div [ id "gasto-pasos", class "d-flex align-items-end mb-4" ]
         [ Html.ul [ class "nav nav-tabs flex-grow-1" ]
             [ tab BasicPagoData "Gasto"
             , tab PagadoresSection "Pago"
@@ -2112,7 +2126,7 @@ viewBasicSection model =
         fechaField =
             Form.getFieldAsString "fecha" form
     in
-    Html.form [ onSubmit SubmitCurrentSection, class "flex-grow-1 d-flex flex-column" ]
+    Html.form [ id "gasto-paso-basico", onSubmit SubmitCurrentSection, class "flex-grow-1 d-flex flex-column" ]
         [ Html.map PagoForm <|
             Bs.textFormItem nombreField
                 { label = "Título"
@@ -2145,6 +2159,7 @@ viewBasicSection model =
             [ viewBotonera
                 [ Bs.btn Bs.Primary
                     [ disabled (Form.getOutput form == Nothing)
+                    , Telemetry.click "gasto.edit_next"
                     , onClick SubmitCurrentSection
                     , class "flex-grow-1"
                     ]
@@ -2177,7 +2192,7 @@ viewPagadoresSection grupo model =
                 (Form.getFieldAsBool (prefix ++ "." ++ mostrarMontoFijoField) form).value == Just True
             }
     in
-    Html.form [ onSubmit SubmitCurrentSection, class "flex-grow-1 d-flex flex-column" ]
+    Html.form [ id "gasto-paso-pagadores", onSubmit SubmitCurrentSection, class "flex-grow-1 d-flex flex-column" ]
         [ div [ class "d-flex flex-wrap align-items-center gap-2 mb-2" ]
             [ Html.h5 [ class "mb-0" ] [ text "Quienes pagaron" ] ]
         , viewSeleccionarParticipantes
@@ -2197,6 +2212,7 @@ viewPagadoresSection grupo model =
                 [ viewTortaFooter grupo Pagadores model
                 , Bs.btn Bs.Primary
                     [ disabled (Form.getOutput form == Nothing)
+                    , Telemetry.click "gasto.edit_next"
                     , onClick SubmitCurrentSection
                     , class "flex-grow-1"
                     ]
@@ -2215,7 +2231,7 @@ viewDeudoresSection grupo model =
         tipoField =
             Form.getFieldAsString "distribucion_deudores.tipo" form
     in
-    Html.form [ onSubmit <| PagoForm Form.Submit, class "flex-grow-1 d-flex flex-column" ]
+    Html.form [ id "gasto-paso-deudores", onSubmit <| PagoForm Form.Submit, class "flex-grow-1 d-flex flex-column" ]
         [ viewReceiptBanner model.receiptParseState
         , viewModalidadSelector tipoField
         , case tipoField.value of
@@ -2245,6 +2261,7 @@ viewDeudoresSection grupo model =
                       disabled (Form.getOutput model.pagoForm == Nothing || not model.hasUnsavedChanges)
                     , onClick (PagoForm Form.Submit)
                     , Attr.id "pago-submit-button"
+                    , Telemetry.click "gasto.save"
                     , class "flex-grow-1"
                     ]
                     [ text <|
@@ -2266,7 +2283,7 @@ el "Cancelar" que vuelve al detalle del gasto.
 viewBotonera : List (Html Msg) -> Html Msg
 viewBotonera children =
     div [ class "d-flex gap-2 align-items-stretch" ]
-        (Bs.btn Bs.Transparent [ onClick Cancel ] [ text "Cancelar" ] :: children)
+        (Bs.btn Bs.Transparent [ Telemetry.click "gasto.edit_cancel", onClick Cancel ] [ text "Cancelar" ] :: children)
 
 
 viewModalidadSelector : Form.FieldState CustomFormError String -> Html Msg
@@ -2294,6 +2311,7 @@ viewModalidadSelector tipoField =
                     [ ( "card flex-fill text-center border-2 position-relative", True )
                     , ( "shadow-sm", active )
                     ]
+                 , Telemetry.click "gasto.modalidad_select"
                  , onClick <| PagoForm <| Form.Input tipoField.path Form.Select (FormField.String value)
                  ]
                     ++ emphasisBorder
@@ -2329,7 +2347,7 @@ viewModalidadSelector tipoField =
                     ]
                 ]
     in
-    div [ class "mb-4" ]
+    div [ id "gasto-modalidad", class "mb-4" ]
         [ Html.h5 [ class "mb-2" ] [ text "Modalidad" ]
         , div [ class "d-flex gap-3 mt-4" ]
             [ card "partes"
@@ -2348,7 +2366,7 @@ viewModalidadSelector tipoField =
 
 viewReceiptBanner : Maybe ReceiptReadingState -> Html Msg
 viewReceiptBanner receiptParseState =
-    div [ class "card mb-4" ]
+    div [ id "gasto-recibo", class "card mb-4" ]
         [ div [ class "card-body" ]
             [ Html.h6 [ class "mb-1" ] [ i [ class "bi bi-stars me-1" ] [], text "Leer recibo con IA" ]
             , p [ class "text-body-secondary small mb-2" ]
@@ -2392,6 +2410,7 @@ viewReceiptBanner receiptParseState =
                             [ type_ "button"
                             , class "btn-close"
                             , Attr.attribute "aria-label" "Cerrar"
+                            , Telemetry.click "gasto.receipt_error_dismiss"
                             , onClick ClearReceiptError
                             ]
                             []
@@ -2461,6 +2480,7 @@ viewModoChip path active label =
              else
                 "false"
             )
+        , Telemetry.click "gasto.modo_toggle"
         , onClick <| PagoForm <| Form.Input path Form.Checkbox (FormField.Bool (not active))
         ]
         [ i
@@ -2494,6 +2514,7 @@ viewSeleccionarParticipantes selector participantes prefix form =
                 [ type_ "button"
                 , class "btn btn-light rounded-pill d-inline-flex align-items-center gap-2"
                 , Attr.id selector.id
+                , Telemetry.click "gasto.participantes_selector_open"
                 , onClick (AbrirSelector { titulo = selector.titulo, prefix = prefix })
                 ]
                 [ i [ class "bi bi-person-fill" ] [], text "Seleccionar" ]
@@ -2524,7 +2545,8 @@ viewSelectorOverlay participantes model =
             in
             div []
                 [ div
-                    [ class "modal d-block"
+                    [ id "gasto-selector-participantes"
+                    , class "modal d-block"
                     , style "z-index" "1070"
                     , Attr.tabindex -1
                     , Attr.attribute "aria-modal" "true"
@@ -2538,6 +2560,7 @@ viewSelectorOverlay participantes model =
                                     [ type_ "button"
                                     , class "btn-close"
                                     , Attr.attribute "aria-label" "Cerrar"
+                                    , Telemetry.click "gasto.participantes_selector_close"
                                     , onClick CerrarSelector
                                     ]
                                     []
@@ -2545,7 +2568,7 @@ viewSelectorOverlay participantes model =
                             , div [ class "modal-body" ] [ viewPills participantes prefix form ]
                             , div [ class "modal-footer" ]
                                 [ Bs.btn Bs.Primary
-                                    [ class "w-100", onClick CerrarSelector ]
+                                    [ class "w-100", Telemetry.click "gasto.participantes_selector_done", onClick CerrarSelector ]
                                     [ text "Listo" ]
                                 ]
                             ]
@@ -2590,6 +2613,7 @@ viewParticipantePill participante prefix form =
              else
                 "false"
             )
+        , Telemetry.click "gasto.participante_toggle"
         , onClick <| PagoForm <| Form.Input participaField.path Form.Checkbox (FormField.Bool (not participa))
         ]
         [ i
@@ -2826,6 +2850,7 @@ viewCuotaCounter path form =
             [ type_ "button"
             , class "btn btn-dark btn-sm rounded-circle"
             , Attr.attribute "aria-label" "Menos partes"
+            , Telemetry.click "gasto.partes_decrease"
             , onClick (setCuota (cuota - 1))
             ]
             [ i [ class "bi bi-dash" ] [] ]
@@ -2834,6 +2859,7 @@ viewCuotaCounter path form =
             [ type_ "button"
             , class "btn btn-dark btn-sm rounded-circle"
             , Attr.attribute "aria-label" "Más partes"
+            , Telemetry.click "gasto.partes_increase"
             , onClick (setCuota (cuota + 1))
             ]
             [ i [ class "bi bi-plus" ] [] ]
@@ -2887,12 +2913,13 @@ viewRepartijaForm monedaPorDefecto prefix form =
         itemsIndexes =
             Form.getListIndexes (prefix ++ ".items") form
     in
-    div []
+    div [ id "gasto-repartija" ]
         [ div [ class "mb-4" ]
             [ div [ class "d-flex justify-content-between align-items-center mb-2" ]
                 [ Html.h6 [ class "mb-0" ] [ text "Ítems" ]
                 , Bs.btn Bs.Secondary
-                    [ onClick <| PagoForm <| Form.Append <| prefix ++ ".items"
+                    [ Telemetry.click "gasto.item_add"
+                    , onClick <| PagoForm <| Form.Append <| prefix ++ ".items"
                     , type_ "button"
                     , class "btn-sm rounded-pill"
                     ]
@@ -2951,13 +2978,13 @@ viewRepartijaForm monedaPorDefecto prefix form =
                     { active = distribucionDeSobrasField.value == Just "SobrasNoDistribuir"
                     , onSelect = selectSobras "SobrasNoDistribuir"
                     }
-                    []
+                    [ Telemetry.click "gasto.sobras_no_distribuir" ]
                     [ text "No distribuir" ]
                 , Bs.segmentedButtonItem
                     { active = distribucionDeSobrasField.value == Just "SobrasProporcional"
                     , onSelect = selectSobras "SobrasProporcional"
                     }
-                    []
+                    [ Telemetry.click "gasto.sobras_proporcional" ]
                     [ text "Proporcional" ]
                 ]
             ]
@@ -2992,6 +3019,7 @@ viewRepartijaItemForm i prefix form =
         , Html.td [ style "width" "1%" ]
             [ Bs.btn Bs.Danger
                 [ type_ "button"
+                , Telemetry.click "gasto.item_remove"
                 , onClick <| PagoForm <| Form.RemoveItem (prefix ++ ".items") i
                 , Attr.attribute "aria-label" "Eliminar item"
                 ]

@@ -36,6 +36,12 @@ import { UserInteractionInstrumentation } from "@opentelemetry/instrumentation-u
 import { BrowserNavigationInstrumentation } from "@opentelemetry/instrumentation-browser-navigation";
 import { ExceptionInstrumentation } from "@opentelemetry/instrumentation-web-exception";
 import {
+  createDefaultSessionIdGenerator,
+  createSessionLogRecordProcessor,
+  createSessionManager,
+  createSessionSpanProcessor,
+} from "@opentelemetry/browser-sdk/session";
+import {
   ATTR_DEPLOYMENT_ENVIRONMENT_NAME,
   ATTR_ERROR_TYPE,
   ATTR_HTTP_REQUEST_METHOD,
@@ -160,6 +166,23 @@ export function browserAttributes(nav = globalThis.navigator) {
 }
 
 // ---------------------------------------------------------------------------
+// Click names
+// ---------------------------------------------------------------------------
+
+const ATTR_CLICK_TARGET = "app.click.target";
+
+// Los botones llevan `data-track` (ver `Utils.Telemetry.click` del lado Elm)
+// con un nombre estable, que acá pasa al span del click. Se busca con
+// `closest` porque el target del evento es lo que se tocó de verdad, que suele
+// ser el ícono o el texto de adentro del botón.
+export function nameClickSpan(element, span) {
+  const name = element?.closest?.("[data-track]")?.getAttribute("data-track");
+  if (!name) return;
+  span.setAttribute(ATTR_CLICK_TARGET, name);
+  span.updateName(`click ${name}`);
+}
+
+// ---------------------------------------------------------------------------
 // Span scrubbing
 // ---------------------------------------------------------------------------
 
@@ -223,6 +246,57 @@ export class PrivacySpanProcessor {
   shutdown() {
     return Promise.resolve();
   }
+}
+
+// ---------------------------------------------------------------------------
+// Session
+// ---------------------------------------------------------------------------
+
+// A session ends after 30 minutes without activity or 4 hours in total,
+// whichever comes first. Every span and log carries its `session.id`.
+//
+// The session lives only in memory: nothing is written to the browser, so a
+// reload or a new tab starts a new session. Navigating inside the app does not,
+// since it is a single page.
+const SESSION_INACTIVITY_TIMEOUT_S = 30 * 60;
+const SESSION_MAX_DURATION_S = 4 * 60 * 60;
+
+// The manager requires a store, and the SDK's only one is localStorage.
+const NO_SESSION_STORE = {
+  save: () => Promise.resolve(),
+  get: () => Promise.resolve(null),
+};
+
+// The manager is the `SessionProvider` the span and log processors ask for the
+// id, so it has to exist before them; `startSession` runs once they are in.
+export function createSession() {
+  const manager = createSessionManager({
+    sessionIdGenerator: createDefaultSessionIdGenerator(),
+    sessionStore: NO_SESSION_STORE,
+    inactivityTimeout: SESSION_INACTIVITY_TIMEOUT_S,
+    maxDuration: SESSION_MAX_DURATION_S,
+  });
+
+  manager.addObserver({
+    onSessionStarted(session, previous) {
+      window.__telemetry.session = session.id;
+      recordEvent("session.start", previous ? { "session.previous_id": previous.id } : {});
+    },
+    onSessionEnded() {
+      recordEvent("session.end");
+    },
+  });
+
+  return manager;
+}
+
+// Not `manager.start()`: all it adds is reading the store, which is empty, and
+// it does so asynchronously, so a span created in between (Elm's `init` runs in
+// this same tick) would start a session that `start()` then replaces. Asking
+// for the id starts the session synchronously instead, and with the logger
+// already installed, so `session.start` is not lost.
+export function startSession(manager) {
+  manager.getSessionId();
 }
 
 // ---------------------------------------------------------------------------
@@ -305,7 +379,7 @@ function createInstruments(meter) {
 }
 
 // ---------------------------------------------------------------------------
-// App events
+// Events
 // ---------------------------------------------------------------------------
 
 // La severidad va por nombre y no como `SeverityNumber` para que los call sites
@@ -317,7 +391,7 @@ const SEVERITIES = {
   error: SeverityNumber.ERROR,
 };
 
-export function recordAppEvent(name, attributes = {}, severity = "info") {
+export function recordEvent(name, attributes = {}, severity = "info") {
   if (!appLogger) return; // telemetry is off
 
   appLogger.emit({
@@ -326,7 +400,7 @@ export function recordAppEvent(name, attributes = {}, severity = "info") {
     body: name,
     attributes: {
       ...attributes,
-      "event.name": `app.${name}`,
+      "event.name": name,
       ...contextAttributes(),
     },
   });
@@ -337,7 +411,7 @@ const FEEDBACK_MAX_LENGTH = 2000;
 let appLogger = null;
 let logProvider = null;
 
-export function recordFeedback(message, name = "feedback", attributes = {}) {
+export function recordFeedback(message, name = "app.feedback", attributes = {}) {
   if (!appLogger) return false;
   if (typeof message !== "string") return false;
 
@@ -350,7 +424,7 @@ export function recordFeedback(message, name = "feedback", attributes = {}) {
     body: text.slice(0, FEEDBACK_MAX_LENGTH),
     attributes: {
       ...attributes,
-      "event.name": `app.${name}`,
+      "event.name": name,
       ...contextAttributes(),
     },
   });
@@ -376,10 +450,11 @@ export class PrivacyLogRecordProcessor {
   }
 }
 
-export function createLogProvider(resource, exporter) {
+export function createLogProvider(resource, exporter, sessionProvider = null) {
   return new LoggerProvider({
     resource,
     processors: [
+      ...(sessionProvider ? [createSessionLogRecordProcessor(sessionProvider)] : []),
       new PrivacyLogRecordProcessor(),
       new BatchLogRecordProcessor({ exporter, scheduledDelayMillis: BATCH_EXPORT_DELAY_MS }),
     ],
@@ -392,9 +467,13 @@ export function installLogProvider(provider) {
   logs.setGlobalLoggerProvider(provider);
 }
 
-function setUpLogs(resource) {
+function setUpLogs(resource, session) {
   installLogProvider(
-    createLogProvider(resource, new OTLPLogExporter({ url: `${OTLP_ENDPOINT}/v1/logs` }))
+    createLogProvider(
+      resource,
+      new OTLPLogExporter({ url: `${OTLP_ENDPOINT}/v1/logs` }),
+      session
+    )
   );
 }
 
@@ -449,11 +528,13 @@ export function initTelemetry() {
   const meterProvider = setUpMetrics(resource);
   const meter = metrics.getMeter(SERVICE_NAME);
   const instruments = createInstruments(meter);
-  setUpLogs(resource);
+  const session = createSession();
+  setUpLogs(resource, session);
 
   const tracerProvider = new TracerProvider({
     resource,
     spanProcessors: [
+      createSessionSpanProcessor(session),
       new PrivacySpanProcessor((duration, attributes) =>
         instruments.httpDuration.record(duration, attributes)
       ),
@@ -473,6 +554,7 @@ export function initTelemetry() {
     })
   );
   trace.setGlobalTracerProvider(tracerProvider);
+  startSession(session);
 
   const ignoreUrls = [new RegExp(`^${OTLP_ENDPOINT.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)];
 
@@ -492,6 +574,12 @@ export function initTelemetry() {
       }),
       new UserInteractionInstrumentation({
         eventNames: ["click"],
+        // Despite its name, this hook is also where the library lets you add
+        // to the span; returning false keeps it.
+        shouldPreventSpanCreation: (_eventType, element, span) => {
+          nameClickSpan(element, span);
+          return false;
+        },
       }),
       new BrowserNavigationInstrumentation({
         sanitizeUrl: scrubUrl,

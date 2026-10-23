@@ -28,6 +28,7 @@ import Svg.Attributes as SvgAttr
 import Time exposing (Zone)
 import Utils.Day
 import Utils.Posix as Posix exposing (Posix)
+import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import View exposing (View)
@@ -165,7 +166,10 @@ view store zone ahora userId model =
                         [ p [] [ text "Tu grupo todavía no tiene participantes!" ]
                         , p []
                             [ text "Agregalos "
-                            , a [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.id } ]
+                            , a
+                                [ Path.href <| Path.Grupos_GrupoId__Participantes { grupoId = grupo.id }
+                                , Telemetry.click "resumen.empty_add_participantes"
+                                ]
                                 [ text "acá" ]
                             ]
                         ]
@@ -173,9 +177,9 @@ view store zone ahora userId model =
                   else
                     div [ class "container-fluid py-3" ]
                         [ div [ class "row g-4" ]
-                            [ div [ class "col-lg-8" ]
+                            [ div [ Attr.id "resumen-principal", class "col-lg-8" ]
                                 [ viewLeftColumn store zone userId model grupo ]
-                            , div [ class "col-lg-4" ]
+                            , div [ Attr.id "resumen-lateral", class "col-lg-4" ]
                                 [ viewRightColumn store zone ahora userId model grupo ]
                             ]
                         ]
@@ -221,7 +225,10 @@ viewLeftColumn store zone userId model grupo =
                 Bs.alert Bs.AlertInfo
                     []
                     [ text "Todavía no hay gastos registrados. "
-                    , a (PagoDetalleModal.linkANuevoGasto AbrirPopup <| Path.Grupos_Id_ { id = grupo.id })
+                    , a
+                        (Telemetry.click "resumen.empty_new_gasto"
+                            :: PagoDetalleModal.linkANuevoGasto AbrirPopup (Path.Grupos_Id_ { id = grupo.id })
+                        )
                         [ text "¡Agregá el primer gasto para empezar a dividir!" ]
                     ]
 
@@ -566,7 +573,17 @@ viewMisTransferenciasCard zone grupo rol transferencias =
         progreso =
             Transferencia.progresoDelPlan grupo transferencias
     in
-    Bs.card []
+    -- Una card por rol, así que el id sale del rol.
+    Bs.card
+        [ Attr.id
+            (case rol of
+                Cobro ->
+                    "resumen-mis-cobros"
+
+                Pago ->
+                    "resumen-mis-pagos"
+            )
+        ]
         [ Bs.cardBody []
             [ div [ class "d-flex justify-content-between align-items-center gap-2" ]
                 [ viewEtiqueta [] [ text "Tus transferencias" ]
@@ -616,6 +633,14 @@ viewFilaTransferencia zone grupo rol t =
                 Transferencia.Pendiente ->
                     Bs.btn (botonDe rol)
                         [ class "btn-sm text-nowrap"
+                        , Telemetry.click
+                            (case rol of
+                                Cobro ->
+                                    "resumen.mark_received"
+
+                                Pago ->
+                                    "resumen.mark_paid"
+                            )
                         , onClick (PedirConfirmacion t)
                         ]
                         [ text textos.accion ]
@@ -657,7 +682,7 @@ viewUltimasTransferenciasCard zone ahora grupo transferencias =
             progreso =
                 Transferencia.progresoDelPlan grupo transferencias
         in
-        Bs.card []
+        Bs.card [ Attr.id "resumen-ultimas-transferencias" ]
             [ Bs.cardHeader [ class "d-flex justify-content-between align-items-center gap-2" ]
                 [ text "Ultimas transferencias"
 
@@ -746,18 +771,19 @@ viewConfirmacionModal userId grupo confirmando =
                     ( [], Nothing )
     in
     Bs.modal
-        { isOpen = confirmando /= Nothing
+        { id = "resumen-modal-confirmar-transferencia"
+        , isOpen = confirmando /= Nothing
         , onClose = CancelarConfirmacion
         , title = "Confirmar transferencia"
         , centered = True
         , body = [ p [] pregunta ]
         , footer =
             [ Bs.btn Bs.Secondary
-                [ onClick CancelarConfirmacion ]
+                [ Telemetry.click "resumen.confirm_cancel", onClick CancelarConfirmacion ]
                 [ text "Todavía no" ]
             , case accion of
                 Just msg ->
-                    Bs.btn Bs.Primary [ onClick msg ] [ text "Sí, ya está" ]
+                    Bs.btn Bs.Primary [ Telemetry.click "resumen.confirm_ok", onClick msg ] [ text "Sí, ya está" ]
 
                 Nothing ->
                     text ""
@@ -794,7 +820,10 @@ viewAvisoMonedasSinTasa grupo resumen =
                     )
                         ++ (monedas |> List.map Moneda.nombre |> String.join ", ")
                         ++ ", así que esas deudas no entran en el total. Cargalas "
-                , a [ Path.href <| Path.Grupos_GrupoId__Settings { grupoId = grupo.id } ]
+                , a
+                    [ Path.href <| Path.Grupos_GrupoId__Settings { grupoId = grupo.id }
+                    , Telemetry.click "resumen.missing_tasas_settings"
+                    ]
                     [ text "en los ajustes del grupo" ]
                 , text "."
                 ]
@@ -835,7 +864,7 @@ viewTabs userId resumen monedas monedaPorDefecto tabActual =
     -- styles.css) makes them fill the width and scroll horizontally instead
     -- of wrapping.
     ul
-        [ class "nav nav-tabs moneda-tabs" ]
+        [ Attr.id "resumen-tabs-monedas", class "nav nav-tabs moneda-tabs" ]
         (tabDelTotal :: (monedas |> List.map tabDeMoneda))
 
 
@@ -846,6 +875,14 @@ viewTab tab tabActual etiqueta simbolo netoUsuario =
             [ type_ "button"
             , classList [ ( "nav-link", True ), ( "active", tab == tabActual ) ]
             , class "text-nowrap"
+            , Telemetry.click
+                (case tab of
+                    TabTotal ->
+                        "resumen.tab_total"
+
+                    TabMoneda _ ->
+                        "resumen.tab_moneda"
+                )
             , onClick (SelectTab tab)
             ]
             [ div [] [ text etiqueta ]
@@ -869,7 +906,7 @@ viewUltimosPagosCard participanteId store model grupo =
                         |> List.sortWith (\p1 p2 -> compare p2.pagoId p1.pagoId)
                         |> List.take 5
             in
-            Bs.card []
+            Bs.card [ Attr.id "resumen-ultimos-gastos" ]
                 [ Bs.cardHeader [] [ text "Ultimos gastos" ]
                 , Bs.listGroup [ class "list-group-flush" ]
                     (ultimosPagos |> List.map (viewUltimoPago participanteId grupo.id grupo.monedaPorDefecto))
@@ -885,6 +922,7 @@ viewUltimoPago participanteId grupoId monedaPorDefecto pago =
         [ class "list-group-item-action p-0" ]
         [ a
             (class "d-flex align-items-center gap-3 px-3 py-2 text-reset text-decoration-none"
+                :: Telemetry.click "resumen.open_gasto"
                 :: PagoDetalleModal.linkAGasto AbrirPopup (Path.Grupos_Id_ { id = grupoId }) pago.pagoId
             )
             [ div
@@ -938,7 +976,7 @@ viewTuEstadoCard userId netos grupo monedaPorDefecto monedaSeleccionada =
                         netos |> List.filter (\( id, _ ) -> id == uid) |> List.head
                     )
     in
-    div [ class "card h-100", style "border-color" "var(--bs-primary)" ]
+    div [ Attr.id "resumen-tu-estado", class "card h-100", style "border-color" "var(--bs-primary)" ]
         [ div [ class "card-body d-flex flex-column justify-content-between p-3" ]
             [ div [ class "text-muted text-uppercase fw-semibold", style "font-size" "0.65rem", style "letter-spacing" "0.05em" ] [ text "Tu estado actual" ]
             , case maybeEntry of
@@ -949,6 +987,7 @@ viewTuEstadoCard userId netos grupo monedaPorDefecto monedaSeleccionada =
                             a
                                 [ Path.href <| Path.Grupos_GrupoId__Transferencias { grupoId = grupo.id }
                                 , class "small text-muted"
+                                , Telemetry.click "resumen.go_settle_debts"
                                 ]
                                 [ text "Saldar deudas" ]
 

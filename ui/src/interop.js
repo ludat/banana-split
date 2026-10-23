@@ -3,7 +3,7 @@ import "bootstrap-icons/font/bootstrap-icons.css";
 import "bootstrap";
 import "./styles.css";
 import "./js/MontoInput";
-import { initTelemetry, recordAppEvent, recordFeedback } from "./js/telemetry";
+import { initTelemetry, recordEvent, recordFeedback } from "./js/telemetry";
 
 initTelemetry();
 
@@ -169,19 +169,19 @@ export const onReady = ({ app, env }) => {
           {
             if (navigator.share) {
               navigator.share({ title: data.title, url: data.url }).then(
-                () => recordAppEvent("share", { outcome: "native" }),
+                () => recordEvent("app.share", { outcome: "native" }),
                 (err) => {
                   // AbortError happens when the user dismisses the share sheet.
                   // On Android it's also what some share targets answer when
                   // they fail, hence the message.
                   if (err && err.name === "AbortError") {
-                    recordAppEvent("share", {
+                    recordEvent("app.share", {
                       outcome: "dismissed",
                       "error.message": String(err.message),
                     });
                     return;
                   }
-                  recordAppEvent("share", {
+                  recordEvent("app.share", {
                     outcome: "failed",
                     "error.type": String(err && err.name),
                     "error.message": String(err && err.message),
@@ -192,14 +192,14 @@ export const onReady = ({ app, env }) => {
             } else if (navigator.clipboard) {
               navigator.clipboard.writeText(data.url).then(
                 () => {
-                  recordAppEvent("share", { outcome: "clipboard" });
+                  recordEvent("app.share", { outcome: "clipboard" });
                   app.ports.incoming.send({
                     tag: "SHARE_LINK_COPIED",
                     data: null,
                   });
                 },
                 (err) => {
-                  recordAppEvent("share", {
+                  recordEvent("app.share", {
                     outcome: "failed",
                     method: "clipboard",
                     "error.type": String(err && err.name),
@@ -209,7 +209,7 @@ export const onReady = ({ app, env }) => {
                 },
               );
             } else {
-              recordAppEvent("share", { outcome: "unsupported" });
+              recordEvent("app.share", { outcome: "unsupported" });
             }
           }
           break;
@@ -226,7 +226,7 @@ export const onReady = ({ app, env }) => {
 
         case "TELEMETRY_EVENT":
           // data: { name: string, attributes: { [k: string]: string }, severity: string }
-          recordAppEvent(data.name, data.attributes, data.severity);
+          recordEvent(data.name, data.attributes, data.severity);
           break;
 
         case "COPY":

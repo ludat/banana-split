@@ -7,7 +7,7 @@ import Date
 import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, Moneda, ShallowPago, ULID)
 import Html exposing (Html, a, div, text)
-import Html.Attributes exposing (class, style)
+import Html.Attributes exposing (class, id, style)
 import Layouts
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -17,6 +17,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Utils.Day
+import Utils.Telemetry as Telemetry
 import View exposing (View)
 
 
@@ -85,7 +86,7 @@ view participanteId store model =
         Success grupo ->
             { title = grupo.nombre
             , body =
-                [ div [ class "container-fluid py-3" ]
+                [ div [ id "gastos", class "container-fluid py-3" ]
                     [ viewPagos participanteId store model grupo ]
                 ]
             }
@@ -108,12 +109,15 @@ viewPagos participanteId store model grupo =
                 Bs.alert Bs.AlertInfo
                     []
                     [ text "Todavía no hay gastos registrados. "
-                    , a (PagoDetalleModal.linkANuevoGasto AbrirPopup <| Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+                    , a
+                        (Telemetry.click "gastos.empty_new_gasto"
+                            :: PagoDetalleModal.linkANuevoGasto AbrirPopup (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+                        )
                         [ text "¡Agregá el primer gasto para empezar a dividir!" ]
                     ]
 
             else
-                Bs.card []
+                Bs.card [ id "gastos-lista" ]
                     [ Bs.listGroupKeyed [ class "list-group-flush" ]
                         (pagos
                             |> List.sortWith (\a b -> Date.compare b.fecha a.fecha)
@@ -131,6 +135,7 @@ viewPago participanteId grupoId monedaPorDefecto pago =
         [ class "list-group-item-action p-0" ]
         [ a
             (class "d-flex align-items-center gap-3 px-3 py-2 text-reset text-decoration-none"
+                :: Telemetry.click "gastos.open_gasto"
                 :: PagoDetalleModal.linkAGasto AbrirPopup (Path.Grupos_GrupoId__Gastos { grupoId = grupoId }) pago.pagoId
             )
             [ div

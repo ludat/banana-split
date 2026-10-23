@@ -24,6 +24,7 @@ import Shared
 import Time exposing (Zone)
 import Utils.Form exposing (CustomFormError)
 import Utils.Posix as Posix exposing (Posix)
+import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import View exposing (View)
@@ -448,7 +449,7 @@ explica qué pasó y ofrece descongelar.
 -}
 viewBannerCongelado : Model -> Html Msg
 viewBannerCongelado model =
-    div [ Bs.fondoCongelado, class "text-white rounded mb-3" ]
+    div [ Attr.id "transferencias-banner-congelado", Bs.fondoCongelado, class "text-white rounded mb-3" ]
         [ Html.button
             [ Attr.type_ "button"
             , class "btn w-100 d-flex align-items-center gap-2 text-white fw-semibold px-3 py-3 border-0 shadow-none"
@@ -459,6 +460,7 @@ viewBannerCongelado model =
                  else
                     "false"
                 )
+            , Telemetry.click "transferencias.toggle_frozen_banner"
             , onClick AlternarBanner
             ]
             [ i [ class iconoCongelado ] []
@@ -487,6 +489,7 @@ viewBannerCongelado model =
                 , Bs.btn Bs.CongeladoInverso
                     [ Attr.id "dejar-de-saldar-deudas"
                     , class "w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                    , Telemetry.click "transferencias.unfreeze"
                     , onClick DescongelarGrupo
                     , Attr.disabled desactivando
                     ]
@@ -516,7 +519,7 @@ viewBannerCongelado model =
 -}
 viewCalculadas : Zone -> Posix -> Grupo -> List Transferencia -> Html Msg
 viewCalculadas zone ahora grupo calculadas =
-    div [ class "card" ]
+    div [ Attr.id "transferencias-calculadas", class "card" ]
         [ Bs.cardHeader []
             -- El `flex-wrap` es para los teléfonos angostos: abajo de ~410px de
             -- ancho el título y el contador no entran juntos, y el contador
@@ -544,7 +547,7 @@ viewAnteriores zone ahora grupo anteriores =
         text ""
 
     else
-        div [ class "card mt-4" ]
+        div [ Attr.id "transferencias-anteriores", class "card mt-4" ]
             [ Bs.cardHeader []
                 [ span [ class "text-uppercase small fw-bold" ]
                     [ text "Transferencias anteriores" ]
@@ -594,7 +597,7 @@ viewInvitacionACongelar resumen model =
         activando =
             RemoteData.isLoading model.congelarGrupoRequest
     in
-    div []
+    div [ Attr.id "transferencias-invitacion-a-saldar" ]
         [ p []
             [ text "Banana Split calcula todos los envíos de dinero que deben realizarse entre los participantes del grupo para quedar saldados. Para esto el grupo tiene que "
             , strong [] [ text "empezar a saldar deudas" ]
@@ -608,6 +611,7 @@ viewInvitacionACongelar resumen model =
         , viewAvisosParaActivar monedasSinTasa gastosInvalidos
         , Bs.btn Bs.Congelado
             [ class "w-100 py-3 fs-5 d-flex align-items-center justify-content-center gap-2"
+            , Telemetry.click "transferencias.freeze_open"
             , onClick MostrarModalDeCongelarGrupo
             , Attr.disabled (not (List.isEmpty monedasSinTasa) || gastosInvalidos /= 0 || activando)
             ]
@@ -789,11 +793,12 @@ viewMenuDeFila accion estado t =
     let
         -- Un `button` y no un `a href="#"`: el ítem no navega a ningún lado, y
         -- con el ancla el `#` se le pega a la URL igual.
-        item icono etiqueta extraClass confirmacion =
+        item track icono etiqueta extraClass confirmacion =
             Html.li []
                 [ Html.button
                     [ Attr.type_ "button"
                     , class ("dropdown-item " ++ extraClass)
+                    , Telemetry.click track
                     , onClick (PedirConfirmacion confirmacion)
                     ]
                     [ i [ class (icono ++ " me-2") ] []
@@ -813,13 +818,13 @@ viewMenuDeFila accion estado t =
         , ul [ class "dropdown-menu dropdown-menu-end shadow" ]
             [ case ( accion, estado ) of
                 ( CambiarEstado, Transferencia.Pendiente ) ->
-                    item "bi bi-check2" "Marcar como Realizada" "" (CambiarEstadoDe t.id)
+                    item "transferencias.mark_done" "bi bi-check2" "Marcar como Realizada" "" (CambiarEstadoDe t.id)
 
                 ( CambiarEstado, Transferencia.Hecha _ ) ->
-                    item "bi bi-arrow-counterclockwise" "Marcar como Pendiente" "" (CambiarEstadoDe t.id)
+                    item "transferencias.mark_pending" "bi bi-arrow-counterclockwise" "Marcar como Pendiente" "" (CambiarEstadoDe t.id)
 
                 ( Borrar, _ ) ->
-                    item "bi bi-trash" "Borrar" "text-danger" (BorrarA t.id)
+                    item "transferencias.delete" "bi bi-trash" "Borrar" "text-danger" (BorrarA t.id)
             ]
         ]
 
@@ -831,7 +836,8 @@ viewActivacionModal model =
             RemoteData.isLoading model.congelarGrupoRequest
     in
     Bs.modal
-        { isOpen = model.mostrarModalDeConfirmacion
+        { id = "transferencias-modal-congelar"
+        , isOpen = model.mostrarModalDeConfirmacion
         , onClose = CancelarModalDeCongelarGrupo
         , title = "Empezar a saldar deudas"
         , centered = True
@@ -856,6 +862,7 @@ viewActivacionModal model =
         , footer =
             [ Bs.btn Bs.Congelado
                 [ class "w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                , Telemetry.click "transferencias.freeze_confirm"
                 , onClick CongelarGrupo
                 , Attr.disabled activando
                 ]
@@ -909,18 +916,19 @@ viewConfirmacionModal grupo confirmando =
                     ( "", [], Nothing )
     in
     Bs.modal
-        { isOpen = confirmando /= Nothing
+        { id = "transferencias-modal-confirmar"
+        , isOpen = confirmando /= Nothing
         , onClose = CancelarConfirmacion
         , title = titulo
         , centered = True
         , body = [ p [] cuerpo ]
         , footer =
             [ Bs.btn Bs.Secondary
-                [ onClick CancelarConfirmacion ]
+                [ Telemetry.click "transferencias.confirm_cancel", onClick CancelarConfirmacion ]
                 [ text "Cancelar" ]
             , case accion of
                 Just ( variante, msg ) ->
-                    Bs.btn variante [ onClick msg ] [ text titulo ]
+                    Bs.btn variante [ Telemetry.click "transferencias.confirm_ok", onClick msg ] [ text titulo ]
 
                 Nothing ->
                     text ""
@@ -935,9 +943,10 @@ viewNuevaTransferencia yo grupo model =
             text ""
 
         Just from ->
-            div [ class "mt-4" ]
+            div [ Attr.id "transferencias-registrar", class "mt-4" ]
                 [ Bs.btn Bs.Transparent
                     [ class "btn-sm text-muted p-0"
+                    , Telemetry.click "transferencias.new_open"
                     , onClick (AbrirNuevaTransferencia grupo.monedaPorDefecto)
                     ]
                     [ text "Registrar una transferencia que hice" ]
@@ -996,17 +1005,19 @@ viewNuevaTransferenciaModal from grupo nuevaForm =
                     ]
     in
     Bs.modal
-        { isOpen = nuevaForm /= Nothing
+        { id = "transferencias-modal-nueva"
+        , isOpen = nuevaForm /= Nothing
         , onClose = CerrarNuevaTransferencia
         , title = "Registrar una transferencia que hice"
         , centered = True
         , body = campos
         , footer =
             [ Bs.btn Bs.Secondary
-                [ onClick CerrarNuevaTransferencia ]
+                [ Telemetry.click "transferencias.new_cancel", onClick CerrarNuevaTransferencia ]
                 [ text "Cancelar" ]
             , Bs.btn Bs.Primary
                 [ Attr.id "registrar-transferencia"
+                , Telemetry.click "transferencias.new_submit"
                 , onClick (NuevaForm Form.Submit)
                 ]
                 [ text "Registrar" ]

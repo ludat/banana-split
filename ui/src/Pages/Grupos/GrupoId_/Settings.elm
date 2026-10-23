@@ -27,6 +27,7 @@ import Route.Path as Path
 import Shared
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import Utils.Http exposing (viewHttpError)
+import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toasts
 import Utils.Toasts.Types as Toasts
 import Utils.Ulid
@@ -394,7 +395,7 @@ view origin currentUser store model =
 
 viewAjustesSection : Grupo -> Maybe (Form CustomFormError UpdateGrupoParams) -> Html Msg
 viewAjustesSection grupo edicion =
-    div [ class "card mb-4" ]
+    div [ id "settings-ajustes", class "card mb-4" ]
         [ div [ class "card-header" ] [ text "Ajustes generales" ]
         , div [ class "card-body" ]
             [ case edicion of
@@ -413,7 +414,7 @@ viewAjustesGuardados grupo =
         [ div [ class "list-group mb-3" ]
             [ viewDatoGuardado "Nombre" grupo.nombre ]
         , Bs.btn Bs.Primary
-            [ onClick EditarAjustes ]
+            [ Telemetry.click "settings.edit", onClick EditarAjustes ]
             [ text "Editar" ]
         ]
 
@@ -439,12 +440,14 @@ viewAjustesEditando grupo form =
         , div [ class "d-flex gap-2" ]
             [ Bs.btn Bs.Primary
                 [ disabled (not dirty || Form.getOutput form == Nothing)
+                , Telemetry.click "settings.save"
                 , onClick (AjustesForm Form.Submit)
                 ]
                 [ text "Guardar" ]
             , button
                 [ type_ "button"
                 , class "btn btn-outline-secondary"
+                , Telemetry.click "settings.cancel"
                 , onClick CancelarEdicionAjustes
                 ]
                 [ text "Cancelar" ]
@@ -649,7 +652,7 @@ viewTasasSection grupo model =
         contexto =
             armarContexto grupo
     in
-    div [ class "card mb-4" ]
+    div [ id "settings-monedas", class "card mb-4" ]
         [ div [ class "card-header" ] [ text "Monedas" ]
         , div [ class "card-body" ]
             [ viewMonedaPorDefecto contexto model
@@ -766,6 +769,7 @@ viewTasasGuardadas contexto guardandoMoneda =
             [ type_ "button"
             , class "btn btn-sm btn-outline-secondary"
             , disabled (guardandoMoneda || contexto.congelado)
+            , Telemetry.click "settings.tasas_edit"
             , onClick EditarTasas
             ]
             [ i [ class "bi bi-pencil me-1" ] []
@@ -815,12 +819,14 @@ viewTasasEditando form =
         , div [ class "d-flex gap-2 mt-3" ]
             [ Bs.btn Bs.Primary
                 [ disabled (tasasDelForm form == Nothing)
+                , Telemetry.click "settings.tasas_save"
                 , onClick (TasasForm Form.Submit)
                 ]
                 [ text "Guardar tasas" ]
             , button
                 [ type_ "button"
                 , class "btn btn-outline-secondary"
+                , Telemetry.click "settings.tasas_cancel"
                 , onClick CancelarEdicionTasas
                 ]
                 [ text "Cancelar" ]
@@ -849,6 +855,7 @@ viewTasaRow form indice =
                 [ type_ "button"
                 , class "btn btn-sm btn-outline-secondary"
                 , Attr.title "Vaciar esta tasa"
+                , Telemetry.click "settings.tasa_clear"
                 , onClick (VaciarTasa indice)
                 ]
                 [ i [ class "bi bi-x-lg" ] [] ]
@@ -933,7 +940,7 @@ viewEmailSection origin currentUser grupo =
                 _ ->
                     False
     in
-    div [ class "card mb-4" ]
+    div [ id "settings-email", class "card mb-4" ]
         [ div [ class "card-header d-flex align-items-center gap-2" ]
             [ text "Cargar gastos por email"
             , if canUseEmail then
@@ -964,6 +971,7 @@ viewEmailSection origin currentUser grupo =
                     [ type_ "button"
                     , class "btn btn-outline-secondary"
                     , disabled (not canUseEmail)
+                    , Telemetry.click "settings.copy_inbound_email"
                     , onClick (CopyEmailAddress address)
                     ]
                     [ text "Copiar" ]
@@ -981,7 +989,7 @@ viewEmailSection origin currentUser grupo =
 
                             _ ->
                                 [ text "Cargá gastos sin abrir la app: "
-                                , a [ Path.href Path.Login ] [ text "iniciá sesión o registrate" ]
+                                , a [ Path.href Path.Login, Telemetry.click "settings.login" ] [ text "iniciá sesión o registrate" ]
                                 , text " y reclamá tu participante en el grupo."
                                 ]
                         )
@@ -1018,7 +1026,7 @@ viewFreezeSection grupo resumen congelamiento =
                 _ ->
                     0
     in
-    div [ class "card" ]
+    div [ id "settings-congelar", class "card" ]
         [ div [ class "card-header" ] [ text "Congelar grupo" ]
         , div [ class "card-body" ]
             [ div [ class "mb-3" ]
@@ -1078,6 +1086,7 @@ viewFreezeButton grupo sePuedeCongelar congelamiento =
             [ id "descongelar-grupo"
             , type_ "button"
             , class "btn btn-outline-secondary"
+            , Telemetry.click "settings.unfreeze"
             , onClick UnfreezeGrupo
             ]
             [ text "Descongelar" ]
@@ -1091,6 +1100,7 @@ viewFreezeButton grupo sePuedeCongelar congelamiento =
         div [ class "d-flex gap-2 align-items-center" ]
             [ Bs.btn Bs.Primary
                 [ id "congelar-grupo"
+                , Telemetry.click "settings.freeze"
                 , onClick FreezeGrupo
                 , disabled (not sePuedeCongelar || congelando)
                 ]

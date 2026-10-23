@@ -23,6 +23,7 @@ import Shared
 import Shared.Msg
 import Task
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Telemetry as Telemetry
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
@@ -193,7 +194,7 @@ viewForm user model =
         nombreField =
             Form.getFieldAsString "nombre" model.form
     in
-    Html.form [ onSubmit (FormMsg Form.Submit) ]
+    Html.form [ id "cuenta-form", onSubmit (FormMsg Form.Submit) ]
         [ div [ class "mb-3" ]
             [ label [ for "email", class "form-label" ] [ text "Email" ]
             , input
@@ -210,7 +211,7 @@ viewForm user model =
         , Html.map FormMsg <|
             viewTextFormItem "Nombre" True nombreField
         , Bs.btn Bs.Primary
-            [ type_ "submit", disabled model.saving ]
+            [ type_ "submit", Telemetry.click "cuenta.save", disabled model.saving ]
             [ text
                 (if model.saving then
                     "Guardando…"

@@ -16,7 +16,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared.Model as Shared
 import Shared.Msg as Shared
-import Utils.Telemetry
+import Utils.Telemetry as Telemetry
 import Utils.Toasts
 import Utils.Toasts.Types exposing (ToastLevel(..), ToastMsg, Toasts)
 import View exposing (View)
@@ -146,7 +146,7 @@ update msg model =
             -- nada más.
             ( { model | feedbackOpen = False, feedbackText = "" }
             , Effect.batch
-                [ Effect.sendFeedback Utils.Telemetry.feedbackGeneral model.feedbackText
+                [ Effect.sendFeedback Telemetry.feedbackGeneral model.feedbackText
                 , Utils.Toasts.pushToast ToastSuccess "¡Gracias! Comentario enviado."
                 ]
             )
@@ -211,11 +211,12 @@ view location toasts lastReadChangelog now currentUser { toContentMsg, model, co
 
 viewNavbar : Location -> Int -> WebData User -> Html Msg
 viewNavbar location unread currentUser =
-    Bs.navbar []
+    Bs.navbar [ Attr.id "navbar" ]
         [ button
             [ type_ "button"
             , class "navbar-toggler border-0 me-2"
             , Attr.attribute "aria-label" "Abrir menú"
+            , Telemetry.click "navbar.open_menu"
             , onClick ToggleNavBar
             ]
             [ span [ class "navbar-toggler-icon" ] [] ]
@@ -226,6 +227,7 @@ viewNavbar location unread currentUser =
                     [ type_ "button"
                     , class "btn btn-link text-reset position-relative p-1"
                     , Attr.attribute "aria-label" ("Ver " ++ String.fromInt unread ++ " novedades")
+                    , Telemetry.click "navbar.changelog"
                     , onClick OpenChangelog
                     ]
                     [ i [ class "bi bi-bell-fill" ] []
@@ -259,12 +261,12 @@ viewUserIcon location currentUser =
                     , li [] [ hr [ class "dropdown-divider" ] [] ]
                     , li []
                         [ button
-                            [ type_ "button", class "dropdown-item", onClick (NavigateAndClose Path.Cuenta) ]
+                            [ type_ "button", class "dropdown-item", Telemetry.click "navbar.account", onClick (NavigateAndClose Path.Cuenta) ]
                             [ text "Mi cuenta" ]
                         ]
                     , li []
                         [ button
-                            [ type_ "button", class "dropdown-item", onClick DoLogout ]
+                            [ type_ "button", class "dropdown-item", Telemetry.click "navbar.logout", onClick DoLogout ]
                             [ text "Cerrar sesión" ]
                         ]
                     ]
@@ -272,7 +274,7 @@ viewUserIcon location currentUser =
                 _ ->
                     [ li []
                         [ button
-                            [ type_ "button", class "dropdown-item", onClick (GoToLoginAndClose location) ]
+                            [ type_ "button", class "dropdown-item", Telemetry.click "navbar.login", onClick (GoToLoginAndClose location) ]
                             [ text "Iniciar sesión" ]
                         ]
                     ]
@@ -286,7 +288,7 @@ viewUserIcon location currentUser =
             , Attr.attribute "aria-label" "Cuenta"
             ]
             [ i [ class icon ] [] ]
-        , ul [ class "dropdown-menu dropdown-menu-end" ] menuItems
+        , ul [ Attr.id "navbar-menu-cuenta", class "dropdown-menu dropdown-menu-end" ] menuItems
         ]
 
 
@@ -296,11 +298,12 @@ that don't have a page/feature yet render as non-functional placeholders.
 viewOffcanvas : Location -> Model -> Int -> WebData User -> Html Msg
 viewOffcanvas location model unread currentUser =
     let
-        menuLink : Msg -> List (Html Msg) -> Html Msg
-        menuLink msg children =
+        menuLink : String -> Msg -> List (Html Msg) -> Html Msg
+        menuLink track msg children =
             a
                 [ class "nav-link"
                 , Attr.href "#"
+                , Telemetry.click track
                 , onClick msg
                 ]
                 children
@@ -321,6 +324,7 @@ viewOffcanvas location model unread currentUser =
         [ if model.navBarOpen then
             div
                 [ class "offcanvas-backdrop fade show"
+                , Telemetry.click "menu.close_backdrop"
                 , onClick ToggleNavBar
                 ]
                 []
@@ -328,7 +332,8 @@ viewOffcanvas location model unread currentUser =
           else
             text ""
         , div
-            [ classList
+            [ Attr.id "menu-lateral"
+            , classList
                 [ ( "offcanvas offcanvas-start", True )
                 , ( "show", model.navBarOpen )
                 ]
@@ -340,14 +345,16 @@ viewOffcanvas location model unread currentUser =
                     [ type_ "button"
                     , class "btn-close"
                     , Attr.attribute "aria-label" "Cerrar"
+                    , Telemetry.click "menu.close"
                     , onClick ToggleNavBar
                     ]
                     []
                 ]
             , div [ class "offcanvas-body d-flex flex-column h-100" ]
                 [ div [ class "nav nav-pills flex-column" ]
-                    [ menuLink (NavigateAndClose Path.Home_) [ text "Inicio" ]
-                    , menuLink OpenChangelog
+                    [ menuLink "menu.home" (NavigateAndClose Path.Home_) [ text "Inicio" ]
+                    , menuLink "menu.changelog"
+                        OpenChangelog
                         [ text "Novedades"
                         , if unread > 0 then
                             Bs.badge "bg-danger rounded-pill ms-2"
@@ -359,23 +366,23 @@ viewOffcanvas location model unread currentUser =
                         ]
                     , menuPlaceholder "Ajustes generales"
                     , menuPlaceholder "Consejos"
-                    , menuLink OpenFeedback [ text "Enviar comentarios" ]
+                    , menuLink "menu.feedback" OpenFeedback [ text "Enviar comentarios" ]
                     , menuPlaceholder "Documentación"
                     ]
                 , div [ class "nav nav-pills flex-column border-top pt-2 mt-2" ]
-                    [ menuLink (NavigateAndClose Path.Home_) [ text "Crear nuevo Grupo" ]
+                    [ menuLink "menu.new_grupo" (NavigateAndClose Path.Home_) [ text "Crear nuevo Grupo" ]
                     ]
                 , div [ class "nav nav-pills flex-column border-top pt-2 mt-2" ] <|
                     case currentUser of
                         Success user ->
                             [ span [ class "nav-link disabled text-truncate" ]
                                 [ text ("Sesión: " ++ user.email) ]
-                            , menuLink (NavigateAndClose Path.Cuenta) [ text "Mi cuenta" ]
-                            , menuLink DoLogout [ text "Cerrar sesión" ]
+                            , menuLink "menu.account" (NavigateAndClose Path.Cuenta) [ text "Mi cuenta" ]
+                            , menuLink "menu.logout" DoLogout [ text "Cerrar sesión" ]
                             ]
 
                         _ ->
-                            [ menuLink (GoToLoginAndClose location) [ text "Iniciar sesión" ] ]
+                            [ menuLink "menu.login" (GoToLoginAndClose location) [ text "Iniciar sesión" ] ]
                 , div [ class "nav nav-pills flex-column border-top pt-2 mt-auto" ]
                     [ menuPlaceholder "Idioma: Español" ]
                 , div [ class "nav nav-pills flex-column border-top pt-2" ]
@@ -388,7 +395,8 @@ viewOffcanvas location model unread currentUser =
 viewFeedbackModal : Model -> Html Msg
 viewFeedbackModal model =
     Bs.modal
-        { isOpen = model.feedbackOpen
+        { id = "modal-comentarios"
+        , isOpen = model.feedbackOpen
         , onClose = CloseFeedback
         , title = "Enviar comentarios"
         , centered = False
@@ -408,9 +416,10 @@ viewFeedbackModal model =
                 [ text "Esto se manda a quienes desarrollan Banana Split. No lleva tus datos ni tu sesión, así que no podemos responderte — si querés respuesta, dejanos cómo contactarte." ]
             ]
         , footer =
-            [ Bs.btn Bs.Transparent [ onClick CloseFeedback ] [ text "Cancelar" ]
+            [ Bs.btn Bs.Transparent [ Telemetry.click "feedback.cancel", onClick CloseFeedback ] [ text "Cancelar" ]
             , Bs.btn Bs.Primary
-                [ onClick SendFeedback
+                [ Telemetry.click "feedback.send"
+                , onClick SendFeedback
                 , Attr.disabled (String.trim model.feedbackText == "")
                 ]
                 [ text "Enviar" ]
@@ -421,14 +430,15 @@ viewFeedbackModal model =
 viewChangelogModal : Bool -> List Changelog.Entry -> Html Msg
 viewChangelogModal isOpen entries =
     Bs.modal
-        { isOpen = isOpen
+        { id = "modal-novedades"
+        , isOpen = isOpen
         , onClose = CloseChangelog
         , title = "Novedades"
         , centered = False
         , body = [ Bs.listGroup [] (List.map viewChangelogEntry entries) ]
         , footer =
-            [ Bs.btn Bs.Transparent [ onClick CloseChangelog ] [ text "Cerrar" ]
-            , Bs.btn Bs.Primary [ onClick MarkChangelogReadAndClose ] [ text "Marcar como leído" ]
+            [ Bs.btn Bs.Transparent [ Telemetry.click "changelog.close", onClick CloseChangelog ] [ text "Cerrar" ]
+            , Bs.btn Bs.Primary [ Telemetry.click "changelog.mark_read", onClick MarkChangelogReadAndClose ] [ text "Marcar como leído" ]
             ]
         }
 
