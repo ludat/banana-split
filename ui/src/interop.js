@@ -2,6 +2,7 @@ import "bootstrap/dist/css/bootstrap.min.css";
 import "bootstrap-icons/font/bootstrap-icons.css";
 import "bootstrap";
 import "./styles.css";
+import "./stepper.css";
 import "./js/MontoInput";
 import { initTelemetry, recordEvent, recordFeedback } from "./js/telemetry";
 

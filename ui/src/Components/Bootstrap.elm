@@ -9,6 +9,7 @@ module Components.Bootstrap exposing
     , cardHeader
     , dateFormItem
     , fileInput
+    , floatingLabel
     , fondoCongelado
     , listGroup
     , listGroupItem
@@ -19,7 +20,6 @@ module Components.Bootstrap exposing
     , navTabs
     , navbar
     , navbarBrand
-    , requiredMarker
     , segmentedButton
     , segmentedButtonItem
     , selectInput
@@ -357,48 +357,42 @@ feedback state =
         Html.text ""
 
 
-fieldLabel : String -> String -> Bool -> Html Form.Msg
-fieldLabel path labelText isRequired =
-    Html.label [ class "form-label", for path ]
+{-| El label de un `form-floating`: va después del control (Bootstrap lo sube
+con `control:focus ~ label`) y sin `form-label`.
+-}
+floatingLabel : String -> String -> Bool -> Html msg
+floatingLabel path labelText isRequired =
+    Html.label [ for path ]
         [ Html.text labelText, requiredMarker isRequired ]
 
 
-maybePlaceholder : Maybe String -> List (Attribute msg)
-maybePlaceholder mp =
-    case mp of
-        Just p ->
-            [ placeholder p ]
-
-        Nothing ->
-            []
-
-
+{-| Con floating labels el placeholder no se ve, pero tiene que estar: Bootstrap
+decide si el label queda arriba con `:placeholder-shown`.
+-}
 textFormItem : Form.FieldState CustomFormError String -> { label : String, placeholder : Maybe String, required : Bool } -> Html Form.Msg
 textFormItem state opts =
-    div [ class "mb-3" ]
-        [ fieldLabel state.path opts.label opts.required
-        , Html.input
-            ([ type_ "text"
-             , class (controlClass state "form-control")
-             , id state.path
-             , value (Maybe.withDefault "" state.value)
-             , onInput (\v -> Input state.path Form.Text (FormField.String v))
-             , on "focusin" (Decode.succeed (Focus state.path))
-             , on "focusout" (Decode.succeed (Blur state.path))
-             , Attr.required opts.required
-             ]
-                ++ maybePlaceholder opts.placeholder
-            )
+    div [ class "form-floating mb-3" ]
+        [ Html.input
+            [ type_ "text"
+            , class (controlClass state "form-control")
+            , id state.path
+            , value (Maybe.withDefault "" state.value)
+            , onInput (\v -> Input state.path Form.Text (FormField.String v))
+            , on "focusin" (Decode.succeed (Focus state.path))
+            , on "focusout" (Decode.succeed (Blur state.path))
+            , Attr.required opts.required
+            , placeholder (Maybe.withDefault opts.label opts.placeholder)
+            ]
             []
+        , floatingLabel state.path opts.label opts.required
         , feedback state
         ]
 
 
 dateFormItem : Form.FieldState CustomFormError String -> { label : String, required : Bool } -> Html Form.Msg
 dateFormItem state opts =
-    div [ class "mb-3" ]
-        [ fieldLabel state.path opts.label opts.required
-        , Html.input
+    div [ class "form-floating mb-3" ]
+        [ Html.input
             [ type_ "date"
             , class (controlClass state "form-control")
             , id state.path
@@ -409,6 +403,7 @@ dateFormItem state opts =
             , Attr.required opts.required
             ]
             []
+        , floatingLabel state.path opts.label opts.required
         , feedback state
         ]
 

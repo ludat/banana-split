@@ -28,6 +28,7 @@ import Bytes exposing (Bytes)
 import Components.BarrasDeNetos exposing (viewNetosBarras, viewNetosBarrasMini)
 import Components.Bootstrap as Bs
 import Components.GraficoTorta as GraficoTorta
+import Components.Stepper as Stepper
 import Date exposing (Date)
 import Dict exposing (Dict)
 import Effect exposing (Effect)
@@ -742,7 +743,7 @@ view store grupo model =
             ( header, content, overlays ) =
                 case model.edicion of
                     Just edicion ->
-                        ( viewHeaderEdicion model
+                        ( viewHeaderEdicion model edicion
                         , viewEdicion grupo model.activeOverlay edicion
                         , text ""
                         )
@@ -798,9 +799,18 @@ view store grupo model =
                     [ div [ class "modal-content" ]
                         [ header
 
-                        -- Columna flex para que el pie de acciones del
-                        -- formulario pueda empujarse al fondo con `mt-auto`.
+                        -- Columna flex para que los errores del paso puedan
+                        -- empujarse al fondo con `mt-auto`.
                         , div [ class "modal-body d-flex flex-column" ] [ content ]
+
+                        -- Con `modal-dialog-scrollable` el footer queda fijo y
+                        -- scrollea sólo el body.
+                        , case model.edicion of
+                            Just edicion ->
+                                viewFooterEdicion grupo edicion
+
+                            Nothing ->
+                                text ""
                         ]
                     ]
                 ]
@@ -841,28 +851,32 @@ estaEditando model =
 
 
 {-| Mientras se edita, el header es sólo el título: los botones (cancelar,
-siguiente, actualizar) los pone el propio formulario al final. La X no cierra el
+siguiente, actualizar) van en el footer. Abajo del título van los tabs de los
+pasos: en el header quedan fijos mientras el body scrollea. La X no cierra el
 popup de una: si hay cambios sin guardar primero pregunta.
 -}
-viewHeaderEdicion : Model -> Html Msg
-viewHeaderEdicion model =
-    div [ class "modal-header border-bottom-0" ]
-        [ h4 [ class "modal-title fw-bold" ]
-            [ text <|
-                if esGastoNuevo model then
-                    "Nuevo gasto"
+viewHeaderEdicion : Model -> Edicion -> Html Msg
+viewHeaderEdicion model edicion =
+    div [ class "modal-header flex-column align-items-stretch" ]
+        [ div [ class "d-flex align-items-center" ]
+            [ h4 [ class "modal-title fw-bold" ]
+                [ text <|
+                    if esGastoNuevo model then
+                        "Nuevo gasto"
 
-                else
-                    "Editar gasto"
+                    else
+                        "Editar gasto"
+                ]
+            , button
+                [ type_ "button"
+                , class "btn-close"
+                , attribute "aria-label" "Cerrar"
+                , Telemetry.click "gasto.edit_close"
+                , onClick AskDiscardEdit
+                ]
+                []
             ]
-        , button
-            [ type_ "button"
-            , class "btn-close"
-            , attribute "aria-label" "Cerrar"
-            , Telemetry.click "gasto.edit_close"
-            , onClick AskDiscardEdit
-            ]
-            []
+        , viewStepper edicion
         ]
 
 
@@ -1823,13 +1837,7 @@ viewEdicion grupo overlayAbierto model =
     -- Crece hasta el alto del modal y reparte en columna, así el paso de
     -- adentro puede mandar su pie de acciones al fondo.
     div [ class "flex-grow-1 d-flex flex-column" ]
-        [ if model.hasUnsavedChanges then
-            Bs.alert Bs.AlertWarning [ style "margin-bottom" "1rem" ] [ text "Hay cambios sin guardar" ]
-
-          else
-            text ""
-        , viewStepTabs model
-        , case model.currentSection of
+        [ case model.currentSection of
             BasicPagoData ->
                 viewBasicSection model
 
@@ -1978,7 +1986,7 @@ viewTortaFooter grupo paso model =
         , Telemetry.click "gasto.edit_open_graph"
         , onClick (OpenOverlay (overlayDelPaso paso))
         ]
-        [ GraficoTorta.viewTortaMini (porcionesTorta grupo paso model) ]
+        [ GraficoTorta.viewTortaBoton (porcionesTorta grupo paso model) ]
 
 
 {-| El gráfico en grande mientras se edita. Las porciones se recalculan al
@@ -2008,47 +2016,33 @@ tituloDelPaso paso =
             "Reparto"
 
 
-{-| Wizard de pasos como tabs por defecto de Bootstrap (`nav-tabs`). Marca el
+{-| Wizard de pasos con el stepper (ver `Components.Stepper`). Marca el
 paso actual y permite saltar a cualquier paso con `SelectSection`.
 -}
-viewStepTabs : Edicion -> Html Msg
-viewStepTabs model =
+viewStepper : Edicion -> Html Msg
+viewStepper model =
     let
-        tab section label =
-            let
-                active =
-                    model.currentSection == section
-            in
-            li [ class "nav-item" ]
-                [ button
-                    [ type_ "button"
-                    , classList
-                        [ ( "nav-link", True )
-                        , ( "active", active )
+        paso section label =
+            { label = label
+            , actual = model.currentSection == section
+            , conError =
+                if sectionIncomplete model section then
+                    -- Incompleto cuenta como error sólo si ya se tocó: así un
+                    -- gasto nuevo no arranca "en rojo".
+                    sectionTocada model section
 
-                        -- Paso incompleto (todavía sin completar): se ve grisado
-                        -- en vez de como error, así no aparece "en rojo" al inicio.
-                        , ( "text-body-tertiary", not active && sectionIncomplete model section )
-                        ]
-                    , Telemetry.click "gasto.edit_step_tab"
-                    , onClick (SelectSection section)
-                    ]
-                    (text label
-                        :: (if not (sectionIncomplete model section) && sectionHasError model section then
-                                [ i [ class "bi bi-exclamation-circle-fill text-danger ms-1" ] [] ]
-
-                            else
-                                []
-                           )
-                    )
+                else
+                    sectionHasError model section
+            , attrs =
+                [ Telemetry.click "gasto.edit_step_tab"
+                , onClick (SelectSection section)
                 ]
+            }
     in
-    div [ id "gasto-pasos", class "d-flex align-items-end mb-4" ]
-        [ Html.ul [ class "nav nav-tabs flex-grow-1" ]
-            [ tab BasicPagoData "Gasto"
-            , tab PagadoresSection "Pago"
-            , tab DeudoresSection "Reparto"
-            ]
+    Stepper.view [ id "gasto-pasos", class "mt-3" ]
+        [ paso BasicPagoData "Gasto"
+        , paso PagadoresSection "Pago"
+        , paso DeudoresSection "Reparto"
         ]
 
 
@@ -2081,6 +2075,34 @@ sectionIncomplete model section =
             faltaTotal || Form.getOutput model.deudoresForm == Nothing
 
 
+{-| Si el usuario ya hizo algo en el paso: cambió algún campo de su form o lo
+envió con "Siguiente". Un gasto que ya existe cuenta como tocado entero, porque
+lo que tiene cargado lo puso alguien.
+
+`getChangedFields` olvida un campo que vuelve a su valor original, así que
+marcar un participante y desmarcarlo deja el paso como no tocado.
+
+-}
+sectionTocada : Edicion -> Section -> Bool
+sectionTocada model section =
+    let
+        tocado form =
+            not (Set.isEmpty (Form.getChangedFields form)) || Form.isSubmitted form
+    in
+    model.pagoId
+        /= Nothing
+        || (case section of
+                BasicPagoData ->
+                    tocado model.pagoBasicoForm
+
+                PagadoresSection ->
+                    tocado model.pagadoresForm
+
+                DeudoresSection ->
+                    tocado model.deudoresForm
+           )
+
+
 distribucionSinPartes : Distribucion -> Bool
 distribucionSinPartes distribucion =
     case distribucion.tipo of
@@ -2092,8 +2114,8 @@ distribucionSinPartes distribucion =
 
 
 {-| Un paso tiene error sólo cuando ya tiene datos cargados pero su resumen
-marca errores accionables (p. ej. los montos no cuadran). Un paso simplemente
-incompleto no cuenta como error: se muestra grisado vía `sectionIncomplete`.
+marca errores accionables (p. ej. los montos no cuadran). Un paso incompleto se
+decide aparte, con `sectionTocada` (ver `viewStepper`).
 -}
 sectionHasError : Edicion -> Section -> Bool
 sectionHasError model section =
@@ -2134,37 +2156,29 @@ viewBasicSection model =
                 , required = True
                 }
         , div [ class "d-flex gap-3 flex-wrap align-items-start" ]
-            [ div [ class "flex-grow-1 mb-3" ]
-                [ Html.label [ class "form-label", Attr.for "monto" ]
-                    [ text "Monto total", Bs.requiredMarker True ]
-                , div [ class "d-flex gap-2" ]
+            [ div [ class "flex-grow-1 mb-3 d-flex gap-2" ]
+                [ div [ class "form-floating flex-shrink-0", style "width" "6.5rem" ]
                     [ Html.map PagoForm <|
                         Bs.selectInput
                             (Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.simboloUnico m )))
                             monedaField
-                            [ style "max-width" "6.5rem" ]
-                    , div [ class "flex-grow-1" ]
-                        [ Html.map PagoForm <|
-                            Bs.montoInput (decimalesDelForm form) montoField [ placeholder "33.000,00" ]
-                        ]
+                            []
+                    , Bs.floatingLabel "moneda" "Moneda" False
                     ]
+                , Html.map PagoForm <|
+                    Bs.montoInput (decimalesDelForm form)
+                        montoField
+                        [ placeholder "33.000,00"
+                        , class "form-floating flex-grow-1"
+                        , attribute "label" "Monto total"
+                        , Attr.required True
+                        ]
                 ]
             , Html.map PagoForm <|
                 Bs.dateFormItem fechaField
                     { label = "Fecha"
                     , required = True
                     }
-            ]
-        , div [ class "mt-auto pt-4" ]
-            [ viewBotonera
-                [ Bs.btn Bs.Primary
-                    [ disabled (Form.getOutput form == Nothing)
-                    , Telemetry.click "gasto.edit_next"
-                    , type_ "submit"
-                    , class "flex-grow-1 flex-md-grow-0 px-md-4"
-                    ]
-                    [ text "Siguiente" ]
-                ]
             ]
         ]
 
@@ -2207,18 +2221,7 @@ viewPagadoresSection grupo model =
             ]
         , viewPartesTable grupo.monedaPorDefecto grupo.participantes prefix mode incluidos (Form.getOutput form |> Maybe.map (\pago -> sumaMontosFijos pago.pagadores)) form
         , div [ class "mt-auto pt-4" ]
-            [ viewErrorFromResumenData (netosDelPaso Pagadores model)
-            , viewBotonera
-                [ Bs.btn Bs.Primary
-                    [ disabled (Form.getOutput form == Nothing)
-                    , Telemetry.click "gasto.edit_next"
-                    , type_ "submit"
-                    , class "flex-grow-1 flex-md-grow-0 px-md-4"
-                    ]
-                    [ text "Siguiente" ]
-                , viewTortaFooter grupo Pagadores model
-                ]
-            ]
+            [ viewErrorFromResumenData (netosDelPaso Pagadores model) ]
         ]
 
 
@@ -2251,41 +2254,75 @@ viewDeudoresSection grupo model =
               -- scope: `.resumenDeudores` ya viene sin el prefijo "deudores"
               -- que `.resumen` agrega al combinar pagadores y deudores.
               viewErrorFromResumenData (netosDelPaso Deudores model)
-            , viewBotonera
-                [ Bs.btn Bs.Primary
-                    [ -- Se permite enviar aunque el gasto sea inválido; el
-                      -- backend lo guarda igual y deja los motivos en su
-                      -- resumen. Se bloquea si el form no es construible o
-                      -- si no hay cambios para guardar.
-                      disabled (Form.getOutput model.pagoForm == Nothing || not model.hasUnsavedChanges)
-                    , type_ "submit"
-                    , Attr.id "pago-submit-button"
-                    , Telemetry.click "gasto.save"
-                    , class "flex-grow-1 flex-md-grow-0 px-md-4"
-                    ]
-                    [ text <|
-                        case model.pagoId of
-                            Just _ ->
-                                "Actualizar gasto"
-
-                            Nothing ->
-                                "Crear"
-                    ]
-                , viewTortaFooter grupo Deudores model
-                ]
             ]
         ]
 
 
-{-| La fila de botones del pie: el "Cancelar" que vuelve al detalle del gasto
-seguido de lo que venga (el botón del paso y, al final, la torta). En pantallas
-chicas el botón del paso se estira para llenar la fila; desde `md` (donde el
-modal deja de ser fullscreen) toma su ancho natural y la fila va a la derecha.
+{-| El footer del modal mientras se edita: "Cancelar", el botón del paso y, en
+los pasos que la tienen, la torta. Está afuera del `<form>` del paso (para que
+quede fijo mientras el body scrollea), así que el submit se engancha al form
+con el atributo `form`; Enter adentro del form lo sigue usando como botón por
+defecto.
+
+En pantallas chicas el botón del paso se estira para llenar la fila; desde `md`
+(donde el modal deja de ser fullscreen) toma su ancho natural y la fila va a la
+derecha.
+
 -}
-viewBotonera : List (Html Msg) -> Html Msg
-viewBotonera children =
-    div [ class "d-flex gap-2 align-items-stretch justify-content-md-end" ]
-        (Bs.btn Bs.Transparent [ Telemetry.click "gasto.edit_cancel", onClick Cancel ] [ text "Cancelar" ] :: children)
+viewFooterEdicion : Grupo -> Edicion -> Html Msg
+viewFooterEdicion grupo model =
+    let
+        submit formId attrs =
+            Bs.btn Bs.Primary
+                ([ type_ "submit"
+                 , attribute "form" formId
+                 , class "flex-grow-1 flex-md-grow-0 px-md-4"
+                 ]
+                    ++ attrs
+                )
+
+        siguiente formId puedeSeguir =
+            submit formId
+                [ disabled (not puedeSeguir), Telemetry.click "gasto.edit_next" ]
+                [ text "Siguiente" ]
+
+        acciones =
+            case model.currentSection of
+                BasicPagoData ->
+                    [ siguiente "gasto-paso-basico" (Form.getOutput model.pagoBasicoForm /= Nothing) ]
+
+                PagadoresSection ->
+                    [ siguiente "gasto-paso-pagadores" (Form.getOutput model.pagadoresForm /= Nothing)
+                    , viewTortaFooter grupo Pagadores model
+                    ]
+
+                DeudoresSection ->
+                    [ submit "gasto-paso-deudores"
+                        [ -- Se permite enviar aunque el gasto sea inválido; el
+                          -- backend lo guarda igual y deja los motivos en su
+                          -- resumen. Se bloquea si el form no es construible o
+                          -- si no hay cambios para guardar.
+                          disabled (Form.getOutput model.pagoForm == Nothing || not model.hasUnsavedChanges)
+                        , Attr.id "pago-submit-button"
+                        , Telemetry.click "gasto.save"
+                        ]
+                        [ text <|
+                            case model.pagoId of
+                                Just _ ->
+                                    "Actualizar gasto"
+
+                                Nothing ->
+                                    "Crear"
+                        ]
+                    , viewTortaFooter grupo Deudores model
+                    ]
+    in
+    div [ class "modal-footer" ]
+        [ div [ class "d-flex gap-2 align-items-stretch justify-content-md-end w-100 m-0" ]
+            (Bs.btn Bs.Transparent [ Telemetry.click "gasto.edit_cancel", onClick Cancel ] [ text "Cancelar" ]
+                :: acciones
+            )
+        ]
 
 
 viewModalidadSelector : Form.FieldState CustomFormError String -> Html Msg

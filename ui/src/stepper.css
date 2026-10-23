@@ -1,0 +1,109 @@
+/* TEMPORAL: el stepper de Bootstrap 6 (`scss/_stepper.scss` en `v6-dev`), que
+   en 5.3 no existe. Mismas clases, tokens y geometría, con las variables de 5.3
+   (`--bs-*`) en lugar de las de 6. Al pasar a Bootstrap 6 se borra este archivo
+   (y su import en interop.js) y `Components.Stepper` sigue andando tal cual.
+
+   Va aparte de styles.css porque todo lo de ahí se vuelve un helper en Css.elm,
+   y estas clases son de Bootstrap. Sin `@layer`, a diferencia del original: el
+   Bootstrap 5 que cargamos no usa capas y le ganaría a cualquier regla en una. */
+
+.stepper {
+    --stepper-size: 2rem;
+    --stepper-gap: 1rem;
+    --stepper-font-size: 0.875rem;
+    --stepper-text-gap: 0.5rem;
+    --stepper-track-size: 0.125rem;
+    --stepper-bg: var(--bs-secondary-bg);
+    --stepper-active-color: var(--bs-white);
+    --stepper-active-bg: var(--bs-primary);
+
+    display: grid;
+    grid-auto-rows: 1fr;
+    gap: var(--stepper-gap);
+    padding-left: 0;
+    margin-bottom: 0;
+    list-style: none;
+    counter-reset: stepper;
+}
+
+.stepper-item {
+    position: relative;
+    display: grid;
+    grid-template-columns: var(--stepper-size) auto;
+    gap: var(--stepper-text-gap);
+    align-items: center;
+    counter-increment: stepper;
+}
+
+/* Bootstrap 6 lo resetea en su reboot; el de 5.3 no. */
+button.stepper-item {
+    padding: 0;
+    color: inherit;
+    text-align: inherit;
+    background: none;
+    border: 0;
+}
+
+.stepper-item::before {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: var(--stepper-size);
+    height: var(--stepper-size);
+    padding: 0.5rem;
+    font-size: var(--stepper-font-size);
+    font-weight: 600;
+    line-height: 1;
+    content: counter(stepper);
+    background-color: var(--stepper-bg);
+    border-radius: 50%;
+}
+
+.stepper-item::after {
+    position: absolute;
+    inset-block-start: 50%;
+    inset-inline-start: calc((var(--stepper-size) * 0.5) - (var(--stepper-track-size) * 0.5));
+    width: var(--stepper-track-size);
+    height: calc(100% + var(--stepper-gap));
+    content: "";
+    background-color: var(--stepper-bg);
+}
+
+.stepper-item:last-child::after {
+    display: none;
+}
+
+.stepper-item.active::before,
+.stepper-item.active::after {
+    color: var(--theme-contrast, var(--stepper-active-color));
+    background-color: var(--theme-bg, var(--stepper-active-bg));
+}
+
+/* La línea que sale del último paso activo va hacia uno que no lo es. */
+.stepper-item.active:not(:has(+ .stepper-item.active))::after {
+    background-color: var(--stepper-bg);
+}
+
+.stepper-horizontal {
+    display: inline-grid;
+    grid-auto-columns: 1fr;
+    grid-auto-flow: column;
+}
+
+.stepper-horizontal .stepper-item {
+    grid-template-rows: var(--stepper-size) auto;
+    grid-template-columns: auto;
+    align-items: start;
+    justify-items: center;
+    text-align: center;
+}
+
+.stepper-horizontal .stepper-item::after {
+    inset-block-start: calc((var(--stepper-size) * 0.5) - (var(--stepper-track-size) * 0.5));
+    inset-inline-start: 50%;
+    width: calc(100% + var(--stepper-gap));
+    height: var(--stepper-track-size);
+}

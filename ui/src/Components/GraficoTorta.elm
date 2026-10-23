@@ -3,6 +3,7 @@ module Components.GraficoTorta exposing
     , colorParaParticipante
     , porciones
     , viewDot
+    , viewTortaBoton
     , viewTortaGrande
     , viewTortaMini
     )
@@ -100,6 +101,15 @@ entrada se respeta para que los colores coincidan con la leyenda.
 -}
 viewTorta : Float -> List ( Color, Float ) -> Html msg
 viewTorta size slices =
+    viewTortaSvg [ SvgAttr.width (String.fromFloat size), SvgAttr.height (String.fromFloat size) ] size slices
+
+
+{-| La torta dibujada en un lienzo de `size` unidades; qué tamaño ocupa en
+pantalla lo deciden los atributos (píxeles fijos, o `100%` para que se adapte
+a la caja que la contiene).
+-}
+viewTortaSvg : List (Svg.Attribute msg) -> Float -> List ( Color, Float ) -> Html msg
+viewTortaSvg sizeAttrs size slices =
     let
         positivos =
             slices |> List.filter (\( _, valor ) -> valor > 0)
@@ -129,10 +139,7 @@ viewTorta size slices =
                 ]
     in
     Svg.svg
-        [ SvgAttr.viewBox ("0 0 " ++ String.fromFloat size ++ " " ++ String.fromFloat size)
-        , SvgAttr.width (String.fromFloat size)
-        , SvgAttr.height (String.fromFloat size)
-        ]
+        (SvgAttr.viewBox ("0 0 " ++ String.fromFloat size ++ " " ++ String.fromFloat size) :: sizeAttrs)
         [ Svg.g
             [ SvgAttr.transform ("translate(" ++ String.fromFloat radius ++ "," ++ String.fromFloat radius ++ ")") ]
             (List.map2 makeSlice positivos arcs)
@@ -199,13 +206,27 @@ mismo: el caller lo envuelve en el botón/disparador que prefiera (un modal de
 Bootstrap, un `onClick`, etc.).
 -}
 viewTortaMini : List PorcionTorta -> Html msg
-viewTortaMini porciones_ =
+viewTortaMini =
+    viewTortaEnCaja "3.5rem"
+
+
+{-| Como `viewTortaMini`, pero del alto de un botón de Bootstrap (line-height +
+padding vertical + bordes de `.btn`), para ir en una fila de botones sin
+estirarlos.
+-}
+viewTortaBoton : List PorcionTorta -> Html msg
+viewTortaBoton =
+    viewTortaEnCaja "calc(1.5em + 0.75rem + 2 * var(--bs-border-width))"
+
+
+viewTortaEnCaja : String -> List PorcionTorta -> Html msg
+viewTortaEnCaja lado porciones_ =
     Html.div
         [ class "border rounded d-flex align-items-center justify-content-center bg-body p-1"
-        , style "width" "3.5rem"
-        , style "height" "3.5rem"
+        , style "width" lado
+        , style "height" lado
         ]
-        [ viewTorta 42 (porcionesToSlices porciones_) ]
+        [ viewTortaSvg [ SvgAttr.width "100%", SvgAttr.height "100%" ] 42 (porcionesToSlices porciones_) ]
 
 
 {-| Torta en grande (240px) con su leyenda debajo. Pensada para el cuerpo de un
