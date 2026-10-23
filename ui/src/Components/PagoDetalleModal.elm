@@ -2161,7 +2161,7 @@ viewBasicSection model =
                     [ disabled (Form.getOutput form == Nothing)
                     , Telemetry.click "gasto.edit_next"
                     , type_ "submit"
-                    , class "flex-grow-1"
+                    , class "flex-grow-1 flex-md-grow-0 px-md-4"
                     ]
                     [ text "Siguiente" ]
                 ]
@@ -2209,14 +2209,14 @@ viewPagadoresSection grupo model =
         , div [ class "mt-auto pt-4" ]
             [ viewErrorFromResumenData (netosDelPaso Pagadores model)
             , viewBotonera
-                [ viewTortaFooter grupo Pagadores model
-                , Bs.btn Bs.Primary
+                [ Bs.btn Bs.Primary
                     [ disabled (Form.getOutput form == Nothing)
                     , Telemetry.click "gasto.edit_next"
                     , type_ "submit"
-                    , class "flex-grow-1"
+                    , class "flex-grow-1 flex-md-grow-0 px-md-4"
                     ]
                     [ text "Siguiente" ]
+                , viewTortaFooter grupo Pagadores model
                 ]
             ]
         ]
@@ -2252,8 +2252,7 @@ viewDeudoresSection grupo model =
               -- que `.resumen` agrega al combinar pagadores y deudores.
               viewErrorFromResumenData (netosDelPaso Deudores model)
             , viewBotonera
-                [ viewTortaFooter grupo Deudores model
-                , Bs.btn Bs.Primary
+                [ Bs.btn Bs.Primary
                     [ -- Se permite enviar aunque el gasto sea inválido; el
                       -- backend lo guarda igual y deja los motivos en su
                       -- resumen. Se bloquea si el form no es construible o
@@ -2262,7 +2261,7 @@ viewDeudoresSection grupo model =
                     , type_ "submit"
                     , Attr.id "pago-submit-button"
                     , Telemetry.click "gasto.save"
-                    , class "flex-grow-1"
+                    , class "flex-grow-1 flex-md-grow-0 px-md-4"
                     ]
                     [ text <|
                         case model.pagoId of
@@ -2272,17 +2271,20 @@ viewDeudoresSection grupo model =
                             Nothing ->
                                 "Crear"
                     ]
+                , viewTortaFooter grupo Deudores model
                 ]
             ]
         ]
 
 
-{-| La fila de botones del pie: lo que venga (la torta, el botón del paso) más
-el "Cancelar" que vuelve al detalle del gasto.
+{-| La fila de botones del pie: el "Cancelar" que vuelve al detalle del gasto
+seguido de lo que venga (el botón del paso y, al final, la torta). En pantallas
+chicas el botón del paso se estira para llenar la fila; desde `md` (donde el
+modal deja de ser fullscreen) toma su ancho natural y la fila va a la derecha.
 -}
 viewBotonera : List (Html Msg) -> Html Msg
 viewBotonera children =
-    div [ class "d-flex gap-2 align-items-stretch" ]
+    div [ class "d-flex gap-2 align-items-stretch justify-content-md-end" ]
         (Bs.btn Bs.Transparent [ Telemetry.click "gasto.edit_cancel", onClick Cancel ] [ text "Cancelar" ] :: children)
 
 
