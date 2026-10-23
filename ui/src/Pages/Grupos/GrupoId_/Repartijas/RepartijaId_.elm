@@ -3,7 +3,7 @@ module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Ayuda, Feedback, 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (DetalleDeItem, DetalleRepartija, DiferenciaDeUnidades(..), DistribucionDeSobras(..), EstadoDeItem(..), Repartija, RepartijaClaim, RepartijaItem, ResolucionDeItem(..), ULID)
-import Html exposing (Html, button, div, h5, h6, i, input, li, p, span, strong, text, ul)
+import Html exposing (Html, button, div, h4, h5, h6, i, input, p, span, strong, text)
 import Html.Attributes as Attr exposing (class, classList, disabled, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput)
 import Layouts
@@ -16,6 +16,7 @@ import Models.Store.Types exposing (Store)
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
+import Set exposing (Set)
 import Shared
 import Shared.Msg
 import Utils.Http exposing (viewHttpError)
@@ -52,7 +53,7 @@ type alias Model =
     , filtros : Filtros
     , participantesExpandido : Bool
     , alertaExpandida : Bool
-    , modoAvanzado : Bool
+    , detallesAbiertos : Set ULID
     , ayuda : Maybe Ayuda
     , feedback : Feedback
     }
@@ -110,7 +111,7 @@ init grupoId repartijaId store =
       , filtros = sinFiltros
       , participantesExpandido = False
       , alertaExpandida = False
-      , modoAvanzado = False
+      , detallesAbiertos = Set.empty
       , ayuda = Nothing
       , feedback = SinResponder
       }
@@ -140,10 +141,10 @@ type Msg
     | ToggleFiltroReclamadosPorVos
     | ToggleFiltroNoResueltos
     | SetFiltroParticipante (Maybe ULID)
-    | VerItemsDe ULID
+    | LimpiarFiltros
     | ToggleParticipantes
     | ToggleAlerta
-    | SetModoAvanzado Bool
+    | ToggleDetalleDeItem ULID
     | AbrirAyuda Ayuda OrigenAyuda
     | CerrarAyuda
     | DismissIntro
@@ -218,33 +219,9 @@ update maybeParticipanteId store msg model =
                 )
             )
 
-        VerItemsDe participanteId ->
-            -- El filtro vive en el modo avanzado, así que mirar lo de alguien
-            -- desde la lista de participantes también lo prende: si no, se
-            -- esconderían items sin nada en pantalla que lo explique.
-            let
-                filtros =
-                    model.filtros
-
-                yaEstaba =
-                    filtros.porParticipante == Just participanteId
-            in
-            ( { model
-                | modoAvanzado = not yaEstaba || model.modoAvanzado
-                , filtros =
-                    { filtros
-                        | porParticipante =
-                            if yaEstaba then
-                                Nothing
-
-                            else
-                                Just participanteId
-                    }
-              }
-            , Effect.telemetryEvent
-                (Telemetry.repartijaFiltro
-                    { filtro = "participante_desde_la_lista", activo = not yaEstaba }
-                )
+        LimpiarFiltros ->
+            ( { model | filtros = sinFiltros }
+            , Effect.none
             )
 
         ToggleParticipantes ->
@@ -258,20 +235,20 @@ update maybeParticipanteId store msg model =
             , Effect.none
             )
 
-        SetModoAvanzado avanzado ->
-            -- Los filtros viven en el modo avanzado, así que al salir se
-            -- limpian: dejarlos puestos escondería items sin nada en pantalla
-            -- que lo explique.
+        ToggleDetalleDeItem itemId ->
+            let
+                abierto =
+                    not (Set.member itemId model.detallesAbiertos)
+            in
             ( { model
-                | modoAvanzado = avanzado
-                , filtros =
-                    if avanzado then
-                        model.filtros
+                | detallesAbiertos =
+                    if abierto then
+                        Set.insert itemId model.detallesAbiertos
 
                     else
-                        sinFiltros
+                        Set.remove itemId model.detallesAbiertos
               }
-            , Effect.telemetryEvent (Telemetry.repartijaModoDeVista avanzado)
+            , Effect.telemetryEvent (Telemetry.repartijaDetalleDeItemAbierto abierto)
             )
 
         AbrirAyuda ayuda origen ->
@@ -491,29 +468,19 @@ view userId { introDismissed } store model =
             , body =
                 [ div [ class "container-fluid py-3" ]
                     [ div [ class "row g-4" ]
-                        -- En mobile los filtros van arriba del encabezado de la
-                        -- lista y en desktop abajo, así que el orden de esta
-                        -- columna no es el del código.
-                        [ div [ class "col-12 col-lg-8 d-flex flex-column" ]
+                        [ div [ class "col-12 col-lg-8" ]
                             [ if introDismissed then
                                 text ""
 
                               else
-                                div [ Attr.id "repartija-intro", class "order-0" ] [ viewIntro ]
-                            , div [ Attr.id "repartija-alertas", class "order-1" ]
+                                div [ Attr.id "repartija-intro" ] [ viewIntro ]
+                            , div [ Attr.id "repartija-alertas" ]
                                 [ viewAlertaNoResueltos model detalle repartija
                                 , viewLinksDeAyuda
                                 ]
-                            , div [ Attr.id "repartija-participantes-mobile", class "order-2 d-lg-none mb-3" ] [ viewParticipantes model grupo repartija ]
-                            , div [ Attr.id "repartija-filtros", class "order-3 order-lg-4" ]
-                                [ if model.modoAvanzado then
-                                    viewFiltros userId grupo model.filtros
-
-                                  else
-                                    text ""
-                                ]
-                            , div [ Attr.id "repartija-items-header", class "order-4 order-lg-3" ] [ viewItemsHeader model ]
-                            , div [ Attr.id "repartija-items", class "order-5" ] [ viewItems model userId detalle repartija ]
+                            , div [ Attr.id "repartija-participantes-mobile", class "d-lg-none mb-3" ] [ viewParticipantes model grupo repartija ]
+                            , div [ Attr.id "repartija-items-header" ] [ viewItemsHeader userId grupo model.filtros ]
+                            , div [ Attr.id "repartija-items" ] [ viewItems model userId grupo detalle repartija ]
                             ]
                         , div [ Attr.id "repartija-lateral", class "col-12 col-lg-4" ]
                             [ div [ Attr.id "repartija-participantes", class "d-none d-lg-block mb-3" ] [ viewParticipantes model grupo repartija ]
@@ -683,34 +650,78 @@ viewParticipantes model grupo repartija =
                 |> List.partition (\p -> List.any (\c -> c.participante == p.id) repartija.claims)
 
         cuenta colorClass titulo participantes =
-            Bs.badge (colorClass ++ " d-inline-flex align-items-center gap-1")
+            Bs.badge (colorClass ++ " rounded-pill d-inline-flex align-items-center gap-1")
                 [ Attr.title titulo ]
-                [ text (String.fromInt (List.length participantes))
-                , i [ class "bi bi-people-fill" ] []
+                [ i [ class "bi bi-people-fill" ] []
+                , text (String.fromInt (List.length participantes))
                 ]
 
         grupoDeNombres colorClass titulo participantes =
             div [ class "d-flex align-items-center flex-wrap gap-2" ]
                 [ cuenta colorClass titulo participantes
-                , span [ class "fw-semibold" ]
+                , span []
                     [ text (participantes |> List.map .nombre |> String.join ", ") ]
                 ]
 
-        -- Expandida, cada uno de los que reclamaron es un botón que filtra la
-        -- lista por esa persona, para ver qué se llevó.
+        -- Expandida, cada uno de los que reclamaron es un botón que abre, en
+        -- un dropdown, qué se llevó esa persona. Bootstrap lo abre, lo cierra
+        -- y le pinta el botón mientras está abierto; Popper lo reubica si no
+        -- entra en la pantalla.
         chipDeParticipante p =
-            button
-                [ type_ "button"
-                , class "btn btn-sm d-inline-flex align-items-center gap-1"
-                , classList
-                    [ ( "btn-primary", model.filtros.porParticipante == Just p.id )
-                    , ( "btn-outline-primary", model.filtros.porParticipante /= Just p.id )
+            div [ class "dropdown" ]
+                [ button
+                    [ type_ "button"
+                    , class "btn btn-sm btn-outline-primary rounded-pill px-3"
+                    , Attr.attribute "data-bs-toggle" "dropdown"
+                    , Attr.attribute "data-bs-offset" "0,8"
+                    , Attr.attribute "aria-expanded" "false"
+                    , Attr.title ("Ver los items que reclamó " ++ p.nombre)
+                    , Telemetry.click "repartija.items_de_participante"
                     ]
-                , Attr.title ("Ver los items que reclamó " ++ p.nombre)
-                , Telemetry.click "repartija.filter_by_participante"
-                , onClick (VerItemsDe p.id)
+                    [ text p.nombre ]
+                , itemsReclamadosPor p
                 ]
-                [ i [ class "bi bi-eye" ] [], text p.nombre ]
+
+        itemsReclamadosPor p =
+            let
+                filas =
+                    repartija.claims
+                        |> List.filter (\c -> c.participante == p.id)
+                        |> List.filterMap
+                            (\c ->
+                                repartija.items
+                                    |> find (\item -> item.id == c.itemId)
+                                    |> Maybe.map
+                                        (\item ->
+                                            Html.tr []
+                                                [ Html.td [ class "ps-3 py-1" ] [ text item.nombre ]
+                                                , Html.td [ class "text-end text-nowrap pe-3 py-1" ]
+                                                    [ text
+                                                        (case c.cantidad of
+                                                            Just n ->
+                                                                String.fromInt n
+
+                                                            Nothing ->
+                                                                "Parte igual"
+                                                        )
+                                                    ]
+                                                ]
+                                        )
+                            )
+            in
+            div [ class "dropdown-menu shadow p-0 overflow-hidden", Attr.style "width" "16rem" ]
+                [ div [ class "fw-semibold bg-body-tertiary border-bottom px-3 py-2" ]
+                    [ text ("Items reclamados por " ++ p.nombre) ]
+                , Html.table [ class "table table-sm table-borderless small mb-1" ]
+                    [ Html.thead []
+                        [ Html.tr [ class "border-bottom" ]
+                            [ Html.th [ class "fw-normal text-body-secondary ps-3 pt-2" ] [ text "Producto" ]
+                            , Html.th [ class "fw-normal text-body-secondary text-end pe-3 pt-2" ] [ text "Unidades" ]
+                            ]
+                        ]
+                    , Html.tbody [] filas
+                    ]
+                ]
     in
     Bs.card []
         [ Bs.cardBody [ class "py-2" ]
@@ -727,7 +738,7 @@ viewParticipantes model grupo repartija =
                 , Telemetry.click "repartija.toggle_participantes"
                 , onClick ToggleParticipantes
                 ]
-                [ h6 [ class "mb-0 flex-grow-1 text-start fw-semibold" ] [ text "Quiénes ya reclamaron" ]
+                [ h5 [ class "mb-0 flex-grow-1 text-start" ] [ text "Quiénes ya reclamaron" ]
                 , i
                     [ class
                         (if model.participantesExpandido then
@@ -745,10 +756,14 @@ viewParticipantes model grupo repartija =
                         (cuenta "text-bg-primary" "Ya reclamaron items" conClaims
                             :: List.map chipDeParticipante conClaims
                         )
-                    , div [ class "mt-3" ]
-                        [ h6 [ class "fw-semibold" ] [ text "No reclamaron items" ]
-                        , grupoDeNombres "text-bg-primary" "Aún no reclamaron items" sinClaims
-                        ]
+                    , if List.isEmpty sinClaims then
+                        text ""
+
+                      else
+                        div [ class "mt-3" ]
+                            [ h6 [ class "fw-semibold" ] [ text "No reclamaron items" ]
+                            , grupoDeNombres "text-bg-secondary" "Aún no reclamaron items" sinClaims
+                            ]
                     ]
 
               else
@@ -758,72 +773,23 @@ viewParticipantes model grupo repartija =
         ]
 
 
-viewItemsHeader : Model -> Html Msg
-viewItemsHeader model =
+{-| El título de la lista con el botón de los filtros, que se abren en un
+dropdown. Cerrado, los filtros siguen aplicándose, así que el botón se destaca y
+cuenta cuántos hay puestos: si no, se esconderían items sin nada en pantalla que
+lo explique.
+
+El dropdown no se cierra al tocar lo de adentro (`data-bs-auto-close`), así se
+pueden poner varios filtros seguidos.
+
+-}
+viewItemsHeader : Maybe ULID -> GrupoLike g -> Filtros -> Html Msg
+viewItemsHeader userId grupo filtros =
     let
-        opcion avanzado label =
-            li []
-                [ button
-                    [ type_ "button"
-                    , class "dropdown-item d-flex align-items-center gap-2"
-                    , classList [ ( "active", model.modoAvanzado == avanzado ) ]
-                    , Telemetry.click
-                        (if avanzado then
-                            "repartija.mode_advanced"
+        activos =
+            [ filtros.reclamadosPorVos, filtros.noResueltos, filtros.porParticipante /= Nothing ]
+                |> List.filter identity
+                |> List.length
 
-                         else
-                            "repartija.mode_simple"
-                        )
-                    , onClick (SetModoAvanzado avanzado)
-                    ]
-                    [ i
-                        [ class "bi bi-check-lg"
-                        , classList [ ( "invisible", model.modoAvanzado /= avanzado ) ]
-                        ]
-                        []
-                    , text label
-                    ]
-                ]
-    in
-    div [ class "d-flex align-items-center justify-content-between gap-2 mb-3" ]
-        [ h5 [ class "mb-0" ] [ text "Items a repartir" ]
-        , div [ class "dropdown" ]
-            [ button
-                [ type_ "button"
-                , class "btn dropdown-toggle d-inline-flex align-items-center gap-2"
-
-                -- El modo avanzado se destaca porque cambia lo que se ve en
-                -- toda la lista: tiene que notarse que está puesto.
-                , classList
-                    [ ( "btn-outline-info", model.modoAvanzado )
-                    , ( "btn-outline-secondary", not model.modoAvanzado )
-                    ]
-                , Attr.attribute "data-bs-toggle" "dropdown"
-                , Attr.attribute "aria-expanded" "false"
-                , Attr.title "Cuánto detalle mostrar de cada item"
-                ]
-                [ i [ class "bi bi-eye" ] []
-                , span [ class "d-none d-sm-inline" ]
-                    [ text
-                        (if model.modoAvanzado then
-                            "Modo avanzado"
-
-                         else
-                            "Modo simple"
-                        )
-                    ]
-                ]
-            , ul [ class "dropdown-menu dropdown-menu-end shadow" ]
-                [ opcion False "Modo simple"
-                , opcion True "Modo avanzado"
-                ]
-            ]
-        ]
-
-
-viewFiltros : Maybe ULID -> GrupoLike g -> Filtros -> Html Msg
-viewFiltros userId grupo filtros =
-    let
         switch id label activo msg =
             div [ class "form-check form-switch mb-0" ]
                 [ input
@@ -837,48 +803,85 @@ viewFiltros userId grupo filtros =
                 , Html.label [ class "form-check-label", Attr.for id ] [ text label ]
                 ]
     in
-    Bs.card [ class "mb-3 bg-body-tertiary" ]
-        [ Bs.cardBody [ class "py-3" ]
-            [ h6 [ class "fw-semibold d-flex align-items-center gap-2" ]
-                [ i [ class "bi bi-funnel" ] [], text "Filtros" ]
-            , div [ class "d-flex flex-wrap align-items-center gap-3" ]
-                [ case userId of
-                    Just _ ->
-                        switch "filtro-reclamados" "Reclamados por vos" filtros.reclamadosPorVos ToggleFiltroReclamadosPorVos
+    div [ class "d-flex align-items-center justify-content-between gap-2 mt-4 mb-3" ]
+        [ h4 [ class "mb-0" ] [ text "Items a repartir" ]
+        , div [ class "dropdown" ]
+            [ button
+                [ type_ "button"
+                , class "btn btn-sm d-inline-flex align-items-center gap-2"
+                , classList
+                    [ ( "btn-primary", activos > 0 )
+                    , ( "btn-outline-secondary", activos == 0 )
+                    ]
+                , Attr.attribute "data-bs-toggle" "dropdown"
+                , Attr.attribute "data-bs-auto-close" "outside"
+                , Attr.attribute "aria-expanded" "false"
+                , Attr.attribute "aria-label" "Filtros"
+                , Attr.title "Filtrar items"
+                , Telemetry.click "repartija.open_filtros"
+                ]
+                [ i [ class "bi bi-funnel" ] []
+                , span [] [ text "Filtros" ]
+                , if activos > 0 then
+                    Bs.badge "text-bg-light rounded-pill" [ Attr.title "Filtros puestos" ] [ text (String.fromInt activos) ]
 
-                    Nothing ->
+                  else
+                    text ""
+                ]
+            , div [ class "dropdown-menu dropdown-menu-end shadow p-3", Attr.style "width" "18rem" ]
+                [ div [ class "d-flex align-items-center mb-3" ]
+                    [ h6 [ class "fw-semibold mb-0 flex-grow-1" ] [ text "Filtros" ]
+                    , if activos > 0 then
+                        button
+                            [ type_ "button"
+                            , class "btn btn-link btn-sm p-0"
+                            , Telemetry.click "repartija.clear_filtros"
+                            , onClick LimpiarFiltros
+                            ]
+                            [ text "Limpiar" ]
+
+                      else
                         text ""
-                , switch "filtro-no-resueltos" "No resueltos" filtros.noResueltos ToggleFiltroNoResueltos
-                , div [ class "input-group flex-grow-1", Attr.style "min-width" "14rem" ]
-                    [ span [ class "input-group-text bg-body" ] [ i [ class "bi bi-search" ] [] ]
-                    , Html.select
-                        [ class "form-select"
-                        , Attr.attribute "aria-label" "Filtrar por participante"
-                        , onInput
-                            (\elegido ->
-                                SetFiltroParticipante
-                                    (if String.isEmpty elegido then
-                                        Nothing
+                    ]
+                , div [ class "d-flex flex-column gap-3" ]
+                    [ case userId of
+                        Just _ ->
+                            switch "filtro-reclamados" "Reclamados por vos" filtros.reclamadosPorVos ToggleFiltroReclamadosPorVos
 
-                                     else
-                                        Just elegido
-                                    )
+                        Nothing ->
+                            text ""
+                    , switch "filtro-no-resueltos" "No resueltos" filtros.noResueltos ToggleFiltroNoResueltos
+                    , div [ class "input-group" ]
+                        [ span [ class "input-group-text bg-body" ] [ i [ class "bi bi-search" ] [] ]
+                        , Html.select
+                            [ class "form-select"
+                            , Attr.attribute "aria-label" "Filtrar por participante"
+                            , onInput
+                                (\elegido ->
+                                    SetFiltroParticipante
+                                        (if String.isEmpty elegido then
+                                            Nothing
+
+                                         else
+                                            Just elegido
+                                        )
+                                )
+                            ]
+                            (Html.option
+                                [ value "", Attr.selected (filtros.porParticipante == Nothing) ]
+                                [ text "Participante" ]
+                                :: (grupo.participantes
+                                        |> List.map
+                                            (\p ->
+                                                Html.option
+                                                    [ value p.id
+                                                    , Attr.selected (filtros.porParticipante == Just p.id)
+                                                    ]
+                                                    [ text p.nombre ]
+                                            )
+                                   )
                             )
                         ]
-                        (Html.option
-                            [ value "", Attr.selected (filtros.porParticipante == Nothing) ]
-                            [ text "Participante" ]
-                            :: (grupo.participantes
-                                    |> List.map
-                                        (\p ->
-                                            Html.option
-                                                [ value p.id
-                                                , Attr.selected (filtros.porParticipante == Just p.id)
-                                                ]
-                                                [ text p.nombre ]
-                                        )
-                               )
-                        )
                     ]
                 ]
             ]
@@ -901,8 +904,8 @@ cumpleFiltros userId filtros repartija ( item, deItem ) =
         && cumple (filtros.porParticipante /= Nothing) filtros.porParticipante
 
 
-viewItems : Model -> Maybe ULID -> DetalleRepartija -> Repartija -> Html Msg
-viewItems model userId detalle repartija =
+viewItems : Model -> Maybe ULID -> GrupoLike g -> DetalleRepartija -> Repartija -> Html Msg
+viewItems model userId grupo detalle repartija =
     let
         -- Cada item con lo que calculó el backend de él. El detalle trae todos
         -- los items de la repartija, así que acá no se pierde ninguno.
@@ -927,7 +930,7 @@ viewItems model userId detalle repartija =
         items ->
             div []
                 (items
-                    |> List.map (\( item, deItem ) -> viewItemCard model userId detalle repartija item deItem)
+                    |> List.map (\( item, deItem ) -> viewItemCard model userId grupo detalle repartija item deItem)
                 )
 
 
@@ -940,8 +943,8 @@ unidades n =
         String.fromInt n ++ " unidades"
 
 
-viewItemCard : Model -> Maybe ULID -> DetalleRepartija -> Repartija -> RepartijaItem -> DetalleDeItem -> Html Msg
-viewItemCard model userId detalle repartija item deItem =
+viewItemCard : Model -> Maybe ULID -> GrupoLike g -> DetalleRepartija -> Repartija -> RepartijaItem -> DetalleDeItem -> Html Msg
+viewItemCard model userId grupo detalle repartija item deItem =
     let
         claims =
             Repartija.claimsDeItem repartija item
@@ -1036,88 +1039,176 @@ viewItemCard model userId detalle repartija item deItem =
                         boton "repartija.item_join" "btn-primary" [ text "Participar" ] (JoinCurrentClaim item) True
                     ]
 
-        tuParticipacion =
-            case userClaim of
-                Nothing ->
-                    div []
-                        [ div [ class "fw-semibold" ] [ text "Tu participación" ]
-                        , div [ class "text-secondary" ] [ text "No reclamaste items" ]
-                        ]
+        detalleAbierto =
+            Set.member item.id model.detallesAbiertos
 
-                Just claim ->
-                    let
-                        miConsumo =
-                            Repartija.consumoDeItem detalle item.id userId
-                    in
-                    div [ Attr.title (explicacionDeConsumo estado item) ]
-                        [ div [ class "fw-semibold" ] [ text "Tu participación" ]
-                        , case claim.cantidad of
-                            Just n ->
-                                div []
-                                    [ text "Reclamaste "
-                                    , span [ class "text-primary" ] [ text (unidades n) ]
-                                    ]
+        columna titulo contenido =
+            div [ class "col-12 col-md-4" ]
+                (div [ class "fw-semibold mb-1" ] [ text titulo ] :: contenido)
 
-                            Nothing ->
-                                div [ class "text-primary" ] [ text "Estás participando" ]
-                        , div [ class "text-danger" ] [ text ("$ " ++ Monto.toString miConsumo) ]
-                        ]
+        apagado texto =
+            div [ class "text-body-secondary" ] [ text texto ]
+
+        linkConAyuda track msg label =
+            button
+                [ type_ "button"
+                , class "btn btn-link p-0 text-start d-flex align-items-start gap-1"
+                , Telemetry.click track
+                , onClick msg
+                ]
+                [ i [ class "bi bi-question-circle-fill mt-1" ] [], span [] [ text label ] ]
     in
     div [ class "card mb-3" ]
-        [ div [ class "card-header" ]
-            [ div [ class "d-flex flex-wrap align-items-center gap-2" ]
-                [ h6 [ class "fs-5 mb-0" ] [ text item.nombre ], badgeDeItem deItem ]
-            , div [ class "small text-body-secondary" ]
-                [ text (unidades item.cantidad)
-                , span [ class "mx-2" ] [ text "·" ]
-                , text ("$ " ++ Monto.toString item.monto)
+        [ div [ class "card-body d-flex flex-column flex-md-row align-items-md-center gap-3" ]
+            [ div [ class "flex-grow-1" ]
+                [ h5 [ class "card-title mb-1" ] [ text item.nombre ]
+                , div [ class "mb-1" ] [ badgeDeItem deItem ]
+                , div [ class "small" ]
+                    [ strong [] [ text "Cantidad: " ]
+                    , text (String.fromInt item.cantidad)
+                    , span [ class "mx-2 text-body-secondary" ] [ text "•" ]
+                    , strong [] [ text "Total: " ]
+                    , text ("$ " ++ Monto.toString item.monto)
+                    ]
+                ]
+            , div [ class "d-flex flex-column align-items-center align-items-md-end gap-2 flex-shrink-0" ] botones
+            ]
+        , div
+            [ class "card-footer d-flex align-items-center gap-2 small"
+            , classList [ ( "border-bottom", detalleAbierto ) ]
+            ]
+            [ case userClaim of
+                Just claim ->
+                    span [ class "flex-grow-1 text-primary fw-semibold d-inline-flex align-items-center gap-1" ]
+                        [ i [ class "bi bi-person-check-fill" ] []
+                        , text
+                            (case claim.cantidad of
+                                Just n ->
+                                    "Reclamaste " ++ String.fromInt n ++ " de " ++ String.fromInt item.cantidad
+
+                                Nothing ->
+                                    -- Solo cuentan los que participan en partes
+                                    -- iguales: si el item además tiene reclamos
+                                    -- por cantidad, esos no dividen con vos.
+                                    case
+                                        claims
+                                            |> List.filter (\c -> c.cantidad == Nothing && c.id /= claim.id)
+                                            |> List.length
+                                    of
+                                        0 ->
+                                            "Participando sólo"
+
+                                        otros ->
+                                            "Participando con " ++ String.fromInt otros ++ " más"
+                            )
+                        ]
+
+                Nothing ->
+                    span [ class "flex-grow-1" ] [ text "No reclamaste unidades" ]
+            , button
+                [ type_ "button"
+                , class "btn btn-link btn-sm p-0 text-reset text-decoration-none d-inline-flex align-items-center gap-1"
+                , Attr.attribute "aria-expanded"
+                    (if detalleAbierto then
+                        "true"
+
+                     else
+                        "false"
+                    )
+                , Telemetry.click "repartija.toggle_item_detail"
+                , onClick (ToggleDetalleDeItem item.id)
+                ]
+                [ text "Detalle"
+                , i
+                    [ class
+                        (if detalleAbierto then
+                            "bi bi-chevron-up"
+
+                         else
+                            "bi bi-chevron-down"
+                        )
+                    ]
+                    []
                 ]
             ]
-        , div [ class "card-body" ]
-            [ div [ class "d-flex flex-wrap align-items-start gap-3" ]
-                (List.concat
-                    [ [ div [ class "flex-grow-1", Attr.style "min-width" "9rem" ] [ tuParticipacion ] ]
-                    , if model.modoAvanzado then
-                        let
-                            -- La columna del medio, solo en modo avanzado: cómo se reparte el item
-                            -- y cuánto va repartido, cada uno con su link a la explicación.
-                            modoDeReparto =
-                                let
-                                    linkConAyuda track ayuda label =
-                                        button
-                                            [ type_ "button"
-                                            , class "btn btn-link p-0 text-start d-flex align-items-start gap-1"
-                                            , Telemetry.click track
-                                            , onClick ayuda
-                                            ]
-                                            [ i [ class "bi bi-question-circle-fill mt-1" ] [], span [] [ text label ] ]
-                                in
-                                div [ class "flex-grow-1", Attr.style "min-width" "11rem" ]
-                                    [ div [ class "fw-semibold" ] [ text "Modo de reparto" ]
-                                    , case estado of
-                                        EstadoSinReclamar ->
-                                            div [ class "text-secondary" ] [ text "Aún no definido" ]
+        , if detalleAbierto then
+            let
+                -- Cómo se reparte el item y cuánto va repartido, cada uno con su link
+                -- a la explicación.
+                modoDeReparto =
+                    columna "Modo de reparto"
+                        (case estado of
+                            EstadoSinReclamar ->
+                                [ apagado "Aún no definido" ]
+
+                            _ ->
+                                [ linkConAyuda "repartija.item_split_mode_help" (AbrirAyuda ComoDividirUnItem DesdeItem) (nombreDelReparto estado)
+                                , linkConAyuda "repartija.item_detail" (AbrirDetalleDeItem item) (progresoDelReparto item estado)
+                                ]
+                        )
+
+                tuParte =
+                    columna "Tu parte"
+                        (case userClaim of
+                            Nothing ->
+                                [ apagado "No reclamaste items" ]
+
+                            Just claim ->
+                                [ div [ Attr.title (explicacionDeConsumo estado item) ]
+                                    [ case claim.cantidad of
+                                        Just n ->
+                                            div []
+                                                [ text "Reclamaste "
+                                                , span [ class "text-primary" ] [ text (unidades n) ]
+                                                ]
+
+                                        Nothing ->
+                                            div [ class "text-primary" ] [ text "Estás participando" ]
+                                    , div [ class "text-danger" ]
+                                        [ text ("$ " ++ Monto.toString (Repartija.consumoDeItem detalle item.id userId)) ]
+                                    ]
+                                ]
+                        )
+
+                participantes =
+                    columna "Participantes"
+                        [ if List.isEmpty claims then
+                            apagado "Nadie lo reclamó"
+
+                          else
+                            let
+                                -- Las unidades de cada uno solo dicen algo si
+                                -- el item se reparte por cantidad.
+                                porCantidad =
+                                    case estado of
+                                        EstadoRepartidoPorCantidad _ ->
+                                            True
 
                                         _ ->
-                                            div []
-                                                [ linkConAyuda "repartija.item_split_mode_help" (AbrirAyuda ComoDividirUnItem DesdeItem) (nombreDelReparto estado)
-                                                , linkConAyuda "repartija.item_detail" (AbrirDetalleDeItem item) (progresoDelReparto estado)
-                                                ]
-                                    ]
-                        in
-                        [ modoDeReparto ]
+                                            False
 
-                      else
-                        []
-                    , [ div
-                            [ class "ms-auto d-flex flex-column flex-sm-row flex-wrap align-items-end justify-content-end gap-2" ]
-                            botones
-                      ]
-                    ]
-                )
-            , div [ class "mt-3" ]
-                [ viewAcciones userId claims userClaim item ]
-            ]
+                                nombreDe claim =
+                                    case ( porCantidad, claim.cantidad ) of
+                                        ( True, Just n ) ->
+                                            lookupNombreParticipante grupo claim.participante ++ " (" ++ String.fromInt n ++ ")"
+
+                                        _ ->
+                                            lookupNombreParticipante grupo claim.participante
+                            in
+                            div []
+                                [ text
+                                    (claims
+                                        |> List.map nombreDe
+                                        |> String.join ", "
+                                    )
+                                ]
+                        ]
+            in
+            div [ class "bg-body-tertiary p-3 rounded-bottom" ]
+                [ div [ class "row g-3" ] [ modoDeReparto, tuParte, participantes ] ]
+
+          else
+            text ""
         ]
 
 
@@ -1137,17 +1228,21 @@ nombreDelReparto estado =
             "Por cantidad y equitativo a la vez"
 
 
-progresoDelReparto : EstadoDeItem -> String
-progresoDelReparto estado =
+progresoDelReparto : RepartijaItem -> EstadoDeItem -> String
+progresoDelReparto item estado =
+    let
+        repartidos n =
+            "Repartidos " ++ String.fromInt n ++ " de " ++ String.fromInt item.cantidad
+    in
     case estado of
         EstadoRepartidoPorCantidad UnidadesExactas ->
-            "Todas las unidades repartidas"
+            repartidos item.cantidad
 
         EstadoRepartidoPorCantidad (FaltanUnidades n) ->
-            "Faltan repartir " ++ unidades n
+            repartidos (item.cantidad - n)
 
         EstadoRepartidoPorCantidad (SobranUnidades n) ->
-            "Sobran " ++ unidades n
+            repartidos (item.cantidad + n)
 
         EstadoRepartidoEquitativamente personas ->
             "Dividido entre " ++ String.fromInt personas
@@ -1248,49 +1343,6 @@ badgeDeItem deItem =
     Bs.badge (colorClass ++ " rounded-pill text-nowrap d-inline-flex align-items-center gap-1")
         [ Attr.title explicacion ]
         (i [ class ("bi " ++ icono) ] [] :: contenido)
-
-
-viewAcciones : Maybe ULID -> List RepartijaClaim -> Maybe RepartijaClaim -> RepartijaItem -> Html Msg
-viewAcciones userId claims userClaim item =
-    let
-        -- La forma de reparto se puede cambiar mientras nadie más haya
-        -- reclamado el item: después ya es una decisión compartida.
-        soloReclamoYo =
-            not (List.isEmpty claims) && List.all (\c -> Just c.participante == userId) claims
-
-        accion track icono label msg =
-            li []
-                [ button [ type_ "button", class "dropdown-item", Telemetry.click track, onClick msg ]
-                    [ i [ class ("bi me-2 " ++ icono) ] [], text label ]
-                ]
-
-        acciones =
-            List.filterMap identity
-                [ if soloReclamoYo then
-                    Just (accion "repartija.item_change_split" "bi-arrow-left-right" "Cambiar forma de reparto" (OpenRepartirModal item))
-
-                  else
-                    Nothing
-                , userClaim |> Maybe.map (\claim -> accion "repartija.item_remove_claim" "bi-x-circle" "Quitar mi reclamo" (LeaveCurrentClaim claim))
-                ]
-    in
-    div [ class "dropdown" ]
-        [ button
-            [ type_ "button"
-            , class "btn btn-sm btn-outline-secondary dropdown-toggle"
-            , Attr.attribute "data-bs-toggle" "dropdown"
-            , Attr.attribute "aria-expanded" "false"
-            , Attr.title "Acciones"
-            ]
-            [ i [ class "bi bi-lightning-charge-fill" ] [] ]
-        , ul [ class "dropdown-menu shadow" ]
-            (if List.isEmpty acciones then
-                [ li [] [ span [ class "dropdown-item-text text-muted small" ] [ text "No hay acciones disponibles" ] ] ]
-
-             else
-                acciones
-            )
-        ]
 
 
 {-| Las tres tarjetas del final: la propina, lo que nadie reclamó y el total,

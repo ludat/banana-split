@@ -1,4 +1,4 @@
-module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, click, codigoDeLoginRechazado, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaFiltro, repartijaModoDeVista, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, severityToString, trackDecodeErrors)
+module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, click, codigoDeLoginRechazado, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaDetalleDeItemAbierto, repartijaFiltro, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, severityToString, trackDecodeErrors)
 
 import Html
 import Html.Attributes
@@ -141,26 +141,20 @@ repartijaRedisenoComentario opinion =
     }
 
 
-{-| Qué tanto se usa el modo avanzado de la repartija. Va también cuando se
-vuelve al simple, con el modo que quedó de atributo, así se puede ver cuántos lo
-prenden y lo apagan enseguida.
+{-| Que alguien abrió el detalle de un item de la repartija. Cerrarlo no se
+cuenta: lo que se quiere saber es cuántos lo necesitan.
 -}
-repartijaModoDeVista : Bool -> Maybe TelemetryEvent
-repartijaModoDeVista avanzado =
-    Just
-        { name = "app.repartija.view_mode"
-        , severity = Info
-        , attributes =
-            [ ( "app.repartija.modo"
-              , Json.string <|
-                    if avanzado then
-                        "avanzado"
+repartijaDetalleDeItemAbierto : Bool -> Maybe TelemetryEvent
+repartijaDetalleDeItemAbierto abierto =
+    if abierto then
+        Just
+            { name = "app.repartija.item_detail_expanded"
+            , severity = Info
+            , attributes = []
+            }
 
-                    else
-                        "simple"
-              )
-            ]
-        }
+    else
+        Nothing
 
 
 repartijaFiltro : { filtro : String, activo : Bool } -> Maybe TelemetryEvent
