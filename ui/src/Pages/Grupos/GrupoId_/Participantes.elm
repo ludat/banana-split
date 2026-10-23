@@ -224,7 +224,7 @@ view store currentUser model =
                                     , Bs.btn Bs.Primary
                                         [ id "agregar-participante"
                                         , Telemetry.click "participantes.add"
-                                        , onClick (ParticipanteForm Form.Submit)
+                                        , type_ "submit"
                                         ]
                                         [ text "Agregar" ]
                                     ]

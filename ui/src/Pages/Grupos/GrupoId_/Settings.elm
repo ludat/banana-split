@@ -441,7 +441,7 @@ viewAjustesEditando grupo form =
             [ Bs.btn Bs.Primary
                 [ disabled (not dirty || Form.getOutput form == Nothing)
                 , Telemetry.click "settings.save"
-                , onClick (AjustesForm Form.Submit)
+                , type_ "submit"
                 ]
                 [ text "Guardar" ]
             , button
@@ -811,7 +811,7 @@ tasaEnTexto tasa =
 
 viewTasasEditando : Form CustomFormError (List (Maybe TasaDeCambio)) -> Html Msg
 viewTasasEditando form =
-    div []
+    Html.form [ onSubmit (TasasForm Form.Submit) ]
         [ div []
             (Form.getListIndexes "tasas" form
                 |> List.map (viewTasaRow form)
@@ -820,7 +820,7 @@ viewTasasEditando form =
             [ Bs.btn Bs.Primary
                 [ disabled (tasasDelForm form == Nothing)
                 , Telemetry.click "settings.tasas_save"
-                , onClick (TasasForm Form.Submit)
+                , type_ "submit"
                 ]
                 [ text "Guardar tasas" ]
             , button

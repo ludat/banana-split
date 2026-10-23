@@ -2160,7 +2160,7 @@ viewBasicSection model =
                 [ Bs.btn Bs.Primary
                     [ disabled (Form.getOutput form == Nothing)
                     , Telemetry.click "gasto.edit_next"
-                    , onClick SubmitCurrentSection
+                    , type_ "submit"
                     , class "flex-grow-1"
                     ]
                     [ text "Siguiente" ]
@@ -2213,7 +2213,7 @@ viewPagadoresSection grupo model =
                 , Bs.btn Bs.Primary
                     [ disabled (Form.getOutput form == Nothing)
                     , Telemetry.click "gasto.edit_next"
-                    , onClick SubmitCurrentSection
+                    , type_ "submit"
                     , class "flex-grow-1"
                     ]
                     [ text "Siguiente" ]
@@ -2259,7 +2259,7 @@ viewDeudoresSection grupo model =
                       -- resumen. Se bloquea si el form no es construible o
                       -- si no hay cambios para guardar.
                       disabled (Form.getOutput model.pagoForm == Nothing || not model.hasUnsavedChanges)
-                    , onClick (PagoForm Form.Submit)
+                    , type_ "submit"
                     , Attr.id "pago-submit-button"
                     , Telemetry.click "gasto.save"
                     , class "flex-grow-1"

@@ -9,7 +9,7 @@ import Generated.Api as Api exposing (Grupo, Moneda, NuevaTransferenciaParams, T
 import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, div, em, h6, i, label, li, p, span, strong, text, ul)
 import Html.Attributes as Attr exposing (class)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onClick, onSubmit)
 import Http
 import Layouts
 import Models.Moneda as Moneda
@@ -971,7 +971,9 @@ viewNuevaTransferenciaModal from grupo nuevaForm =
                                 |> Maybe.withDefault grupo.monedaPorDefecto
                     in
                     [ Html.map NuevaForm <|
-                        div []
+                        -- El botón de submit vive en el footer del modal, fuera
+                        -- de este form; se asocia con el atributo `form`.
+                        Html.form [ Attr.id "transferencias-nueva-form", onSubmit Form.Submit ]
                             [ div [ class "mb-3" ]
                                 [ label [ class "form-label" ] [ text "A quién" ]
                                 , Bs.selectInput
@@ -1018,7 +1020,8 @@ viewNuevaTransferenciaModal from grupo nuevaForm =
             , Bs.btn Bs.Primary
                 [ Attr.id "registrar-transferencia"
                 , Telemetry.click "transferencias.new_submit"
-                , onClick (NuevaForm Form.Submit)
+                , Attr.type_ "submit"
+                , Attr.attribute "form" "transferencias-nueva-form"
                 ]
                 [ text "Registrar" ]
             ]

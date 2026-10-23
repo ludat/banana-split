@@ -8,7 +8,7 @@ import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, str
 import Generated.Api as Api exposing (GrupoParaUsuario)
 import Html exposing (Html, a, div, input, label, text)
 import Html.Attributes as Attr exposing (class, classList, for, id, placeholder, required, type_)
-import Html.Events exposing (onClick)
+import Html.Events exposing (onSubmit)
 import Layouts
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
@@ -226,7 +226,7 @@ viewCrearGrupo shared model =
         nombreField =
             Form.getFieldAsString "nombre" model.form
     in
-    Bs.card [ id "home-crear-grupo" ]
+    Html.form [ id "home-crear-grupo", class "card", onSubmit (UpdateForm Submit) ]
         [ Bs.cardHeader [] [ text "Crear grupo" ]
         , Bs.cardBody []
             [ div [ class "mb-3" ]
@@ -272,7 +272,7 @@ viewCrearGrupo shared model =
             , Bs.btn Bs.Primary
                 [ id "crear-grupo"
                 , Telemetry.click "home.create_grupo"
-                , onClick <| UpdateForm Submit
+                , type_ "submit"
                 ]
                 [ text "Crear" ]
             ]
