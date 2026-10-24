@@ -20,9 +20,10 @@ import Html.Attributes exposing (attribute, class, classList, type_)
 
 {-| Un paso del stepper.
 
-  - `actual`: el paso en el que se está. Es el único `active` (en color
-    primario): Bootstrap 6 lo usa también para los pasos completos, pero acá
-    el color indica sólo dónde estás.
+  - `actual`: el paso en el que se está. Él y los anteriores van `active` (en
+    color primario, con la línea entre ellos también) y los siguientes en gris,
+    así el stepper muestra el avance. Se marca además con `aria-current` y el
+    label en negrita.
   - `conError`: muestra un ícono de error al lado del label.
   - `attrs`: lo del botón que decide el caller (el `onClick`, telemetría, ...).
 
@@ -37,17 +38,34 @@ type alias Paso msg =
 
 view : List (Attribute msg) -> List (Paso msg) -> Html msg
 view attrs pasos =
+    let
+        -- Hasta el actual inclusive van como hechos. Si ninguno es el actual,
+        -- ninguno.
+        hechos =
+            if List.any .actual pasos then
+                pasos
+                    |> List.foldl
+                        (\paso ( acc, pasado ) ->
+                            ( not pasado :: acc, pasado || paso.actual )
+                        )
+                        ( [], False )
+                    |> Tuple.first
+                    |> List.reverse
+
+            else
+                List.map (\_ -> False) pasos
+    in
     Html.div (class "stepper stepper-horizontal w-100" :: attrs)
-        (List.map viewPaso pasos)
+        (List.map2 viewPaso hechos pasos)
 
 
-viewPaso : Paso msg -> Html msg
-viewPaso paso =
+viewPaso : Bool -> Paso msg -> Html msg
+viewPaso hecho paso =
     button
         ([ type_ "button"
          , classList
             [ ( "stepper-item", True )
-            , ( "active", paso.actual )
+            , ( "active", hecho )
             ]
          ]
             ++ (if paso.actual then
