@@ -181,8 +181,10 @@ processInbound :: Maybe Text -> MailerooInbound -> ExceptT Text AppHandler Text
 processInbound host payload = do
   -- 1. Prove the POST came from Maileroo.
   config <- lift $ asks (.receipts)
+
   validated <-
     lift $ inSpan "email.inbound.validate_webhook" $ liftIO $ validateWebhook config.manager payload.validationUrl
+
   unless validated
     $ throwError "validation_url did not confirm the webhook (success was not true)"
 
@@ -201,7 +203,7 @@ processInbound host payload = do
   -- Everything from here is repliable: run the authenticated pipeline, then email
   -- the sender the confirmation or the (Spanish) failure reason before re-raising
   -- for the drop log.
-  mailer <- lift $ asks (.mailer)
+  mailer <- asks (.mailer)
   result <- lift $ runExceptT $ processPago payload fromEmail
   case result of
     Left reason -> do
@@ -220,16 +222,13 @@ processPago payload fromEmail = do
   config <- lift $ asks (.receipts)
 
   -- 3. Resolve the From address to a user.
-  maybeUser <- lift $ runBeamFastRead $ fetchUserByEmail fromEmail
-  user <-
-    maybe (throwError $ "No hay ninguna cuenta asociada a la dirección " <> unEmail fromEmail <> ".") pure maybeUser
+  user <- (lift $ runBeamFastRead $ fetchUserByEmail fromEmail)
+    `orElseMay` (throwError $ "No hay ninguna cuenta asociada a la dirección " <> unEmail fromEmail <> ".")
 
   -- 4. Authorize the grupo: the +tag grupoId must be one of this user's grupos.
   grupoId <-
-    either
-      (const $ throwError "No pude identificar el grupo en la dirección de destino.")
-      pure
-      (extractGrupoId payload)
+    (pure $ extractGrupoId payload)
+      `orElse_` (throwError "No pude identificar el grupo en la dirección de destino.")
   grupos <- lift $ runBeamFastRead $ fetchGruposForUser user.id
   unless (any (\g -> g.id == grupoId) grupos)
     $ throwError "No perteneces a ese grupo, o el grupo no existe."
@@ -239,17 +238,15 @@ processPago payload fromEmail = do
   lift
     $ logInfo
       "email.inbound.authorized"
-      [ logAttr "app.user.email" (unEmail fromEmail)
-      , logAttr "enduser.id" (show user.id :: Text)
-      , logAttr "app.grupo.id" (show grupo.id :: Text)
+      [ logAttr "app.user.email" fromEmail
+      , logAttr "enduser.id" user.id
+      , logAttr "app.grupo.id" grupo.id
       ]
 
   -- 5. Ask the AI to parse exactly one pago within this grupo (text only for
   -- now). A 'Left' here is the model's own (Spanish) explanation.
   let subject = fromMaybe "" (firstHeader "Subject" payload.headers)
-  parsed <-
-    lift (analyzePagoFromEmail config (mkPagoContext user grupo) subject (bodyText payload))
-      `orElse` throwError
+  parsed <- ExceptT $ analyzePagoFromEmail config (mkPagoContext user grupo) subject (bodyText payload)
 
   -- 6. Resolve the model's output into a real Pago. This is deliberately
   -- permissive: we would rather save a partial pago (which savePago will flag as

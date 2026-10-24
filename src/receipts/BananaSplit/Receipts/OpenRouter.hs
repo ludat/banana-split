@@ -21,7 +21,6 @@ module BananaSplit.Receipts.OpenRouter (
   analyzePagoFromEmail,
 ) where
 
-import Control.Arrow (left)
 import Control.Monad.Error.Class
 import Data.Aeson
 import Data.ByteString qualified as BS
@@ -30,14 +29,14 @@ import Data.Scientific (Scientific)
 import Data.String.Interpolate (__i)
 import Data.Text qualified as Text
 import Data.Text.Encoding qualified as Text
-import Data.Text.Encoding.Error (lenientDecode)
+import Katip (KatipContext)
 import Network.HTTP.Req
 import OpenTelemetry.Trace.Core qualified as Otel
 import Protolude
 
 import BananaSplit.Receipts.Tesseract (extractTextFromImage)
 import BananaSplit.Receipts.Types
-import BananaSplit.Telemetry (MonadTelemetry (..))
+import BananaSplit.Telemetry (MonadTelemetry (..), logAttr, logError, logWarn)
 
 newtype ParsedReceipt = ParsedReceipt
   { items :: [ParsedReceiptItem]
@@ -181,8 +180,10 @@ newtype ImageUrl = ImageUrl
   deriving stock (Show, Generic)
   deriving anyclass (ToJSON)
 
-newtype OpenRouterResponse = OpenRouterResponse
+data OpenRouterResponse = OpenRouterResponse
   { choices :: [Choice]
+  , model :: Maybe Text
+  -- ^ The model that actually answered, which may be one of the fallbacks.
   }
   deriving stock (Show, Generic)
   deriving anyclass (FromJSON)
@@ -200,7 +201,7 @@ newtype ResponseMessage = ResponseMessage
   deriving anyclass (FromJSON)
 
 analyzeReceiptImage ::
-  (MonadTelemetry m, MonadIO m) =>
+  (MonadTelemetry m, KatipContext m) =>
   ReceiptsReaderConfig
   -> Text
   -> m (Either Text ParsedReceipt)
@@ -208,7 +209,7 @@ analyzeReceiptImage config base64Image =
   analyzeReceiptFromMessage config $ ImageContent (ImageUrl $ "data:" <> base64Image)
 
 analyzeReceiptText ::
-  (MonadTelemetry m, MonadIO m) =>
+  (MonadTelemetry m, KatipContext m) =>
   ReceiptsReaderConfig
   -> Text
   -> m (Either Text ParsedReceipt)
@@ -219,7 +220,7 @@ analyzeReceiptText config base64Image = runExceptT $ do
   ExceptT $ analyzeReceiptFromMessage config $ TextContent ocrText
 
 analyzeReceiptFromMessage ::
-  (MonadTelemetry m, MonadIO m) =>
+  (MonadTelemetry m, KatipContext m) =>
   ReceiptsReaderConfig
   -> MessageContent
   -> m (Either Text ParsedReceipt)
@@ -251,7 +252,7 @@ analyzeReceiptFromMessage config msg =
 -- body); image attachments are added in a later step. Returns 'Left' with a
 -- (Spanish) explanation when the model can't confidently parse the pago.
 analyzePagoFromEmail ::
-  (MonadTelemetry m, MonadIO m) =>
+  (MonadTelemetry m, KatipContext m) =>
   ReceiptsReaderConfig
   -> EmailPagoContext
   -> Text
@@ -325,26 +326,19 @@ exampleParsedEmailPago =
 -- plain-text (non-JSON) answer is surfaced as 'Left' — that is how the prompts
 -- ask the model to report a problem it can't resolve.
 callOpenRouterJson ::
-  (MonadTelemetry m, MonadIO m, FromJSON a) =>
+  (MonadTelemetry m, KatipContext m, FromJSON a) =>
   ReceiptsReaderConfig
   -> Text
   -> [MessageContent]
   -> m (Either Text a)
 callOpenRouterJson config systemPrompt userContent =
-  inSpan' "openrouter.chat" $ \span ->
-    liftIO $ llamarOpenRouter span config systemPrompt userContent
-
-llamarOpenRouter ::
-  (FromJSON a) =>
-  Otel.Span
-  -> ReceiptsReaderConfig
-  -> Text
-  -> [MessageContent]
-  -> IO (Either Text a)
-llamarOpenRouter span config systemPrompt userContent =
-  runReq defaultHttpConfig{httpConfigCheckResponse = \_ _ _ -> Nothing} $ runExceptT $ do
+  -- Everything, logs included, happens inside the span so the logs are attached
+  -- to this call in the trace. Only the request itself runs in 'Req'.
+  inSpan' "openrouter.chat" $ \span -> runExceptT $ do
     (model, fallbackModels) <- case config.models of
-      [] -> throwError "Reading receipts is not properly configured. Talk to an admin."
+      [] -> do
+        logError "openrouter.not_configured" []
+        throwError "Reading receipts is not properly configured. Talk to an admin."
       (model : fallback) -> pure (model, fallback)
     let requestBody =
           OpenRouterRequest
@@ -369,17 +363,19 @@ llamarOpenRouter span config systemPrompt userContent =
           , ("app.openrouter.request_bytes", Otel.toAttribute (fromIntegral requestBytes :: Int64))
           ]
     response <-
-      req
-        POST
-        (https "openrouter.ai" /: "api" /: "v1" /: "chat" /: "completions")
-        (ReqBodyJson requestBody)
-        bsResponse
-        ( mconcat
-            [ header "Authorization" ("Bearer " <> Text.encodeUtf8 config.apiKey)
-            , header "HTTP-Referer" "https://split.ludat.io"
-            , header "X-Title" "Banana Split"
-            ]
-        )
+      liftIO
+        $ runReq defaultHttpConfig{httpConfigCheckResponse = \_ _ _ -> Nothing}
+        $ req
+          POST
+          (https "openrouter.ai" /: "api" /: "v1" /: "chat" /: "completions")
+          (ReqBodyJson requestBody)
+          bsResponse
+          ( mconcat
+              [ header "Authorization" ("Bearer " <> Text.encodeUtf8 config.apiKey)
+              , header "HTTP-Referer" "https://split.ludat.io"
+              , header "X-Title" "Banana Split"
+              ]
+          )
     liftIO $
       Otel.addAttributes span $
         HashMap.fromList
@@ -390,10 +386,29 @@ llamarOpenRouter span config systemPrompt userContent =
           , ("http.response.status_code", Otel.toAttribute (fromIntegral (responseStatusCode response) :: Int64))
           ]
 
-    openRouterResp <- liftEither $ left Text.pack $ eitherDecodeStrict @OpenRouterResponse $ responseBody response
+    let status = responseStatusCode response
+        rawBody = Text.decodeUtf8With lenientDecode (responseBody response)
+    -- Not an OpenRouter completion: a non-2xx answer (its error object), an
+    -- HTML error page, a truncated body...
+    openRouterResp <- case eitherDecodeStrict @OpenRouterResponse (responseBody response) of
+      Left detalle -> do
+        logError
+          "openrouter.unexpected_response"
+          [ logAttr "http.response.status_code" status
+          , logAttr "app.openrouter.response_body" (recortar rawBody)
+          , logAttr "error.message" detalle
+          ]
+        throwError "No pude comunicarme con el servicio de IA. Probá de nuevo más tarde."
+      Right r -> pure r
 
     Choice (ResponseMessage contentText) <- case openRouterResp.choices of
-      [] -> throwError "No response from OpenRouter"
+      [] -> do
+        logError
+          "openrouter.no_choices"
+          [ logAttr "http.response.status_code" status
+          , logAttr "app.openrouter.response_body" (recortar rawBody)
+          ]
+        throwError "No response from OpenRouter"
       (c : _) -> pure c
 
     -- The prompts tell the model to answer with a bare JSON object, or a
@@ -406,5 +421,25 @@ llamarOpenRouter span config systemPrompt userContent =
             & Text.dropWhile (/= '{')
             & Text.dropWhileEnd (/= '}')
     if Text.null cleanedText
-      then throwError (Text.strip contentText)
-      else liftEither $ left Text.pack $ eitherDecodeStrict $ Text.encodeUtf8 cleanedText
+      then do
+        logWarn
+          "openrouter.declined"
+          [ logAttr "app.openrouter.response_model" openRouterResp.model
+          , logAttr "app.openrouter.content" (recortar contentText)
+          ]
+        throwError (Text.strip contentText)
+      else case eitherDecodeStrict (Text.encodeUtf8 cleanedText) of
+        Left detalle -> do
+          logWarn
+            "openrouter.invalid_json"
+            [ logAttr "app.openrouter.response_model" openRouterResp.model
+            , logAttr "app.openrouter.content" (recortar contentText)
+            , logAttr "error.message" detalle
+            ]
+          throwError "La IA devolvió una respuesta que no pude interpretar. Probá de nuevo."
+        Right parsed -> pure parsed
+  where
+    -- Enough to see what went wrong without shipping a whole page per log.
+    recortar t
+      | Text.length t > 4000 = Text.take 4000 t <> "…"
+      | otherwise = t
