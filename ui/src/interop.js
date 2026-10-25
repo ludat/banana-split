@@ -53,7 +53,10 @@ customElements.define(
         display: "standalone",
         background_color: "#ffffff",
         theme_color: "#0070f2",
-        icons: [{ src: `${origin}/favicon.png`, sizes: "any", type: "image/png" }],
+        icons: [
+          { src: `${origin}/icon-192.png`, sizes: "192x192", type: "image/png" },
+          { src: `${origin}/icon-512.png`, sizes: "512x512", type: "image/png" },
+        ],
       };
       const dataUrl = `data:application/manifest+json,${encodeURIComponent(JSON.stringify(manifest))}`;
       let link = document.querySelector('link[rel="manifest"]');
