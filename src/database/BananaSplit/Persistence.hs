@@ -30,6 +30,8 @@ module BananaSplit.Persistence (
   recomputePagos,
   addParticipante,
   addParticipanteForUser,
+  EdicionRechazada (..),
+  editarParticipante,
   claimParticipante,
   unclaimParticipante,
   createGrupo,
@@ -159,13 +161,13 @@ createGrupo :: Text -> Text -> Pg M.Grupo
 createGrupo nombre participanteNombre =
   createGrupoWith
     nombre
-    [M.Participante{M.id = nullUlid, M.nombre = participanteNombre, M.user = Nothing}]
+    [M.Participante{M.id = nullUlid, M.nombre = participanteNombre, M.user = Nothing, M.datosDeCobro = Nothing}]
 
 createGrupoForUser :: Text -> M.User -> Pg M.Grupo
 createGrupoForUser nombre user =
   createGrupoWith
     nombre
-    [M.Participante{M.id = nullUlid, M.nombre = user.nombre, M.user = Just user}]
+    [M.Participante{M.id = nullUlid, M.nombre = user.nombre, M.user = Just user, M.datosDeCobro = Nothing}]
 
 createGrupoWith :: Text -> [M.Participante] -> Pg M.Grupo
 createGrupoWith nombre participantes = do
@@ -182,13 +184,14 @@ createGrupoWith nombre participantes = do
         { M.id = participanteId
         , M.nombre = participante.nombre
         , M.user = participante.user
+        , M.datosDeCobro = participante.datosDeCobro
         }
   unless (null savedParticipantes)
     $ runInsert
     $ insert db.participantes
     $ insertValues
     $ savedParticipantes
-    & fmap (\p -> Participante p.id (GrupoId newId) p.nombre (UserId (fmap (.id) p.user)))
+    & fmap (\p -> Participante p.id (GrupoId newId) p.nombre (UserId (fmap (.id) p.user)) p.datosDeCobro)
   pure
     $ M.Grupo
       { M.id = newId
@@ -200,13 +203,13 @@ createGrupoWith nombre participantes = do
       , M.monedasConPagos = mempty
       }
 
-updateUser :: ULID -> Text -> Pg M.User
-updateUser userId rawNombre = do
+updateUser :: ULID -> Text -> Maybe Text -> Pg M.User
+updateUser userId rawNombre datosDeCobro = do
   let nombre = Text.strip rawNombre
   runUpdate
     $ update
       db.users
-      (\u -> u.nombre <-. val_ nombre)
+      (\u -> mconcat [u.nombre <-. val_ nombre, u.datos_de_cobro <-. val_ datosDeCobro])
       (\u -> u.id ==. val_ userId)
   fetchUserById userId
     `orElseMay` fail ("user vanished while updating: " <> show userId)
@@ -235,13 +238,14 @@ createUser email rawNombre = do
   runInsert
     $ insert db.users
     $ insertValues
-      [ User{id = newId, email = email, nombre = nombre, created_at = now}
+      [ User{id = newId, email = email, nombre = nombre, created_at = now, datos_de_cobro = Nothing}
       ]
   pure
     $ M.User
       { M.id = newId
       , M.email = email
       , M.nombre = nombre
+      , M.datosDeCobro = Nothing
       }
 
 toModelUser :: User -> M.User
@@ -250,6 +254,7 @@ toModelUser u =
     { M.id = u.id
     , M.email = u.email
     , M.nombre = u.nombre
+    , M.datosDeCobro = u.datos_de_cobro
     }
 
 attemptWindow :: NominalDiffTime
@@ -809,6 +814,7 @@ toModelParticipante p mOwner =
     { M.id = p.id
     , M.nombre = p.nombre
     , M.user = mOwner
+    , M.datosDeCobro = p.datos_de_cobro
     }
 
 fetchParticipanteById :: ULID -> Pg M.Participante
@@ -831,7 +837,7 @@ addParticipante grupoId name = do
   runInsert
     $ insert db.participantes
     $ insertValues
-      [ Participante newId (GrupoId grupoId) name (UserId Nothing)
+      [ Participante newId (GrupoId grupoId) name (UserId Nothing) Nothing
       ]
   pure
     $ Right
@@ -839,6 +845,7 @@ addParticipante grupoId name = do
       { M.id = newId
       , M.nombre = name
       , M.user = Nothing
+      , M.datosDeCobro = Nothing
       }
 
 -- | Add a new participante already claimed by a user: the "I'm new here" of
@@ -867,9 +874,44 @@ addParticipanteForUser grupoId name userId = runExceptT $ do
   runInsert
     $ insert db.participantes
     $ insertValues
-      [ Participante newId (GrupoId grupoId) name (UserId (Just userId))
+      [ Participante newId (GrupoId grupoId) name (UserId (Just userId)) Nothing
       ]
   lift $ fetchParticipanteById newId
+
+data EdicionRechazada
+  = ParticipanteNoExiste
+  | -- | Otro participante del grupo ya se llama así (los nombres son únicos
+    -- por grupo).
+    NombreRepetido
+  deriving stock (Show, Eq)
+
+-- | Cambiarle el nombre y los datos de cobro a un participante. Si ya se llama
+-- así no es un nombre repetido: es él mismo.
+editarParticipante :: ULID -> ULID -> Text -> Maybe Text -> Pg (Either EdicionRechazada M.Participante)
+editarParticipante grupoId participanteId nombre datosDeCobro = runExceptT $ do
+  _ <-
+    ( runSelectReturningOne $ select $ do
+        p <- all_ db.participantes
+        guard_ (p.id ==. val_ participanteId)
+        guard_ (p.grupo ==. GrupoId (val_ grupoId))
+        pure p.id
+    )
+      `orElseMay` throwError ParticipanteNoExiste
+
+  otroConEseNombre <- runSelectReturningOne $ select $ do
+    p <- all_ db.participantes
+    guard_ (p.grupo ==. GrupoId (val_ grupoId))
+    guard_ (p.nombre ==. val_ nombre)
+    guard_ (p.id /=. val_ participanteId)
+    pure p.id
+  when (isJust otroConEseNombre) $ throwError NombreRepetido
+
+  runUpdate
+    $ update
+      db.participantes
+      (\p -> mconcat [p.nombre <-. val_ nombre, p.datos_de_cobro <-. val_ datosDeCobro])
+      (\p -> p.id ==. val_ participanteId)
+  lift $ fetchParticipanteById participanteId
 
 -- | Claim a participante as belonging to a user. A user owns at most one
 -- participante per grupo, enforced as a hard rule: the claim is refused if the
@@ -926,11 +968,11 @@ unclaimParticipante grupoId participanteId userId = do
   fetchParticipanteById participanteId
 
 deleteShallowParticipante :: ULID -> ULID -> Pg M.ParticipanteId
-deleteShallowParticipante _grupoId participanteId = do
+deleteShallowParticipante grupoId participanteId = do
   runDelete
     $ delete
       db.participantes
-      (\p -> p.id ==. val_ participanteId)
+      (\p -> p.id ==. val_ participanteId &&. p.grupo ==. GrupoId (val_ grupoId))
   pure $ M.ParticipanteId participanteId
 
 participanteId2Persistent :: M.ParticipanteId -> ParticipanteId

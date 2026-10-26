@@ -135,15 +135,22 @@ jsonEncRegisterParams  val =
 
 type alias UpdateMeParams  =
    { nombre: String
+   , datosDeCobro: (Maybe String)
    }
 
 jsonDecUpdateMeParams : Json.Decode.Decoder ( UpdateMeParams )
 jsonDecUpdateMeParams =
-   Json.Decode.succeed (\pnombre -> {nombre = pnombre}) |> custom (Json.Decode.string)
+   Json.Decode.succeed (\pnombre pdatosDeCobro -> {nombre = pnombre, datosDeCobro = pdatosDeCobro})
+   |> required "nombre" (Json.Decode.string)
+   |> fnullable "datosDeCobro" (Json.Decode.string)
 
 jsonEncUpdateMeParams : UpdateMeParams -> Value
 jsonEncUpdateMeParams  val =
-   Json.Encode.string val.nombre
+   Json.Encode.object
+   [ ("nombre", Json.Encode.string val.nombre)
+   , ("datosDeCobro", (maybeEncode (Json.Encode.string)) val.datosDeCobro)
+   ]
+
 
 
 type alias Email  = String
@@ -161,14 +168,16 @@ type alias User  =
    { id: ULID
    , email: Email
    , nombre: String
+   , datosDeCobro: (Maybe String)
    }
 
 jsonDecUser : Json.Decode.Decoder ( User )
 jsonDecUser =
-   Json.Decode.succeed (\pid pemail pnombre -> {id = pid, email = pemail, nombre = pnombre})
+   Json.Decode.succeed (\pid pemail pnombre pdatosDeCobro -> {id = pid, email = pemail, nombre = pnombre, datosDeCobro = pdatosDeCobro})
    |> required "id" (jsonDecULID)
    |> required "email" (jsonDecEmail)
    |> required "nombre" (Json.Decode.string)
+   |> fnullable "datosDeCobro" (Json.Decode.string)
 
 jsonEncUser : User -> Value
 jsonEncUser  val =
@@ -176,6 +185,7 @@ jsonEncUser  val =
    [ ("id", jsonEncULID val.id)
    , ("email", jsonEncEmail val.email)
    , ("nombre", Json.Encode.string val.nombre)
+   , ("datosDeCobro", (maybeEncode (Json.Encode.string)) val.datosDeCobro)
    ]
 
 
@@ -245,6 +255,26 @@ jsonDecParticipanteAddParams =
 jsonEncParticipanteAddParams : ParticipanteAddParams -> Value
 jsonEncParticipanteAddParams  val =
    Json.Encode.string val.name
+
+
+type alias ParticipanteUpdateParams  =
+   { nombre: String
+   , datosDeCobro: (Maybe String)
+   }
+
+jsonDecParticipanteUpdateParams : Json.Decode.Decoder ( ParticipanteUpdateParams )
+jsonDecParticipanteUpdateParams =
+   Json.Decode.succeed (\pnombre pdatosDeCobro -> {nombre = pnombre, datosDeCobro = pdatosDeCobro})
+   |> required "nombre" (Json.Decode.string)
+   |> fnullable "datosDeCobro" (Json.Decode.string)
+
+jsonEncParticipanteUpdateParams : ParticipanteUpdateParams -> Value
+jsonEncParticipanteUpdateParams  val =
+   Json.Encode.object
+   [ ("nombre", Json.Encode.string val.nombre)
+   , ("datosDeCobro", (maybeEncode (Json.Encode.string)) val.datosDeCobro)
+   ]
+
 
 
 type ClaimRejection  =
@@ -701,14 +731,16 @@ type alias Participante  =
    { id: ULID
    , nombre: String
    , user: (Maybe User)
+   , datosDeCobro: (Maybe String)
    }
 
 jsonDecParticipante : Json.Decode.Decoder ( Participante )
 jsonDecParticipante =
-   Json.Decode.succeed (\pid pnombre puser -> {id = pid, nombre = pnombre, user = puser})
+   Json.Decode.succeed (\pid pnombre puser pdatosDeCobro -> {id = pid, nombre = pnombre, user = puser, datosDeCobro = pdatosDeCobro})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
    |> fnullable "user" (jsonDecUser)
+   |> fnullable "datosDeCobro" (Json.Decode.string)
 
 jsonEncParticipante : Participante -> Value
 jsonEncParticipante  val =
@@ -716,6 +748,7 @@ jsonEncParticipante  val =
    [ ("id", jsonEncULID val.id)
    , ("nombre", Json.Encode.string val.nombre)
    , ("user", (maybeEncode (jsonEncUser)) val.user)
+   , ("datosDeCobro", (maybeEncode (Json.Encode.string)) val.datosDeCobro)
    ]
 
 
@@ -1459,6 +1492,37 @@ postGrupoByIdParticipantes capture_id body toMsg =
                     params
             , body =
                 Http.jsonBody (jsonEncParticipanteAddParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecParticipante
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+putGrupoByIdParticipantesByParticipanteId : ULID -> ULID -> ParticipanteUpdateParams -> (Result Http.Error  (Participante)  -> msg) -> Cmd msg
+putGrupoByIdParticipantesByParticipanteId capture_id capture_participanteId body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "participantes"
+                    , (capture_participanteId)
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncParticipanteUpdateParams body)
             , expect =
                 Http.expectJson toMsg jsonDecParticipante
             , timeout =

@@ -37,6 +37,8 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> ReqBody '[JSON] UpdateGrupoParams :> Put '[JSON] Grupo
   , _routeGrupoParticipanteAdd ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
+  , _routeGrupoParticipanteUpdate ::
+      routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> ReqBody '[JSON] ParticipanteUpdateParams :> Put '[JSON] Participante
   , _routePagoPost ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
   , -- Con @participante@ el resumen de cada gasto viene recortado a esa
@@ -130,6 +132,12 @@ data ParticipanteAddParams = ParticipanteAddParams
   }
   deriving (Show, Eq, Generic)
 
+data ParticipanteUpdateParams = ParticipanteUpdateParams
+  { nombre :: Text
+  , datosDeCobro :: Maybe Text
+  }
+  deriving (Show, Eq, Generic)
+
 -- | Step 1: ask for a login code by email. The same request whether or not an
 -- account exists, so it never reveals which — existence is only disclosed at
 -- verify time, to the proven owner of the address.
@@ -174,6 +182,7 @@ data RegisterParams = RegisterParams
 -- need the ownership-proof flow), so only the display name is editable here.
 data UpdateMeParams = UpdateMeParams
   { nombre :: Text
+  , datosDeCobro :: Maybe Text
   }
   deriving (Show, Eq, Generic)
 
@@ -256,6 +265,7 @@ data ClaimParticipanteResult
   deriving (Show, Eq, Generic)
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
+Elm.deriveBoth Elm.defaultOptions ''ParticipanteUpdateParams
 Elm.deriveBoth Elm.defaultOptions ''RequestCodeParams
 Elm.deriveBoth Elm.defaultOptions ''LoginChallenge
 Elm.deriveBoth Elm.defaultOptions ''VerifyParams

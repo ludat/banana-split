@@ -14,6 +14,7 @@ module Site.Handler.Grupos (
   handleUnclaimParticipante,
   handleUnfreezeGrupo,
   handleUpdateGrupo,
+  handleUpdateParticipante,
 ) where
 
 import Data.Text qualified as Text
@@ -24,6 +25,7 @@ import BananaSplit
 import BananaSplit.Persistence (
   CongelamientoRechazado (..),
   ConteoDeGastos (..),
+  EdicionRechazada (..),
   addParticipante,
   addParticipanteForUser,
   claimParticipante,
@@ -32,6 +34,7 @@ import BananaSplit.Persistence (
   createGrupo,
   createGrupoForUser,
   deleteShallowParticipante,
+  editarParticipante,
   fetchGrupo,
   fetchGruposForUser,
   fetchTransferencias,
@@ -87,7 +90,11 @@ handleGetNetos grupoId = do
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
 handleDeleteParticipante grupoId participanteId = do
-  _ <- runBeamWrite (deleteShallowParticipante grupoId participanteId)
+  _ <-
+    runBeamWrite (deleteShallowParticipante grupoId participanteId)
+      `onForeignKeyViolation` throwJsonError
+        err409
+        "Este participante está siendo usado, no se puede borrar hasta que nadie lo referencie"
   pure participanteId
 
 handleShowGrupo :: ULID -> AppHandler Grupo
@@ -99,6 +106,21 @@ handleCreateParticipante :: ULID -> ParticipanteAddParams -> AppHandler Particip
 handleCreateParticipante grupoId ParticipanteAddParams{name} = do
   runBeamWrite (addParticipante grupoId name)
     `Site.Handler.Utils.orElse` (\_e -> throwJsonError err400 "falle")
+
+handleUpdateParticipante :: ULID -> ULID -> ParticipanteUpdateParams -> AppHandler Participante
+handleUpdateParticipante grupoId participanteId params = do
+  let nombre = Text.strip params.nombre
+  when (Text.null nombre) $
+    throwJsonError err400 "El nombre no puede estar vacío"
+
+  -- Vacío es lo mismo que no haberlo cargado.
+  let datosDeCobro = mfilter (not . Text.null) (Text.strip <$> params.datosDeCobro)
+
+  resultado <- runBeamWrite $ editarParticipante grupoId participanteId nombre datosDeCobro
+  case resultado of
+    Right participante -> pure participante
+    Left ParticipanteNoExiste -> throwJsonError err404 "Participante no encontrado"
+    Left NombreRepetido -> throwJsonError err409 "Ya hay un participante con ese nombre"
 
 handleGetMisGrupos :: User -> AppHandler [GrupoParaUsuario]
 handleGetMisGrupos user = do

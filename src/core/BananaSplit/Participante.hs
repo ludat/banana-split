@@ -20,6 +20,7 @@ data Participante = Participante
   { id :: ULID
   , nombre :: Text
   , user :: Maybe User
+  , datosDeCobro :: Maybe Text
   }
   deriving (Show, Eq, Generic)
 

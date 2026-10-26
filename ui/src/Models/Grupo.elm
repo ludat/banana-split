@@ -1,4 +1,4 @@
-module Models.Grupo exposing (GrupoLike, claimRejectionMessage, currentParticipante, estaCongelado, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
+module Models.Grupo exposing (GrupoLike, claimRejectionMessage, currentParticipante, datosDeCobro, estaCongelado, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
 
 import Generated.Api exposing (ClaimRejection(..), Participante, ParticipanteId, ULID, User)
 import RemoteData exposing (RemoteData(..), WebData)
@@ -83,7 +83,21 @@ lookupParticipante grupo participanteId =
     grupo.participantes
         |> List.filter (\p -> p.id == participanteId)
         |> List.head
-        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido", user = Nothing }
+        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido", user = Nothing, datosDeCobro = Nothing }
+
+
+{-| Cómo quiere recibir la plata: lo que se cargó en el participante y, si no
+tiene nada, lo de la cuenta que lo reclamó. Así alcanza con cargarlo una vez en
+la cuenta en vez de en cada grupo.
+-}
+datosDeCobro : Participante -> Maybe String
+datosDeCobro participante =
+    case participante.datosDeCobro of
+        Just datos ->
+            Just datos
+
+        Nothing ->
+            participante.user |> Maybe.andThen .datosDeCobro
 
 
 lookupNombreParticipante : GrupoLike g -> ParticipanteId -> String

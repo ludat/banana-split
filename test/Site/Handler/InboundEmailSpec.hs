@@ -242,8 +242,8 @@ testGrupo =
     { id = nullUlid
     , nombre = "Viaje"
     , participantes =
-        [ Participante{id = p1, nombre = "Ana", user = Nothing}
-        , Participante{id = p2, nombre = "Beto", user = Nothing}
+        [ Participante{id = p1, nombre = "Ana", user = Nothing, datosDeCobro = Nothing}
+        , Participante{id = p2, nombre = "Beto", user = Nothing, datosDeCobro = Nothing}
         ]
     , congeladoAt = Nothing
     , monedaPorDefecto = ARS

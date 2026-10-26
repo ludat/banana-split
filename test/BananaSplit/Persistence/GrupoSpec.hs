@@ -4,6 +4,7 @@ module BananaSplit.Persistence.GrupoSpec (
 
 import Data.Map.Strict qualified as Map
 import Data.Time (fromGregorian)
+import Database.PostgreSQL.Simple (SqlError (..))
 import Protolude
 import Test.Hspec
 
@@ -98,6 +99,73 @@ spec = do
       result <- runDb $ addParticipanteForUser grupo.id "otre" user.id
 
       result `shouldBe` Left NameAlreadyTaken
+
+  describe "deleteShallowParticipante" $ do
+    -- El handler cuenta con esto para responder un 409 en vez de un 500.
+    it "tira una violación de foreign key si el participante está en un gasto" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+      _ <- runDb $ savePago grupo.id (pagoDe grupo)
+
+      runDb (deleteShallowParticipante grupo.id participante.id)
+        `shouldThrow` (\e -> sqlState e == "23503")
+
+  describe "editarParticipante" $ do
+    it "le cambia el nombre al participante" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+
+      result <- runDb $ editarParticipante grupo.id participante.id "Juan Pérez" Nothing
+
+      fmap (.nombre) result `shouldBe` Right "Juan Pérez"
+      Just despues <- runDb $ fetchGrupo grupo.id
+      (despues.participantes & fmap (.nombre)) `shouldBe` ["Juan Pérez"]
+
+    it "guarda y borra los datos de cobro" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+
+      _ <- runDb $ editarParticipante grupo.id participante.id "Juan" (Just "Alias: juan.mp")
+      Just conDatos <- runDb $ fetchGrupo grupo.id
+      (conDatos.participantes & fmap (.datosDeCobro)) `shouldBe` [Just "Alias: juan.mp"]
+
+      _ <- runDb $ editarParticipante grupo.id participante.id "Juan" Nothing
+      Just sinDatos <- runDb $ fetchGrupo grupo.id
+      (sinDatos.participantes & fmap (.datosDeCobro)) `shouldBe` [Nothing]
+
+    it "trae los datos de cobro de la cuenta que lo reclamó" $ \(RunDb runDb) -> do
+      user <- runDb $ createUser "juan@example.com" "Juan"
+      grupo <- runDb $ createGrupoForUser "Grupo" user
+      _ <- runDb $ updateUser user.id "Juan" (Just "CBU 123")
+
+      Just despues <- runDb $ fetchGrupo grupo.id
+      (despues.participantes & fmap (\p -> fmap (.datosDeCobro) p.user)) `shouldBe` [Just (Just "CBU 123")]
+
+    it "deja poner el mismo nombre que ya tenía" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+
+      result <- runDb $ editarParticipante grupo.id participante.id "Juan" Nothing
+
+      fmap (.nombre) result `shouldBe` Right "Juan"
+
+    it "no deja usar el nombre de otro participante del grupo" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+      _ <- runDb $ addParticipante grupo.id "Ana"
+
+      result <- runDb $ editarParticipante grupo.id participante.id "Ana" Nothing
+
+      fmap (.nombre) result `shouldBe` Left NombreRepetido
+
+    it "no encuentra un participante de otro grupo" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      otroGrupo <- runDb $ createGrupo "Otro" "Ana"
+      participante <- unicoParticipante grupo
+
+      result <- runDb $ editarParticipante otroGrupo.id participante.id "Pepe" Nothing
+
+      fmap (.nombre) result `shouldBe` Left ParticipanteNoExiste
 
   describe "fetchGruposForUser estado" $ do
     it "says there are no gastos in a new grupo" $ \(RunDb runDb) -> do
@@ -324,6 +392,11 @@ dolaresSonPesos grupoId dolares pesos =
       grupoId
       ARS
       [TasaDeCambio{id = nullUlid, unaMoneda = USD, otraMoneda = ARS, unMonto = dolares, otroMonto = pesos}]
+
+unicoParticipante :: Grupo -> IO Participante
+unicoParticipante grupo = case grupo.participantes of
+  [p] -> pure p
+  _ -> panic "expected exactly one participante"
 
 -- | El estado que le muestra la home a ese usuario en su único grupo.
 estadoEnLaHome :: User -> Pg EstadoParaUsuario

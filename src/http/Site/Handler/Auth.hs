@@ -222,4 +222,6 @@ handleUpdateMe sessionUser params = do
   let nombre = Text.strip params.nombre
   when (Text.null nombre)
     $ throwJsonError err400 "Ingresá tu nombre"
-  runBeamWrite $ updateUser sessionUser.id nombre
+
+  let datosDeCobro = mfilter (not . Text.null) (Text.strip <$> params.datosDeCobro)
+  runBeamWrite $ updateUser sessionUser.id nombre datosDeCobro

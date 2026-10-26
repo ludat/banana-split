@@ -80,6 +80,7 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy ReceiptImageRequest)
     , DefineElm (Proxy :: Proxy ReceiptImageResponse)
     , DefineElm (Proxy :: Proxy ParticipanteAddParams)
+    , DefineElm (Proxy :: Proxy ParticipanteUpdateParams)
     , DefineElm (Proxy :: Proxy ClaimRejection)
     , DefineElm (Proxy :: Proxy ClaimParticipanteResult)
     , DefineElm (Proxy :: Proxy ResumenGrupo)
