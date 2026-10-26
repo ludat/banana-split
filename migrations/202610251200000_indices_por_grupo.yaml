@@ -1,0 +1,20 @@
+operations:
+  # Con el id atrás: las lecturas por grupo ordenan por id (el listado de
+  # gastos, el último pago de "mis grupos"), y así salen del índice.
+  - create_index:
+      name: idx_pagos_grupo_id
+      table: pagos
+      columns:
+        grupo__id: {}
+        id: {}
+  - create_index:
+      name: idx_transferencias_grupo_id
+      table: transferencias
+      columns:
+        grupo__id: {}
+        id: {}
+  - create_index:
+      name: idx_participantes_user
+      table: participantes
+      columns:
+        user__id: {}

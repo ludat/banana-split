@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 module Site.Types (
@@ -38,6 +39,10 @@ data App = App
   -- hay que pasarle a 'Persistence.conTransaccionDeEscritura'.
   }
 
+instance Telemetry.HasTelemetry App where
+  getTelemetry app = app.telemetry
+  overTelemetry f app = app{telemetry = f app.telemetry}
+
 newtype AppHandler a = AppHandler {runAppHandler :: ReaderT App Servant.Handler a}
   deriving newtype
     ( Functor
@@ -47,19 +52,9 @@ newtype AppHandler a = AppHandler {runAppHandler :: ReaderT App Servant.Handler 
     , MonadReader App
     , MonadError ServerError
     )
-
-instance Katip.Katip AppHandler where
-  getLogEnv = asks (.telemetry.logEnv)
-  localLogEnv f = sobreTelemetry (Telemetry.sobreLogEnv f)
-
-instance Katip.KatipContext AppHandler where
-  getKatipContext = asks (.telemetry.logContexts)
-  localKatipContext f = sobreTelemetry (Telemetry.sobreLogContexts f)
-  getKatipNamespace = asks (.telemetry.logNamespace)
-  localKatipNamespace f = sobreTelemetry (Telemetry.sobreLogNamespace f)
-
-sobreTelemetry :: (Telemetry -> Telemetry) -> AppHandler a -> AppHandler a
-sobreTelemetry f = local $ \app -> app{telemetry = f app.telemetry}
+  deriving
+    (Katip.Katip, Katip.KatipContext, Telemetry.MonadTracer)
+    via (Telemetry.ViaTelemetry (ReaderT App Servant.Handler))
 
 instance Persistence.MonadPg AppHandler where
   runBeamWrite dbAction = conUnaConexionDelPool $ \telemetry conn ->
@@ -74,9 +69,6 @@ conUnaConexionDelPool accion = do
   liftIO
     $ Persistence.conConexionDelPool app.telemetry app.beamConnectionPool
     $ accion app.telemetry
-
-instance Telemetry.MonadTracer AppHandler where
-  getTracer = asks (.telemetry.tracer)
 
 instance Telemetry.MonadTelemetry AppHandler where
   inSpan' name action = do

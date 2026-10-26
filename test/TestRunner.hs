@@ -13,7 +13,7 @@ import OpenTelemetry.Trace.Core qualified as Otel
 import OpenTelemetry.Trace.Monad qualified as OtelMonad
 import Protolude
 
-import BananaSplit.Telemetry (ConTelemetria (..), MonadTelemetry (..), MonadTracer (..), Telemetry (..))
+import BananaSplit.Telemetry (MonadTelemetry (..), MonadTracer (..), Telemetry (..), ViaTelemetry (..))
 
 newtype TestRunner a = TestRunner (ReaderT Telemetry IO a)
   deriving newtype
@@ -25,11 +25,8 @@ newtype TestRunner a = TestRunner (ReaderT Telemetry IO a)
     , MonadReader Telemetry
     )
   deriving
-    (Katip.Katip, Katip.KatipContext)
-    via (ConTelemetria (ReaderT Telemetry IO))
-
-instance MonadTracer TestRunner where
-  getTracer = asks (.tracer)
+    (Katip.Katip, Katip.KatipContext, MonadTracer)
+    via (ViaTelemetry (ReaderT Telemetry IO))
 
 instance MonadTelemetry TestRunner where
   inSpan' nombre = OtelMonad.inSpan' nombre Otel.defaultSpanArguments

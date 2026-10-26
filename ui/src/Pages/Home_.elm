@@ -5,11 +5,13 @@ import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form, Msg(..))
 import Form.Field
 import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
-import Generated.Api as Api exposing (GrupoParaUsuario)
-import Html exposing (Html, a, div, input, label, text)
+import Generated.Api as Api exposing (EstadoParaUsuario(..), GrupoParaUsuario, Moneda)
+import Html exposing (Html, a, div, i, input, label, span, text)
 import Html.Attributes as Attr exposing (class, classList, for, id, placeholder, required, type_)
 import Html.Events exposing (onSubmit)
 import Layouts
+import Models.Moneda as Moneda
+import Models.Monto as Monto
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
@@ -180,7 +182,7 @@ view shared model =
 
 
 {-| The grupos where the signed-in user claimed a participante, each linking to
-its grupo page and showing which participante they are there.
+its grupo page and showing where the user stands in it.
 -}
 viewMisGrupos : WebData (List GrupoParaUsuario) -> Html Msg
 viewMisGrupos misGrupos =
@@ -211,12 +213,88 @@ viewMisGrupos misGrupos =
 viewMisGruposItem : GrupoParaUsuario -> Html Msg
 viewMisGruposItem grupo =
     a
-        [ class "list-group-item list-group-item-action d-flex justify-content-between align-items-center"
+        [ class "list-group-item list-group-item-action d-flex justify-content-between align-items-center gap-3"
         , Path.href <| Path.Grupos_Id_ { id = grupo.id }
         , Telemetry.click "home.open_grupo"
         ]
         [ text grupo.nombre
-        , Html.small [ class "text-muted" ] [ text ("como " ++ grupo.participanteNombre) ]
+        , div [ class "small text-end" ] (viewEstado grupo)
+        ]
+
+
+{-| Lo mismo que la página del grupo muestra arriba de todo, en chico: abierto,
+cómo venís; congelado, cuánto te falta transferir.
+-}
+viewEstado : GrupoParaUsuario -> List (Html Msg)
+viewEstado grupo =
+    case grupo.estado of
+        EnGrupoAbierto abierto ->
+            let
+                lineas =
+                    if abierto.cantidadPagos == 0 then
+                        [ div [ class "text-muted" ] [ text "Sin gastos todavía" ] ]
+
+                    else if List.isEmpty abierto.neto then
+                        [ viewAlDia ]
+
+                    else
+                        abierto.neto
+                            |> List.map
+                                (\( moneda, monto ) ->
+                                    if monto.valor < 0 then
+                                        viewLinea "Debés" "text-danger" grupo moneda monto
+
+                                    else
+                                        viewLinea "Te deben" "text-success" grupo moneda monto
+                                )
+            in
+            lineas ++ viewInvalidos abierto.cantidadPagosInvalidos
+
+        EnGrupoCongelado congelado ->
+            let
+                lineas =
+                    List.map (\( moneda, monto ) -> viewLinea "Te tienen que transferir" "text-success" grupo moneda monto) congelado.aCobrar
+                        ++ List.map (\( moneda, monto ) -> viewLinea "Te falta transferir" "text-danger" grupo moneda monto) congelado.aPagar
+            in
+            if List.isEmpty lineas then
+                [ viewAlDia ]
+
+            else
+                lineas
+
+
+viewLinea : String -> String -> GrupoParaUsuario -> Moneda -> Api.Monto -> Html Msg
+viewLinea etiqueta color grupo moneda monto =
+    div []
+        [ span [ class "text-muted me-1" ] [ text etiqueta ]
+        , span [ class ("fw-semibold text-nowrap " ++ color) ]
+            [ text (Moneda.simbolo grupo.monedaPorDefecto moneda ++ " " ++ Monto.toString (Monto.abs monto)) ]
+        ]
+
+
+viewAlDia : Html Msg
+viewAlDia =
+    div [ class "text-success" ] [ i [ class "bi bi-check2-circle me-1" ] [], text "Estás al día" ]
+
+
+{-| Los inválidos no entran en el neto, así que el número de arriba puede
+estar mintiendo: vale la pena avisarlo desde acá.
+-}
+viewInvalidos : Int -> List (Html Msg)
+viewInvalidos cantidad =
+    if cantidad == 0 then
+        []
+
+    else
+        [ div [ class "text-warning-emphasis" ]
+            [ i [ class "bi bi-exclamation-triangle me-1" ] []
+            , text <|
+                if cantidad == 1 then
+                    "1 gasto inválido"
+
+                else
+                    String.fromInt cantidad ++ " gastos inválidos"
+            ]
         ]
 
 

@@ -11,12 +11,14 @@ module Integracion.PgSpec (
 
 import Data.IORef (readIORef)
 import Data.Pool qualified as Pool
+import Database.Beam (as_, runSelectReturningList, select, val_, values_)
 import Database.Beam.Postgres (Connection)
 import OpenTelemetry.Attributes qualified as Attributes
 import OpenTelemetry.Common qualified as Common
 import OpenTelemetry.Exporter.InMemory.Span (inMemoryListExporter)
 import OpenTelemetry.Trace.Core (ImmutableSpan, SpanContext (..), SpanHot (..))
 import OpenTelemetry.Trace.Core qualified as Otel
+import OpenTelemetry.Util (appendOnlyBoundedCollectionValues)
 import Protolude
 import Test.Hspec
 
@@ -58,6 +60,18 @@ instrumentationLibrary =
     , librarySchemaUrl = ""
     , libraryAttributes = Attributes.emptyAttributes
     }
+
+textoEnAtributos :: Attributes.Attributes -> Text -> Maybe Text
+textoEnAtributos attrs clave =
+  case Attributes.lookupAttribute attrs clave of
+    Just (Attributes.AttributeValue (Attributes.TextAttribute texto)) -> Just texto
+    _ -> Nothing
+
+enteroEn :: Attributes.Attributes -> Text -> Maybe Int64
+enteroEn attrs clave =
+  case Attributes.lookupAttribute attrs clave of
+    Just (Attributes.AttributeValue (Attributes.IntAttribute n)) -> Just n
+    _ -> Nothing
 
 atributoTexto :: ImmutableSpan -> Text -> IO (Maybe Text)
 atributoTexto span clave = do
@@ -101,6 +115,41 @@ spec = around conConexion $ do
           -- distinguir el trabajo propio de la llamada a otro sistema.
           span.spanKind `shouldBe` Otel.Client
           atributoTexto span "db.query.summary" `shouldReturn` Just "SELECT grupos"
+        otros -> panic $ "se esperaba un span y salieron " <> show (length otros)
+
+    -- La cuenta sale de envolver el @siguiente@ de 'runReturningMany', así que
+    -- solo una query de verdad prueba que cada fila leída pasa por ahí.
+    it "anota cuántas filas devolvió cada query y el total" $ \(telemetry, _pool, conn) -> do
+      (conMemoria, leerSpans) <- conSpansEnMemoria telemetry
+      conTransaccionDeLecturaRapida conMemoria conn $ do
+        -- Tres filas sin necesitar datos: un VALUES de tres enteros.
+        _ <- runSelectReturningList $ select $ values_ [as_ @Int32 (val_ 1), as_ @Int32 (val_ 2), as_ @Int32 (val_ 3)]
+        -- Y una que no encuentra nada.
+        unaQuery
+
+      leerSpans >>= \case
+        [span] -> do
+          hot <- readIORef span.spanHot
+          appendOnlyBoundedCollectionValues hot.hotEvents
+            & toList
+            & fmap (\evento -> enteroEn evento.eventAttributes "db.response.returned_rows")
+            & (`shouldBe` [Just 3, Just 0])
+          enteroEn hot.hotAttributes "db.response.returned_rows" `shouldBe` Just 3
+        otros -> panic $ "se esperaba un span y salieron " <> show (length otros)
+
+    it "anota la query entera sin los valores" $ \(telemetry, _pool, conn) -> do
+      (conMemoria, leerSpans) <- conSpansEnMemoria telemetry
+      conTransaccionDeLecturaRapida conMemoria conn $ do
+        _ <- runSelectReturningList $ select $ pure (as_ @Text (val_ "lucas@ejemplo.com"))
+        pure ()
+
+      leerSpans >>= \case
+        [span] -> do
+          hot <- readIORef span.spanHot
+          appendOnlyBoundedCollectionValues hot.hotEvents
+            & toList
+            & fmap (\evento -> textoEnAtributos evento.eventAttributes "db.query.text")
+            & (`shouldBe` [Just "SELECT ? AS \"res0\""])
         otros -> panic $ "se esperaba un span y salieron " <> show (length otros)
 
     it "sigue el trace que ya estaba abierto" $ \(telemetry, _pool, conn) -> do

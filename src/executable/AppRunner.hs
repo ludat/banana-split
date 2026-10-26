@@ -1,4 +1,5 @@
 {-# LANGUAGE DerivingStrategies #-}
+{-# LANGUAGE DerivingVia #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 
 -- | La mónada concreta en la que corren los comandos de consola.
@@ -31,6 +32,10 @@ data Entorno = Entorno
   , conexion :: Connection
   }
 
+instance Telemetry.HasTelemetry Entorno where
+  getTelemetry entorno = entorno.telemetry
+  overTelemetry f entorno = entorno{telemetry = f entorno.telemetry}
+
 newtype AppRunner a = AppRunner (ReaderT Entorno IO a)
   deriving newtype
     ( Functor
@@ -40,6 +45,9 @@ newtype AppRunner a = AppRunner (ReaderT Entorno IO a)
     , MonadUnliftIO
     , MonadReader Entorno
     )
+  deriving
+    (Katip.Katip, Katip.KatipContext, MonadTracer)
+    via (Telemetry.ViaTelemetry (ReaderT Entorno IO))
 
 -- | Corre un comando. Se llama una vez, en 'Main.main'.
 runApp :: Telemetry -> Connection -> AppRunner a -> IO a
@@ -63,25 +71,7 @@ instance Persistence.MonadPg AppRunner where
         entorno.conexion
         accion
 
-instance MonadTracer AppRunner where
-  getTracer = asks (.telemetry.tracer)
-
 -- | Abajo hay 'IO' y no el @ExceptT@ de Servant, así que hay unlift y el span se
 -- cierra solo: la que abre el span es la de la librería.
 instance MonadTelemetry AppRunner where
   inSpan' nombre = OtelMonad.inSpan' nombre Otel.defaultSpanArguments
-
--- | A mano y no por @deriving via@ 'Telemetry.ConTelemetria', por lo mismo: el
--- reader es más grande que el 'Telemetry'. Igual que en 'Site.Types.AppHandler'.
-instance Katip.Katip AppRunner where
-  getLogEnv = asks (.telemetry.logEnv)
-  localLogEnv f = sobreTelemetry (Telemetry.sobreLogEnv f)
-
-instance Katip.KatipContext AppRunner where
-  getKatipContext = asks (.telemetry.logContexts)
-  localKatipContext f = sobreTelemetry (Telemetry.sobreLogContexts f)
-  getKatipNamespace = asks (.telemetry.logNamespace)
-  localKatipNamespace f = sobreTelemetry (Telemetry.sobreLogNamespace f)
-
-sobreTelemetry :: (Telemetry -> Telemetry) -> AppRunner a -> AppRunner a
-sobreTelemetry f = local $ \entorno -> entorno{telemetry = f entorno.telemetry}
