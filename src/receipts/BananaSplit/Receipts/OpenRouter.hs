@@ -363,19 +363,19 @@ callOpenRouterJson config systemPrompt userContent =
           , ("app.openrouter.request_bytes", Otel.toAttribute (fromIntegral requestBytes :: Int64))
           ]
     response <-
-      liftIO
-        $ runReq defaultHttpConfig{httpConfigCheckResponse = \_ _ _ -> Nothing}
-        $ req
-          POST
-          (https "openrouter.ai" /: "api" /: "v1" /: "chat" /: "completions")
-          (ReqBodyJson requestBody)
-          bsResponse
-          ( mconcat
-              [ header "Authorization" ("Bearer " <> Text.encodeUtf8 config.apiKey)
-              , header "HTTP-Referer" "https://split.ludat.io"
-              , header "X-Title" "Banana Split"
-              ]
-          )
+      liftIO $
+        runReq defaultHttpConfig{httpConfigCheckResponse = \_ _ _ -> Nothing} $
+          req
+            POST
+            (https "openrouter.ai" /: "api" /: "v1" /: "chat" /: "completions")
+            (ReqBodyJson requestBody)
+            bsResponse
+            ( mconcat
+                [ header "Authorization" ("Bearer " <> Text.encodeUtf8 config.apiKey)
+                , header "HTTP-Referer" "https://split.ludat.io"
+                , header "X-Title" "Banana Split"
+                ]
+            )
     liftIO $
       Otel.addAttributes span $
         HashMap.fromList

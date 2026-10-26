@@ -222,8 +222,9 @@ processPago payload fromEmail = do
   config <- lift $ asks (.receipts)
 
   -- 3. Resolve the From address to a user.
-  user <- (lift $ runBeamFastRead $ fetchUserByEmail fromEmail)
-    `orElseMay` (throwError $ "No hay ninguna cuenta asociada a la dirección " <> unEmail fromEmail <> ".")
+  user <-
+    (lift $ runBeamFastRead $ fetchUserByEmail fromEmail)
+      `orElseMay` (throwError $ "No hay ninguna cuenta asociada a la dirección " <> unEmail fromEmail <> ".")
 
   -- 4. Authorize the grupo: the +tag grupoId must be one of this user's grupos.
   grupoId <-

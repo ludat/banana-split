@@ -16,9 +16,13 @@ module BananaSplit.Persistence (
   conTransaccionDeEscritura,
   conTransaccionDeLecturaRapida,
   correrEnLaTransaccionDeAfuera,
-  anotarQueriesEnElSpan,
+  RegistroDeQueries,
+  nuevoRegistro,
   registrarStatement,
+  terminarStatement,
+  anotarQueriesEnElSpan,
   resumirQuery,
+  taparValores,
   makePool,
   openConnection,
   conUnaConexion,
@@ -319,27 +323,77 @@ fetchGrupo aGrupoId = do
           , M.monedasConPagos = monedasConPagos
           }
 
--- | El join que filtra por usuario ya trae el participante que reclamó en cada
--- grupo, que es justo lo que muestra el listado: sale todo en una query.
+-- | Los grupos donde el usuario reclamó un participante, cada uno con lo que
+-- le importa de él ('M.EstadoParaUsuario').
+--
+-- Primero los que tuvieron actividad más reciente: el último pago cargado o,
+-- si todavía no tiene pagos, la creación del grupo. Las dos cosas salen de
+-- comparar ULIDs, que ordenan por fecha de creación; así un grupo recién
+-- creado queda arriba en vez de al fondo con los que no tienen pagos.
 fetchGruposForUser :: ULID -> Pg [M.GrupoParaUsuario]
 fetchGruposForUser userId = do
   filas <- runSelectReturningList $ select $ do
-    grupo <-
-      all_ db.grupos
-        & orderBy_ (asc_ . (.id))
-    p <- all_ db.participantes
-    guard_ (p.grupo ==. GrupoId grupo.id)
-    guard_ (p.user ==. UserId (val_ (Just userId)))
-    pure (grupo.id, grupo.nombre, p.nombre)
+    orderBy_ (\((grupoId, _, _, _), _, ultimoPago) -> desc_ (fromMaybe_ (just_ grupoId) ultimoPago))
+      $ aggregate_
+        ( \(grupo, participanteId, pago) ->
+            (
+              ( group_ grupo.id
+              , group_ grupo.nombre
+              , group_ grupo.moneda_por_defecto
+              , group_ grupo.congelado_at
+              )
+            , group_ participanteId
+            , max_ pago.pagoId
+            )
+        )
+      $ do
+        grupo <- all_ db.grupos
+        participante <- all_ db.participantes
+        guard_ (participante.grupo ==. GrupoId grupo.id)
+        guard_ (participante.user ==. UserId (val_ (Just userId)))
+        pago <- leftJoin_ (all_ db.pagos) (\pago -> pago.pagoGrupo ==. GrupoId grupo.id)
+        pure (grupo, participante.id, pago)
+  -- Lo que hace falta para el estado de cada grupo se pide una vez para todos,
+  -- no una por grupo: la cantidad de queries no crece con la lista. Netos,
+  -- tasas y conteos solo los usan los abiertos.
+  let todos = filas & fmap (\((grupoId, _, _, _), _, _) -> grupoId)
+      abiertos = filas & mapMaybe (\((grupoId, _, _, congeladoAt), _, _) -> grupoId <$ guard (isNothing congeladoAt))
+  transferencias <- fetchTransferenciasDeGrupos todos
+  netos <- netosDeGrupos abiertos
+  tasas <- fetchTasasDeCambioDeGrupos abiertos
+  conteos <- contarGastosDeGrupos abiertos
+
   pure
     $ filas
     & fmap
-      ( \(grupoId, nombre, participanteNombre) ->
-          M.GrupoParaUsuario
-            { M.id = grupoId
-            , M.nombre = nombre
-            , M.participanteNombre = participanteNombre
-            }
+      ( \((grupoId, nombre, monedaPorDefecto, congeladoAt), participanteId, _ultimoPago) ->
+          let
+            participante = M.ParticipanteId participanteId
+            transferenciasDelGrupo = delGrupo grupoId [] transferencias
+          in
+            M.GrupoParaUsuario
+              { M.id = grupoId
+              , M.nombre = nombre
+              , M.monedaPorDefecto = monedaPorDefecto
+              , -- Lo mismo que muestra la página del grupo arriba de todo,
+                -- recortado a un participante: abierto, su neto; congelado, lo
+                -- que le falta transferir.
+                M.estado = case congeladoAt of
+                  Just _ ->
+                    M.EnGrupoCongelado $ M.pendienteDe participante transferenciasDelGrupo
+                  Nothing ->
+                    let conteo = delGrupo grupoId ConteoDeGastos{total = 0, invalidos = 0} conteos
+                    in M.EnGrupoAbierto
+                         M.AbiertoParaUsuario
+                           { M.neto =
+                               M.netoConsolidadoDe
+                                 participante
+                                 (M.tablaDeTasas monedaPorDefecto (delGrupo grupoId [] tasas))
+                                 (delGrupo grupoId mempty netos <> M.netosDeTransferencias transferenciasDelGrupo)
+                           , M.cantidadPagos = conteo.total
+                           , M.cantidadPagosInvalidos = conteo.invalidos
+                           }
+              }
       )
 
 fetchPago :: ULID -> ULID -> Pg M.Pago
@@ -382,22 +436,66 @@ data ConteoDeGastos = ConteoDeGastos
 --
 -- Qué cuenta como válido lo decide 'esValido_', al lado del decoder del blob.
 contarGastos :: ULID -> Pg ConteoDeGastos
-contarGastos grupoId = do
-  resultado <- runSelectReturningOne $ select $ do
+contarGastos grupoId =
+  filasDeConteoDeGastos (UnGrupo grupoId) <&> \case
+    -- Agrupado por grupo, el que no tiene gastos no devuelve ninguna fila.
+    [] -> ConteoDeGastos{total = 0, invalidos = 0}
+    (_, conteo) : _ -> conteo
+
+-- | 'contarGastos' de varios grupos en una sola query. El grupo sin gastos no
+-- aparece en el mapa.
+contarGastosDeGrupos :: [ULID] -> Pg (Map ULID ConteoDeGastos)
+contarGastosDeGrupos grupoIds =
+  Map.fromList <$> filasDeConteoDeGastos (VariosGrupos grupoIds)
+
+filasDeConteoDeGastos :: CualesGrupos -> Pg [(ULID, ConteoDeGastos)]
+filasDeConteoDeGastos cuales = do
+  filas <- runSelectReturningList $ select $ do
     aggregate_
       ( \pago ->
-          ( as_ @Int32 countAll_
+          ( group_ pago.pagoGrupo
+          , as_ @Int32 countAll_
           , fromMaybe_ 0 $ sum_ $ ifThenElse_ (ResumenGuardado.esValido_ pago.resumen) (val_ 0) (val_ (1 :: Int32))
           )
       )
       $ do
         pago <- all_ db.pagos
-        guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
+        guard_ (grupoEs_ cuales pago.pagoGrupo)
         pure pago
-  pure $ case resultado of
-    Nothing -> ConteoDeGastos{total = 0, invalidos = 0}
-    Just (cantidad, malos) ->
-      ConteoDeGastos{total = fromIntegral cantidad, invalidos = fromIntegral malos}
+  pure
+    $ filas
+    & fmap
+      ( \(GrupoId grupoId, cantidad, malos) ->
+          (grupoId, ConteoDeGastos{total = fromIntegral cantidad, invalidos = fromIntegral malos})
+      )
+
+-- | Qué grupos lee una query. Las lecturas por grupo se escriben una sola vez,
+-- devolviendo cada fila con el grupo al que pertenece, y cada variante arma su
+-- resultado: la de un grupo usa las filas tal cual, la de varios las agrupa.
+data CualesGrupos
+  = UnGrupo ULID
+  | VariosGrupos [ULID]
+
+-- | El filtro de 'CualesGrupos' sobre la columna del grupo. Uno solo es un
+-- @=@, como siempre; sin grupos es @FALSE@ en vez de @IN ()@, que Postgres no
+-- acepta.
+grupoEs_ :: CualesGrupos -> PrimaryKey GrupoT (QExpr Postgres s) -> QExpr Postgres s Bool
+grupoEs_ (UnGrupo grupoId) grupo = grupo ==. GrupoId (val_ grupoId)
+grupoEs_ (VariosGrupos []) _ = val_ False
+grupoEs_ (VariosGrupos grupoIds) (GrupoId grupo) = grupo `in_` fmap val_ grupoIds
+
+-- | Las filas de varios grupos en una lista por grupo, cada una en el orden en
+-- que vinieron.
+agruparPorGrupo :: [(ULID, a)] -> Map ULID [a]
+agruparPorGrupo filas =
+  filas
+    & fmap (\(grupoId, fila) -> (grupoId, [fila]))
+    -- 'flip' porque 'fromListWith' pone adelante lo que viene después.
+    & Map.fromListWith (flip (<>))
+
+-- | Lo de un grupo dentro de lo que trajo una lectura de varios.
+delGrupo :: ULID -> a -> Map ULID a -> a
+delGrupo grupoId porDefecto porGrupo = Map.findWithDefault porDefecto grupoId porGrupo
 
 escribirPagadoYConsumido :: ULID -> M.Pago -> M.ResumenGasto -> Pg ()
 escribirPagadoYConsumido grupoId pago resumen = do
@@ -655,31 +753,44 @@ resumenDesde netos guardado =
 -- No filtra por el resumen guardado porque un gasto inválido no tiene filas: el
 -- filtro vive en la escritura.
 netosDeGrupo :: ULID -> Pg (M.PorMoneda (M.Netos M.Monto))
-netosDeGrupo grupoId = do
+netosDeGrupo grupoId = foldMap snd <$> filasDeNetos (UnGrupo grupoId)
+
+-- | 'netosDeGrupo' de varios grupos en una sola query.
+netosDeGrupos :: [ULID] -> Pg (Map ULID (M.PorMoneda (M.Netos M.Monto)))
+netosDeGrupos grupoIds = Map.fromListWith (<>) <$> filasDeNetos (VariosGrupos grupoIds)
+
+-- | Una fila por grupo, participante y moneda, cada una ya como netos para
+-- poder sumarlas con '<>'.
+filasDeNetos :: CualesGrupos -> Pg [(ULID, M.PorMoneda (M.Netos M.Monto))]
+filasDeNetos cuales = do
   filas <- runSelectReturningList $ select $ do
     aggregate_
       -- El cast es necesario: en Postgres SUM(bigint) devuelve numeric, y sin
       -- él la fila no decodifica.
-      ( \(participante, moneda, neto) ->
-          (group_ participante, group_ moneda, cast_ (fromMaybe_ 0 (sum_ neto)) bigint)
+      ( \(grupo, participante, moneda, neto) ->
+          (group_ grupo, group_ participante, group_ moneda, cast_ (fromMaybe_ 0 (sum_ neto)) bigint)
       )
       $ do
         -- Una sola tabla: la fila del cache sabe de qué grupo es, así que la
         -- suma no toca 'pagos' para nada.
         fila <- all_ db.pagado_y_consumido_en_gasto
-        guard_ (fila.grupo ==. GrupoId (val_ grupoId))
+        guard_ (grupoEs_ cuales fila.grupo)
         let ParticipanteId participante = fila.participante
+            GrupoId grupo = fila.grupo
         pure
-          ( participante
+          ( grupo
+          , participante
           , fila.moneda
           , fila.pagado_en_unidades_minimas - fila.consumido_en_unidades_minimas
           )
   pure
     $ filas
-    & foldMap
-      ( \(participante, moneda, neto) ->
-          M.mkDeuda (M.ParticipanteId participante) (desdeUnidadesMinimas moneda neto)
-            `M.enMoneda` moneda
+    & fmap
+      ( \(grupo, participante, moneda, neto) ->
+          ( grupo
+          , M.mkDeuda (M.ParticipanteId participante) (desdeUnidadesMinimas moneda neto)
+              `M.enMoneda` moneda
+          )
       )
 
 fetchParticipantes :: ULID -> Pg [M.Participante]
@@ -1484,25 +1595,36 @@ updateGrupo grupoId nombre monedaPorDefecto = do
       (\g -> g.id ==. val_ grupoId)
 
 fetchTransferencias :: ULID -> Pg [M.Transferencia]
-fetchTransferencias grupoId = do
+fetchTransferencias grupoId = fmap snd <$> filasDeTransferencias (UnGrupo grupoId)
+
+-- | 'fetchTransferencias' de varios grupos en una sola query. Cada lista queda
+-- en el mismo orden que la de un grupo solo.
+fetchTransferenciasDeGrupos :: [ULID] -> Pg (Map ULID [M.Transferencia])
+fetchTransferenciasDeGrupos grupoIds =
+  agruparPorGrupo <$> filasDeTransferencias (VariosGrupos grupoIds)
+
+filasDeTransferencias :: CualesGrupos -> Pg [(ULID, M.Transferencia)]
+filasDeTransferencias cuales = do
   rows <- runSelectReturningList $ select $ do
     t <-
       all_ db.transferencias
         & orderBy_ (asc_ . (.id))
-    guard_ (t.grupo ==. GrupoId (val_ grupoId))
+    guard_ (grupoEs_ cuales t.grupo)
     pure t
   pure
     $ rows
     & fmap
       ( \t ->
-          M.Transferencia
-            { M.id = t.id
-            , M.from = M.ParticipanteId $ case t.participante_from of ParticipanteId ulid -> ulid
-            , M.to = M.ParticipanteId $ case t.participante_to of ParticipanteId ulid -> ulid
-            , M.monto = desdeUnidadesMinimas t.moneda t.monto_en_unidades_minimas
-            , M.moneda = t.moneda
-            , M.saldadaAt = t.saldada_at
-            }
+          ( case t.grupo of GrupoId grupoId -> grupoId
+          , M.Transferencia
+              { M.id = t.id
+              , M.from = M.ParticipanteId $ case t.participante_from of ParticipanteId ulid -> ulid
+              , M.to = M.ParticipanteId $ case t.participante_to of ParticipanteId ulid -> ulid
+              , M.monto = desdeUnidadesMinimas t.moneda t.monto_en_unidades_minimas
+              , M.moneda = t.moneda
+              , M.saldadaAt = t.saldada_at
+              }
+          )
       )
 
 -- | En qué monedas hay pagos cargados. Es lo único que las pantallas de monedas
@@ -1515,24 +1637,34 @@ fetchMonedasConPagos grupoId =
     pure pago.pagoMoneda
 
 fetchTasasDeCambio :: ULID -> Pg [M.TasaDeCambio]
-fetchTasasDeCambio grupoId = do
+fetchTasasDeCambio grupoId = fmap snd <$> filasDeTasasDeCambio (UnGrupo grupoId)
+
+-- | 'fetchTasasDeCambio' de varios grupos en una sola query.
+fetchTasasDeCambioDeGrupos :: [ULID] -> Pg (Map ULID [M.TasaDeCambio])
+fetchTasasDeCambioDeGrupos grupoIds =
+  agruparPorGrupo <$> filasDeTasasDeCambio (VariosGrupos grupoIds)
+
+filasDeTasasDeCambio :: CualesGrupos -> Pg [(ULID, M.TasaDeCambio)]
+filasDeTasasDeCambio cuales = do
   rows <- runSelectReturningList $ select $ do
     tasa <-
       all_ db.tasas_de_cambio
         & orderBy_ (asc_ . (.id))
-    guard_ (tasa.grupo ==. GrupoId (val_ grupoId))
+    guard_ (grupoEs_ cuales tasa.grupo)
     pure tasa
   pure
     $ rows
     & fmap
       ( \tasa ->
-          M.TasaDeCambio
-            { M.id = tasa.id
-            , M.unaMoneda = tasa.una_moneda
-            , M.otraMoneda = tasa.otra_moneda
-            , M.unMonto = desdeUnidadesMinimas tasa.una_moneda tasa.un_monto_en_unidades_minimas
-            , M.otroMonto = desdeUnidadesMinimas tasa.otra_moneda tasa.otro_monto_en_unidades_minimas
-            }
+          ( case tasa.grupo of GrupoId grupoId -> grupoId
+          , M.TasaDeCambio
+              { M.id = tasa.id
+              , M.unaMoneda = tasa.una_moneda
+              , M.otraMoneda = tasa.otra_moneda
+              , M.unMonto = desdeUnidadesMinimas tasa.una_moneda tasa.un_monto_en_unidades_minimas
+              , M.otroMonto = desdeUnidadesMinimas tasa.otra_moneda tasa.otro_monto_en_unidades_minimas
+              }
+          )
       )
 
 -- | Deja primero la moneda que va antes por código, que es el orden en que se

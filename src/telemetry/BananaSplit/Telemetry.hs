@@ -15,11 +15,9 @@ module BananaSplit.Telemetry (
   spanQueNoGraba,
   tracerQueNoGraba,
 
-  -- * Katip sobre el reader
-  ConTelemetria (..),
-  sobreLogContexts,
-  sobreLogEnv,
-  sobreLogNamespace,
+  -- * Katip y el tracer sobre el reader
+  HasTelemetry (..),
+  ViaTelemetry (..),
 
   -- * Correr sin telemetría
   SinTelemetria,
@@ -73,7 +71,7 @@ import BananaSplit.Telemetry.Scribe (LogPayload (..), otelScribe)
 -- de logging de Katip, que se acumula a medida que se baja ('Katip.katipAddContext',
 -- 'Katip.katipAddNamespace'). Están juntos para que una mónada no tenga que repetir
 -- "qué hace falta para instrumentar": con esto en el reader ya cumple
--- 'MonadTelemetry' y 'Katip.KatipContext' —ver 'ConTelemetria'— y es todo lo que hay
+-- 'MonadTelemetry' y 'Katip.KatipContext' —ver 'ViaTelemetry'— y es todo lo que hay
 -- que pasarle a 'BananaSplit.Persistence.Pg.conTransaccionDeEscritura' o a 'runApp'.
 data Telemetry = Telemetry
   { tracer :: Tracer
@@ -367,38 +365,47 @@ spanQueNoGraba =
       , traceState = TraceState.empty
       }
 
--- | Las instancias de Katip para cualquier mónada que tenga el 'Telemetry' en el
--- reader, escritas una sola vez.
+-- | Un reader que lleva el 'Telemetry' adentro: cómo sacarlo y cómo cambiarlo.
+-- Es todo lo que 'ViaTelemetry' necesita saber del reader de una mónada.
+class HasTelemetry r where
+  getTelemetry :: r -> Telemetry
+  overTelemetry :: (Telemetry -> Telemetry) -> r -> r
+
+instance HasTelemetry Telemetry where
+  getTelemetry = identity
+  overTelemetry f = f
+
+-- | Las instancias de Katip y de 'MonadTracer' para cualquier mónada cuyo
+-- reader lleve el 'Telemetry' ('HasTelemetry'), escritas una sola vez.
 --
 -- Cada mónada concreta las toma con @deriving via@ en lugar de repetirlas:
 --
--- > newtype AppRunner a = AppRunner (ReaderT Telemetry IO a)
--- >   deriving newtype (..., MonadReader Telemetry)
--- >   deriving (Katip.Katip, Katip.KatipContext) via (ConTelemetria (ReaderT Telemetry IO))
---
--- Para una mónada cuyo reader es algo más grande que el 'Telemetry' —'Site.Types.App',
--- que además tiene el pool y la config— no sirve: esa escribe las instancias a mano
--- con 'sobreLogEnv' y compañía, que es la misma cirugía pero sobre su propio record.
-newtype ConTelemetria m a = ConTelemetria (m a)
+-- > newtype AppRunner a = AppRunner (ReaderT Entorno IO a)
+-- >   deriving newtype (..., MonadReader Entorno)
+-- >   deriving (Katip.Katip, Katip.KatipContext, MonadTracer) via (ViaTelemetry (ReaderT Entorno IO))
+-- >
+-- > instance HasTelemetry Entorno where ...
+newtype ViaTelemetry m a = ViaTelemetry (m a)
   deriving newtype (Functor, Applicative, Monad)
 
-deriving newtype instance (MonadIO m) => MonadIO (ConTelemetria m)
+deriving newtype instance (MonadIO m) => MonadIO (ViaTelemetry m)
 
-deriving newtype instance
-  (MonadReader Telemetry m) => MonadReader Telemetry (ConTelemetria m)
+deriving newtype instance (MonadReader r m) => MonadReader r (ViaTelemetry m)
 
-instance (MonadIO m, MonadReader Telemetry m) => Katip.Katip (ConTelemetria m) where
-  getLogEnv = asks (.logEnv)
-  localLogEnv f = local (sobreLogEnv f)
+instance (MonadIO m, MonadReader r m, HasTelemetry r) => Katip.Katip (ViaTelemetry m) where
+  getLogEnv = asks (\r -> (getTelemetry r).logEnv)
+  localLogEnv f = local (overTelemetry (sobreLogEnv f))
 
-instance (MonadIO m, MonadReader Telemetry m) => KatipContext (ConTelemetria m) where
-  getKatipContext = asks (.logContexts)
-  localKatipContext f = local (sobreLogContexts f)
-  getKatipNamespace = asks (.logNamespace)
-  localKatipNamespace f = local (sobreLogNamespace f)
+instance (MonadIO m, MonadReader r m, HasTelemetry r) => KatipContext (ViaTelemetry m) where
+  getKatipContext = asks (\r -> (getTelemetry r).logContexts)
+  localKatipContext f = local (overTelemetry (sobreLogContexts f))
+  getKatipNamespace = asks (\r -> (getTelemetry r).logNamespace)
+  localKatipNamespace f = local (overTelemetry (sobreLogNamespace f))
 
--- | Los tres @local@ del estado de logging, para quien tenga que escribir las
--- instancias a mano sobre su propio reader.
+instance (MonadReader r m, HasTelemetry r) => MonadTracer (ViaTelemetry m) where
+  getTracer = asks (\r -> (getTelemetry r).tracer)
+
+-- | Los tres @local@ del estado de logging.
 sobreLogEnv :: (LogEnv -> LogEnv) -> Telemetry -> Telemetry
 sobreLogEnv f telemetry = telemetry{logEnv = f telemetry.logEnv}
 

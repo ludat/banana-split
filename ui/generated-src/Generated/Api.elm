@@ -608,22 +608,89 @@ jsonEncGrupo  val =
 type alias GrupoParaUsuario  =
    { id: ULID
    , nombre: String
-   , participanteNombre: String
+   , monedaPorDefecto: Moneda
+   , estado: EstadoParaUsuario
    }
 
 jsonDecGrupoParaUsuario : Json.Decode.Decoder ( GrupoParaUsuario )
 jsonDecGrupoParaUsuario =
-   Json.Decode.succeed (\pid pnombre pparticipanteNombre -> {id = pid, nombre = pnombre, participanteNombre = pparticipanteNombre})
+   Json.Decode.succeed (\pid pnombre pmonedaPorDefecto pestado -> {id = pid, nombre = pnombre, monedaPorDefecto = pmonedaPorDefecto, estado = pestado})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
-   |> required "participanteNombre" (Json.Decode.string)
+   |> required "monedaPorDefecto" (jsonDecMoneda)
+   |> required "estado" (jsonDecEstadoParaUsuario)
 
 jsonEncGrupoParaUsuario : GrupoParaUsuario -> Value
 jsonEncGrupoParaUsuario  val =
    Json.Encode.object
    [ ("id", jsonEncULID val.id)
    , ("nombre", Json.Encode.string val.nombre)
-   , ("participanteNombre", Json.Encode.string val.participanteNombre)
+   , ("monedaPorDefecto", jsonEncMoneda val.monedaPorDefecto)
+   , ("estado", jsonEncEstadoParaUsuario val.estado)
+   ]
+
+
+
+type EstadoParaUsuario  =
+    EnGrupoAbierto AbiertoParaUsuario
+    | EnGrupoCongelado CongeladoParaUsuario
+
+jsonDecEstadoParaUsuario : Json.Decode.Decoder ( EstadoParaUsuario )
+jsonDecEstadoParaUsuario =
+    let jsonDecDictEstadoParaUsuario = Dict.fromList
+            [ ("EnGrupoAbierto", Json.Decode.lazy (\_ -> Json.Decode.map EnGrupoAbierto (jsonDecAbiertoParaUsuario)))
+            , ("EnGrupoCongelado", Json.Decode.lazy (\_ -> Json.Decode.map EnGrupoCongelado (jsonDecCongeladoParaUsuario)))
+            ]
+    in  decodeSumObjectWithSingleField  "EstadoParaUsuario" jsonDecDictEstadoParaUsuario
+
+jsonEncEstadoParaUsuario : EstadoParaUsuario -> Value
+jsonEncEstadoParaUsuario  val =
+    let keyval v = case v of
+                    EnGrupoAbierto v1 -> ("EnGrupoAbierto", encodeValue (jsonEncAbiertoParaUsuario v1))
+                    EnGrupoCongelado v1 -> ("EnGrupoCongelado", encodeValue (jsonEncCongeladoParaUsuario v1))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type alias AbiertoParaUsuario  =
+   { neto: (PorMoneda Monto)
+   , cantidadPagos: Int
+   , cantidadPagosInvalidos: Int
+   }
+
+jsonDecAbiertoParaUsuario : Json.Decode.Decoder ( AbiertoParaUsuario )
+jsonDecAbiertoParaUsuario =
+   Json.Decode.succeed (\pneto pcantidadPagos pcantidadPagosInvalidos -> {neto = pneto, cantidadPagos = pcantidadPagos, cantidadPagosInvalidos = pcantidadPagosInvalidos})
+   |> required "neto" (jsonDecPorMoneda (jsonDecMonto))
+   |> required "cantidadPagos" (Json.Decode.int)
+   |> required "cantidadPagosInvalidos" (Json.Decode.int)
+
+jsonEncAbiertoParaUsuario : AbiertoParaUsuario -> Value
+jsonEncAbiertoParaUsuario  val =
+   Json.Encode.object
+   [ ("neto", (jsonEncPorMoneda (jsonEncMonto)) val.neto)
+   , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
+   , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
+   ]
+
+
+
+type alias CongeladoParaUsuario  =
+   { aCobrar: (PorMoneda Monto)
+   , aPagar: (PorMoneda Monto)
+   }
+
+jsonDecCongeladoParaUsuario : Json.Decode.Decoder ( CongeladoParaUsuario )
+jsonDecCongeladoParaUsuario =
+   Json.Decode.succeed (\paCobrar paPagar -> {aCobrar = paCobrar, aPagar = paPagar})
+   |> required "aCobrar" (jsonDecPorMoneda (jsonDecMonto))
+   |> required "aPagar" (jsonDecPorMoneda (jsonDecMonto))
+
+jsonEncCongeladoParaUsuario : CongeladoParaUsuario -> Value
+jsonEncCongeladoParaUsuario  val =
+   Json.Encode.object
+   [ ("aCobrar", (jsonEncPorMoneda (jsonEncMonto)) val.aCobrar)
+   , ("aPagar", (jsonEncPorMoneda (jsonEncMonto)) val.aPagar)
    ]
 
 
