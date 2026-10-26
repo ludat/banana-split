@@ -70,6 +70,35 @@ spec = do
       grupos <- runDb $ fetchGruposForUser user.id
       grupos `shouldBe` []
 
+  describe "addParticipanteForUser" $ do
+    it "adds a participante already claimed by the user" $ \(RunDb runDb) -> do
+      user <- runDb $ createUser "nueva@example.com" "Nueva"
+      grupo <- runDb $ createGrupo "Ajeno" "otre"
+
+      result <- runDb $ addParticipanteForUser grupo.id "Nueva" user.id
+
+      (result & fmap (\p -> (p.nombre, fmap (.id) p.user))) `shouldBe` Right ("Nueva", Just user.id)
+      grupos <- runDb $ fetchGruposForUser user.id
+      (grupos & fmap (.id)) `shouldBe` [grupo.id]
+
+    it "refuses when the user already owns a participante in the grupo" $ \(RunDb runDb) -> do
+      user <- runDb $ createUser "yo@example.com" "Yo"
+      grupo <- runDb $ createGrupoForUser "Propio" user
+
+      result <- runDb $ addParticipanteForUser grupo.id "Otro yo" user.id
+
+      result `shouldBe` Left AlreadyOwnAnotherParticipante
+      Just despues <- runDb $ fetchGrupo grupo.id
+      length despues.participantes `shouldBe` 1
+
+    it "refuses a name another participante already has" $ \(RunDb runDb) -> do
+      user <- runDb $ createUser "otre@example.com" "Otre"
+      grupo <- runDb $ createGrupo "Ajeno" "otre"
+
+      result <- runDb $ addParticipanteForUser grupo.id "otre" user.id
+
+      result `shouldBe` Left NameAlreadyTaken
+
   describe "fetchGruposForUser estado" $ do
     it "says there are no gastos in a new grupo" $ \(RunDb runDb) -> do
       user <- runDb $ createUser "yo@example.com" "Yo"

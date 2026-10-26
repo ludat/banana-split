@@ -1,5 +1,6 @@
 module Site.Handler.Grupos (
   CreateGrupoParams,
+  handleAddMeAsParticipante,
   handleClaimParticipante,
   handleCreateGrupo,
   handleCreateGrupoAsUser,
@@ -24,6 +25,7 @@ import BananaSplit.Persistence (
   CongelamientoRechazado (..),
   ConteoDeGastos (..),
   addParticipante,
+  addParticipanteForUser,
   claimParticipante,
   congelarGrupo,
   contarGastos,
@@ -105,6 +107,15 @@ handleGetMisGrupos user = do
 handleClaimParticipante :: User -> ULID -> ULID -> AppHandler ClaimParticipanteResult
 handleClaimParticipante user grupoId participanteId = do
   result <- runBeamWrite $ claimParticipante grupoId participanteId user.id
+  pure $ case result of
+    Left rejection -> ClaimRejected rejection
+    Right participante -> ClaimAccepted participante
+
+handleAddMeAsParticipante :: User -> ULID -> ParticipanteAddParams -> AppHandler ClaimParticipanteResult
+handleAddMeAsParticipante user grupoId ParticipanteAddParams{name} = do
+  when (Text.null (Text.strip name)) $
+    throwJsonError err400 "El nombre no puede estar vacío"
+  result <- runBeamWrite $ addParticipanteForUser grupoId (Text.strip name) user.id
   pure $ case result of
     Left rejection -> ClaimRejected rejection
     Right participante -> ClaimAccepted participante

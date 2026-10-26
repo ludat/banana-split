@@ -251,10 +251,11 @@ type ClaimRejection  =
     ClaimedByOtherUser 
     | AlreadyOwnAnotherParticipante 
     | ParticipanteNotFound 
+    | NameAlreadyTaken 
 
 jsonDecClaimRejection : Json.Decode.Decoder ( ClaimRejection )
 jsonDecClaimRejection = 
-    let jsonDecDictClaimRejection = Dict.fromList [("ClaimedByOtherUser", ClaimedByOtherUser), ("AlreadyOwnAnotherParticipante", AlreadyOwnAnotherParticipante), ("ParticipanteNotFound", ParticipanteNotFound)]
+    let jsonDecDictClaimRejection = Dict.fromList [("ClaimedByOtherUser", ClaimedByOtherUser), ("AlreadyOwnAnotherParticipante", AlreadyOwnAnotherParticipante), ("ParticipanteNotFound", ParticipanteNotFound), ("NameAlreadyTaken", NameAlreadyTaken)]
     in  decodeSumUnaries "ClaimRejection" jsonDecDictClaimRejection
 
 jsonEncClaimRejection : ClaimRejection -> Value
@@ -263,6 +264,7 @@ jsonEncClaimRejection  val =
         ClaimedByOtherUser -> Json.Encode.string "ClaimedByOtherUser"
         AlreadyOwnAnotherParticipante -> Json.Encode.string "AlreadyOwnAnotherParticipante"
         ParticipanteNotFound -> Json.Encode.string "ParticipanteNotFound"
+        NameAlreadyTaken -> Json.Encode.string "NameAlreadyTaken"
 
 
 
@@ -2268,6 +2270,37 @@ putGrupoByIdParticipantesByParticipanteIdClaim capture_id capture_participanteId
                     params
             , body =
                 Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecClaimParticipanteResult
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postGrupoByIdParticipantesMe : ULID -> ParticipanteAddParams -> (Result Http.Error  (ClaimParticipanteResult)  -> msg) -> Cmd msg
+postGrupoByIdParticipantesMe capture_id body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "participantes"
+                    , "me"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncParticipanteAddParams body)
             , expect =
                 Http.expectJson toMsg jsonDecClaimParticipanteResult
             , timeout =

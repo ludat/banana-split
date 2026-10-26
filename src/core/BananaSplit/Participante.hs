@@ -27,6 +27,9 @@ data ClaimRejection
   = ClaimedByOtherUser
   | AlreadyOwnAnotherParticipante
   | ParticipanteNotFound
+  | -- | Adding yourself as a new participante with a name another participante
+    -- of the grupo already has (names are unique per grupo).
+    NameAlreadyTaken
   deriving (Show, Eq, Generic)
 
 newtype ParticipanteId = ParticipanteId ULID

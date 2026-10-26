@@ -1,18 +1,19 @@
-module Layouts.Default.Grupo exposing (Model, Msg, Props, layout)
+module Layouts.Default.Grupo exposing (Agregarme, Model, Msg, Props, layout)
 
+import Browser.Dom
 import Components.Bootstrap as Bs
 import Components.PagoDetalleModal as PagoDetalleModal
 import Css
 import Dict
 import Effect exposing (Effect)
-import Generated.Api exposing (Grupo, ULID, User)
-import Html exposing (Html, a, button, div, h2, i, label, li, node, option, p, select, span, text, ul)
+import Generated.Api as Api exposing (ClaimParticipanteResult(..), ClaimRejection(..), Grupo, Participante, ULID, User)
+import Html exposing (Html, a, button, div, h2, i, input, label, li, node, option, p, select, span, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
-import Html.Events exposing (on, onClick, preventDefaultOn)
+import Html.Events exposing (on, onClick, onInput, onSubmit, preventDefaultOn)
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
-import Models.Grupo exposing (GrupoLike, currentParticipante, estaCongelado, grupoIdFromPath, ownedParticipante)
+import Models.Grupo exposing (GrupoLike, claimRejectionMessage, currentParticipante, estaCongelado, grupoIdFromPath, ownedParticipante)
 import Models.Repartija as Repartija
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -23,7 +24,9 @@ import Route.Path as Path
 import Shared.Model as Shared
 import Shared.Msg as Shared
 import Svg.Attributes as SvgAttr
+import Task
 import Utils.Telemetry as Telemetry
+import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
 
@@ -35,7 +38,7 @@ layout : Props -> Shared.Model -> Route () -> Layout Layouts.Default.Props Model
 layout _ shared route =
     Layout.new
         { init = \() -> init route
-        , update = update (PagoDetalleModal.context shared route) shared.store
+        , update = update (PagoDetalleModal.context shared route) shared.store shared.currentUser
         , view = view shared.store route.path shared.participanteId shared.origin shared.currentUser
         , subscriptions = subscriptions
         }
@@ -50,6 +53,19 @@ layout _ shared route =
 type alias Model =
     { qrShare : Maybe { title : String, url : String }
     , pagoModal : PagoDetalleModal.Model
+    , agregarme : Maybe Agregarme
+    }
+
+
+{-| El modal de "Soy nuevo": alguien que entró al grupo y no es ninguno de los
+participantes se agrega a sí mismo. Con cuenta queda reclamado de una; sin
+cuenta es un participante más, elegido en este navegador.
+-}
+type alias Agregarme =
+    { grupoId : ULID
+    , nombre : String
+    , enviando : Bool
+    , error : Maybe String
     }
 
 
@@ -61,6 +77,7 @@ init route =
     in
     ( { qrShare = Nothing
       , pagoModal = pagoModal
+      , agregarme = Nothing
       }
     , Effect.map PagoModalMsg modalEffect
     )
@@ -77,11 +94,79 @@ type Msg
     | CloseQrShare
     | PagoModalMsg PagoDetalleModal.Msg
     | AbrirPopup PagoDetalleModal.Ruta
+    | AbrirAgregarme ULID
+    | CerrarAgregarme
+    | NombreAgregarmeCambiado String
+    | EnviarAgregarme
+    | GotAgregarme (Result String Participante)
+    | NoOp
 
 
-update : PagoDetalleModal.Context -> Store -> Msg -> Model -> ( Model, Effect Msg )
-update ctx store msg model =
+update : PagoDetalleModal.Context -> Store -> WebData User -> Msg -> Model -> ( Model, Effect Msg )
+update ctx store currentUser msg model =
     case msg of
+        NoOp ->
+            ( model, Effect.none )
+
+        AbrirAgregarme grupoId ->
+            ( { model
+                | agregarme =
+                    Just
+                        { grupoId = grupoId
+                        , nombre =
+                            case currentUser of
+                                Success u ->
+                                    u.nombre
+
+                                _ ->
+                                    ""
+                        , enviando = False
+                        , error = Nothing
+                        }
+              }
+            , Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "agregarme-nombre"
+            )
+
+        CerrarAgregarme ->
+            ( { model | agregarme = Nothing }, Effect.none )
+
+        NombreAgregarmeCambiado nombre ->
+            ( { model | agregarme = model.agregarme |> Maybe.map (\a -> { a | nombre = nombre, error = Nothing }) }
+            , Effect.none
+            )
+
+        EnviarAgregarme ->
+            case model.agregarme of
+                Just agregarme ->
+                    if agregarme.enviando then
+                        ( model, Effect.none )
+
+                    else
+                        enviarAgregarme store currentUser agregarme model
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        GotAgregarme result ->
+            case ( model.agregarme, result ) of
+                ( Just agregarme, Ok p ) ->
+                    ( { model | agregarme = Nothing }
+                    , Effect.batch
+                        [ Store.refreshGrupo agregarme.grupoId
+                        , Effect.sendSharedMsg <|
+                            Shared.SetCurrentParticipante { grupoId = agregarme.grupoId, participanteId = Just p.id }
+                        , Effect.sendToast { level = ToastSuccess, content = "Te agregamos al grupo como " ++ p.nombre }
+                        ]
+                    )
+
+                ( Just agregarme, Err error ) ->
+                    ( { model | agregarme = Just { agregarme | enviando = False, error = Just error } }
+                    , Effect.none
+                    )
+
+                ( Nothing, _ ) ->
+                    ( model, Effect.none )
+
         PagoModalMsg subMsg ->
             let
                 ( pagoModal, eff ) =
@@ -111,6 +196,48 @@ update ctx store msg model =
             ( { model | qrShare = Nothing }
             , Effect.none
             )
+
+
+enviarAgregarme : Store -> WebData User -> Agregarme -> Model -> ( Model, Effect Msg )
+enviarAgregarme store currentUser agregarme model =
+    let
+        nombre =
+            String.trim agregarme.nombre
+    in
+    if String.isEmpty nombre then
+        ( { model | agregarme = Just { agregarme | error = Just "Poné tu nombre" } }, Effect.none )
+
+    else if nombreTomado store agregarme.grupoId nombre then
+        ( { model | agregarme = Just { agregarme | error = Just (claimRejectionMessage NameAlreadyTaken) } }
+        , Effect.none
+        )
+
+    else
+        ( { model | agregarme = Just { agregarme | enviando = True, error = Nothing } }
+        , Effect.sendCmd <|
+            case currentUser of
+                -- Con cuenta queda reclamado en el mismo paso.
+                Success _ ->
+                    Api.postGrupoByIdParticipantesMe agregarme.grupoId
+                        { name = nombre }
+                        (\result ->
+                            GotAgregarme <|
+                                case result of
+                                    Ok (ClaimAccepted p) ->
+                                        Ok p
+
+                                    Ok (ClaimRejected reason) ->
+                                        Err (claimRejectionMessage reason)
+
+                                    Err _ ->
+                                        Err errorAlAgregarme
+                        )
+
+                _ ->
+                    Api.postGrupoByIdParticipantes agregarme.grupoId
+                        { name = nombre }
+                        (GotAgregarme << Result.mapError (\_ -> errorAlAgregarme))
+        )
 
 
 subscriptions : Model -> Sub Msg
@@ -168,6 +295,8 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
                 text ""
         , Html.map toContentMsg <|
             viewQrModal model.qrShare
+        , Html.map toContentMsg <|
+            viewAgregarmeModal currentUser model.agregarme
         , case remoteGrupo of
             Success grupo ->
                 Html.map (toContentMsg << PagoModalMsg) <|
@@ -187,6 +316,19 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
                                     [ p [ class "mb-3" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
                                     , div [ class "mx-auto", style "max-width" "20rem" ]
                                         [ viewGlobalUserSelector activeUser grupo ]
+
+                                    -- Todavía no eligió a nadie, así que con
+                                    -- cuenta tampoco tiene a nadie reclamado.
+                                    , p [ class "mt-3 mb-0 small text-muted" ]
+                                        [ text "¿No estás en la lista? "
+                                        , button
+                                            [ type_ "button"
+                                            , class "btn btn-link btn-sm p-0 align-baseline"
+                                            , Telemetry.click "grupo.agregarme_abrir"
+                                            , onClick (AbrirAgregarme grupo.id)
+                                            ]
+                                            [ text "Agregarme al grupo" ]
+                                        ]
                                     ]
                             ]
 
@@ -931,6 +1073,74 @@ viewQrModal qrShare =
         }
 
 
+{-| El modal de "Soy nuevo". Con cuenta el nombre arranca con el de la cuenta.
+-}
+viewAgregarmeModal : WebData User -> Maybe Agregarme -> Html Msg
+viewAgregarmeModal currentUser agregarme =
+    Bs.modal
+        { id = "modal-agregarme"
+        , isOpen = agregarme /= Nothing
+        , -- Mientras se envía no se cierra: la respuesta es la que lo elige.
+          onClose =
+            if agregarme |> Maybe.map .enviando |> Maybe.withDefault False then
+                NoOp
+
+            else
+                CerrarAgregarme
+        , centered = True
+        , title = "Agregarme al grupo"
+        , body =
+            case agregarme of
+                Just a ->
+                    [ Html.form [ Attr.id "agregarme-form", onSubmit EnviarAgregarme ]
+                        [ label [ class "form-label", Attr.for "agregarme-nombre" ] [ text "¿Cómo te llamamos?" ]
+                        , input
+                            [ Attr.id "agregarme-nombre"
+                            , type_ "text"
+                            , classList [ ( "form-control", True ), ( "is-invalid", a.error /= Nothing ) ]
+                            , value a.nombre
+                            , onInput NombreAgregarmeCambiado
+                            , Attr.disabled a.enviando
+                            ]
+                            []
+                        , case a.error of
+                            Just error ->
+                                div [ class "invalid-feedback" ] [ text error ]
+
+                            Nothing ->
+                                text ""
+                        , p [ class "form-text mb-0" ]
+                            [ text <|
+                                case currentUser of
+                                    Success _ ->
+                                        "Vas a aparecer como un participante nuevo, ya asociado a tu cuenta."
+
+                                    _ ->
+                                        "Vas a aparecer como un participante nuevo. Si entrás con tu cuenta, después lo podés reclamar."
+                            ]
+                        ]
+                    ]
+
+                Nothing ->
+                    []
+        , footer =
+            [ Bs.btn Bs.Transparent
+                [ Telemetry.click "grupo.agregarme_cancelar"
+                , onClick CerrarAgregarme
+                , Attr.disabled (agregarme |> Maybe.map .enviando |> Maybe.withDefault False)
+                ]
+                [ text "Cancelar" ]
+            , Bs.btn Bs.Primary
+                [ type_ "submit"
+                , Attr.attribute "form" "agregarme-form"
+                , Telemetry.click "grupo.agregarme_enviar"
+                , Attr.disabled (agregarme |> Maybe.map .enviando |> Maybe.withDefault False)
+                ]
+                [ text "Agregarme" ]
+            ]
+        }
+
+
 viewGlobalUserSelector : Maybe ULID -> GrupoLike r -> Html Msg
 viewGlobalUserSelector activeUser grupo =
     select
@@ -964,3 +1174,21 @@ viewGlobalUserSelector activeUser grupo =
                         )
                )
         )
+
+
+{-| Los nombres son únicos en el grupo. Sin cuenta el backend no lo dice lindo
+(rompe el índice), así que lo miramos acá para los dos casos.
+-}
+nombreTomado : Store -> ULID -> String -> Bool
+nombreTomado store grupoId nombre =
+    case Store.getGrupo grupoId store of
+        Success grupo ->
+            List.any (\p -> p.nombre == nombre) grupo.participantes
+
+        _ ->
+            False
+
+
+errorAlAgregarme : String
+errorAlAgregarme =
+    "No pudimos agregarte, probá de nuevo"

@@ -110,6 +110,10 @@ data Api routes
       routes :- AuthProtect User :> "me" :> "grupos" :> Get '[JSON] [GrupoParaUsuario]
   , _routeParticipanteClaim ::
       routes :- AuthProtect User :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Put '[JSON] ClaimParticipanteResult
+  , -- "I'm new here": add a participante for the signed-in user, already
+    -- claimed. Refused like a claim when the user already owns one.
+    _routeParticipanteAddMe ::
+      routes :- AuthProtect User :> "grupo" :> Capture "id" ULID :> "participantes" :> "me" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] ClaimParticipanteResult
   , _routeParticipanteUnclaim ::
       routes :- AuthProtect User :> "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> "claim" :> Delete '[JSON] Participante
   , _routeHealth ::

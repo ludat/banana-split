@@ -29,6 +29,7 @@ module BananaSplit.Persistence (
   runMigration,
   recomputePagos,
   addParticipante,
+  addParticipanteForUser,
   claimParticipante,
   unclaimParticipante,
   createGrupo,
@@ -839,6 +840,36 @@ addParticipante grupoId name = do
       , M.nombre = name
       , M.user = Nothing
       }
+
+-- | Add a new participante already claimed by a user: the "I'm new here" of
+-- someone who joins a grupo and isn't any of its participantes yet. Same
+-- one-per-grupo rule as 'claimParticipante', checked in the same transaction, so
+-- nothing is inserted when it is refused. A name that is already taken is
+-- refused too instead of tripping the unique index, since the participante with
+-- that name may well be the user, who should claim it instead.
+addParticipanteForUser :: ULID -> Text -> ULID -> Pg (Either M.ClaimRejection M.Participante)
+addParticipanteForUser grupoId name userId = runExceptT $ do
+  existingClaim <- runSelectReturningOne $ select $ do
+    p <- all_ db.participantes
+    guard_ (p.grupo ==. GrupoId (val_ grupoId))
+    guard_ (p.user ==. UserId (val_ (Just userId)))
+    pure p.id
+  when (isJust existingClaim) $ throwError M.AlreadyOwnAnotherParticipante
+
+  sameName <- runSelectReturningOne $ select $ do
+    p <- all_ db.participantes
+    guard_ (p.grupo ==. GrupoId (val_ grupoId))
+    guard_ (p.nombre ==. val_ name)
+    pure p.id
+  when (isJust sameName) $ throwError M.NameAlreadyTaken
+
+  newId <- liftIO ULID.getULID
+  runInsert
+    $ insert db.participantes
+    $ insertValues
+      [ Participante newId (GrupoId grupoId) name (UserId (Just userId))
+      ]
+  lift $ fetchParticipanteById newId
 
 -- | Claim a participante as belonging to a user. A user owns at most one
 -- participante per grupo, enforced as a hard rule: the claim is refused if the

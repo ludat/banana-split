@@ -11,7 +11,7 @@ module Shared exposing
 
 import Date
 import Effect exposing (Effect, incoming)
-import Generated.Api as Api exposing (ClaimParticipanteResult(..), ClaimRejection(..), ULID)
+import Generated.Api as Api exposing (ClaimParticipanteResult(..), ULID)
 import Json.Decode
 import Json.Encode
 import Models.Grupo
@@ -233,7 +233,7 @@ update _ msg model =
 
                 Ok (ClaimRejected reason) ->
                     ( model
-                    , Effect.sendToast { level = ToastDanger, content = claimRejectionMessage reason }
+                    , Effect.sendToast { level = ToastDanger, content = Models.Grupo.claimRejectionMessage reason }
                     )
 
                 Err _ ->
@@ -295,21 +295,6 @@ currentParticipante model grupoId =
 
         _ ->
             model.participanteId
-
-
-{-| A user-facing message for each way a claim can be refused.
--}
-claimRejectionMessage : ClaimRejection -> String
-claimRejectionMessage reason =
-    case reason of
-        ClaimedByOtherUser ->
-            "Ese participante ya fue reclamado por otra persona"
-
-        AlreadyOwnAnotherParticipante ->
-            "Ya reclamaste otro participante en este grupo. Dejá de reclamarlo primero."
-
-        ParticipanteNotFound ->
-            "No encontramos ese participante"
 
 
 genericClaimError : String

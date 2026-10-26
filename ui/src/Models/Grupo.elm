@@ -1,6 +1,6 @@
-module Models.Grupo exposing (GrupoLike, currentParticipante, estaCongelado, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
+module Models.Grupo exposing (GrupoLike, claimRejectionMessage, currentParticipante, estaCongelado, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
 
-import Generated.Api exposing (Participante, ParticipanteId, ULID, User)
+import Generated.Api exposing (ClaimRejection(..), Participante, ParticipanteId, ULID, User)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route.Path as Path
 import Time
@@ -126,3 +126,21 @@ currentParticipante manualPick currentUser grupo =
 
                 _ ->
                     Nothing
+
+
+{-| A user-facing message for each way a claim can be refused.
+-}
+claimRejectionMessage : ClaimRejection -> String
+claimRejectionMessage reason =
+    case reason of
+        ClaimedByOtherUser ->
+            "Ese participante ya fue reclamado por otra persona"
+
+        AlreadyOwnAnotherParticipante ->
+            "Ya reclamaste otro participante en este grupo. Dejá de reclamarlo primero."
+
+        ParticipanteNotFound ->
+            "No encontramos ese participante"
+
+        NameAlreadyTaken ->
+            "Ya hay un participante con ese nombre. Si sos vos, elegilo de la lista."
