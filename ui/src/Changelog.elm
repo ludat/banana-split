@@ -19,8 +19,8 @@ changelog =
       , description = "Ahora podés instalar un grupo en tu celu como si fuera un app nativa. Adios a perder el enlace de un grupo."
       }
     , { date = Date.fromCalendarDate 2026 Mar 7
-      , title = "Congelar grupos"
-      , description = "Ahora podés congelar un grupo para fijar las deudas. Una vez congelado, no se pueden agregar, editar ni eliminar gastos."
+      , title = "Saldar deudas"
+      , description = "Ahora un grupo puede empezar a saldar deudas, lo que fija lo que debe cada uno. Mientras se saldan, no se pueden agregar, editar ni eliminar gastos."
       }
     , { date = Date.fromCalendarDate 2026 Apr 2
       , title = "Repartir sobras de una repartija"
@@ -51,8 +51,8 @@ changelog =
       , description = "Ahora podés reenviar a un grupo los mails de tus compras (tickets, pedidos, confirmaciones de pago) y los cargamos como gasto automáticamente, sin abrir la app. Copiá la dirección del grupo desde sus ajustes."
       }
     , { date = Date.fromCalendarDate 2026 Sep 2
-      , title = "Grupos congelados y transferencias"
-      , description = "Mejoramos la vista de un grupo congelado y las transferencias necesarias para saldar las deudas."
+      , title = "Saldando deudas y transferencias"
+      , description = "Mejoramos la vista de un grupo que está saldando deudas y las transferencias necesarias para quedar saldados."
       }
     ]
 

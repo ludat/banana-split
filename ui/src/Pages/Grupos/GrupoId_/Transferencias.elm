@@ -552,7 +552,7 @@ viewAnteriores zone ahora grupo anteriores =
                 [ span [ class "text-uppercase small fw-bold" ]
                     [ text "Transferencias anteriores" ]
                 , p [ class "text-body-secondary small mb-0 mt-1" ]
-                    [ text "Estas son transferencias calculadas en congelamientos pasados o registradas por los participantes." ]
+                    [ text "Estas son transferencias calculadas en saldos de deudas anteriores o registradas por los participantes." ]
                 ]
             , div [ class "list-group list-group-flush" ]
                 (anteriores |> List.map (viewTransferenciaAnterior zone ahora grupo))
@@ -854,9 +854,9 @@ viewActivacionModal model =
             , p [ class "fw-bold mb-2" ] [ text "Cambios para todos los participantes:" ]
             , ul [ class "mb-3" ] viewCambiosAlCongelar
             , p [ class "text-muted small mb-0" ]
-                [ text "Este cambio de estado se podrá revertir desde "
-                , em [] [ text "Ajustes" ]
-                , text " del grupo, pero tiene implicancias."
+                [ text "Este cambio de estado se podrá revertir desde esta misma sección con "
+                , em [] [ text "Dejar de saldar deudas" ]
+                , text ", pero tiene implicancias."
                 ]
             ]
         , footer =

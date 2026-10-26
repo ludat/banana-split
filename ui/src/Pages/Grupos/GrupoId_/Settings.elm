@@ -7,7 +7,7 @@ import Form.Error as FormError
 import Form.Field
 import Form.Init as Form
 import Form.Validate as V exposing (Validation)
-import Generated.Api as Api exposing (Grupo, Moneda, Monto, ResumenGrupo, TasaDeCambio, ULID, UpdateGrupoParams, User)
+import Generated.Api as Api exposing (Grupo, Moneda, Monto, TasaDeCambio, ULID, UpdateGrupoParams, User)
 import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, a, button, div, i, input, label, option, select, span, text)
 import Html.Attributes as Attr exposing (class, classList, disabled, for, id, selected, type_, value)
@@ -50,9 +50,6 @@ type alias Model =
     , ajustesForm : Maybe (Form CustomFormError UpdateGrupoParams)
     , moneda : EstadoDeLaMoneda
     , tasasForm : Maybe (Form CustomFormError (List (Maybe TasaDeCambio)))
-    , -- Congelar calcula las transferencias mínimas en el backend y puede
-      -- tardar unos segundos, así que la pantalla avisa mientras tanto.
-      congelamiento : WebData Grupo
     }
 
 
@@ -75,11 +72,7 @@ esperandoConfirmacion estado =
 
 
 type Msg
-    = FreezeGrupo
-    | FreezeGrupoResponse (Result Http.Error Grupo)
-    | UnfreezeGrupo
-    | UnfreezeGrupoResponse (Result Http.Error Grupo)
-    | AjustesForm Form.Msg
+    = AjustesForm Form.Msg
     | UpdateGrupoResponse (Result Http.Error Grupo)
     | EditarAjustes
     | CancelarEdicionAjustes
@@ -99,11 +92,9 @@ init store grupoId =
       , ajustesForm = Nothing
       , moneda = MonedaDelGrupo
       , tasasForm = Nothing
-      , congelamiento = NotAsked
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
-        , Store.ensureResumen grupoId store
         , Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
         ]
@@ -129,54 +120,6 @@ seedAjustesForm grupo =
 update : Store -> Msg -> Model -> ( Model, Effect Msg )
 update store msg model =
     case msg of
-        FreezeGrupo ->
-            ( { model | congelamiento = Loading }
-            , Effect.sendCmd <|
-                Api.postGrupoByIdFreeze
-                    model.grupoId
-                    FreezeGrupoResponse
-            )
-
-        FreezeGrupoResponse (Ok grupo) ->
-            ( { model | congelamiento = Success grupo }
-            , Effect.batch
-                [ Store.refreshResumen model.grupoId
-                , Store.refreshGrupo model.grupoId
-                , Toasts.pushToast Toasts.ToastSuccess "Grupo congelado"
-                ]
-            )
-
-        FreezeGrupoResponse (Err error) ->
-            ( { model | congelamiento = Failure error }
-            , Effect.batch
-                [ Store.refreshResumen model.grupoId
-                , Toasts.pushToast Toasts.ToastDanger "No se pudo congelar el grupo. Revisá que no queden gastos inválidos y que estén cargadas las tasas de cambio de todas las monedas con deuda."
-                ]
-            )
-
-        UnfreezeGrupo ->
-            ( model
-            , Effect.sendCmd <|
-                Api.deleteGrupoByIdFreeze
-                    model.grupoId
-                    UnfreezeGrupoResponse
-            )
-
-        UnfreezeGrupoResponse (Ok _) ->
-            -- El congelamiento anterior ya no dice nada del grupo de ahora.
-            ( { model | congelamiento = NotAsked }
-            , Effect.batch
-                [ Store.refreshResumen model.grupoId
-                , Store.refreshGrupo model.grupoId
-                , Toasts.pushToast Toasts.ToastSuccess "Grupo descongelado"
-                ]
-            )
-
-        UnfreezeGrupoResponse (Err _) ->
-            ( model
-            , Toasts.pushToast Toasts.ToastDanger "No se pudo descongelar el grupo"
-            )
-
         EditarAjustes ->
             ( { model
                 | ajustesForm =
@@ -385,7 +328,6 @@ view origin currentUser store model =
                             [ viewAjustesSection grupo model.ajustesForm
                             , viewTasasSection grupo model
                             , viewEmailSection origin currentUser grupo
-                            , viewFreezeSection grupo (Store.getResumen model.grupoId store) model.congelamiento
                             ]
                         ]
                     ]
@@ -714,7 +656,7 @@ viewMonedaPorDefecto contexto model =
         , div [ class "text-muted small mt-1" ]
             [ text <|
                 if contexto.congelado then
-                    "El grupo está congelado: las deudas ya están fijas en esta moneda."
+                    "Mientras el grupo está saldando deudas, las deudas quedan fijas en esta moneda."
 
                 else
                     case ( model.moneda, editandoTasas ) of
@@ -746,7 +688,7 @@ viewTasas contexto model =
                             "Las tasas que dejes vacías se borran al guardar."
 
                         ( Nothing, True ) ->
-                            "Con estas se fijaron las deudas al congelar. Descongelá el grupo para cambiarlas."
+                            "Con estas se calcularon las deudas al empezar a saldarlas. Para cambiarlas, dejá de saldar deudas desde Transferencias."
 
                         ( Nothing, False ) ->
                             "Con estas convertimos las demás monedas del grupo."
@@ -996,139 +938,6 @@ viewEmailSection origin currentUser grupo =
                     ]
             ]
         ]
-
-
-viewFreezeSection : Grupo -> WebData ResumenGrupo -> WebData Grupo -> Html Msg
-viewFreezeSection grupo resumen congelamiento =
-    let
-        -- Congelar consolida todo a la moneda del grupo, así que sin la tasa de
-        -- alguna de las monedas con deuda no hay nada que congelar. Es la misma
-        -- condición que chequea el backend.
-        -- Con el grupo ya congelado el resumen no trae netos ni consolidado, y
-        -- tampoco hacen falta: lo único que se puede hacer es descongelar.
-        monedasSinTasa : List Moneda
-        monedasSinTasa =
-            case RemoteData.toMaybe resumen of
-                Just (Api.GrupoAbierto r) ->
-                    r.consolidado.monedasSinTasa
-
-                _ ->
-                    []
-
-        -- Un gasto inválido no entra en los netos, así que congelar así dejaría
-        -- las deudas fijas sin esa plata. También lo chequea el backend.
-        gastosInvalidos : Int
-        gastosInvalidos =
-            case RemoteData.toMaybe resumen of
-                Just (Api.GrupoAbierto r) ->
-                    r.cantidadPagosInvalidos
-
-                _ ->
-                    0
-    in
-    div [ id "settings-congelar", class "card" ]
-        [ div [ class "card-header" ] [ text "Congelar grupo" ]
-        , div [ class "card-body" ]
-            [ div [ class "mb-3" ]
-                [ text <|
-                    if estaCongelado grupo then
-                        "Este grupo está congelado. Las deudas están fijas en "
-                            ++ Moneda.nombre grupo.monedaPorDefecto
-                            ++ " y no se pueden agregar, editar ni eliminar gastos ni cambiar las tasas de cambio."
-
-                    else
-                        "Congelar el grupo fija las deudas actuales, convertidas a "
-                            ++ Moneda.nombre grupo.monedaPorDefecto
-                            ++ " con las tasas de cambio cargadas. No se podrán agregar, editar ni eliminar gastos mientras esté congelado."
-                ]
-            , if estaCongelado grupo || List.isEmpty monedasSinTasa then
-                text ""
-
-              else
-                Bs.alert Bs.AlertWarning
-                    [ class "mb-3" ]
-                    [ text <|
-                        (if List.length monedasSinTasa == 1 then
-                            "Para congelar falta la tasa de cambio de "
-
-                         else
-                            "Para congelar faltan las tasas de cambio de "
-                        )
-                            ++ (monedasSinTasa |> List.map Moneda.nombre |> String.join ", ")
-                            ++ ". Cargalas más arriba."
-                    ]
-            , if estaCongelado grupo || gastosInvalidos == 0 then
-                text ""
-
-              else
-                Bs.alert Bs.AlertWarning
-                    [ class "mb-3" ]
-                    [ text <|
-                        if gastosInvalidos == 1 then
-                            "Para congelar hay que arreglar 1 gasto inválido: no se cuenta para las deudas."
-
-                        else
-                            "Para congelar hay que arreglar "
-                                ++ String.fromInt gastosInvalidos
-                                ++ " gastos inválidos: no se cuentan para las deudas."
-                    ]
-            , viewFreezeButton grupo
-                (List.isEmpty monedasSinTasa && gastosInvalidos == 0)
-                congelamiento
-            ]
-        ]
-
-
-viewFreezeButton : Grupo -> Bool -> WebData Grupo -> Html Msg
-viewFreezeButton grupo sePuedeCongelar congelamiento =
-    if estaCongelado grupo then
-        button
-            [ id "descongelar-grupo"
-            , type_ "button"
-            , class "btn btn-outline-secondary"
-            , Telemetry.click "settings.unfreeze"
-            , onClick UnfreezeGrupo
-            ]
-            [ text "Descongelar" ]
-
-    else
-        let
-            congelando : Bool
-            congelando =
-                RemoteData.isLoading congelamiento
-        in
-        div [ class "d-flex gap-2 align-items-center" ]
-            [ Bs.btn Bs.Primary
-                [ id "congelar-grupo"
-                , Telemetry.click "settings.freeze"
-                , onClick FreezeGrupo
-                , disabled (not sePuedeCongelar || congelando)
-                ]
-                [ text <|
-                    if congelando then
-                        "Congelando..."
-
-                    else
-                        "Congelar"
-                ]
-
-            -- Calcular las transferencias mínimas puede tardar unos segundos.
-            , if congelando then
-                div [ class "d-flex gap-2 align-items-center" ]
-                    [ Bs.spinner
-                        [ Attr.style "width" "1.25rem"
-                        , Attr.style "height" "1.25rem"
-                        , Attr.style "border-width" "0.2em"
-                        , Attr.style "flex" "0 0 auto"
-                        , Attr.attribute "aria-hidden" "true"
-                        ]
-                    , span [ class "text-body-secondary small" ]
-                        [ text "Calculando las transferencias para saldar el grupo..." ]
-                    ]
-
-              else
-                text ""
-            ]
 
 
 viewTextFormItem : String -> Bool -> Form.FieldState CustomFormError String -> Html Form.Msg
