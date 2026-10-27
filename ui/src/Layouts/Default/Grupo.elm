@@ -1,4 +1,4 @@
-module Layouts.Default.Grupo exposing (Agregarme, Model, Msg, Props, layout)
+module Layouts.Default.Grupo exposing (Agregarme, ErrorAlAgregarme, Model, Msg, Props, layout)
 
 import Browser.Dom
 import Components.Bootstrap as Bs
@@ -6,14 +6,18 @@ import Components.PagoDetalleModal as PagoDetalleModal
 import Css
 import Dict
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (ClaimParticipanteResult(..), ClaimRejection(..), Grupo, Participante, ULID, User)
-import Html exposing (Html, a, button, div, h2, i, input, label, li, node, option, p, select, span, text, ul)
+import Form exposing (Form)
+import Form.Init as Form
+import Form.Validate as V exposing (Validation)
+import Generated.Api as Api exposing (ClaimParticipanteResult(..), Grupo, Participante, ParticipanteAddParams, ParticipanteClaimError(..), ULID, User)
+import Html exposing (Html, a, button, div, h2, i, label, li, node, option, p, select, span, text, ul)
 import Html.Attributes as Attr exposing (class, classList, selected, style, type_, value)
-import Html.Events exposing (on, onClick, onInput, onSubmit, preventDefaultOn)
+import Html.Events exposing (on, onClick, onSubmit, preventDefaultOn)
+import Http
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
-import Models.Grupo exposing (GrupoLike, claimRejectionMessage, currentParticipante, estaCongelado, grupoIdFromPath, ownedParticipante)
+import Models.Grupo exposing (GrupoLike, claimErrorMessage, currentParticipante, estaCongelado, grupoIdFromPath, ownedParticipante, participanteErrorFromHttp)
 import Models.Repartija as Repartija
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -25,6 +29,7 @@ import Shared.Model as Shared
 import Shared.Msg as Shared
 import Svg.Attributes as SvgAttr
 import Task
+import Utils.Form exposing (CustomFormError, anyString, isDataModifyingEvent, textInput)
 import Utils.Telemetry as Telemetry
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
@@ -59,14 +64,29 @@ type alias Model =
 
 {-| El modal de "Soy nuevo": alguien que entró al grupo y no es ninguno de los
 participantes se agrega a sí mismo. Con cuenta queda reclamado de una; sin
-cuenta es un participante más, elegido en este navegador.
+cuenta es un participante más, elegido en este navegador. `envio` es el último
+intento de agregarse.
 -}
 type alias Agregarme =
     { grupoId : ULID
-    , nombre : String
-    , enviando : Bool
-    , error : Maybe String
+    , form : Form CustomFormError ParticipanteAddParams
+    , envio : RemoteData ErrorAlAgregarme Participante
     }
+
+
+{-| Por qué no se pudo agregar. El rechazo es del backend, que es el único que
+valida el nombre: con cuenta llega tipado, y sin cuenta como un status que se
+traduce al mismo rechazo.
+-}
+type ErrorAlAgregarme
+    = Rechazado ParticipanteClaimError
+    | FalloElRequest
+
+
+validateAgregarme : Validation CustomFormError ParticipanteAddParams
+validateAgregarme =
+    V.succeed ParticipanteAddParams
+        |> V.andMap (V.field "nombre" anyString)
 
 
 init : Route () -> ( Model, Effect Msg )
@@ -96,9 +116,8 @@ type Msg
     | AbrirPopup PagoDetalleModal.Ruta
     | AbrirAgregarme ULID
     | CerrarAgregarme
-    | NombreAgregarmeCambiado String
-    | EnviarAgregarme
-    | GotAgregarme (Result String Participante)
+    | AgregarmeForm Form.Msg
+    | GotAgregarme (Result ErrorAlAgregarme Participante)
     | NoOp
 
 
@@ -113,15 +132,18 @@ update ctx store currentUser msg model =
                 | agregarme =
                     Just
                         { grupoId = grupoId
-                        , nombre =
-                            case currentUser of
-                                Success u ->
-                                    u.nombre
+                        , form =
+                            Form.initial
+                                [ Form.setString "nombre" <|
+                                    case currentUser of
+                                        Success u ->
+                                            u.nombre
 
-                                _ ->
-                                    ""
-                        , enviando = False
-                        , error = Nothing
+                                        _ ->
+                                            ""
+                                ]
+                                validateAgregarme
+                        , envio = NotAsked
                         }
               }
             , Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "agregarme-nombre"
@@ -130,22 +152,34 @@ update ctx store currentUser msg model =
         CerrarAgregarme ->
             ( { model | agregarme = Nothing }, Effect.none )
 
-        NombreAgregarmeCambiado nombre ->
-            ( { model | agregarme = model.agregarme |> Maybe.map (\a -> { a | nombre = nombre, error = Nothing }) }
-            , Effect.none
-            )
-
-        EnviarAgregarme ->
+        AgregarmeForm Form.Submit ->
             case model.agregarme of
                 Just agregarme ->
-                    if agregarme.enviando then
-                        ( model, Effect.none )
-
-                    else
-                        enviarAgregarme store currentUser agregarme model
+                    enviarAgregarme currentUser agregarme model
 
                 Nothing ->
                     ( model, Effect.none )
+
+        AgregarmeForm formMsg ->
+            ( { model
+                | agregarme =
+                    model.agregarme
+                        |> Maybe.map
+                            (\a ->
+                                { a
+                                    | form = Form.update validateAgregarme formMsg a.form
+                                    , envio =
+                                        -- El rechazo era de lo que estaba escrito: si cambia, ya no aplica.
+                                        if isDataModifyingEvent formMsg then
+                                            NotAsked
+
+                                        else
+                                            a.envio
+                                }
+                            )
+              }
+            , Effect.none
+            )
 
         GotAgregarme result ->
             case ( model.agregarme, result ) of
@@ -160,7 +194,7 @@ update ctx store currentUser msg model =
                     )
 
                 ( Just agregarme, Err error ) ->
-                    ( { model | agregarme = Just { agregarme | enviando = False, error = Just error } }
+                    ( { model | agregarme = Just { agregarme | envio = Failure error } }
                     , Effect.none
                     )
 
@@ -198,46 +232,42 @@ update ctx store currentUser msg model =
             )
 
 
-enviarAgregarme : Store -> WebData User -> Agregarme -> Model -> ( Model, Effect Msg )
-enviarAgregarme store currentUser agregarme model =
+enviarAgregarme : WebData User -> Agregarme -> Model -> ( Model, Effect Msg )
+enviarAgregarme currentUser agregarme model =
     let
-        nombre =
-            String.trim agregarme.nombre
+        enviado =
+            { agregarme | form = Form.update validateAgregarme Form.Submit agregarme.form }
     in
-    if String.isEmpty nombre then
-        ( { model | agregarme = Just { agregarme | error = Just "Poné tu nombre" } }, Effect.none )
+    case ( RemoteData.isLoading agregarme.envio, Form.getOutput agregarme.form ) of
+        ( False, Just params ) ->
+            ( { model | agregarme = Just { enviado | envio = Loading } }
+            , Effect.sendCmd <|
+                case currentUser of
+                    -- Con cuenta queda reclamado en el mismo paso.
+                    Success _ ->
+                        Api.postGrupoByIdParticipantesMe agregarme.grupoId
+                            params
+                            (\result ->
+                                GotAgregarme <|
+                                    case result of
+                                        Ok (ClaimAccepted p) ->
+                                            Ok p
 
-    else if nombreTomado store agregarme.grupoId nombre then
-        ( { model | agregarme = Just { agregarme | error = Just (claimRejectionMessage NameAlreadyTaken) } }
-        , Effect.none
-        )
+                                        Ok (ClaimRejected reason) ->
+                                            Err (Rechazado reason)
 
-    else
-        ( { model | agregarme = Just { agregarme | enviando = True, error = Nothing } }
-        , Effect.sendCmd <|
-            case currentUser of
-                -- Con cuenta queda reclamado en el mismo paso.
-                Success _ ->
-                    Api.postGrupoByIdParticipantesMe agregarme.grupoId
-                        { name = nombre }
-                        (\result ->
-                            GotAgregarme <|
-                                case result of
-                                    Ok (ClaimAccepted p) ->
-                                        Ok p
+                                        Err _ ->
+                                            Err FalloElRequest
+                            )
 
-                                    Ok (ClaimRejected reason) ->
-                                        Err (claimRejectionMessage reason)
+                    _ ->
+                        Api.postGrupoByIdParticipantes agregarme.grupoId
+                            params
+                            (GotAgregarme << Result.mapError errorAlAgregarmeSinCuenta)
+            )
 
-                                    Err _ ->
-                                        Err errorAlAgregarme
-                        )
-
-                _ ->
-                    Api.postGrupoByIdParticipantes agregarme.grupoId
-                        { name = nombre }
-                        (GotAgregarme << Result.mapError (\_ -> errorAlAgregarme))
-        )
+        _ ->
+            ( { model | agregarme = Just enviado }, Effect.none )
 
 
 subscriptions : Model -> Sub Msg
@@ -1077,12 +1107,16 @@ viewQrModal qrShare =
 -}
 viewAgregarmeModal : WebData User -> Maybe Agregarme -> Html Msg
 viewAgregarmeModal currentUser agregarme =
+    let
+        enviando =
+            agregarme |> Maybe.map (.envio >> RemoteData.isLoading) |> Maybe.withDefault False
+    in
     Bs.modal
         { id = "modal-agregarme"
         , isOpen = agregarme /= Nothing
         , -- Mientras se envía no se cierra: la respuesta es la que lo elige.
           onClose =
-            if agregarme |> Maybe.map .enviando |> Maybe.withDefault False then
+            if enviando then
                 NoOp
 
             else
@@ -1092,18 +1126,16 @@ viewAgregarmeModal currentUser agregarme =
         , body =
             case agregarme of
                 Just a ->
-                    [ Html.form [ Attr.id "agregarme-form", onSubmit EnviarAgregarme ]
+                    [ Html.form [ Attr.id "agregarme-form", onSubmit (AgregarmeForm Form.Submit) ]
                         [ label [ class "form-label", Attr.for "agregarme-nombre" ] [ text "¿Cómo te llamamos?" ]
-                        , input
-                            [ Attr.id "agregarme-nombre"
-                            , type_ "text"
-                            , classList [ ( "form-control", True ), ( "is-invalid", a.error /= Nothing ) ]
-                            , value a.nombre
-                            , onInput NombreAgregarmeCambiado
-                            , Attr.disabled a.enviando
-                            ]
-                            []
-                        , case a.error of
+                        , Html.map AgregarmeForm <|
+                            textInput
+                                [ Attr.id "agregarme-nombre"
+                                , classList [ ( "is-invalid", mensajeDeErrorAlAgregarme a /= Nothing ) ]
+                                , Attr.disabled enviando
+                                ]
+                                (Form.getFieldAsString "nombre" a.form)
+                        , case mensajeDeErrorAlAgregarme a of
                             Just error ->
                                 div [ class "invalid-feedback" ] [ text error ]
 
@@ -1127,14 +1159,14 @@ viewAgregarmeModal currentUser agregarme =
             [ Bs.btn Bs.Transparent
                 [ Telemetry.click "grupo.agregarme_cancelar"
                 , onClick CerrarAgregarme
-                , Attr.disabled (agregarme |> Maybe.map .enviando |> Maybe.withDefault False)
+                , Attr.disabled enviando
                 ]
                 [ text "Cancelar" ]
             , Bs.btn Bs.Primary
                 [ type_ "submit"
                 , Attr.attribute "form" "agregarme-form"
                 , Telemetry.click "grupo.agregarme_enviar"
-                , Attr.disabled (agregarme |> Maybe.map .enviando |> Maybe.withDefault False)
+                , Attr.disabled enviando
                 ]
                 [ text "Agregarme" ]
             ]
@@ -1176,19 +1208,26 @@ viewGlobalUserSelector activeUser grupo =
         )
 
 
-{-| Los nombres son únicos en el grupo. Sin cuenta el backend no lo dice lindo
-(rompe el índice), así que lo miramos acá para los dos casos.
+{-| Sin cuenta el rechazo llega como status y no como 'ClaimRejected', pero es
+el mismo rechazo.
 -}
-nombreTomado : Store -> ULID -> String -> Bool
-nombreTomado store grupoId nombre =
-    case Store.getGrupo grupoId store of
-        Success grupo ->
-            List.any (\p -> p.nombre == nombre) grupo.participantes
+errorAlAgregarmeSinCuenta : Http.Error -> ErrorAlAgregarme
+errorAlAgregarmeSinCuenta error =
+    participanteErrorFromHttp error
+        |> Maybe.map (Rechazado << ParticipanteError)
+        |> Maybe.withDefault FalloElRequest
+
+
+{-| Por qué no se pudo agregar, si el último intento falló.
+-}
+mensajeDeErrorAlAgregarme : Agregarme -> Maybe String
+mensajeDeErrorAlAgregarme agregarme =
+    case agregarme.envio of
+        Failure (Rechazado reason) ->
+            Just (claimErrorMessage reason)
+
+        Failure FalloElRequest ->
+            Just "No pudimos agregarte, probá de nuevo"
 
         _ ->
-            False
-
-
-errorAlAgregarme : String
-errorAlAgregarme =
-    "No pudimos agregarte, probá de nuevo"
+            Nothing

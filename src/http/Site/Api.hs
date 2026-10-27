@@ -56,7 +56,7 @@ data Api routes
   , _routePagoResumenPost ::
       routes :- "pagos" :> "resumen" :> ReqBody '[JSON] Pago :> Post '[JSON] ResumenPago
   , _routeGrupoParticipanteDelete ::
-      routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> Delete '[JSON] ULID
+      routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> Delete '[JSON] DeleteParticipanteResult
   , _routeGrupoPagoDelete ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> Delete '[JSON] ULID
   , _routePagoUpdate ::
@@ -261,7 +261,14 @@ data ReceiptImageResponse
 -- the same success|error pattern).
 data ClaimParticipanteResult
   = ClaimAccepted Participante
-  | ClaimRejected ClaimRejection
+  | ClaimRejected ParticipanteClaimError
+  deriving (Show, Eq, Generic)
+
+-- | Same pattern as 'ClaimParticipanteResult': a rejected delete says what still
+-- references the participante, so it has to reach the frontend as a 200.
+data DeleteParticipanteResult
+  = DeleteAccepted ULID
+  | DeleteRejected ParticipanteError
   deriving (Show, Eq, Generic)
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
@@ -285,3 +292,4 @@ Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageResponse
 Elm.deriveBoth Elm.defaultOptions ''ClaimParticipanteResult
+Elm.deriveBoth Elm.defaultOptions ''DeleteParticipanteResult

@@ -8,6 +8,9 @@ module BananaSplit.Persistence.Pg (
   Pg,
   MonadPg (..),
   liftPg,
+  tryJustPg,
+  uniqueViolation,
+  foreignKeyViolation,
 
   -- * Correr una acción
   conConexionDelPool,
@@ -27,6 +30,7 @@ module BananaSplit.Persistence.Pg (
   taparValores,
 ) where
 
+import Control.Exception (tryJust)
 import Data.HashMap.Strict qualified as HashMap
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Pool qualified as Pool
@@ -35,7 +39,8 @@ import Database.Beam.Backend.SQL (BeamSqlBackendSyntax, FromBackendRow, MonadBea
 import Database.Beam.Postgres (Connection, Postgres, liftIOWithHandle, runBeamPostgres, runBeamPostgresDebug)
 import Database.Beam.Postgres qualified as Beam
 import Database.Beam.Postgres.Syntax (fromPgCommand, pgRenderSyntaxScript)
-import Database.PostgreSQL.Simple.Errors (isSerializationError)
+import Database.PostgreSQL.Simple (SqlError)
+import Database.PostgreSQL.Simple.Errors (ConstraintViolation (..), constraintViolation, isSerializationError)
 import Database.PostgreSQL.Simple.Transaction qualified as Transaction
 import Katip qualified
 import OpenTelemetry.Trace.Core (Span)
@@ -73,6 +78,40 @@ newtype Pg a = Pg (ReaderT EntornoPg Beam.Pg a)
 
 liftPg :: Beam.Pg a -> Pg a
 liftPg = Pg . lift
+
+-- | 'tryJust' adentro de la transacción. Cuando una sentencia falla, Postgres
+-- aborta la transacción entera, así que la acción corre en un savepoint: si
+-- tira, la base vuelve a él y la transacción sigue usable. Lo que @reconocer@
+-- no reconoce se relanza.
+--
+-- Como en 'Telemetry.inSpan'', el 'Pg' de Beam no tiene cómo atrapar nada, así
+-- que se toma la conexión y la acción se interpreta en 'IO'. Corre con el mismo
+-- entorno, así que sus queries se cuentan en el span de afuera.
+tryJustPg :: (Exception e) => (e -> Maybe b) -> Pg a -> Pg (Either b a)
+tryJustPg reconocer accion = do
+  entorno <- ask
+  resultado <- liftPg $ liftIOWithHandle $ \conn ->
+    tryJust reconocer
+      $ Transaction.withSavepoint conn (runBeamPostgres conn (correr entorno accion))
+  -- La query que falló ya está manejada: no es la que hizo explotar al span.
+  when (isLeft resultado)
+    $ for_ entorno.registro
+    $ \registro -> liftIO $ writeIORef registro.sinTerminar Nothing
+  pure resultado
+
+-- | Para 'tryJustPg': la escritura chocó con ese índice único.
+uniqueViolation :: ByteString -> b -> SqlError -> Maybe b
+uniqueViolation indice resultado sqlError =
+  resultado <$ guard (constraintViolation sqlError == Just (UniqueViolation indice))
+
+-- | Para 'tryJustPg': no se pudo borrar de esa tabla porque una foreign key la
+-- sigue referenciando. Cuál es la decide @reconocer@ por su nombre; una que no
+-- reconoce se relanza.
+foreignKeyViolation :: ByteString -> (ByteString -> Maybe b) -> SqlError -> Maybe b
+foreignKeyViolation tabla reconocer sqlError =
+  case constraintViolation sqlError of
+    Just (ForeignKeyViolation tablaBorrada constraint) | tablaBorrada == tabla -> reconocer constraint
+    _ -> Nothing
 
 correr :: EntornoPg -> Pg a -> Beam.Pg a
 correr entorno (Pg accion) = runReaderT accion entorno

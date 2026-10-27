@@ -277,36 +277,85 @@ jsonEncParticipanteUpdateParams  val =
 
 
 
-type ClaimRejection  =
+type ParticipanteUsage  =
+    UsedInGasto 
+    | UsedInRepartija 
+    | UsedInTransferencia 
+
+jsonDecParticipanteUsage : Json.Decode.Decoder ( ParticipanteUsage )
+jsonDecParticipanteUsage = 
+    let jsonDecDictParticipanteUsage = Dict.fromList [("UsedInGasto", UsedInGasto), ("UsedInRepartija", UsedInRepartija), ("UsedInTransferencia", UsedInTransferencia)]
+    in  decodeSumUnaries "ParticipanteUsage" jsonDecDictParticipanteUsage
+
+jsonEncParticipanteUsage : ParticipanteUsage -> Value
+jsonEncParticipanteUsage  val =
+    case val of
+        UsedInGasto -> Json.Encode.string "UsedInGasto"
+        UsedInRepartija -> Json.Encode.string "UsedInRepartija"
+        UsedInTransferencia -> Json.Encode.string "UsedInTransferencia"
+
+
+
+type ParticipanteError  =
+    ParticipanteNotFound 
+    | EmptyName 
+    | NameAlreadyTaken 
+    | ParticipanteInUse ParticipanteUsage
+
+jsonDecParticipanteError : Json.Decode.Decoder ( ParticipanteError )
+jsonDecParticipanteError =
+    let jsonDecDictParticipanteError = Dict.fromList
+            [ ("ParticipanteNotFound", Json.Decode.lazy (\_ -> Json.Decode.succeed ParticipanteNotFound))
+            , ("EmptyName", Json.Decode.lazy (\_ -> Json.Decode.succeed EmptyName))
+            , ("NameAlreadyTaken", Json.Decode.lazy (\_ -> Json.Decode.succeed NameAlreadyTaken))
+            , ("ParticipanteInUse", Json.Decode.lazy (\_ -> Json.Decode.map ParticipanteInUse (jsonDecParticipanteUsage)))
+            ]
+    in  decodeSumObjectWithSingleField  "ParticipanteError" jsonDecDictParticipanteError
+
+jsonEncParticipanteError : ParticipanteError -> Value
+jsonEncParticipanteError  val =
+    let keyval v = case v of
+                    ParticipanteNotFound  -> ("ParticipanteNotFound", encodeValue (Json.Encode.list identity []))
+                    EmptyName  -> ("EmptyName", encodeValue (Json.Encode.list identity []))
+                    NameAlreadyTaken  -> ("NameAlreadyTaken", encodeValue (Json.Encode.list identity []))
+                    ParticipanteInUse v1 -> ("ParticipanteInUse", encodeValue (jsonEncParticipanteUsage v1))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type ParticipanteClaimError  =
     ClaimedByOtherUser 
     | AlreadyOwnAnotherParticipante 
-    | ParticipanteNotFound 
-    | NameAlreadyTaken 
+    | ParticipanteError ParticipanteError
 
-jsonDecClaimRejection : Json.Decode.Decoder ( ClaimRejection )
-jsonDecClaimRejection = 
-    let jsonDecDictClaimRejection = Dict.fromList [("ClaimedByOtherUser", ClaimedByOtherUser), ("AlreadyOwnAnotherParticipante", AlreadyOwnAnotherParticipante), ("ParticipanteNotFound", ParticipanteNotFound), ("NameAlreadyTaken", NameAlreadyTaken)]
-    in  decodeSumUnaries "ClaimRejection" jsonDecDictClaimRejection
+jsonDecParticipanteClaimError : Json.Decode.Decoder ( ParticipanteClaimError )
+jsonDecParticipanteClaimError =
+    let jsonDecDictParticipanteClaimError = Dict.fromList
+            [ ("ClaimedByOtherUser", Json.Decode.lazy (\_ -> Json.Decode.succeed ClaimedByOtherUser))
+            , ("AlreadyOwnAnotherParticipante", Json.Decode.lazy (\_ -> Json.Decode.succeed AlreadyOwnAnotherParticipante))
+            , ("ParticipanteError", Json.Decode.lazy (\_ -> Json.Decode.map ParticipanteError (jsonDecParticipanteError)))
+            ]
+    in  decodeSumObjectWithSingleField  "ParticipanteClaimError" jsonDecDictParticipanteClaimError
 
-jsonEncClaimRejection : ClaimRejection -> Value
-jsonEncClaimRejection  val =
-    case val of
-        ClaimedByOtherUser -> Json.Encode.string "ClaimedByOtherUser"
-        AlreadyOwnAnotherParticipante -> Json.Encode.string "AlreadyOwnAnotherParticipante"
-        ParticipanteNotFound -> Json.Encode.string "ParticipanteNotFound"
-        NameAlreadyTaken -> Json.Encode.string "NameAlreadyTaken"
+jsonEncParticipanteClaimError : ParticipanteClaimError -> Value
+jsonEncParticipanteClaimError  val =
+    let keyval v = case v of
+                    ClaimedByOtherUser  -> ("ClaimedByOtherUser", encodeValue (Json.Encode.list identity []))
+                    AlreadyOwnAnotherParticipante  -> ("AlreadyOwnAnotherParticipante", encodeValue (Json.Encode.list identity []))
+                    ParticipanteError v1 -> ("ParticipanteError", encodeValue (jsonEncParticipanteError v1))
+    in encodeSumObjectWithSingleField keyval val
 
 
 
 type ClaimParticipanteResult  =
     ClaimAccepted Participante
-    | ClaimRejected ClaimRejection
+    | ClaimRejected ParticipanteClaimError
 
 jsonDecClaimParticipanteResult : Json.Decode.Decoder ( ClaimParticipanteResult )
 jsonDecClaimParticipanteResult =
     let jsonDecDictClaimParticipanteResult = Dict.fromList
             [ ("ClaimAccepted", Json.Decode.lazy (\_ -> Json.Decode.map ClaimAccepted (jsonDecParticipante)))
-            , ("ClaimRejected", Json.Decode.lazy (\_ -> Json.Decode.map ClaimRejected (jsonDecClaimRejection)))
+            , ("ClaimRejected", Json.Decode.lazy (\_ -> Json.Decode.map ClaimRejected (jsonDecParticipanteClaimError)))
             ]
     in  decodeSumObjectWithSingleField  "ClaimParticipanteResult" jsonDecDictClaimParticipanteResult
 
@@ -314,7 +363,28 @@ jsonEncClaimParticipanteResult : ClaimParticipanteResult -> Value
 jsonEncClaimParticipanteResult  val =
     let keyval v = case v of
                     ClaimAccepted v1 -> ("ClaimAccepted", encodeValue (jsonEncParticipante v1))
-                    ClaimRejected v1 -> ("ClaimRejected", encodeValue (jsonEncClaimRejection v1))
+                    ClaimRejected v1 -> ("ClaimRejected", encodeValue (jsonEncParticipanteClaimError v1))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type DeleteParticipanteResult  =
+    DeleteAccepted ULID
+    | DeleteRejected ParticipanteError
+
+jsonDecDeleteParticipanteResult : Json.Decode.Decoder ( DeleteParticipanteResult )
+jsonDecDeleteParticipanteResult =
+    let jsonDecDictDeleteParticipanteResult = Dict.fromList
+            [ ("DeleteAccepted", Json.Decode.lazy (\_ -> Json.Decode.map DeleteAccepted (jsonDecULID)))
+            , ("DeleteRejected", Json.Decode.lazy (\_ -> Json.Decode.map DeleteRejected (jsonDecParticipanteError)))
+            ]
+    in  decodeSumObjectWithSingleField  "DeleteParticipanteResult" jsonDecDictDeleteParticipanteResult
+
+jsonEncDeleteParticipanteResult : DeleteParticipanteResult -> Value
+jsonEncDeleteParticipanteResult  val =
+    let keyval v = case v of
+                    DeleteAccepted v1 -> ("DeleteAccepted", encodeValue (jsonEncULID v1))
+                    DeleteRejected v1 -> ("DeleteRejected", encodeValue (jsonEncParticipanteError v1))
     in encodeSumObjectWithSingleField keyval val
 
 
@@ -1653,7 +1723,7 @@ postPagosResumen body toMsg =
                 Nothing
             }
 
-deleteGrupoByIdParticipantesByParticipanteId : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
+deleteGrupoByIdParticipantesByParticipanteId : ULID -> ULID -> (Result Http.Error  (DeleteParticipanteResult)  -> msg) -> Cmd msg
 deleteGrupoByIdParticipantesByParticipanteId capture_id capture_participanteId toMsg =
     let
         params =
@@ -1677,7 +1747,7 @@ deleteGrupoByIdParticipantesByParticipanteId capture_id capture_participanteId t
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg jsonDecULID
+                Http.expectJson toMsg jsonDecDeleteParticipanteResult
             , timeout =
                 Nothing
             , tracker =

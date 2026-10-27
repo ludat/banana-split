@@ -232,13 +232,13 @@ viewDatosDeCobro : Form.FieldState CustomFormError String -> Html Form.Msg
 viewDatosDeCobro field =
     div [ class "mb-3" ]
         [ label [ for field.path, class "form-label" ] [ text "¿Cómo querés recibir la plata?" ]
-        , Html.textarea
-            [ id field.path
+        , input
+            [ type_ "text"
+            , id field.path
             , class "form-control"
-            , Attr.rows 3
             , Attr.placeholder "Alias: juan.mp, CBU..., en efectivo"
             , Attr.value (Maybe.withDefault "" field.value)
-            , onInput (\v -> Input field.path Form.Textarea (Form.Field.String v))
+            , onInput (\v -> Input field.path Form.Text (Form.Field.String v))
             , on "focus" (Json.Decode.succeed (Focus field.path))
             , on "blur" (Json.Decode.succeed (Blur field.path))
             ]

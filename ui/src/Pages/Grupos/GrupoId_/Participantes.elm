@@ -3,17 +3,16 @@ module Pages.Grupos.GrupoId_.Participantes exposing (Accion, Confirmacion, Edici
 import Browser.Dom
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)
-import Form exposing (Form, Msg(..))
-import Form.Field
-import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, string, succeed)
-import Generated.Api as Api exposing (Participante, ParticipanteAddParams, ParticipanteId, ULID, User)
-import Html exposing (Html, button, div, i, input, label, li, span, text, ul)
-import Html.Attributes as Attr exposing (class, classList, for, id, type_, value)
-import Html.Events exposing (on, onClick, onInput, onSubmit)
+import Form exposing (Form)
+import Form.Init as Form
+import Form.Validate exposing (Validation, andMap, field, maybe, string, succeed)
+import Generated.Api as Api exposing (DeleteParticipanteResult(..), Participante, ParticipanteAddParams, ParticipanteId, ParticipanteUpdateParams, ULID, User)
+import Html exposing (Html, button, div, i, label, li, span, text, ul)
+import Html.Attributes as Attr exposing (class, classList, for, id, type_)
+import Html.Events exposing (onClick, onSubmit)
 import Http
-import Json.Decode
 import Layouts
-import Models.Grupo exposing (datosDeCobro, isOwnedBy, ownedParticipante)
+import Models.Grupo exposing (datosDeCobro, isOwnedBy, ownedParticipante, participanteErrorFromHttp, participanteErrorMessage)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
@@ -22,7 +21,7 @@ import Route exposing (Route)
 import Shared
 import Shared.Msg
 import Task
-import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Form exposing (CustomFormError, anyString, isDataModifyingEvent, textInput)
 import Utils.Telemetry as Telemetry
 import Utils.Toasts exposing (pushToast)
 import Utils.Toasts.Types exposing (ToastLevel(..))
@@ -62,17 +61,17 @@ type alias Confirmacion =
     }
 
 
-{-| El popup para cambiarle el nombre a un participante.
+{-| El popup para editar un participante. `guardado` es el último intento de
+guardarlo: si falló, el error es el rechazo del backend, que es el único que
+valida.
 -}
 type alias Edicion =
     { participanteId : ULID
-    , nombre : String
-    , datosDeCobro : String
+    , form : Form CustomFormError ParticipanteUpdateParams
 
     -- Los de la cuenta que lo reclamó, que se usan si se deja vacío.
     , datosDeLaCuenta : Maybe String
-    , enviando : Bool
-    , error : Maybe String
+    , guardado : WebData Participante
     }
 
 
@@ -83,14 +82,12 @@ type Msg
     | Confirmar
     | AbrirEdicion Participante
     | CerrarEdicion
-    | NombreEdicionCambiado String
-    | DatosDeCobroCambiados String
-    | GuardarEdicion
+    | EdicionForm Form.Msg
     | GotEdicion (Result Http.Error Participante)
     | ParticipanteForm Form.Msg
     | GotAddedParticipanteResponse (Result Http.Error Participante)
     | DeleteParticipante ParticipanteId
-    | DeleteParticipanteResponse (Result Http.Error ULID)
+    | DeleteParticipanteResponse (Result Http.Error DeleteParticipanteResult)
     | ClaimParticipante ULID
     | UnclaimParticipante ULID
 
@@ -110,10 +107,20 @@ init store grupoId =
     )
 
 
+{-| Los forms de participantes no validan nada: el nombre lo valida el backend,
+que lo rechaza con un 'ParticipanteError'.
+-}
 validateParticipante : Validation CustomFormError ParticipanteAddParams
 validateParticipante =
     succeed Api.ParticipanteAddParams
-        |> andMap (field "nombre" (string |> andThen nonEmpty))
+        |> andMap (field "nombre" anyString)
+
+
+validateEdicion : Validation CustomFormError ParticipanteUpdateParams
+validateEdicion =
+    succeed Api.ParticipanteUpdateParams
+        |> andMap (field "nombre" anyString)
+        |> andMap (field "datosDeCobro" (maybe string))
 
 
 
@@ -158,11 +165,14 @@ update store msg model =
                 | edicion =
                     Just
                         { participanteId = p.id
-                        , nombre = p.nombre
-                        , datosDeCobro = Maybe.withDefault "" p.datosDeCobro
+                        , form =
+                            Form.initial
+                                [ Form.setString "nombre" p.nombre
+                                , Form.setString "datosDeCobro" (Maybe.withDefault "" p.datosDeCobro)
+                                ]
+                                validateEdicion
                         , datosDeLaCuenta = p.user |> Maybe.andThen .datosDeCobro
-                        , enviando = False
-                        , error = Nothing
+                        , guardado = NotAsked
                         }
               }
             , Effect.sendCmd <| Task.attempt (\_ -> NoOp) <| Browser.Dom.focus "edicion-nombre"
@@ -171,27 +181,34 @@ update store msg model =
         CerrarEdicion ->
             ( { model | edicion = Nothing }, Effect.none )
 
-        DatosDeCobroCambiados datos ->
-            ( { model | edicion = model.edicion |> Maybe.map (\e -> { e | datosDeCobro = datos }) }
-            , Effect.none
-            )
-
-        NombreEdicionCambiado nombre ->
-            ( { model | edicion = model.edicion |> Maybe.map (\e -> { e | nombre = nombre, error = Nothing }) }
-            , Effect.none
-            )
-
-        GuardarEdicion ->
+        EdicionForm Form.Submit ->
             case model.edicion of
                 Just edicion ->
-                    if edicion.enviando then
-                        ( model, Effect.none )
-
-                    else
-                        guardarEdicion store edicion model
+                    guardarEdicion edicion model
 
                 Nothing ->
                     ( model, Effect.none )
+
+        EdicionForm formMsg ->
+            ( { model
+                | edicion =
+                    model.edicion
+                        |> Maybe.map
+                            (\e ->
+                                { e
+                                    | form = Form.update validateEdicion formMsg e.form
+                                    , guardado =
+                                        -- El rechazo era de lo que estaba escrito: si cambia, ya no aplica.
+                                        if isDataModifyingEvent formMsg then
+                                            NotAsked
+
+                                        else
+                                            e.guardado
+                                }
+                            )
+              }
+            , Effect.none
+            )
 
         GotEdicion result ->
             case ( model.edicion, result ) of
@@ -204,21 +221,7 @@ update store msg model =
                     )
 
                 ( Just edicion, Err error ) ->
-                    ( { model
-                        | edicion =
-                            Just
-                                { edicion
-                                    | enviando = False
-                                    , error =
-                                        Just <|
-                                            case error of
-                                                Http.BadStatus 409 ->
-                                                    nombreRepetido
-
-                                                _ ->
-                                                    "No pudimos cambiar el nombre, probá de nuevo"
-                                }
-                      }
+                    ( { model | edicion = Just { edicion | guardado = Failure error } }
                     , Effect.none
                     )
 
@@ -261,11 +264,13 @@ update store msg model =
                         ]
                     )
 
-                Err _ ->
+                Err error ->
                     ( model
-                    , Effect.batch
-                        [ pushToast ToastDanger "Fallo la creación del usuario"
-                        ]
+                    , pushToast ToastDanger
+                        (participanteErrorFromHttp error
+                            |> Maybe.map participanteErrorMessage
+                            |> Maybe.withDefault "Fallo la creación del participante"
+                        )
                     )
 
         DeleteParticipante participanteId ->
@@ -281,14 +286,11 @@ update store msg model =
 
         DeleteParticipanteResponse result ->
             case result of
-                Ok _ ->
+                Ok (DeleteAccepted _) ->
                     ( model, Store.refreshGrupo model.grupoId )
 
-                -- Sigue apareciendo en algún gasto o transferencia.
-                Err (Http.BadStatus 409) ->
-                    ( model
-                    , pushToast ToastDanger "Este participante está siendo usado, no se puede borrar hasta que nadie lo referencie."
-                    )
+                Ok (DeleteRejected error) ->
+                    ( model, pushToast ToastDanger (participanteErrorMessage error) )
 
                 Err _ ->
                     ( model, pushToast ToastDanger "Fallo al borrar el participante." )
@@ -306,51 +308,39 @@ update store msg model =
             )
 
 
-guardarEdicion : Store -> Edicion -> Model -> ( Model, Effect Msg )
-guardarEdicion store edicion model =
+guardarEdicion : Edicion -> Model -> ( Model, Effect Msg )
+guardarEdicion edicion model =
     let
-        nombre =
-            String.trim edicion.nombre
+        enviada =
+            { edicion | form = Form.update validateEdicion Form.Submit edicion.form }
     in
-    if String.isEmpty nombre then
-        ( { model | edicion = Just { edicion | error = Just "Poné un nombre" } }, Effect.none )
-
-    else if nombreDeOtro store model.grupoId edicion.participanteId nombre then
-        ( { model | edicion = Just { edicion | error = Just nombreRepetido } }, Effect.none )
-
-    else
-        ( { model | edicion = Just { edicion | enviando = True, error = Nothing } }
-        , Effect.sendCmd <|
-            Api.putGrupoByIdParticipantesByParticipanteId model.grupoId
-                edicion.participanteId
-                { nombre = nombre
-                , datosDeCobro =
-                    if String.isEmpty (String.trim edicion.datosDeCobro) then
-                        Nothing
-
-                    else
-                        Just (String.trim edicion.datosDeCobro)
-                }
-                GotEdicion
-        )
-
-
-{-| Si otro participante del grupo ya se llama así: los nombres son únicos en
-el grupo. El backend también lo rechaza, esto es para avisar sin ir y volver.
--}
-nombreDeOtro : Store -> ULID -> ULID -> String -> Bool
-nombreDeOtro store grupoId participanteId nombre =
-    case Store.getGrupo grupoId store of
-        Success grupo ->
-            List.any (\p -> p.id /= participanteId && p.nombre == nombre) grupo.participantes
+    case ( RemoteData.isLoading edicion.guardado, Form.getOutput edicion.form ) of
+        ( False, Just params ) ->
+            ( { model | edicion = Just { enviada | guardado = Loading } }
+            , Effect.sendCmd <|
+                Api.putGrupoByIdParticipantesByParticipanteId model.grupoId
+                    edicion.participanteId
+                    params
+                    GotEdicion
+            )
 
         _ ->
-            False
+            ( { model | edicion = Just enviada }, Effect.none )
 
 
-nombreRepetido : String
-nombreRepetido =
-    "Ya hay un participante con ese nombre"
+{-| Por qué no se pudo guardar, si el último intento falló.
+-}
+errorDeEdicion : Edicion -> Maybe String
+errorDeEdicion edicion =
+    case edicion.guardado of
+        Failure error ->
+            participanteErrorFromHttp error
+                |> Maybe.map participanteErrorMessage
+                |> Maybe.withDefault "No pudimos guardar los cambios, probá de nuevo"
+                |> Just
+
+        _ ->
+            Nothing
 
 
 subscriptions : Model -> Sub Msg
@@ -483,7 +473,7 @@ viewEdicionModal : Maybe Edicion -> Html Msg
 viewEdicionModal edicion =
     let
         enviando =
-            edicion |> Maybe.map .enviando |> Maybe.withDefault False
+            edicion |> Maybe.map (.guardado >> RemoteData.isLoading) |> Maybe.withDefault False
     in
     Bs.modal
         { id = "modal-editar-participante"
@@ -499,34 +489,29 @@ viewEdicionModal edicion =
         , body =
             case edicion of
                 Just e ->
-                    [ Html.form [ id "edicion-form", onSubmit GuardarEdicion ]
+                    [ Html.form [ id "edicion-form", onSubmit (EdicionForm Form.Submit) ]
                         [ label [ class "form-label", for "edicion-nombre" ] [ text "Nombre" ]
-                        , input
-                            [ id "edicion-nombre"
-                            , type_ "text"
-                            , classList [ ( "form-control", True ), ( "is-invalid", e.error /= Nothing ) ]
-                            , value e.nombre
-                            , onInput NombreEdicionCambiado
-                            , Attr.disabled e.enviando
-                            ]
-                            []
-                        , case e.error of
+                        , Html.map EdicionForm <|
+                            textInput
+                                [ id "edicion-nombre"
+                                , classList [ ( "is-invalid", errorDeEdicion e /= Nothing ) ]
+                                , Attr.disabled enviando
+                                ]
+                                (Form.getFieldAsString "nombre" e.form)
+                        , case errorDeEdicion e of
                             Just error ->
                                 div [ class "invalid-feedback" ] [ text error ]
 
                             Nothing ->
                                 text ""
                         , label [ class "form-label mt-3", for "edicion-datos-de-cobro" ] [ text "¿Cómo quiere recibir la plata?" ]
-                        , Html.textarea
-                            [ id "edicion-datos-de-cobro"
-                            , class "form-control"
-                            , Attr.rows 3
-                            , Attr.placeholder "Alias: juan.mp, CBU..., en efectivo"
-                            , value e.datosDeCobro
-                            , onInput DatosDeCobroCambiados
-                            , Attr.disabled e.enviando
-                            ]
-                            []
+                        , Html.map EdicionForm <|
+                            textInput
+                                [ id "edicion-datos-de-cobro"
+                                , Attr.placeholder "Alias: juan.mp, CBU..., en efectivo"
+                                , Attr.disabled enviando
+                                ]
+                                (Form.getFieldAsString "datosDeCobro" e.form)
                         , div [ class "form-text", Attr.style "white-space" "pre-line" ]
                             [ text <|
                                 case e.datosDeLaCuenta of
@@ -702,22 +687,5 @@ viewNombreField : Form.FieldState CustomFormError String -> Html Form.Msg
 viewNombreField nombreField =
     div [ class "mb-3" ]
         [ label [ for nombreField.path, class "form-label" ] [ text "Nombre" ]
-        , input
-            [ type_ "text"
-            , id nombreField.path
-            , class "form-control"
-            , classList [ ( "is-invalid", hasErrorField nombreField ) ]
-            , value (Maybe.withDefault "" nombreField.value)
-            , Attr.placeholder "Juan"
-            , onInput (\v -> Input nombreField.path Form.Text (Form.Field.String v))
-            , on "focus" (Json.Decode.succeed (Focus nombreField.path))
-            , on "blur" (Json.Decode.succeed (Blur nombreField.path))
-            , Attr.required True
-            ]
-            []
-        , if hasErrorField nombreField then
-            div [ class "invalid-feedback" ] [ errorForField nombreField ]
-
-          else
-            text ""
+        , textInput [ id nombreField.path, Attr.placeholder "Juan" ] nombreField
         ]
