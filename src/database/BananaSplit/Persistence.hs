@@ -20,6 +20,8 @@ module BananaSplit.Persistence (
   nuevoRegistro,
   registrarStatement,
   terminarStatement,
+  fallarStatement,
+  taparDetalle,
   anotarQueriesEnElSpan,
   resumirQuery,
   taparValores,

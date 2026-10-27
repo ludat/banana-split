@@ -25,12 +25,13 @@ module BananaSplit.Persistence.Pg (
   nuevoRegistro,
   registrarStatement,
   terminarStatement,
+  fallarStatement,
+  taparDetalle,
   anotarQueriesEnElSpan,
   resumirQuery,
   taparValores,
 ) where
 
-import Control.Exception (tryJust)
 import Data.HashMap.Strict qualified as HashMap
 import Data.IORef (IORef, modifyIORef', newIORef, readIORef, writeIORef)
 import Data.Pool qualified as Pool
@@ -39,7 +40,7 @@ import Database.Beam.Backend.SQL (BeamSqlBackendSyntax, FromBackendRow, MonadBea
 import Database.Beam.Postgres (Connection, Postgres, liftIOWithHandle, runBeamPostgres, runBeamPostgresDebug)
 import Database.Beam.Postgres qualified as Beam
 import Database.Beam.Postgres.Syntax (fromPgCommand, pgRenderSyntaxScript)
-import Database.PostgreSQL.Simple (SqlError)
+import Database.PostgreSQL.Simple (SqlError (..))
 import Database.PostgreSQL.Simple.Errors (ConstraintViolation (..), constraintViolation, isSerializationError)
 import Database.PostgreSQL.Simple.Transaction qualified as Transaction
 import Katip qualified
@@ -91,13 +92,15 @@ tryJustPg :: (Exception e) => (e -> Maybe b) -> Pg a -> Pg (Either b a)
 tryJustPg reconocer accion = do
   entorno <- ask
   resultado <- liftPg $ liftIOWithHandle $ \conn ->
-    tryJust reconocer
+    tryJust (\e -> (e,) <$> reconocer e)
       $ Transaction.withSavepoint conn (runBeamPostgres conn (correr entorno accion))
-  -- La query que falló ya está manejada: no es la que hizo explotar al span.
-  when (isLeft resultado)
-    $ for_ entorno.registro
-    $ \registro -> liftIO $ writeIORef registro.sinTerminar Nothing
-  pure resultado
+  case resultado of
+    Right a -> pure (Right a)
+    Left (e, b) -> do
+      -- La query que falló ya está manejada: deja su evento como cualquier
+      -- otra, y no es la que hizo explotar al span.
+      for_ entorno.registro $ \registro -> liftIO $ fallarStatement registro (toException e)
+      pure (Left b)
 
 -- | Para 'tryJustPg': la escritura chocó con ese índice único.
 uniqueViolation :: ByteString -> b -> SqlError -> Maybe b
@@ -256,9 +259,9 @@ data RegistroDeQueries = RegistroDeQueries
   { span :: Span
   , resumenes :: IORef [Text]
   , filasDevueltas :: IORef Int64
-  , sinTerminar :: IORef (Maybe Text)
-  -- ^ El SQL de la query que se mandó y todavía no terminó. Si el span se
-  -- cierra con algo acá, es la que explotó.
+  , sinTerminar :: IORef (Maybe QueryEnCurso)
+  -- ^ La query que se mandó y todavía no terminó. Si el span se cierra con
+  -- algo acá, es la que explotó.
   }
 
 nuevoRegistro :: Span -> IO RegistroDeQueries
@@ -283,9 +286,10 @@ registrarStatement registro sqlConValores = do
   inicio <- Otel.getTimestamp
   let resumen = resumirQuery sqlConValores
       sql = taparValores sqlConValores
+  let enCurso = QueryEnCurso{sql, resumen, inicio}
   modifyIORef' registro.resumenes (resumen :)
-  writeIORef registro.sinTerminar (Just sql)
-  pure QueryEnCurso{sql, resumen, inicio}
+  writeIORef registro.sinTerminar (Just enCurso)
+  pure enCurso
 
 -- | Deja el evento @db.query@ de una query que terminó, fechado cuando empezó,
 -- con las filas que devolvió si es de las que devuelven filas.
@@ -297,6 +301,71 @@ terminarStatement :: RegistroDeQueries -> QueryEnCurso -> Maybe Int64 -> IO ()
 terminarStatement registro enCurso filas = do
   writeIORef registro.sinTerminar Nothing
   forM_ filas $ \cantidad -> modifyIORef' registro.filasDevueltas (+ cantidad)
+  agregarEventoDeQuery registro enCurso
+    [("db.response.returned_rows", Otel.toAttribute cantidad) | Just cantidad <- [filas]]
+
+-- | Deja el evento @db.query@ de la query que falló con una excepción que se
+-- atrapó y manejó ('tryJustPg'): como no hace explotar al span, no queda en el
+-- span sino en su evento, junto con el error entero ('atributosDelError').
+fallarStatement :: RegistroDeQueries -> SomeException -> IO ()
+fallarStatement registro excepcion =
+  readIORef registro.sinTerminar >>= \case
+    Nothing -> pure ()
+    Just enCurso -> do
+      writeIORef registro.sinTerminar Nothing
+      agregarEventoDeQuery registro enCurso (atributosDelError excepcion)
+
+-- | Todo lo que se sabe del error, con los nombres de la convención de
+-- OpenTelemetry: @exception.type@ y @exception.message@, y para uno de Postgres
+-- el SQLSTATE en @db.response.status_code@ y también en @error.type@. El detalle
+-- y la pista de Postgres no tienen nombre en la convención, van solo si vienen,
+-- y el detalle con los valores tapados ('taparDetalle').
+atributosDelError :: SomeException -> [(Text, Otel.Attribute)]
+atributosDelError excepcion@(SomeException interna) =
+  case fromException excepcion of
+    Just (sqlError :: SqlError) ->
+      -- No 'interna': postgresql-simple envuelve sus errores en su jerarquía de
+      -- excepciones, y lo que hay adentro es un 'SomePostgreSqlException'.
+      let codigo = Otel.toAttribute (texto sqlError.sqlState)
+       in ("exception.type", tipo sqlError)
+            : ("db.response.status_code", codigo)
+            : ("error.type", codigo)
+            : ("exception.message", Otel.toAttribute (texto sqlError.sqlErrorMsg))
+            : opcional "db.postgresql.error.detail" (taparDetalle (texto sqlError.sqlErrorDetail))
+            <> opcional "db.postgresql.error.hint" (texto sqlError.sqlErrorHint)
+    Nothing ->
+      [ ("exception.type", tipo interna)
+      , ("error.type", Otel.toAttribute ("_OTHER" :: Text))
+      , ("exception.message", Otel.toAttribute (toS (displayException excepcion) :: Text))
+      ]
+  where
+    tipo :: (Typeable t) => t -> Otel.Attribute
+    tipo valor = Otel.toAttribute (show (typeOf valor) :: Text)
+
+    texto :: ByteString -> Text
+    texto = decodeUtf8With lenientDecode
+
+    opcional :: Text -> Text -> [(Text, Otel.Attribute)]
+    opcional clave valor = [(clave, Otel.toAttribute valor) | not (Text.null valor)]
+
+-- | El detalle de un error de Postgres trae los valores de la fila que chocó,
+-- como @Key (nombre)=(Ana) already exists.@: se tapan como en 'taparValores' y
+-- queda @Key (nombre)=(?) already exists.@ Ante la duda se tapa de más: un valor
+-- que no cierra tapa todo lo que sigue, y uno con paréntesis adentro se tapa
+-- hasta el último.
+taparDetalle :: Text -> Text
+taparDetalle detalle =
+  case Text.splitOn "=(" detalle of
+    primero : valores@(_ : _) -> Text.intercalate "=(" (primero : map taparValor valores)
+    _ -> detalle
+  where
+    taparValor resto =
+      case Text.breakOnEnd ")" resto of
+        ("", _) -> "?"
+        (_, despues) -> "?)" <> despues
+
+agregarEventoDeQuery :: RegistroDeQueries -> QueryEnCurso -> [(Text, Otel.Attribute)] -> IO ()
+agregarEventoDeQuery registro enCurso atributos =
   Otel.addEvent registro.span
     $ Otel.NewEvent
       { Otel.newEventName = "db.query"
@@ -304,7 +373,7 @@ terminarStatement registro enCurso filas = do
           HashMap.fromList
             $ ("db.query.summary", Otel.toAttribute enCurso.resumen)
             : ("db.query.text", Otel.toAttribute enCurso.sql)
-            : [("db.response.returned_rows", Otel.toAttribute cantidad) | Just cantidad <- [filas]]
+            : atributos
       , Otel.newEventTimestamp = Just enCurso.inicio
       }
 
@@ -316,7 +385,7 @@ anotarQueriesEnElSpan registro = do
   -- también queda la excepción.
   readIORef registro.sinTerminar >>= \case
     Nothing -> pure ()
-    Just sql -> Otel.addAttribute registro.span "db.query.text" sql
+    Just enCurso -> Otel.addAttribute registro.span "db.query.text" enCurso.sql
   unless (null queries)
     $ Otel.addAttributes registro.span
     $ HashMap.fromList
