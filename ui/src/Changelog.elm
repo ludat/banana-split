@@ -54,6 +54,10 @@ changelog =
       , title = "Saldando deudas y transferencias"
       , description = "Mejoramos la vista de un grupo que está saldando deudas y las transferencias necesarias para quedar saldados."
       }
+    , { date = Date.fromCalendarDate 2026 Oct 27
+      , title = "Mejor manejo de participantes y datos para transferencias"
+      , description = "Ahora podés agregarte a un grupo si no estás en la lista, editar el nombre de un participante. Además podés cargar cómo querés recibir la plata (alias, CBU, en efectivo...) en tu cuenta o en cada participante, y se muestra en el resumen junto a lo que te tienen que transferir."
+      }
     ]
 
 
