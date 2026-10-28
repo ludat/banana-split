@@ -325,8 +325,6 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
                 text ""
         , Html.map toContentMsg <|
             viewQrModal model.qrShare
-        , Html.map toContentMsg <|
-            viewAgregarmeModal currentUser model.agregarme
         , case remoteGrupo of
             Success grupo ->
                 Html.map (toContentMsg << PagoModalMsg) <|
@@ -335,39 +333,80 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
             _ ->
                 text ""
         ]
-            ++ (case ( activeUser, remoteGrupo ) of
-                    ( Nothing, Success grupo ) ->
-                        if List.isEmpty grupo.participantes then
-                            content.body
-
-                        else
+            ++ (case remoteGrupo of
+                    Success grupo ->
+                        if eligiendoParticipante activeUser grupo then
                             [ Html.map toContentMsg <|
-                                div [ Attr.id "grupo-elegir-participante", class "container-fluid py-5 text-center" ]
-                                    [ p [ class "mb-3" ] [ text "Por favor seleccioná quién sos para comenzar:" ]
-                                    , div [ class "mx-auto", style "max-width" "20rem" ]
-                                        [ viewGlobalUserSelector activeUser grupo ]
+                                div
+                                    [ Attr.id "grupo-elegir-participante"
+                                    , class "container-fluid py-5 text-center d-flex flex-column align-items-center justify-content-center"
+                                    , style "min-height" "60vh"
+                                    ]
+                                    [ Html.h4 [ class "fw-semibold mb-2" ] [ text "Bienvenido" ]
+                                    , p [ class "mb-3" ] [ text "Seleccioná quién sos para comenzar" ]
+                                    , viewSelectorDeBienvenida activeUser grupo
 
                                     -- Todavía no eligió a nadie, así que con
                                     -- cuenta tampoco tiene a nadie reclamado.
-                                    , p [ class "mt-3 mb-0 small text-muted" ]
-                                        [ text "¿No estás en la lista? "
-                                        , button
+                                    , p [ class "mt-4 mb-1 text-muted" ] [ text "¿Aún no estás en el grupo?" ]
+
+                                    -- Como los chips de la repartija: un
+                                    -- dropdown que Bootstrap abre, cierra
+                                    -- (clic afuera, Escape) y Popper ubica.
+                                    -- No se cierra al tocar lo de adentro
+                                    -- (`data-bs-auto-close`), que es un form.
+                                    , div [ class "dropdown-center" ]
+                                        [ button
                                             [ type_ "button"
-                                            , class "btn btn-link btn-sm p-0 align-baseline"
+                                            , class "btn btn-link p-0 text-decoration-none d-inline-flex align-items-center gap-1"
+                                            , Attr.attribute "data-bs-toggle" "dropdown"
+                                            , Attr.attribute "data-bs-auto-close" "outside"
+                                            , Attr.attribute "data-bs-offset" "0,8"
+                                            , Attr.attribute "aria-expanded" "false"
                                             , Telemetry.click "grupo.agregarme_abrir"
-                                            , onClick (AbrirAgregarme grupo.id)
+
+                                            -- Cerrándolo con este mismo botón, el
+                                            -- click llega antes que el cierre: ahí
+                                            -- no hay que re-armar el form.
+                                            , onClick
+                                                (if model.agregarme == Nothing then
+                                                    AbrirAgregarme grupo.id
+
+                                                 else
+                                                    NoOp
+                                                )
+
+                                            -- Bootstrap avisa en el botón. Mientras
+                                            -- se envía no se cierra: la respuesta
+                                            -- es la que lo elige. Cerrado, se
+                                            -- descarta lo escrito, como el modal.
+                                            , preventDefaultOn "hide.bs.dropdown"
+                                                (Decode.succeed
+                                                    ( NoOp
+                                                    , model.agregarme
+                                                        |> Maybe.map (.envio >> RemoteData.isLoading)
+                                                        |> Maybe.withDefault False
+                                                    )
+                                                )
+                                            , on "hidden.bs.dropdown" (Decode.succeed CerrarAgregarme)
                                             ]
-                                            [ text "Agregarme al grupo" ]
+                                            [ i [ class "bi bi-plus-circle-fill" ] []
+                                            , text "Agregarme a la lista"
+                                            ]
+                                        , viewAgregarmePopover model.agregarme
                                         ]
                                     ]
                             ]
+
+                        else
+                            content.body
 
                     _ ->
                         content.body
                )
             ++ [ case remoteGrupo of
                     Success grupo ->
-                        if (headerInfo currentPath store currentUser grupo).showTabs then
+                        if (headerInfo currentPath store currentUser grupo).showTabs && not (eligiendoParticipante activeUser grupo) then
                             div
                                 [ class "d-md-none"
                                 , style "height" "calc(var(--navbar-bottom-height) + 1.55rem + env(safe-area-inset-bottom))"
@@ -394,6 +433,43 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
             , url = origin ++ Path.toString info.share.path
             }
     in
+    if eligiendoParticipante activeUser grupo then
+        viewGroupHeaderDeBienvenida activeUser info share grupo
+
+    else
+        viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info share
+
+
+{-| Mientras no eligió quién es, todavía no hay nada que hacer en el grupo: ni
+tabs, ni "Agregar gasto", ni la navbar de abajo. Queda el nombre del grupo, para
+compartirlo, y el "Ver cómo" en desktop (en mobile el selector ya está en el
+medio de la pantalla).
+-}
+viewGroupHeaderDeBienvenida : Maybe ULID -> HeaderInfo -> { title : String, url : String } -> Grupo -> Html Msg
+viewGroupHeaderDeBienvenida activeUser info share grupo =
+    div [ Attr.id "grupo-header", class "border-bottom" ]
+        [ div [ class "container-fluid py-3" ]
+            [ viewBreadcrumb info.breadcrumb
+            , div [ class "d-flex flex-wrap align-items-center justify-content-between gap-3" ]
+                [ div [ class "d-flex align-items-center gap-3 min-w-0" ]
+                    [ h2 [ class "mb-0 display-6 text-break" ] [ text info.title ]
+                    , viewShareDropdown
+                        [ i [ class "bi bi-share-fill" ] []
+                        , span [ class "visually-hidden" ] [ text "Compartir" ]
+                        ]
+                        share
+                    ]
+                , label [ class "d-none d-md-flex align-items-center gap-2 text-nowrap mb-0" ]
+                    [ text "Ver cómo:"
+                    , viewGlobalUserSelector activeUser grupo
+                    ]
+                ]
+            ]
+        ]
+
+
+viewGroupHeaderCompleto : Path.Path -> Maybe ULID -> WebData User -> Store -> Grupo -> HeaderInfo -> { title : String, url : String } -> Html Msg
+viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info share =
     div [ Attr.id "grupo-header", class "border-bottom" ]
         [ div [ class "container-fluid py-3" ]
             [ div [ class "d-flex flex-wrap align-items-start justify-content-between gap-3" ]
@@ -417,7 +493,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                         ]
                     , viewVerComoWarning currentUser activeUser grupo
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
-                        [ viewShareDropdown share
+                        [ viewShareDropdown textoCompartir share
 
                         -- Fuera de las secciones con tabs (la repartija) se
                         -- está mirando un gasto puntual, no cargando gastos.
@@ -456,7 +532,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
                     text ""
 
                   else
-                    div [ class "ms-auto" ] [ viewShareDropdown share ]
+                    div [ class "ms-auto" ] [ viewShareDropdown textoCompartir share ]
                 ]
             ]
         , if info.showTabs then
@@ -635,12 +711,11 @@ Entity names are resolved from the store, falling back to `"Cargando..."` while 
 data is still loading.
 
 -}
-headerInfo :
-    Path.Path
-    -> Store
-    -> WebData User
-    -> Grupo
-    -> { breadcrumb : Maybe AccionDelBreadcrumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
+type alias HeaderInfo =
+    { breadcrumb : Maybe AccionDelBreadcrumb, title : String, showTabs : Bool, share : { title : String, path : Path.Path } }
+
+
+headerInfo : Path.Path -> Store -> WebData User -> Grupo -> HeaderInfo
 headerInfo currentPath store currentUser grupo =
     let
         -- De acá cuelgan todas las secciones del grupo. La única que no es
@@ -871,7 +946,7 @@ viewBreadcrumb accion =
                     , Attr.title "Con una cuenta ves todos los grupos en los que participás, sin tener que acordarte las URLs."
                     ]
                     [ i [ class "bi bi-person-circle" ] []
-                    , Html.span [] [ text "Logueate para ver tus grupos" ]
+                    , Html.span [] [ text "Iniciá sesión para ver tus grupos" ]
                     ]
                 ]
 
@@ -1018,8 +1093,8 @@ option, both pointing at the current page's share target. Opening and closing
 (including closing on blur) is handled by Bootstrap's own dropdown JS via
 `data-bs-toggle`.
 -}
-viewShareDropdown : { title : String, url : String } -> Html Msg
-viewShareDropdown { title, url } =
+viewShareDropdown : List (Html Msg) -> { title : String, url : String } -> Html Msg
+viewShareDropdown contenido { title, url } =
     div [ class "dropdown" ]
         [ button
             [ type_ "button"
@@ -1027,9 +1102,7 @@ viewShareDropdown { title, url } =
             , Attr.attribute "data-bs-toggle" "dropdown"
             , Attr.attribute "aria-expanded" "false"
             ]
-            [ i [ class "bi bi-share me-1" ] []
-            , text "Compartir"
-            ]
+            contenido
         , ul [ class "dropdown-menu dropdown-menu-end shadow" ]
             [ li []
                 [ a
@@ -1103,81 +1176,143 @@ viewQrModal qrShare =
         }
 
 
-{-| El modal de "Soy nuevo". Con cuenta el nombre arranca con el de la cuenta.
+{-| El popover de "Soy nuevo", con la misma pinta que el de los items que
+reclamó alguien en la repartija. Con cuenta el nombre arranca con el de la
+cuenta.
+
+El menú está siempre en el DOM porque Bootstrap lo busca al lado del botón en el
+momento del clic; el form aparece cuando `AbrirAgregarme` lo arma.
+
 -}
-viewAgregarmeModal : WebData User -> Maybe Agregarme -> Html Msg
-viewAgregarmeModal currentUser agregarme =
+viewAgregarmePopover : Maybe Agregarme -> Html Msg
+viewAgregarmePopover agregarme =
+    div
+        [ Attr.id "agregarme-popover"
+        , class "dropdown-menu shadow p-0 overflow-hidden text-start"
+        , style "width" "20rem"
+        , style "max-width" "calc(100vw - 2rem)"
+        ]
+        [ div [ class "fw-semibold bg-body-tertiary border-bottom px-3 py-2" ]
+            [ text "Sumarme al grupo" ]
+        , case agregarme of
+            Nothing ->
+                text ""
+
+            Just a ->
+                viewAgregarmeForm a
+        ]
+
+
+viewAgregarmeForm : Agregarme -> Html Msg
+viewAgregarmeForm a =
     let
         enviando =
-            agregarme |> Maybe.map (.envio >> RemoteData.isLoading) |> Maybe.withDefault False
+            RemoteData.isLoading a.envio
     in
-    Bs.modal
-        { id = "modal-agregarme"
-        , isOpen = agregarme /= Nothing
-        , -- Mientras se envía no se cierra: la respuesta es la que lo elige.
-          onClose =
-            if enviando then
-                NoOp
-
-            else
-                CerrarAgregarme
-        , centered = True
-        , title = "Agregarme al grupo"
-        , body =
-            case agregarme of
-                Just a ->
-                    [ Html.form [ Attr.id "agregarme-form", onSubmit (AgregarmeForm Form.Submit) ]
-                        [ label [ class "form-label", Attr.for "agregarme-nombre" ] [ text "¿Cómo te llamamos?" ]
-                        , Html.map AgregarmeForm <|
-                            textInput
-                                [ Attr.id "agregarme-nombre"
-                                , classList [ ( "is-invalid", mensajeDeErrorAlAgregarme a /= Nothing ) ]
-                                , Attr.disabled enviando
-                                ]
-                                (Form.getFieldAsString "nombre" a.form)
-                        , case mensajeDeErrorAlAgregarme a of
-                            Just error ->
-                                div [ class "invalid-feedback" ] [ text error ]
-
-                            Nothing ->
-                                text ""
-                        , p [ class "form-text mb-0" ]
-                            [ text <|
-                                case currentUser of
-                                    Success _ ->
-                                        "Vas a aparecer como un participante nuevo, ya asociado a tu cuenta."
-
-                                    _ ->
-                                        "Vas a aparecer como un participante nuevo. Si entrás con tu cuenta, después lo podés reclamar."
-                            ]
+    Html.form
+        [ Attr.id "agregarme-form"
+        , class "p-3 d-flex align-items-start gap-2"
+        , onSubmit (AgregarmeForm Form.Submit)
+        ]
+        [ div [ class "flex-grow-1" ]
+            [ Html.map AgregarmeForm <|
+                textInput
+                    [ Attr.id "agregarme-nombre"
+                    , Attr.placeholder "Nombre"
+                    , Attr.attribute "aria-label" "Nombre"
+                    , classList
+                        [ ( "is-invalid", mensajeDeErrorAlAgregarme a /= Nothing )
+                        , ( "bg-body-secondary", enviando )
                         ]
+
+                    -- `readonly` y no `disabled`: un campo deshabilitado
+                    -- pierde el foco, y al volver con un error habría que
+                    -- hacer click de nuevo para corregirlo.
+                    , Attr.readonly enviando
                     ]
+                    (Form.getFieldAsString "nombre" a.form)
+            , case mensajeDeErrorAlAgregarme a of
+                Just error ->
+                    div [ class "invalid-feedback" ] [ text error ]
 
                 Nothing ->
-                    []
-        , footer =
-            [ Bs.btn Bs.Transparent
-                [ Telemetry.click "grupo.agregarme_cancelar"
-                , onClick CerrarAgregarme
-                , Attr.disabled enviando
-                ]
-                [ text "Cancelar" ]
-            , Bs.btn Bs.Primary
-                [ type_ "submit"
-                , Attr.attribute "form" "agregarme-form"
-                , Telemetry.click "grupo.agregarme_enviar"
-                , Attr.disabled enviando
-                ]
-                [ text "Agregarme" ]
+                    text ""
             ]
-        }
+        , Bs.btn Bs.Primary
+            [ type_ "submit"
+            , Telemetry.click "grupo.agregarme_enviar"
+
+            -- Lo mismo para el botón: se ve deshabilitado pero conserva el
+            -- foco. Un segundo submit mientras se envía lo ignora
+            -- `enviarAgregarme`.
+            , classList [ ( "disabled", enviando ) ]
+            , Attr.attribute "aria-disabled"
+                (if enviando then
+                    "true"
+
+                 else
+                    "false"
+                )
+            ]
+            [ text "Aceptar" ]
+        ]
+
+
+textoCompartir : List (Html Msg)
+textoCompartir =
+    [ i [ class "bi bi-share me-1" ] []
+    , text "Compartir"
+    ]
+
+
+{-| Si hay a quién elegir y todavía no se eligió a nadie, la página es la de
+bienvenida en vez del contenido del grupo.
+-}
+eligiendoParticipante : Maybe ULID -> Grupo -> Bool
+eligiendoParticipante activeUser grupo =
+    activeUser == Nothing && not (List.isEmpty grupo.participantes)
 
 
 viewGlobalUserSelector : Maybe ULID -> GrupoLike r -> Html Msg
 viewGlobalUserSelector activeUser grupo =
+    viewSelectorDeParticipante
+        { attrs = [ class "form-select form-select-sm" ]
+        , vacio = option [ value "", selected (activeUser == Nothing) ] [ text "" ]
+        , opcion = []
+        }
+        activeUser
+        grupo
+
+
+{-| El mismo selector, con pinta de botón primario: es lo único que hay para
+hacer en la bienvenida. El placeholder no aparece en la lista, porque elegirlo
+no haría nada.
+-}
+viewSelectorDeBienvenida : Maybe ULID -> GrupoLike r -> Html Msg
+viewSelectorDeBienvenida activeUser grupo =
+    viewSelectorDeParticipante
+        { attrs =
+            [ class "form-select w-auto bg-primary text-white border-primary"
+            , style "--bs-form-select-bg-img" "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e\")"
+            , Attr.attribute "aria-label" "Participantes de este grupo"
+            ]
+        , vacio =
+            option [ value "", selected (activeUser == Nothing), Attr.hidden True, Attr.disabled True ]
+                [ text "Participantes de este grupo" ]
+        , opcion = [ class "bg-body text-body" ]
+        }
+        activeUser
+        grupo
+
+
+viewSelectorDeParticipante :
+    { attrs : List (Html.Attribute Msg), vacio : Html Msg, opcion : List (Html.Attribute Msg) }
+    -> Maybe ULID
+    -> GrupoLike r
+    -> Html Msg
+viewSelectorDeParticipante config activeUser grupo =
     select
-        [ class "form-select form-select-sm"
-        , on "change"
+        (on "change"
             (Decode.at [ "target", "value" ] Decode.string
                 |> Decode.map
                     (\value ->
@@ -1193,15 +1328,17 @@ viewGlobalUserSelector activeUser grupo =
                                 }
                     )
             )
-        ]
-        (option [ value "", selected (activeUser == Nothing) ] [ text "" ]
+            :: config.attrs
+        )
+        (config.vacio
             :: (grupo.participantes
                     |> List.map
                         (\p ->
                             option
-                                [ value p.id
-                                , selected (activeUser == Just p.id)
-                                ]
+                                (value p.id
+                                    :: selected (activeUser == Just p.id)
+                                    :: config.opcion
+                                )
                                 [ text p.nombre ]
                         )
                )
