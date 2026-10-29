@@ -54,19 +54,19 @@ changelog =
       , title = "Saldando deudas y transferencias"
       , description = "Mejoramos la vista de un grupo que está saldando deudas y las transferencias necesarias para quedar saldados."
       }
-    , { date = Date.fromCalendarDate 2026 Oct 2
+    , { date = Date.fromCalendarDate 2026 Oct 24
       , title = "Modo saldar deudas"
       , description = "Cuando terminen de cargar gastos, activá el Modo saldar deudas: calculamos quién le tiene que pasar plata a quién y cada uno puede marcar sus transferencias como realizadas."
       }
-    , { date = Date.fromCalendarDate 2026 Oct 14
+    , { date = Date.fromCalendarDate 2026 Oct 31
       , title = "Nueva pantalla de repartijas"
       , description = "Rediseñamos las repartijas: cada item muestra su precio y cuánto se reclamó, y es más fácil ver qué te toca a vos."
       }
-    , { date = Date.fromCalendarDate 2026 Oct 26
+    , { date = Date.fromCalendarDate 2026 Nov 7
       , title = "Tus grupos de un vistazo"
       , description = "En la pantalla principal ahora ves cómo está cada uno de tus grupos sin tener que entrar."
       }
-    , { date = Date.fromCalendarDate 2026 Oct 27
+    , { date = Date.fromCalendarDate 2026 Nov 14
       , title = "Mejor manejo de participantes y datos para transferencias"
       , description = "Ahora podés agregarte a un grupo si no estás en la lista, editar el nombre de un participante. Además podés cargar cómo querés recibir la plata (alias, CBU, en efectivo...) en tu cuenta o en cada participante, y se muestra en el resumen junto a lo que te tienen que transferir."
       }
@@ -81,6 +81,7 @@ recentChangelog lastRead now =
     in
     changelog
         |> List.filter (\entry -> Date.compare entry.date oneMonthAgo /= LT)
+        |> List.filter (\entry -> Date.compare entry.date now /= GT)
         |> List.filter
             (\entry ->
                 case lastRead of
