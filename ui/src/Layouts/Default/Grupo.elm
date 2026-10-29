@@ -1293,6 +1293,7 @@ viewSelectorDeBienvenida activeUser grupo =
     viewSelectorDeParticipante
         { attrs =
             [ class "form-select w-auto bg-primary text-white border-primary"
+            , style "cursor" "pointer"
             , style "--bs-form-select-bg-img" "url(\"data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23fff' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='m2 5 6 6 6-6'/%3e%3c/svg%3e\")"
             , Attr.attribute "aria-label" "Participantes de este grupo"
             ]
