@@ -301,7 +301,9 @@ terminarStatement :: RegistroDeQueries -> QueryEnCurso -> Maybe Int64 -> IO ()
 terminarStatement registro enCurso filas = do
   writeIORef registro.sinTerminar Nothing
   forM_ filas $ \cantidad -> modifyIORef' registro.filasDevueltas (+ cantidad)
-  agregarEventoDeQuery registro enCurso
+  agregarEventoDeQuery
+    registro
+    enCurso
     [("db.response.returned_rows", Otel.toAttribute cantidad) | Just cantidad <- [filas]]
 
 -- | Deja el evento @db.query@ de la query que falló con una excepción que se
@@ -327,12 +329,12 @@ atributosDelError excepcion@(SomeException interna) =
       -- No 'interna': postgresql-simple envuelve sus errores en su jerarquía de
       -- excepciones, y lo que hay adentro es un 'SomePostgreSqlException'.
       let codigo = Otel.toAttribute (texto sqlError.sqlState)
-       in ("exception.type", tipo sqlError)
-            : ("db.response.status_code", codigo)
-            : ("error.type", codigo)
-            : ("exception.message", Otel.toAttribute (texto sqlError.sqlErrorMsg))
-            : opcional "db.postgresql.error.detail" (taparDetalle (texto sqlError.sqlErrorDetail))
-            <> opcional "db.postgresql.error.hint" (texto sqlError.sqlErrorHint)
+      in ("exception.type", tipo sqlError)
+           : ("db.response.status_code", codigo)
+           : ("error.type", codigo)
+           : ("exception.message", Otel.toAttribute (texto sqlError.sqlErrorMsg))
+           : opcional "db.postgresql.error.detail" (taparDetalle (texto sqlError.sqlErrorDetail))
+             <> opcional "db.postgresql.error.hint" (texto sqlError.sqlErrorHint)
     Nothing ->
       [ ("exception.type", tipo interna)
       , ("error.type", Otel.toAttribute ("_OTHER" :: Text))
