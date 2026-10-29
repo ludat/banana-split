@@ -4,12 +4,14 @@ module BananaSplit.Persistence.GrupoSpec (
 
 import Data.Map.Strict qualified as Map
 import Data.Time (fromGregorian)
+import Database.Beam.Postgres (liftIOWithHandle)
+import Database.PostgreSQL.Simple (Only (..), query_)
 import Protolude
 import Test.Hspec
 
 import BananaSplit
 import BananaSplit.Persistence
-import BananaSplit.Persistence.Pg (contandoQueries)
+import BananaSplit.Persistence.Pg (contandoQueries, liftPg)
 import BananaSplit.Persistence.SpecHook
 import BananaSplit.ULID (nullUlid)
 import BananaSplit.User (User (..))
@@ -97,7 +99,123 @@ spec = do
 
       result <- runDb $ addParticipanteForUser grupo.id "otre" user.id
 
-      result `shouldBe` Left NameAlreadyTaken
+      result `shouldBe` Left (ParticipanteError NameAlreadyTaken)
+
+  -- Lo rechaza el índice único: después del error la transacción tiene que
+  -- seguir sirviendo (es lo que hace el savepoint de 'tryJustPg').
+  describe "addParticipante" $ do
+    it "no deja repetir el nombre de otro participante del grupo" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+
+      result <- runDb $ addParticipante grupo.id "Juan"
+
+      fmap (.nombre) result `shouldBe` Left NameAlreadyTaken
+      Just despues <- runDb $ fetchGrupo grupo.id
+      fmap (.nombre) despues.participantes `shouldBe` ["Juan"]
+
+    it "le saca los espacios de alrededor al nombre" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+
+      result <- runDb $ addParticipante grupo.id "  Ana "
+
+      fmap (.nombre) result `shouldBe` Right "Ana"
+
+    it "no deja un nombre vacío" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+
+      result <- runDb $ addParticipante grupo.id "   "
+
+      fmap (.nombre) result `shouldBe` Left EmptyName
+
+  describe "deleteShallowParticipante" $ do
+    it "no borra un participante que está en un gasto" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+      _ <- runDb $ savePago grupo.id (pagoDe grupo)
+
+      result <- runDb $ deleteShallowParticipante grupo.id participante.id
+
+      result `shouldBe` Left (ParticipanteInUse UsedInGasto)
+      Just despues <- runDb $ fetchGrupo grupo.id
+      fmap (.id) despues.participantes `shouldBe` [participante.id]
+
+    -- Una que falte haría que el borrado termine en un 500 en vez de decir qué
+    -- lo está usando.
+    it "sabe qué es cada foreign key que apunta a participantes" $ \(RunDb runDb) -> do
+      constraints <- runDb $ liftPg $ liftIOWithHandle $ \conn ->
+        fmap fromOnly
+          <$> query_
+            conn
+            "select conname::text from pg_constraint \
+            \where contype = 'f' and confrelid = 'public.participantes'::regclass"
+
+      constraints `shouldSatisfy` (not . null)
+      filter (isNothing . usoDeParticipante) constraints `shouldBe` []
+
+  describe "editarParticipante" $ do
+    it "le cambia el nombre al participante" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+
+      result <- runDb $ editarParticipante grupo.id participante.id "Juan Pérez" Nothing
+
+      fmap (.nombre) result `shouldBe` Right "Juan Pérez"
+      Just despues <- runDb $ fetchGrupo grupo.id
+      (despues.participantes & fmap (.nombre)) `shouldBe` ["Juan Pérez"]
+
+    it "guarda y borra los datos de cobro" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+
+      _ <- runDb $ editarParticipante grupo.id participante.id "Juan" (Just "Alias: juan.mp")
+      Just conDatos <- runDb $ fetchGrupo grupo.id
+      (conDatos.participantes & fmap (.datosDeCobro)) `shouldBe` [Just "Alias: juan.mp"]
+
+      _ <- runDb $ editarParticipante grupo.id participante.id "Juan" Nothing
+      Just sinDatos <- runDb $ fetchGrupo grupo.id
+      (sinDatos.participantes & fmap (.datosDeCobro)) `shouldBe` [Nothing]
+
+    it "trae los datos de cobro de la cuenta que lo reclamó" $ \(RunDb runDb) -> do
+      user <- runDb $ createUser "juan@example.com" "Juan"
+      grupo <- runDb $ createGrupoForUser "Grupo" user
+      _ <- runDb $ updateUser user.id "Juan" (Just "CBU 123")
+
+      Just despues <- runDb $ fetchGrupo grupo.id
+      (despues.participantes & fmap (\p -> fmap (.datosDeCobro) p.user)) `shouldBe` [Just (Just "CBU 123")]
+
+    it "deja poner el mismo nombre que ya tenía" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+
+      result <- runDb $ editarParticipante grupo.id participante.id "Juan" Nothing
+
+      fmap (.nombre) result `shouldBe` Right "Juan"
+
+    it "no deja usar el nombre de otro participante del grupo" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+      _ <- runDb $ addParticipante grupo.id "Ana"
+
+      result <- runDb $ editarParticipante grupo.id participante.id "Ana" Nothing
+
+      fmap (.nombre) result `shouldBe` Left NameAlreadyTaken
+
+    it "no encuentra un participante de otro grupo" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      otroGrupo <- runDb $ createGrupo "Otro" "Ana"
+      participante <- unicoParticipante grupo
+
+      result <- runDb $ editarParticipante otroGrupo.id participante.id "Pepe" Nothing
+
+      fmap (.nombre) result `shouldBe` Left ParticipanteNotFound
+
+    it "no deja dejarlo sin nombre" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Grupo" "Juan"
+      participante <- unicoParticipante grupo
+
+      result <- runDb $ editarParticipante grupo.id participante.id "" Nothing
+
+      fmap (.nombre) result `shouldBe` Left EmptyName
 
   describe "fetchGruposForUser estado" $ do
     it "says there are no gastos in a new grupo" $ \(RunDb runDb) -> do
@@ -188,7 +306,7 @@ spec = do
           participante <-
             addParticipante grupo.id nombre >>= \case
               Right p -> pure p
-              Left e -> panic e
+              Left e -> panic (show e)
           claimParticipante grupo.id participante.id user.id >>= \case
             Right _ -> pure ()
             Left e -> panic (show e)
@@ -267,7 +385,7 @@ grupoConDos user nombre = do
   otro <-
     addParticipante grupo.id "otro" >>= \case
       Right p -> pure $ ParticipanteId p.id
-      Left e -> panic e
+      Left e -> panic (show e)
   pure (grupo, yo, otro)
 
 -- | Abierto y con un gasto en el que el usuario puso 100 y el otro los consumió.
@@ -324,6 +442,11 @@ dolaresSonPesos grupoId dolares pesos =
       grupoId
       ARS
       [TasaDeCambio{id = nullUlid, unaMoneda = USD, otraMoneda = ARS, unMonto = dolares, otroMonto = pesos}]
+
+unicoParticipante :: Grupo -> IO Participante
+unicoParticipante grupo = case grupo.participantes of
+  [p] -> pure p
+  _ -> panic "expected exactly one participante"
 
 -- | El estado que le muestra la home a ese usuario en su único grupo.
 estadoEnLaHome :: User -> Pg EstadoParaUsuario

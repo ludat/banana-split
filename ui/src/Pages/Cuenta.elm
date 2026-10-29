@@ -71,12 +71,15 @@ validateUpdateMeParams =
                     |> V.andThen V.nonEmpty
                 )
             )
+        |> V.andMap (V.field "datosDeCobro" (V.maybe V.string))
 
 
 seedForm : User -> Form CustomFormError UpdateMeParams
 seedForm user =
     Form.initial
-        [ Form.setString "nombre" user.nombre ]
+        [ Form.setString "nombre" user.nombre
+        , Form.setString "datosDeCobro" (Maybe.withDefault "" user.datosDeCobro)
+        ]
         validateUpdateMeParams
 
 
@@ -210,6 +213,8 @@ viewForm user model =
             ]
         , Html.map FormMsg <|
             viewTextFormItem "Nombre" True nombreField
+        , Html.map FormMsg <|
+            viewDatosDeCobro (Form.getFieldAsString "datosDeCobro" model.form)
         , Bs.btn Bs.Primary
             [ type_ "submit", Telemetry.click "cuenta.save", disabled model.saving ]
             [ text
@@ -220,6 +225,26 @@ viewForm user model =
                     "Guardar"
                 )
             ]
+        ]
+
+
+viewDatosDeCobro : Form.FieldState CustomFormError String -> Html Form.Msg
+viewDatosDeCobro field =
+    div [ class "mb-3" ]
+        [ label [ for field.path, class "form-label" ] [ text "¿Cómo querés recibir la plata?" ]
+        , input
+            [ type_ "text"
+            , id field.path
+            , class "form-control"
+            , Attr.placeholder "Alias: juan.mp, CBU..., en efectivo"
+            , Attr.value (Maybe.withDefault "" field.value)
+            , onInput (\v -> Input field.path Form.Text (Form.Field.String v))
+            , on "focus" (Json.Decode.succeed (Focus field.path))
+            , on "blur" (Json.Decode.succeed (Blur field.path))
+            ]
+            []
+        , div [ class "form-text" ]
+            [ text "Se muestra en todos los grupos donde te reclamaste, salvo que en alguno cargues otros datos para ese participante." ]
         ]
 
 

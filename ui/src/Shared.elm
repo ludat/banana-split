@@ -233,7 +233,7 @@ update _ msg model =
 
                 Ok (ClaimRejected reason) ->
                     ( model
-                    , Effect.sendToast { level = ToastDanger, content = Models.Grupo.claimRejectionMessage reason }
+                    , Effect.sendToast { level = ToastDanger, content = Models.Grupo.claimErrorMessage reason }
                     )
 
                 Err _ ->

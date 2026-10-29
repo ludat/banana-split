@@ -1,6 +1,7 @@
-module Models.Grupo exposing (GrupoLike, claimRejectionMessage, currentParticipante, estaCongelado, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante)
+module Models.Grupo exposing (GrupoLike, claimErrorMessage, currentParticipante, datosDeCobro, estaCongelado, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante, participanteErrorFromHttp, participanteErrorMessage)
 
-import Generated.Api exposing (ClaimRejection(..), Participante, ParticipanteId, ULID, User)
+import Generated.Api exposing (Participante, ParticipanteClaimError(..), ParticipanteError(..), ParticipanteId, ParticipanteUsage(..), ULID, User)
+import Http
 import RemoteData exposing (RemoteData(..), WebData)
 import Route.Path as Path
 import Time
@@ -83,7 +84,21 @@ lookupParticipante grupo participanteId =
     grupo.participantes
         |> List.filter (\p -> p.id == participanteId)
         |> List.head
-        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido", user = Nothing }
+        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido", user = Nothing, datosDeCobro = Nothing }
+
+
+{-| Cómo quiere recibir la plata: lo que se cargó en el participante y, si no
+tiene nada, lo de la cuenta que lo reclamó. Así alcanza con cargarlo una vez en
+la cuenta en vez de en cada grupo.
+-}
+datosDeCobro : Participante -> Maybe String
+datosDeCobro participante =
+    case participante.datosDeCobro of
+        Just datos ->
+            Just datos
+
+        Nothing ->
+            participante.user |> Maybe.andThen .datosDeCobro
 
 
 lookupNombreParticipante : GrupoLike g -> ParticipanteId -> String
@@ -130,8 +145,8 @@ currentParticipante manualPick currentUser grupo =
 
 {-| A user-facing message for each way a claim can be refused.
 -}
-claimRejectionMessage : ClaimRejection -> String
-claimRejectionMessage reason =
+claimErrorMessage : ParticipanteClaimError -> String
+claimErrorMessage reason =
     case reason of
         ClaimedByOtherUser ->
             "Ese participante ya fue reclamado por otra persona"
@@ -139,8 +154,52 @@ claimRejectionMessage reason =
         AlreadyOwnAnotherParticipante ->
             "Ya reclamaste otro participante en este grupo. Dejá de reclamarlo primero."
 
+        ParticipanteError NameAlreadyTaken ->
+            "Ya hay un participante con ese nombre. Si sos vos, elegilo de la lista."
+
+        ParticipanteError error ->
+            participanteErrorMessage error
+
+
+{-| A user-facing message for each way creating, editing or deleting a
+participante can be refused.
+-}
+participanteErrorMessage : ParticipanteError -> String
+participanteErrorMessage error =
+    case error of
         ParticipanteNotFound ->
             "No encontramos ese participante"
 
+        EmptyName ->
+            "Poné un nombre"
+
         NameAlreadyTaken ->
-            "Ya hay un participante con ese nombre. Si sos vos, elegilo de la lista."
+            "Ya hay un participante con ese nombre"
+
+        ParticipanteInUse UsedInGasto ->
+            "No se puede borrar: aparece en algún gasto. Sacalo de los gastos primero."
+
+        ParticipanteInUse UsedInRepartija ->
+            "No se puede borrar: reclamó items de una repartija. Sacale esos items primero."
+
+        ParticipanteInUse UsedInTransferencia ->
+            "No se puede borrar: tiene transferencias de cuando se congeló el grupo."
+
+
+{-| Crear y editar un participante no devuelven un resultado tipado: rechazan
+con un status, y este es el 'ParticipanteError' que corresponde a cada uno.
+-}
+participanteErrorFromHttp : Http.Error -> Maybe ParticipanteError
+participanteErrorFromHttp error =
+    case error of
+        Http.BadStatus 400 ->
+            Just EmptyName
+
+        Http.BadStatus 404 ->
+            Just ParticipanteNotFound
+
+        Http.BadStatus 409 ->
+            Just NameAlreadyTaken
+
+        _ ->
+            Nothing

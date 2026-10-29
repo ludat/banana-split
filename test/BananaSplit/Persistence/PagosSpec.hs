@@ -285,7 +285,7 @@ spec =
       tercero <-
         runDb (addParticipante grupo.id "tercero") >>= \case
           Right participante -> pure $ ParticipanteId participante.id
-          Left e -> panic e
+          Left e -> panic (show e)
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
       -- Se ensucia el cache a mano: si la lectura lo recalculara, lo pisaría.
@@ -317,7 +317,7 @@ grupoConDosParticipantes = do
   otro <-
     addParticipante grupo.id "otro" >>= \case
       Right participante -> pure $ ParticipanteId participante.id
-      Left e -> panic e
+      Left e -> panic (show e)
   pure (grupo, participanteDe grupo, otro)
 
 -- | Un gasto donde uno pone todo y el otro consume todo.

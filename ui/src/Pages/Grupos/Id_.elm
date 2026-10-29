@@ -12,7 +12,7 @@ import Html.Attributes as Attr exposing (class, classList, style, type_)
 import Html.Events exposing (onClick)
 import Http
 import Layouts
-import Models.Grupo exposing (GrupoLike, estaCongelado, lookupNombreParticipante)
+import Models.Grupo exposing (GrupoLike, datosDeCobro, estaCongelado, lookupNombreParticipante, lookupParticipante)
 import Models.Moneda as Moneda
 import Models.Monto as Monto
 import Models.Store as Store
@@ -627,6 +627,16 @@ viewFilaTransferencia zone grupo rol t =
                 , text " "
                 , text (Monto.toString t.monto)
                 ]
+
+            -- Cuando te toca pagar y todavía no lo hiciste, es justo lo que
+            -- hace falta para hacer la transferencia.
+            , case ( rol, Transferencia.estado t, datosDeCobro (lookupParticipante grupo t.to) ) of
+                ( Pago, Transferencia.Pendiente, Just datos ) ->
+                    div [ class "small text-body-secondary mt-1", style "white-space" "pre-line" ]
+                        [ i [ class "bi bi-wallet2 me-1" ] [], text datos ]
+
+                _ ->
+                    text ""
             ]
         , td [ class "text-end" ]
             [ case Transferencia.estado t of

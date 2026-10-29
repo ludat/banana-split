@@ -37,6 +37,8 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> ReqBody '[JSON] UpdateGrupoParams :> Put '[JSON] Grupo
   , _routeGrupoParticipanteAdd ::
       routes :- "grupo" :> Capture "id" ULID :> "participantes" :> ReqBody '[JSON] ParticipanteAddParams :> Post '[JSON] Participante
+  , _routeGrupoParticipanteUpdate ::
+      routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> ReqBody '[JSON] ParticipanteUpdateParams :> Put '[JSON] Participante
   , _routePagoPost ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> ReqBody '[JSON] Pago :> Post '[JSON] Pago
   , -- Con @participante@ el resumen de cada gasto viene recortado a esa
@@ -54,7 +56,7 @@ data Api routes
   , _routePagoResumenPost ::
       routes :- "pagos" :> "resumen" :> ReqBody '[JSON] Pago :> Post '[JSON] ResumenPago
   , _routeGrupoParticipanteDelete ::
-      routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> Delete '[JSON] ULID
+      routes :- "grupo" :> Capture "id" ULID :> "participantes" :> Capture "participanteId" ULID :> Delete '[JSON] DeleteParticipanteResult
   , _routeGrupoPagoDelete ::
       routes :- "grupo" :> Capture "id" ULID :> "pagos" :> Capture "pagoId" ULID :> Delete '[JSON] ULID
   , _routePagoUpdate ::
@@ -130,6 +132,12 @@ data ParticipanteAddParams = ParticipanteAddParams
   }
   deriving (Show, Eq, Generic)
 
+data ParticipanteUpdateParams = ParticipanteUpdateParams
+  { nombre :: Text
+  , datosDeCobro :: Maybe Text
+  }
+  deriving (Show, Eq, Generic)
+
 -- | Step 1: ask for a login code by email. The same request whether or not an
 -- account exists, so it never reveals which — existence is only disclosed at
 -- verify time, to the proven owner of the address.
@@ -174,6 +182,7 @@ data RegisterParams = RegisterParams
 -- need the ownership-proof flow), so only the display name is editable here.
 data UpdateMeParams = UpdateMeParams
   { nombre :: Text
+  , datosDeCobro :: Maybe Text
   }
   deriving (Show, Eq, Generic)
 
@@ -252,10 +261,18 @@ data ReceiptImageResponse
 -- the same success|error pattern).
 data ClaimParticipanteResult
   = ClaimAccepted Participante
-  | ClaimRejected ClaimRejection
+  | ClaimRejected ParticipanteClaimError
+  deriving (Show, Eq, Generic)
+
+-- | Same pattern as 'ClaimParticipanteResult': a rejected delete says what still
+-- references the participante, so it has to reach the frontend as a 200.
+data DeleteParticipanteResult
+  = DeleteAccepted ULID
+  | DeleteRejected ParticipanteError
   deriving (Show, Eq, Generic)
 
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
+Elm.deriveBoth Elm.defaultOptions ''ParticipanteUpdateParams
 Elm.deriveBoth Elm.defaultOptions ''RequestCodeParams
 Elm.deriveBoth Elm.defaultOptions ''LoginChallenge
 Elm.deriveBoth Elm.defaultOptions ''VerifyParams
@@ -275,3 +292,4 @@ Elm.deriveBoth Elm.defaultOptions ''ResumenPago
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageResponse
 Elm.deriveBoth Elm.defaultOptions ''ClaimParticipanteResult
+Elm.deriveBoth Elm.defaultOptions ''DeleteParticipanteResult

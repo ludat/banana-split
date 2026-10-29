@@ -79,6 +79,7 @@ data UserT f = User
   , email :: Columnar f M.Email
   , nombre :: Columnar f Text
   , created_at :: Columnar f UTCTime
+  , datos_de_cobro :: Columnar (Nullable f) Text
   }
   deriving (Generic, Beamable)
 
@@ -131,6 +132,7 @@ data ParticipanteT f = Participante
   , grupo :: PrimaryKey GrupoT f
   , nombre :: Columnar f Text
   , user :: PrimaryKey UserT (Nullable f)
+  , datos_de_cobro :: Columnar (Nullable f) Text
   }
   deriving (Generic, Beamable)
 

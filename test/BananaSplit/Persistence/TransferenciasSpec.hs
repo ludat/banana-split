@@ -197,7 +197,7 @@ congelarConDeuda runDb grupo pagador deudor monto = do
 grupoDeDos :: RunDb -> IO (Grupo, ParticipanteId, ParticipanteId)
 grupoDeDos (RunDb runDb) = do
   grupo <- runDb $ createGrupo "Viaje" "una"
-  otra <- runDb (addParticipante grupo.id "otra") >>= either panic pure
+  otra <- runDb (addParticipante grupo.id "otra") >>= either (panic . show) pure
   case grupo.participantes of
     [una] -> pure (grupo, ParticipanteId una.id, ParticipanteId otra.id)
     _ -> panic "se esperaba exactamente un participante"

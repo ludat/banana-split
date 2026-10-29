@@ -1,8 +1,13 @@
-module Utils.Form exposing (CustomFormError(..), errorForField, hasErrorField, isDataModifyingEvent)
+module Utils.Form exposing (CustomFormError(..), anyString, errorForField, hasErrorField, isDataModifyingEvent, textInput)
 
 import Form
 import Form.Error as FormError
-import Html exposing (Html, text)
+import Form.Field
+import Form.Validate as Validate exposing (Validation)
+import Html exposing (Html, input, text)
+import Html.Attributes exposing (class, type_, value)
+import Html.Events exposing (on, onInput)
+import Json.Decode
 import Numeric.ArithmeticError as DecimalError
 
 
@@ -115,3 +120,29 @@ errorForField field =
     errorTextForField field
         |> Maybe.map text
         |> Maybe.withDefault (text "")
+
+
+{-| Cualquier texto, vacío incluido (`Form.Validate.string` rechaza el vacío).
+Para los campos que valida el backend y no el form.
+-}
+anyString : Validation CustomFormError String
+anyString =
+    Validate.oneOf [ Validate.string, Validate.emptyString ]
+
+
+{-| Un input de texto atado a un campo del form, con los atributos que hagan
+falta (id, placeholder...).
+-}
+textInput : List (Html.Attribute Form.Msg) -> Form.FieldState CustomFormError String -> Html Form.Msg
+textInput attributes field =
+    input
+        ([ type_ "text"
+         , class "form-control"
+         , value (Maybe.withDefault "" field.value)
+         , onInput (\v -> Form.Input field.path Form.Text (Form.Field.String v))
+         , on "focus" (Json.Decode.succeed (Form.Focus field.path))
+         , on "blur" (Json.Decode.succeed (Form.Blur field.path))
+         ]
+            ++ attributes
+        )
+        []

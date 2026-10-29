@@ -9,6 +9,8 @@ module BananaSplit.Telemetry.QueryTracingSpec (
 import Data.IORef (readIORef)
 import Data.Text qualified as Text
 import Data.Vector qualified as Vector
+import Database.PostgreSQL.Simple (SqlError (..))
+import Database.PostgreSQL.Simple qualified as PG
 import OpenTelemetry.Attributes qualified as Attributes
 import OpenTelemetry.Exporter.InMemory.Span (inMemoryListExporter)
 import OpenTelemetry.Trace.Core (
@@ -157,6 +159,27 @@ spec = do
     it "si una comilla no cierra tapa todo lo que sigue" $
       Persistence.taparValores "SELECT 'lucas@ejemplo.com AS \"res0\"" `shouldBe` "SELECT ?"
 
+  -- Los casos son detalles de errores de Postgres de verdad: traen los valores
+  -- de la fila que chocó, que son datos de usuario.
+  describe "taparDetalle" $ do
+    it "tapa los valores de una violación de unique" $
+      Persistence.taparDetalle "Key (grupo__id, nombre)=(01KABC, Ana) already exists."
+        `shouldBe` "Key (grupo__id, nombre)=(?) already exists."
+
+    it "tapa los valores de una violación de foreign key" $
+      Persistence.taparDetalle "Key (id)=(01KABC) is still referenced from table \"partes_deudores\"."
+        `shouldBe` "Key (id)=(?) is still referenced from table \"partes_deudores\"."
+
+    it "tapa un valor con paréntesis adentro hasta el último" $
+      Persistence.taparDetalle "Key (nombre)=(Ana (la de Juan)) already exists."
+        `shouldBe` "Key (nombre)=(?) already exists."
+
+    it "si un valor no cierra tapa todo lo que sigue" $
+      Persistence.taparDetalle "Key (nombre)=(Ana already exists." `shouldBe` "Key (nombre)=(?"
+
+    it "sin valores lo deja tal cual" $
+      Persistence.taparDetalle "Failing row contains nothing." `shouldBe` "Failing row contains nothing."
+
   -- Esto existe porque el camino es indirecto: Beam avisa de cada statement por un
   -- callback, y si se rompe no hay error — simplemente los spans de base quedan sin
   -- queries adentro.
@@ -263,6 +286,34 @@ spec = do
       -- Su SQL entero va en el span, al lado de la excepción.
       textoEn hot.hotAttributes "db.query.text" `shouldBe` Just "SELECT 2 FROM \"pagos\""
 
+    -- Una que falló pero se atrapó ('tryJustPg') no hizo explotar al span: su
+    -- SQL y su error van en su evento, como cualquier otra query.
+    it "una query que falló y se manejó deja su evento con el error" $ do
+      hot <- enUnSpan $ \span -> do
+        registro <- Persistence.nuevoRegistro span
+        _ <- Persistence.registrarStatement registro "INSERT INTO \"participantes\" VALUES ('Ana')"
+        Persistence.fallarStatement registro (toException violacionDeUnique)
+        Persistence.anotarQueriesEnElSpan registro
+
+      map textoDelEvento (eventos hot) `shouldBe` [Just "INSERT participantes"]
+      map (\evento -> textoEn evento.eventAttributes "db.query.text") (eventos hot)
+        `shouldBe` [Just "INSERT INTO \"participantes\" VALUES (?)"]
+      map (\evento -> textoEn evento.eventAttributes "db.response.status_code") (eventos hot)
+        `shouldBe` [Just "23505"]
+      map (\evento -> textoEn evento.eventAttributes "error.type") (eventos hot)
+        `shouldBe` [Just "23505"]
+      map (\evento -> textoEn evento.eventAttributes "exception.type") (eventos hot)
+        `shouldBe` [Just "SqlError"]
+      map (\evento -> textoEn evento.eventAttributes "exception.message") (eventos hot)
+        `shouldBe` [Just "duplicate key value violates unique constraint \"unique_participantes_in_grupo\""]
+      map (\evento -> textoEn evento.eventAttributes "db.postgresql.error.detail") (eventos hot)
+        `shouldBe` [Just "Key (grupo__id, nombre)=(?) already exists."]
+      -- Postgres no mandó pista: no queda un atributo vacío.
+      map (\evento -> textoEn evento.eventAttributes "db.postgresql.error.hint") (eventos hot)
+        `shouldBe` [Nothing]
+      textoEn hot.hotAttributes "db.query.text" `shouldBe` Nothing
+      textoEn hot.hotAttributes "db.query.summary" `shouldBe` Just "INSERT participantes"
+
     it "si todas terminaron no deja SQL en el span" $ do
       hot <- enUnSpan $ \span -> do
         registro <- Persistence.nuevoRegistro span
@@ -279,6 +330,17 @@ spec = do
       textoEn hot.hotAttributes "db.query.summary" `shouldBe` Nothing
       enteroEn hot.hotAttributes "db.query.count" `shouldBe` Nothing
       enteroEn hot.hotAttributes "db.response.returned_rows" `shouldBe` Nothing
+
+-- | Lo que tira Postgres cuando un insert choca con un índice único.
+violacionDeUnique :: SqlError
+violacionDeUnique =
+  SqlError
+    { sqlState = "23505"
+    , sqlExecStatus = PG.FatalError
+    , sqlErrorMsg = "duplicate key value violates unique constraint \"unique_participantes_in_grupo\""
+    , sqlErrorDetail = "Key (grupo__id, nombre)=(01KABC, Ana) already exists."
+    , sqlErrorHint = ""
+    }
 
 -- | Una query que se manda y termina, devolviendo esas filas.
 unaQuery :: Persistence.RegistroDeQueries -> Text -> Maybe Int64 -> IO ()

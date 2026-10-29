@@ -44,6 +44,7 @@ serverT =
         , _routeGrupoGetNetos = handleGetNetos
         , _routeGrupoUpdate = handleUpdateGrupo
         , _routeGrupoParticipanteAdd = handleCreateParticipante
+        , _routeGrupoParticipanteUpdate = handleUpdateParticipante
         , _routeGrupoParticipanteDelete = handleDeleteParticipante
         , _routeGrupoPagoDelete = handleDeletePago
         , _routePagoPost = handlePagoPost

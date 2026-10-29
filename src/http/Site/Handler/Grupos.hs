@@ -14,6 +14,7 @@ module Site.Handler.Grupos (
   handleUnclaimParticipante,
   handleUnfreezeGrupo,
   handleUpdateGrupo,
+  handleUpdateParticipante,
 ) where
 
 import Data.Text qualified as Text
@@ -32,6 +33,7 @@ import BananaSplit.Persistence (
   createGrupo,
   createGrupoForUser,
   deleteShallowParticipante,
+  editarParticipante,
   fetchGrupo,
   fetchGruposForUser,
   fetchTransferencias,
@@ -85,10 +87,12 @@ handleGetNetos grupoId = do
             , transferencias = transferencias
             }
 
-handleDeleteParticipante :: ULID -> ULID -> AppHandler ULID
+handleDeleteParticipante :: ULID -> ULID -> AppHandler DeleteParticipanteResult
 handleDeleteParticipante grupoId participanteId = do
-  _ <- runBeamWrite (deleteShallowParticipante grupoId participanteId)
-  pure participanteId
+  result <- runBeamWrite $ deleteShallowParticipante grupoId participanteId
+  pure $ case result of
+    Left rejection -> DeleteRejected rejection
+    Right () -> DeleteAccepted participanteId
 
 handleShowGrupo :: ULID -> AppHandler Grupo
 handleShowGrupo grupoId = do
@@ -98,7 +102,24 @@ handleShowGrupo grupoId = do
 handleCreateParticipante :: ULID -> ParticipanteAddParams -> AppHandler Participante
 handleCreateParticipante grupoId ParticipanteAddParams{name} = do
   runBeamWrite (addParticipante grupoId name)
-    `Site.Handler.Utils.orElse` (\_e -> throwJsonError err400 "falle")
+    `Site.Handler.Utils.orElse` throwParticipanteError
+
+handleUpdateParticipante :: ULID -> ULID -> ParticipanteUpdateParams -> AppHandler Participante
+handleUpdateParticipante grupoId participanteId params = do
+  -- Vacío es lo mismo que no haberlo cargado.
+  let datosDeCobro = mfilter (not . Text.null) (Text.strip <$> params.datosDeCobro)
+
+  runBeamWrite (editarParticipante grupoId participanteId params.nombre datosDeCobro)
+    `Site.Handler.Utils.orElse` throwParticipanteError
+
+-- | Crear y editar responden con un error HTTP; reclamar y borrar, en cambio,
+-- los devuelven dentro del resultado.
+throwParticipanteError :: ParticipanteError -> AppHandler a
+throwParticipanteError = \case
+  ParticipanteNotFound -> throwJsonError err404 "Participante no encontrado"
+  EmptyName -> throwJsonError err400 "El nombre no puede estar vacío"
+  NameAlreadyTaken -> throwJsonError err409 "Ya hay un participante con ese nombre"
+  ParticipanteInUse _ -> throwJsonError err409 "Este participante está siendo usado"
 
 handleGetMisGrupos :: User -> AppHandler [GrupoParaUsuario]
 handleGetMisGrupos user = do
@@ -113,9 +134,7 @@ handleClaimParticipante user grupoId participanteId = do
 
 handleAddMeAsParticipante :: User -> ULID -> ParticipanteAddParams -> AppHandler ClaimParticipanteResult
 handleAddMeAsParticipante user grupoId ParticipanteAddParams{name} = do
-  when (Text.null (Text.strip name)) $
-    throwJsonError err400 "El nombre no puede estar vacío"
-  result <- runBeamWrite $ addParticipanteForUser grupoId (Text.strip name) user.id
+  result <- runBeamWrite $ addParticipanteForUser grupoId name user.id
   pure $ case result of
     Left rejection -> ClaimRejected rejection
     Right participante -> ClaimAccepted participante

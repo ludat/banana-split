@@ -1,0 +1,17 @@
+operations:
+  # Texto libre con cómo quiere recibir la plata cada participante (alias, CBU,
+  # "en efectivo"...). Opcional: la mayoría no lo va a cargar.
+  - add_column:
+      table: participantes
+      column:
+        name: datos_de_cobro
+        type: text
+        nullable: true
+  # Lo mismo pero de la cuenta: vale para todos los participantes que la cuenta
+  # reclamó y no tienen los suyos.
+  - add_column:
+      table: users
+      column:
+        name: datos_de_cobro
+        type: text
+        nullable: true

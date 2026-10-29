@@ -135,15 +135,22 @@ jsonEncRegisterParams  val =
 
 type alias UpdateMeParams  =
    { nombre: String
+   , datosDeCobro: (Maybe String)
    }
 
 jsonDecUpdateMeParams : Json.Decode.Decoder ( UpdateMeParams )
 jsonDecUpdateMeParams =
-   Json.Decode.succeed (\pnombre -> {nombre = pnombre}) |> custom (Json.Decode.string)
+   Json.Decode.succeed (\pnombre pdatosDeCobro -> {nombre = pnombre, datosDeCobro = pdatosDeCobro})
+   |> required "nombre" (Json.Decode.string)
+   |> fnullable "datosDeCobro" (Json.Decode.string)
 
 jsonEncUpdateMeParams : UpdateMeParams -> Value
 jsonEncUpdateMeParams  val =
-   Json.Encode.string val.nombre
+   Json.Encode.object
+   [ ("nombre", Json.Encode.string val.nombre)
+   , ("datosDeCobro", (maybeEncode (Json.Encode.string)) val.datosDeCobro)
+   ]
+
 
 
 type alias Email  = String
@@ -161,14 +168,16 @@ type alias User  =
    { id: ULID
    , email: Email
    , nombre: String
+   , datosDeCobro: (Maybe String)
    }
 
 jsonDecUser : Json.Decode.Decoder ( User )
 jsonDecUser =
-   Json.Decode.succeed (\pid pemail pnombre -> {id = pid, email = pemail, nombre = pnombre})
+   Json.Decode.succeed (\pid pemail pnombre pdatosDeCobro -> {id = pid, email = pemail, nombre = pnombre, datosDeCobro = pdatosDeCobro})
    |> required "id" (jsonDecULID)
    |> required "email" (jsonDecEmail)
    |> required "nombre" (Json.Decode.string)
+   |> fnullable "datosDeCobro" (Json.Decode.string)
 
 jsonEncUser : User -> Value
 jsonEncUser  val =
@@ -176,6 +185,7 @@ jsonEncUser  val =
    [ ("id", jsonEncULID val.id)
    , ("email", jsonEncEmail val.email)
    , ("nombre", Json.Encode.string val.nombre)
+   , ("datosDeCobro", (maybeEncode (Json.Encode.string)) val.datosDeCobro)
    ]
 
 
@@ -247,36 +257,105 @@ jsonEncParticipanteAddParams  val =
    Json.Encode.string val.name
 
 
-type ClaimRejection  =
+type alias ParticipanteUpdateParams  =
+   { nombre: String
+   , datosDeCobro: (Maybe String)
+   }
+
+jsonDecParticipanteUpdateParams : Json.Decode.Decoder ( ParticipanteUpdateParams )
+jsonDecParticipanteUpdateParams =
+   Json.Decode.succeed (\pnombre pdatosDeCobro -> {nombre = pnombre, datosDeCobro = pdatosDeCobro})
+   |> required "nombre" (Json.Decode.string)
+   |> fnullable "datosDeCobro" (Json.Decode.string)
+
+jsonEncParticipanteUpdateParams : ParticipanteUpdateParams -> Value
+jsonEncParticipanteUpdateParams  val =
+   Json.Encode.object
+   [ ("nombre", Json.Encode.string val.nombre)
+   , ("datosDeCobro", (maybeEncode (Json.Encode.string)) val.datosDeCobro)
+   ]
+
+
+
+type ParticipanteUsage  =
+    UsedInGasto 
+    | UsedInRepartija 
+    | UsedInTransferencia 
+
+jsonDecParticipanteUsage : Json.Decode.Decoder ( ParticipanteUsage )
+jsonDecParticipanteUsage = 
+    let jsonDecDictParticipanteUsage = Dict.fromList [("UsedInGasto", UsedInGasto), ("UsedInRepartija", UsedInRepartija), ("UsedInTransferencia", UsedInTransferencia)]
+    in  decodeSumUnaries "ParticipanteUsage" jsonDecDictParticipanteUsage
+
+jsonEncParticipanteUsage : ParticipanteUsage -> Value
+jsonEncParticipanteUsage  val =
+    case val of
+        UsedInGasto -> Json.Encode.string "UsedInGasto"
+        UsedInRepartija -> Json.Encode.string "UsedInRepartija"
+        UsedInTransferencia -> Json.Encode.string "UsedInTransferencia"
+
+
+
+type ParticipanteError  =
+    ParticipanteNotFound 
+    | EmptyName 
+    | NameAlreadyTaken 
+    | ParticipanteInUse ParticipanteUsage
+
+jsonDecParticipanteError : Json.Decode.Decoder ( ParticipanteError )
+jsonDecParticipanteError =
+    let jsonDecDictParticipanteError = Dict.fromList
+            [ ("ParticipanteNotFound", Json.Decode.lazy (\_ -> Json.Decode.succeed ParticipanteNotFound))
+            , ("EmptyName", Json.Decode.lazy (\_ -> Json.Decode.succeed EmptyName))
+            , ("NameAlreadyTaken", Json.Decode.lazy (\_ -> Json.Decode.succeed NameAlreadyTaken))
+            , ("ParticipanteInUse", Json.Decode.lazy (\_ -> Json.Decode.map ParticipanteInUse (jsonDecParticipanteUsage)))
+            ]
+    in  decodeSumObjectWithSingleField  "ParticipanteError" jsonDecDictParticipanteError
+
+jsonEncParticipanteError : ParticipanteError -> Value
+jsonEncParticipanteError  val =
+    let keyval v = case v of
+                    ParticipanteNotFound  -> ("ParticipanteNotFound", encodeValue (Json.Encode.list identity []))
+                    EmptyName  -> ("EmptyName", encodeValue (Json.Encode.list identity []))
+                    NameAlreadyTaken  -> ("NameAlreadyTaken", encodeValue (Json.Encode.list identity []))
+                    ParticipanteInUse v1 -> ("ParticipanteInUse", encodeValue (jsonEncParticipanteUsage v1))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type ParticipanteClaimError  =
     ClaimedByOtherUser 
     | AlreadyOwnAnotherParticipante 
-    | ParticipanteNotFound 
-    | NameAlreadyTaken 
+    | ParticipanteError ParticipanteError
 
-jsonDecClaimRejection : Json.Decode.Decoder ( ClaimRejection )
-jsonDecClaimRejection = 
-    let jsonDecDictClaimRejection = Dict.fromList [("ClaimedByOtherUser", ClaimedByOtherUser), ("AlreadyOwnAnotherParticipante", AlreadyOwnAnotherParticipante), ("ParticipanteNotFound", ParticipanteNotFound), ("NameAlreadyTaken", NameAlreadyTaken)]
-    in  decodeSumUnaries "ClaimRejection" jsonDecDictClaimRejection
+jsonDecParticipanteClaimError : Json.Decode.Decoder ( ParticipanteClaimError )
+jsonDecParticipanteClaimError =
+    let jsonDecDictParticipanteClaimError = Dict.fromList
+            [ ("ClaimedByOtherUser", Json.Decode.lazy (\_ -> Json.Decode.succeed ClaimedByOtherUser))
+            , ("AlreadyOwnAnotherParticipante", Json.Decode.lazy (\_ -> Json.Decode.succeed AlreadyOwnAnotherParticipante))
+            , ("ParticipanteError", Json.Decode.lazy (\_ -> Json.Decode.map ParticipanteError (jsonDecParticipanteError)))
+            ]
+    in  decodeSumObjectWithSingleField  "ParticipanteClaimError" jsonDecDictParticipanteClaimError
 
-jsonEncClaimRejection : ClaimRejection -> Value
-jsonEncClaimRejection  val =
-    case val of
-        ClaimedByOtherUser -> Json.Encode.string "ClaimedByOtherUser"
-        AlreadyOwnAnotherParticipante -> Json.Encode.string "AlreadyOwnAnotherParticipante"
-        ParticipanteNotFound -> Json.Encode.string "ParticipanteNotFound"
-        NameAlreadyTaken -> Json.Encode.string "NameAlreadyTaken"
+jsonEncParticipanteClaimError : ParticipanteClaimError -> Value
+jsonEncParticipanteClaimError  val =
+    let keyval v = case v of
+                    ClaimedByOtherUser  -> ("ClaimedByOtherUser", encodeValue (Json.Encode.list identity []))
+                    AlreadyOwnAnotherParticipante  -> ("AlreadyOwnAnotherParticipante", encodeValue (Json.Encode.list identity []))
+                    ParticipanteError v1 -> ("ParticipanteError", encodeValue (jsonEncParticipanteError v1))
+    in encodeSumObjectWithSingleField keyval val
 
 
 
 type ClaimParticipanteResult  =
     ClaimAccepted Participante
-    | ClaimRejected ClaimRejection
+    | ClaimRejected ParticipanteClaimError
 
 jsonDecClaimParticipanteResult : Json.Decode.Decoder ( ClaimParticipanteResult )
 jsonDecClaimParticipanteResult =
     let jsonDecDictClaimParticipanteResult = Dict.fromList
             [ ("ClaimAccepted", Json.Decode.lazy (\_ -> Json.Decode.map ClaimAccepted (jsonDecParticipante)))
-            , ("ClaimRejected", Json.Decode.lazy (\_ -> Json.Decode.map ClaimRejected (jsonDecClaimRejection)))
+            , ("ClaimRejected", Json.Decode.lazy (\_ -> Json.Decode.map ClaimRejected (jsonDecParticipanteClaimError)))
             ]
     in  decodeSumObjectWithSingleField  "ClaimParticipanteResult" jsonDecDictClaimParticipanteResult
 
@@ -284,7 +363,28 @@ jsonEncClaimParticipanteResult : ClaimParticipanteResult -> Value
 jsonEncClaimParticipanteResult  val =
     let keyval v = case v of
                     ClaimAccepted v1 -> ("ClaimAccepted", encodeValue (jsonEncParticipante v1))
-                    ClaimRejected v1 -> ("ClaimRejected", encodeValue (jsonEncClaimRejection v1))
+                    ClaimRejected v1 -> ("ClaimRejected", encodeValue (jsonEncParticipanteClaimError v1))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type DeleteParticipanteResult  =
+    DeleteAccepted ULID
+    | DeleteRejected ParticipanteError
+
+jsonDecDeleteParticipanteResult : Json.Decode.Decoder ( DeleteParticipanteResult )
+jsonDecDeleteParticipanteResult =
+    let jsonDecDictDeleteParticipanteResult = Dict.fromList
+            [ ("DeleteAccepted", Json.Decode.lazy (\_ -> Json.Decode.map DeleteAccepted (jsonDecULID)))
+            , ("DeleteRejected", Json.Decode.lazy (\_ -> Json.Decode.map DeleteRejected (jsonDecParticipanteError)))
+            ]
+    in  decodeSumObjectWithSingleField  "DeleteParticipanteResult" jsonDecDictDeleteParticipanteResult
+
+jsonEncDeleteParticipanteResult : DeleteParticipanteResult -> Value
+jsonEncDeleteParticipanteResult  val =
+    let keyval v = case v of
+                    DeleteAccepted v1 -> ("DeleteAccepted", encodeValue (jsonEncULID v1))
+                    DeleteRejected v1 -> ("DeleteRejected", encodeValue (jsonEncParticipanteError v1))
     in encodeSumObjectWithSingleField keyval val
 
 
@@ -701,14 +801,16 @@ type alias Participante  =
    { id: ULID
    , nombre: String
    , user: (Maybe User)
+   , datosDeCobro: (Maybe String)
    }
 
 jsonDecParticipante : Json.Decode.Decoder ( Participante )
 jsonDecParticipante =
-   Json.Decode.succeed (\pid pnombre puser -> {id = pid, nombre = pnombre, user = puser})
+   Json.Decode.succeed (\pid pnombre puser pdatosDeCobro -> {id = pid, nombre = pnombre, user = puser, datosDeCobro = pdatosDeCobro})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
    |> fnullable "user" (jsonDecUser)
+   |> fnullable "datosDeCobro" (Json.Decode.string)
 
 jsonEncParticipante : Participante -> Value
 jsonEncParticipante  val =
@@ -716,6 +818,7 @@ jsonEncParticipante  val =
    [ ("id", jsonEncULID val.id)
    , ("nombre", Json.Encode.string val.nombre)
    , ("user", (maybeEncode (jsonEncUser)) val.user)
+   , ("datosDeCobro", (maybeEncode (Json.Encode.string)) val.datosDeCobro)
    ]
 
 
@@ -1467,6 +1570,37 @@ postGrupoByIdParticipantes capture_id body toMsg =
                 Nothing
             }
 
+putGrupoByIdParticipantesByParticipanteId : ULID -> ULID -> ParticipanteUpdateParams -> (Result Http.Error  (Participante)  -> msg) -> Cmd msg
+putGrupoByIdParticipantesByParticipanteId capture_id capture_participanteId body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "participantes"
+                    , (capture_participanteId)
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncParticipanteUpdateParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecParticipante
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
 postGrupoByIdPagos : ULID -> Pago -> (Result Http.Error  (Pago)  -> msg) -> Cmd msg
 postGrupoByIdPagos capture_id body toMsg =
     let
@@ -1589,7 +1723,7 @@ postPagosResumen body toMsg =
                 Nothing
             }
 
-deleteGrupoByIdParticipantesByParticipanteId : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
+deleteGrupoByIdParticipantesByParticipanteId : ULID -> ULID -> (Result Http.Error  (DeleteParticipanteResult)  -> msg) -> Cmd msg
 deleteGrupoByIdParticipantesByParticipanteId capture_id capture_participanteId toMsg =
     let
         params =
@@ -1613,7 +1747,7 @@ deleteGrupoByIdParticipantesByParticipanteId capture_id capture_participanteId t
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg jsonDecULID
+                Http.expectJson toMsg jsonDecDeleteParticipanteResult
             , timeout =
                 Nothing
             , tracker =

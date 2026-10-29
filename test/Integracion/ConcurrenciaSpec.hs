@@ -227,7 +227,7 @@ prepararEscenario telemetry conn = conTransaccionDeEscritura telemetry conn $ do
   otro <-
     addParticipante grupo.id "otro" >>= \case
       Right participante -> pure $ M.ParticipanteId participante.id
-      Left e -> panic e
+      Left e -> panic (show e)
   let uno = case grupo.participantes of
         (p : _) -> M.ParticipanteId p.id
         [] -> panic "el grupo deberia tener un participante"

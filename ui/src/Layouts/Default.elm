@@ -11,6 +11,7 @@ import Html exposing (Html, a, button, div, h5, hr, i, li, span, text, textarea,
 import Html.Attributes as Attr exposing (class, classList, type_)
 import Html.Events exposing (onClick, onInput)
 import Layout exposing (Layout)
+import Models.Opinion as Opinion exposing (Opinion(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
@@ -30,7 +31,7 @@ layout : Props -> Shared.Model -> Route () -> Layout () Model Msg contentMsg
 layout _ shared route =
     Layout.new
         { init = \() -> init
-        , update = update
+        , update = update shared.today
         , view = view (currentLocation route) shared.toasties shared.lastReadChangelog shared.today shared.currentUser
         , subscriptions = subscriptions
         }
@@ -48,6 +49,7 @@ currentLocation route =
 type alias Model =
     { navBarOpen : Bool
     , changelogOpen : Bool
+    , changelogOpinion : Maybe Opinion
     , feedbackOpen : Bool
     , feedbackText : String
     }
@@ -57,6 +59,7 @@ init : ( Model, Effect Msg )
 init =
     ( { navBarOpen = False
       , changelogOpen = False
+      , changelogOpinion = Nothing
       , feedbackOpen = False
       , feedbackText = ""
       }
@@ -76,6 +79,7 @@ type Msg
     | OpenChangelog
     | CloseChangelog
     | MarkChangelogReadAndClose
+    | OpinarChangelog Opinion
     | OpenFeedback
     | CloseFeedback
     | FeedbackChanged String
@@ -83,8 +87,8 @@ type Msg
     | DoLogout
 
 
-update : Msg -> Model -> ( Model, Effect Msg )
-update msg model =
+update : Date -> Msg -> Model -> ( Model, Effect Msg )
+update now msg model =
     case msg of
         ToastMsg toastMsg ->
             ( model
@@ -123,6 +127,17 @@ update msg model =
         MarkChangelogReadAndClose ->
             ( { model | changelogOpen = False }
             , Effect.sendSharedMsg Shared.MarkChangelogRead
+            )
+
+        OpinarChangelog opinion ->
+            -- Las mismas novedades que muestra el modal (ver `view`).
+            ( { model | changelogOpinion = Just opinion }
+            , Effect.telemetryEvent
+                (Telemetry.changelogFeedback
+                    { opinion = Opinion.toString opinion
+                    , novedades = List.map .title (Changelog.recentChangelog Nothing now)
+                    }
+                )
             )
 
         OpenFeedback ->
@@ -199,7 +214,7 @@ view location toasts lastReadChangelog now currentUser { toContentMsg, model, co
         , Html.map toContentMsg <|
             viewOffcanvas location model unread currentUser
         , Html.map toContentMsg <|
-            viewChangelogModal model.changelogOpen modalEntries
+            viewChangelogModal model modalEntries
         , Html.map toContentMsg <|
             viewFeedbackModal model
         , Html.map toContentMsg <|
@@ -427,20 +442,62 @@ viewFeedbackModal model =
         }
 
 
-viewChangelogModal : Bool -> List Changelog.Entry -> Html Msg
-viewChangelogModal isOpen entries =
+viewChangelogModal : Model -> List Changelog.Entry -> Html Msg
+viewChangelogModal model entries =
     Bs.modal
         { id = "modal-novedades"
-        , isOpen = isOpen
+        , isOpen = model.changelogOpen
         , onClose = CloseChangelog
         , title = "Novedades"
         , centered = False
-        , body = [ Bs.listGroup [] (List.map viewChangelogEntry entries) ]
+        , body =
+            [ Bs.listGroup [] (List.map viewChangelogEntry entries)
+            , if List.isEmpty entries then
+                text ""
+
+              else
+                viewChangelogOpinion model.changelogOpinion
+            ]
         , footer =
             [ Bs.btn Bs.Transparent [ Telemetry.click "changelog.close", onClick CloseChangelog ] [ text "Cerrar" ]
             , Bs.btn Bs.Primary [ Telemetry.click "changelog.mark_read", onClick MarkChangelogReadAndClose ] [ text "Marcar como leído" ]
             ]
         }
+
+
+{-| Con tocar una opción ya se manda, como la encuesta de la repartija. La
+respuesta queda mientras dure el layout, así no se vuelve a preguntar cada vez
+que se abre el modal.
+-}
+viewChangelogOpinion : Maybe Opinion -> Html Msg
+viewChangelogOpinion respuesta =
+    case respuesta of
+        Nothing ->
+            div [ class "mt-3" ]
+                [ Html.p [ class "mb-2 text-center" ] [ text "¿Con estos cambios la app está mejor o peor?" ]
+                , div [ class "d-flex gap-2" ]
+                    (List.map
+                        (\opinion ->
+                            Bs.btn Bs.Secondary
+                                [ class "flex-grow-1 d-flex flex-column align-items-center gap-1"
+                                , Telemetry.click "changelog.opinion"
+                                , onClick (OpinarChangelog opinion)
+                                ]
+                                [ i [ class ("bi fs-4 " ++ Opinion.icono opinion) ] []
+                                , span [] [ text (Opinion.label opinion) ]
+                                ]
+                        )
+                        [ Mejor, Igual, Peor ]
+                    )
+                ]
+
+        Just opinion ->
+            Html.p [ class "mt-3 mb-0 text-center" ]
+                [ i [ class ("bi text-success me-1 " ++ Opinion.icono opinion) ] []
+                , text "¡Gracias! Respondiste "
+                , Html.strong [] [ text (Opinion.label opinion) ]
+                , text "."
+                ]
 
 
 viewChangelogEntry : Changelog.Entry -> Html Msg

@@ -14,6 +14,7 @@ data User = User
   { id :: ULID
   , email :: Email
   , nombre :: Text
+  , datosDeCobro :: Maybe Text
   }
   deriving (Show, Eq, Generic)
 

@@ -20,6 +20,8 @@ module BananaSplit.Persistence (
   nuevoRegistro,
   registrarStatement,
   terminarStatement,
+  fallarStatement,
+  taparDetalle,
   anotarQueriesEnElSpan,
   resumirQuery,
   taparValores,
@@ -30,6 +32,8 @@ module BananaSplit.Persistence (
   recomputePagos,
   addParticipante,
   addParticipanteForUser,
+  editarParticipante,
+  usoDeParticipante,
   claimParticipante,
   unclaimParticipante,
   createGrupo,
@@ -83,7 +87,7 @@ import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres hiding (Pg)
 import Database.Beam.Postgres.Full hiding (insert)
-import Database.PostgreSQL.Simple (Only (..), execute, query)
+import Database.PostgreSQL.Simple (Only (..), SqlError, execute, query)
 import Katip (KatipContext)
 import OpenTelemetry.Trace.Core qualified as Otel
 
@@ -159,13 +163,13 @@ createGrupo :: Text -> Text -> Pg M.Grupo
 createGrupo nombre participanteNombre =
   createGrupoWith
     nombre
-    [M.Participante{M.id = nullUlid, M.nombre = participanteNombre, M.user = Nothing}]
+    [M.Participante{M.id = nullUlid, M.nombre = participanteNombre, M.user = Nothing, M.datosDeCobro = Nothing}]
 
 createGrupoForUser :: Text -> M.User -> Pg M.Grupo
 createGrupoForUser nombre user =
   createGrupoWith
     nombre
-    [M.Participante{M.id = nullUlid, M.nombre = user.nombre, M.user = Just user}]
+    [M.Participante{M.id = nullUlid, M.nombre = user.nombre, M.user = Just user, M.datosDeCobro = Nothing}]
 
 createGrupoWith :: Text -> [M.Participante] -> Pg M.Grupo
 createGrupoWith nombre participantes = do
@@ -182,13 +186,14 @@ createGrupoWith nombre participantes = do
         { M.id = participanteId
         , M.nombre = participante.nombre
         , M.user = participante.user
+        , M.datosDeCobro = participante.datosDeCobro
         }
   unless (null savedParticipantes)
     $ runInsert
     $ insert db.participantes
     $ insertValues
     $ savedParticipantes
-    & fmap (\p -> Participante p.id (GrupoId newId) p.nombre (UserId (fmap (.id) p.user)))
+    & fmap (\p -> Participante p.id (GrupoId newId) p.nombre (UserId (fmap (.id) p.user)) p.datosDeCobro)
   pure
     $ M.Grupo
       { M.id = newId
@@ -200,13 +205,13 @@ createGrupoWith nombre participantes = do
       , M.monedasConPagos = mempty
       }
 
-updateUser :: ULID -> Text -> Pg M.User
-updateUser userId rawNombre = do
+updateUser :: ULID -> Text -> Maybe Text -> Pg M.User
+updateUser userId rawNombre datosDeCobro = do
   let nombre = Text.strip rawNombre
   runUpdate
     $ update
       db.users
-      (\u -> u.nombre <-. val_ nombre)
+      (\u -> mconcat [u.nombre <-. val_ nombre, u.datos_de_cobro <-. val_ datosDeCobro])
       (\u -> u.id ==. val_ userId)
   fetchUserById userId
     `orElseMay` fail ("user vanished while updating: " <> show userId)
@@ -235,13 +240,14 @@ createUser email rawNombre = do
   runInsert
     $ insert db.users
     $ insertValues
-      [ User{id = newId, email = email, nombre = nombre, created_at = now}
+      [ User{id = newId, email = email, nombre = nombre, created_at = now, datos_de_cobro = Nothing}
       ]
   pure
     $ M.User
       { M.id = newId
       , M.email = email
       , M.nombre = nombre
+      , M.datosDeCobro = Nothing
       }
 
 toModelUser :: User -> M.User
@@ -250,6 +256,7 @@ toModelUser u =
     { M.id = u.id
     , M.email = u.email
     , M.nombre = u.nombre
+    , M.datosDeCobro = u.datos_de_cobro
     }
 
 attemptWindow :: NominalDiffTime
@@ -809,6 +816,7 @@ toModelParticipante p mOwner =
     { M.id = p.id
     , M.nombre = p.nombre
     , M.user = mOwner
+    , M.datosDeCobro = p.datos_de_cobro
     }
 
 fetchParticipanteById :: ULID -> Pg M.Participante
@@ -825,30 +833,38 @@ fetchParticipanteById participanteId = do
         UserId Nothing -> pure Nothing
       pure $ toModelParticipante p mOwner
 
-addParticipante :: ULID -> Text -> Pg (Either Text M.Participante)
-addParticipante grupoId name = do
+-- | 'M.NameAlreadyTaken' si la escritura choca con otro participante del grupo
+-- que ya se llama así (los nombres son únicos por grupo). No se chequea antes de
+-- escribir: el índice es el que decide, también cuando dos lo intentan a la vez.
+nombreRepetidoError :: SqlError -> Maybe M.ParticipanteError
+nombreRepetidoError = uniqueViolation "unique_participantes_in_grupo" M.NameAlreadyTaken
+
+addParticipante :: ULID -> Text -> Pg (Either M.ParticipanteError M.Participante)
+addParticipante grupoId nombreIngresado = runExceptT $ do
+  name <- ExceptT $ pure $ M.validarNombre nombreIngresado
   newId <- liftIO ULID.getULID
-  runInsert
+  ExceptT
+    $ tryJustPg nombreRepetidoError
+    $ runInsert
     $ insert db.participantes
     $ insertValues
-      [ Participante newId (GrupoId grupoId) name (UserId Nothing)
+      [ Participante newId (GrupoId grupoId) name (UserId Nothing) Nothing
       ]
   pure
-    $ Right
     $ M.Participante
       { M.id = newId
       , M.nombre = name
       , M.user = Nothing
+      , M.datosDeCobro = Nothing
       }
 
 -- | Add a new participante already claimed by a user: the "I'm new here" of
 -- someone who joins a grupo and isn't any of its participantes yet. Same
 -- one-per-grupo rule as 'claimParticipante', checked in the same transaction, so
--- nothing is inserted when it is refused. A name that is already taken is
--- refused too instead of tripping the unique index, since the participante with
--- that name may well be the user, who should claim it instead.
-addParticipanteForUser :: ULID -> Text -> ULID -> Pg (Either M.ClaimRejection M.Participante)
-addParticipanteForUser grupoId name userId = runExceptT $ do
+-- nothing is inserted when it is refused.
+addParticipanteForUser :: ULID -> Text -> ULID -> Pg (Either M.ParticipanteClaimError M.Participante)
+addParticipanteForUser grupoId nombreIngresado userId = runExceptT $ do
+  name <- withExceptT M.ParticipanteError $ ExceptT $ pure $ M.validarNombre nombreIngresado
   existingClaim <- runSelectReturningOne $ select $ do
     p <- all_ db.participantes
     guard_ (p.grupo ==. GrupoId (val_ grupoId))
@@ -856,28 +872,47 @@ addParticipanteForUser grupoId name userId = runExceptT $ do
     pure p.id
   when (isJust existingClaim) $ throwError M.AlreadyOwnAnotherParticipante
 
-  sameName <- runSelectReturningOne $ select $ do
-    p <- all_ db.participantes
-    guard_ (p.grupo ==. GrupoId (val_ grupoId))
-    guard_ (p.nombre ==. val_ name)
-    pure p.id
-  when (isJust sameName) $ throwError M.NameAlreadyTaken
-
   newId <- liftIO ULID.getULID
-  runInsert
+  withExceptT M.ParticipanteError
+    $ ExceptT
+    $ tryJustPg nombreRepetidoError
+    $ runInsert
     $ insert db.participantes
     $ insertValues
-      [ Participante newId (GrupoId grupoId) name (UserId (Just userId))
+      [ Participante newId (GrupoId grupoId) name (UserId (Just userId)) Nothing
       ]
   lift $ fetchParticipanteById newId
+
+-- | Cambiarle el nombre y los datos de cobro a un participante.
+editarParticipante ::
+  ULID -> ULID -> Text -> Maybe Text -> Pg (Either M.ParticipanteError M.Participante)
+editarParticipante grupoId participanteId nombreIngresado datosDeCobro = runExceptT $ do
+  nombre <- ExceptT $ pure $ M.validarNombre nombreIngresado
+  _ <-
+    ( runSelectReturningOne $ select $ do
+        p <- all_ db.participantes
+        guard_ (p.id ==. val_ participanteId)
+        guard_ (p.grupo ==. GrupoId (val_ grupoId))
+        pure p.id
+    )
+      `orElseMay` throwError M.ParticipanteNotFound
+
+  ExceptT
+    $ tryJustPg nombreRepetidoError
+    $ runUpdate
+    $ update
+      db.participantes
+      (\p -> mconcat [p.nombre <-. val_ nombre, p.datos_de_cobro <-. val_ datosDeCobro])
+      (\p -> p.id ==. val_ participanteId)
+  lift $ fetchParticipanteById participanteId
 
 -- | Claim a participante as belonging to a user. A user owns at most one
 -- participante per grupo, enforced as a hard rule: the claim is refused if the
 -- user already owns another participante in the same grupo (they must unclaim it
--- first). See 'M.ClaimRejection' for the ways it can be refused.
+-- first). See 'M.ParticipanteClaimError' for the ways it can be refused.
 --
 -- Re-claiming the participante you already own is a no-op that succeeds.
-claimParticipante :: ULID -> ULID -> ULID -> Pg (Either M.ClaimRejection M.Participante)
+claimParticipante :: ULID -> ULID -> ULID -> Pg (Either M.ParticipanteClaimError M.Participante)
 claimParticipante grupoId participanteId userId = runExceptT $ do
   p <-
     ( runSelectReturningOne $ select $ do
@@ -886,7 +921,7 @@ claimParticipante grupoId participanteId userId = runExceptT $ do
         guard_ (p.grupo ==. GrupoId (val_ grupoId))
         pure p
     )
-      `orElseMay` throwError M.ParticipanteNotFound
+      `orElseMay` throwError (M.ParticipanteError M.ParticipanteNotFound)
   case p.user of
     UserId (Just ownerId)
       -- Re-claiming your own participante succeeds without changes.
@@ -925,13 +960,32 @@ unclaimParticipante grupoId participanteId userId = do
       )
   fetchParticipanteById participanteId
 
-deleteShallowParticipante :: ULID -> ULID -> Pg M.ParticipanteId
-deleteShallowParticipante _grupoId participanteId = do
-  runDelete
+-- | 'M.ParticipanteInUse' si algo todavía lo referencia (un gasto, por ejemplo):
+-- lo rechaza la foreign key, no se chequea tabla por tabla.
+deleteShallowParticipante :: ULID -> ULID -> Pg (Either M.ParticipanteError ())
+deleteShallowParticipante grupoId participanteId = do
+  tryJustPg (foreignKeyViolation "participantes" (fmap M.ParticipanteInUse . usoDeParticipante))
+    $ runDelete
     $ delete
       db.participantes
-      (\p -> p.id ==. val_ participanteId)
-  pure $ M.ParticipanteId participanteId
+      (\p -> p.id ==. val_ participanteId &&. p.grupo ==. GrupoId (val_ grupoId))
+
+-- | Qué es lo que referencia a un participante, según la foreign key que frenó
+-- el borrado. Tiene que estar cada una de las que apuntan a @participantes@:
+-- una que falte se relanza y el borrado termina en un 500. Lo chequea un test
+-- contra la base.
+usoDeParticipante :: ByteString -> Maybe M.ParticipanteUsage
+usoDeParticipante = \case
+  "fk_pagado_y_consumido_participante__id" -> Just M.UsedInGasto
+  "fk_monto_equitativo_item_participante__id" -> Just M.UsedInGasto
+  "fk_montos_especificos_item_participante__id" -> Just M.UsedInGasto
+  "fk_partes_item_participante__id" -> Just M.UsedInGasto
+  "fk_partes_deudores_participante_id" -> Just M.UsedInGasto
+  "fk_partes_pagadores_participante__id" -> Just M.UsedInGasto
+  "fk_repartijas_claims_participante__id" -> Just M.UsedInRepartija
+  "fk_transacciones_congeladas_participante_from__id" -> Just M.UsedInTransferencia
+  "fk_transacciones_congeladas_participante_to__id" -> Just M.UsedInTransferencia
+  _ -> Nothing
 
 participanteId2Persistent :: M.ParticipanteId -> ParticipanteId
 participanteId2Persistent (M.ParticipanteId p) = ParticipanteId p

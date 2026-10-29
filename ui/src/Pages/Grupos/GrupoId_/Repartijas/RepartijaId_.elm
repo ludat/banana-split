@@ -1,4 +1,4 @@
-module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Ayuda, Feedback, Filtros, Model, Msg, Opinion, OrigenAyuda, page)
+module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Ayuda, Feedback, Filtros, Model, Msg, OrigenAyuda, page)
 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)
@@ -10,6 +10,7 @@ import Layouts
 import List.Extra exposing (find)
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
 import Models.Monto as Monto
+import Models.Opinion as Opinion exposing (Opinion(..))
 import Models.Repartija as Repartija
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -60,18 +61,12 @@ type alias Model =
 
 
 {-| La encuesta sobre el rediseño. Recién cuando alguien ya opinó se le ofrece
-contar por qué; no se recuerda la respuesta, así que se puede opinar de nuevo
-cuantas veces se quiera.
+contar por qué. La respuesta ya mandada no se puede cambiar, pero tampoco se
+recuerda: al volver a entrar a la pantalla se pregunta de nuevo.
 -}
 type Feedback
     = SinResponder
     | Respondido { opinion : Opinion, comentarioAbierto : Bool, comentario : String, comentarioEnviado : Bool }
-
-
-type Opinion
-    = Mejor
-    | Igual
-    | Peor
 
 
 type alias Filtros =
@@ -152,7 +147,6 @@ type Msg
     | ComentarioFeedbackCambiado String
     | AbrirComentarioFeedback
     | EnviarComentarioFeedback
-    | VolverAOpinar
 
 
 update : Maybe ULID -> Store -> Msg -> Model -> ( Model, Effect Msg )
@@ -279,7 +273,7 @@ update maybeParticipanteId store msg model =
                         , comentarioEnviado = False
                         }
               }
-            , Effect.telemetryEvent (Telemetry.repartijaRediseno (opinionToString opinion))
+            , Effect.telemetryEvent (Telemetry.repartijaRediseno (Opinion.toString opinion))
             )
 
         AbrirComentarioFeedback ->
@@ -289,11 +283,6 @@ update maybeParticipanteId store msg model =
 
                 SinResponder ->
                     model
-            , Effect.none
-            )
-
-        VolverAOpinar ->
-            ( { model | feedback = SinResponder }
             , Effect.none
             )
 
@@ -315,7 +304,7 @@ update maybeParticipanteId store msg model =
                     -- mandado y agradece.
                     ( { model | feedback = Respondido { respuesta | comentarioEnviado = True } }
                     , Effect.sendFeedback
-                        (Telemetry.repartijaRedisenoComentario (opinionToString respuesta.opinion))
+                        (Telemetry.repartijaRedisenoComentario (Opinion.toString respuesta.opinion))
                         respuesta.comentario
                     )
 
@@ -1428,47 +1417,8 @@ origenAyudaToString origen =
             "totales"
 
 
-opinionToString : Opinion -> String
-opinionToString opinion =
-    case opinion of
-        Mejor ->
-            "mejor"
-
-        Igual ->
-            "igual"
-
-        Peor ->
-            "peor"
-
-
-opinionIcono : Opinion -> String
-opinionIcono opinion =
-    case opinion of
-        Mejor ->
-            "bi-emoji-smile"
-
-        Igual ->
-            "bi-emoji-neutral"
-
-        Peor ->
-            "bi-emoji-frown"
-
-
-opinionLabel : Opinion -> String
-opinionLabel opinion =
-    case opinion of
-        Mejor ->
-            "Mejor"
-
-        Igual ->
-            "Igual"
-
-        Peor ->
-            "Peor"
-
-
 {-| La encuesta sobre el rediseño, abajo del total. Está siempre: después de
-responder se puede volver a opinar.
+responder queda el agradecimiento.
 
 Con tocar una opción ya se manda, así que eso es lo que la card dice antes y
 después; el comentario es un extra que queda escondido atrás de un link.
@@ -1483,8 +1433,8 @@ viewFeedback feedback =
                 , Telemetry.click "repartija.redesign_opinion"
                 , onClick (ResponderFeedback opinion)
                 ]
-                [ i [ class ("bi fs-4 " ++ opinionIcono opinion) ] []
-                , span [] [ text (opinionLabel opinion) ]
+                [ i [ class ("bi fs-4 " ++ Opinion.icono opinion) ] []
+                , span [] [ text (Opinion.label opinion) ]
                 ]
 
         linkChico track icono label msg =
@@ -1521,11 +1471,11 @@ viewFeedback feedback =
         Respondido respuesta ->
             Bs.card [ Attr.id "repartija-feedback", class "mb-3" ]
                 [ Bs.cardBody [ class "py-4 text-center" ]
-                    [ i [ class ("bi fs-1 text-success " ++ opinionIcono respuesta.opinion) ] []
+                    [ i [ class ("bi fs-1 text-success " ++ Opinion.icono respuesta.opinion) ] []
                     , p [ class "fw-semibold fs-5 mb-1 mt-2" ] [ text "¡Listo, gracias!" ]
                     , p [ class "text-body-secondary mb-0" ]
                         [ text "Tu respuesta "
-                        , strong [] [ text (opinionLabel respuesta.opinion) ]
+                        , strong [] [ text (Opinion.label respuesta.opinion) ]
                         , text " ya se envió."
                         ]
                     , if respuesta.comentarioEnviado then
@@ -1559,14 +1509,12 @@ viewFeedback feedback =
 
                       else
                         text ""
-                    , div [ class "d-flex justify-content-center gap-3 mt-3" ]
-                        [ if respuesta.comentarioAbierto || respuesta.comentarioEnviado then
-                            text ""
+                    , if respuesta.comentarioAbierto || respuesta.comentarioEnviado then
+                        text ""
 
-                          else
-                            linkChico "repartija.redesign_add_comment" "bi-chat-left-text" "Agregar un comentario" AbrirComentarioFeedback
-                        , linkChico "repartija.redesign_change_answer" "bi-arrow-counterclockwise" "Cambiar respuesta" VolverAOpinar
-                        ]
+                      else
+                        div [ class "d-flex justify-content-center mt-3" ]
+                            [ linkChico "repartija.redesign_add_comment" "bi-chat-left-text" "Agregar un comentario" AbrirComentarioFeedback ]
                     ]
                 ]
 

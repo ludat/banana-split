@@ -234,7 +234,7 @@ instance FromJSON SessionClaims where
     pure
       SessionClaims
         { sessionStdClaims = std
-        , sessionUser = User{id = uid, email = email, nombre = nombre}
+        , sessionUser = User{id = uid, email = email, nombre = nombre, datosDeCobro = Nothing}
         }
 
 insertClaims :: [(Key, Value)] -> Value -> Value

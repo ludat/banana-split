@@ -1,4 +1,4 @@
-module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, click, codigoDeLoginRechazado, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaDetalleDeItemAbierto, repartijaFiltro, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, severityToString, trackDecodeErrors)
+module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, changelogFeedback, click, codigoDeLoginRechazado, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaDetalleDeItemAbierto, repartijaFiltro, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, severityToString, trackDecodeErrors)
 
 import Html
 import Html.Attributes
@@ -139,6 +139,23 @@ repartijaRedisenoComentario opinion =
     , attributes =
         [ ( "app.feedback.opinion", Json.string opinion ) ]
     }
+
+
+{-| Qué le parecieron las novedades del modal. Lleva los títulos de las que se
+le mostraron, porque el modal muestra las del último mes y no son las mismas
+para todos: así una opinión se puede atribuir a los cambios que vio.
+-}
+changelogFeedback : { opinion : String, novedades : List String } -> Maybe TelemetryEvent
+changelogFeedback { opinion, novedades } =
+    Just
+        { name = "app.changelog.feedback"
+        , severity = Info
+        , attributes =
+            [ ( "app.feedback.opinion", Json.string opinion )
+            , ( "app.changelog.entries", Json.list Json.string novedades )
+            , ( "app.changelog.entry_count", Json.int (List.length novedades) )
+            ]
+        }
 
 
 {-| Que alguien abrió el detalle de un item de la repartija. Cerrarlo no se

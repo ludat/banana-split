@@ -42,7 +42,7 @@ testPepper :: ByteString
 testPepper = "test-pepper"
 
 testUser :: User
-testUser = User{id = nullUlid, email = "user@example.com", nombre = "Alice"}
+testUser = User{id = nullUlid, email = "user@example.com", nombre = "Alice", datosDeCobro = Nothing}
 
 spec :: Spec
 spec = do
