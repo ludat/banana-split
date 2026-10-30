@@ -1047,7 +1047,17 @@ viewItemCard model userId grupo detalle repartija item deItem =
                 ]
                 [ i [ class "bi bi-question-circle-fill mt-1" ] [], span [] [ text label ] ]
     in
-    div [ class "card mb-3" ]
+    div
+        (class "card mb-3"
+            :: (case userClaim of
+                    -- Un tinte azul apenas visible marca los items que reclamaste.
+                    Just _ ->
+                        [ Attr.style "background-color" "color-mix(in srgb, var(--bs-primary) 6%, var(--bs-body-bg))" ]
+
+                    Nothing ->
+                        []
+               )
+        )
         [ div [ class "card-body d-flex flex-column flex-md-row align-items-md-center gap-3" ]
             [ div [ class "flex-grow-1" ]
                 [ h5 [ class "card-title mb-1" ] [ text item.nombre ]
@@ -1068,7 +1078,7 @@ viewItemCard model userId grupo detalle repartija item deItem =
             ]
             [ case userClaim of
                 Just claim ->
-                    span [ class "flex-grow-1 text-primary fw-semibold d-inline-flex align-items-center gap-1" ]
+                    span [ class "flex-grow-1 fw-semibold d-inline-flex align-items-center gap-1" ]
                         [ i [ class "bi bi-person-check-fill" ] []
                         , text
                             (case claim.cantidad of
@@ -1148,11 +1158,11 @@ viewItemCard model userId grupo detalle repartija item deItem =
                                         Just n ->
                                             div []
                                                 [ text "Reclamaste "
-                                                , span [ class "text-primary" ] [ text (unidades n) ]
+                                                , span [ class "fw-semibold" ] [ text (unidades n) ]
                                                 ]
 
                                         Nothing ->
-                                            div [ class "text-primary" ] [ text "Estás participando" ]
+                                            div [ class "fw-semibold" ] [ text "Estás participando" ]
                                     , div [ class "text-danger" ]
                                         [ text ("$ " ++ Monto.toString (Repartija.consumoDeItem detalle item.id userId)) ]
                                     ]
