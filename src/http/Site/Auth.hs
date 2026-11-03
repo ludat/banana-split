@@ -22,6 +22,7 @@ module Site.Auth (
   renderSessionCookie,
   sessionDurationSeconds,
   sessionRefreshThreshold,
+  sessionTokenFromRequest,
   shouldRefreshSession,
   verifyLoginChallenge,
   verifyRegistrationToken,

@@ -894,6 +894,13 @@ headerInfo currentPath store currentUser grupo =
             , share = grupoShare
             }
 
+        Path.Landing ->
+            { breadcrumb = Nothing
+            , title = "Banana split"
+            , showTabs = False
+            , share = grupoShare
+            }
+
 
 {-| La vuelta a la entidad de la que colgás, con forma de "‹ Grupo: Salidita de
 Jueves". No es un camino desde la raíz sino un solo salto para atrás; cuando

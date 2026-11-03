@@ -1,5 +1,6 @@
 module Shared exposing
     ( Flags
+    , InitialData
     , Model
     , Msg
     , currentParticipante
@@ -36,18 +37,34 @@ type alias Flags =
     , lastReadChangelog : Maybe Int
     , repartijaIntroDismissed : Bool
     , origin : String
+    , initialData : Maybe InitialData
+    }
+
+
+{-| Lo que el backend inyecta en el index.html (ver `Site.Frontend`), o en dev
+`/api/initial-data.js`. Lo lee `interop.js`.
+-}
+type alias InitialData =
+    { user : Maybe Api.User
     }
 
 
 decoder : Json.Decode.Decoder Flags
 decoder =
-    Json.Decode.map6 Flags
+    Json.Decode.map7 Flags
         (Json.Decode.field "now" Json.Decode.int)
         (Json.Decode.field "offset" Json.Decode.int)
         (Json.Decode.field "timeZone" Json.Decode.string)
         (Json.Decode.field "lastReadChangelog" (Json.Decode.nullable Json.Decode.int))
         (Json.Decode.field "repartijaIntroDismissed" Json.Decode.bool)
         (Json.Decode.field "origin" Json.Decode.string)
+        (Json.Decode.field "initialData"
+            (Json.Decode.nullable
+                (Json.Decode.map InitialData
+                    (Json.Decode.field "user" (Json.Decode.nullable Api.jsonDecUser))
+                )
+            )
+        )
 
 
 
@@ -70,6 +87,7 @@ init possiblyFlags _ =
                     , lastReadChangelog = Nothing
                     , repartijaIntroDismissed = False
                     , origin = ""
+                    , initialData = Nothing
                     }
 
         now =
@@ -77,11 +95,27 @@ init possiblyFlags _ =
 
         timezone =
             Time.customZone flags.offset []
+
+        -- El usuario inyectado sale del token, así que se muestra ya pero igual
+        -- se refresca: eso renueva la cookie y trae el usuario de la base. Sin
+        -- token no hay nada que refrescar.
+        ( currentUser, refrescarSesion ) =
+            case flags.initialData of
+                Just { user } ->
+                    case user of
+                        Just u ->
+                            ( Success u, Effect.sendCmd (Api.postAuthRefresh CurrentUserLoaded) )
+
+                        Nothing ->
+                            ( NotAsked, Effect.none )
+
+                Nothing ->
+                    ( Loading, Effect.sendCmd (Api.postAuthRefresh CurrentUserLoaded) )
     in
     ( { toasties = Toast.initialState
       , store = Store.empty
       , participanteId = Nothing
-      , currentUser = Loading
+      , currentUser = currentUser
       , now = now
       , today = Date.fromPosix timezone now
       , timezoneName = flags.timeZone
@@ -93,7 +127,7 @@ init possiblyFlags _ =
       , repartijaIntroDismissed = flags.repartijaIntroDismissed
       , origin = flags.origin
       }
-    , Effect.sendCmd (Api.postAuthRefresh CurrentUserLoaded)
+    , refrescarSesion
     )
 
 

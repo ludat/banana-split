@@ -15,13 +15,11 @@ import Http
 import Json.Decode
 import Layouts
 import Page exposing (Page)
-import Process
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Shared.Msg
-import Task
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import Utils.Telemetry as Telemetry
 import Utils.Toasts.Types exposing (ToastLevel(..))
@@ -29,12 +27,12 @@ import View exposing (View)
 
 
 page : Shared.Model -> Route () -> Page Model Msg
-page shared _ =
+page _ _ =
     Page.new
-        { init = init shared
-        , update = update shared
+        { init = init
+        , update = update
         , subscriptions = \_ -> Sub.none
-        , view = view shared
+        , view = view
         }
         |> Page.withLayout (\_ -> Layouts.Default {})
 
@@ -42,23 +40,17 @@ page shared _ =
 type alias Model =
     { form : Form CustomFormError UpdateMeParams
     , saving : Bool
+    , user : WebData User
     }
 
 
-init : Shared.Model -> () -> ( Model, Effect Msg )
-init shared () =
-    -- The current user resolves asynchronously into shared.currentUser, so if
-    -- it isn't there yet we poll until it lands and then seed the form.
-    case shared.currentUser of
-        Success user ->
-            ( { form = seedForm user, saving = False }
-            , Effect.none
-            )
-
-        _ ->
-            ( { form = Form.initial [] validateUpdateMeParams, saving = False }
-            , waitAndCheckUser
-            )
+init : () -> ( Model, Effect Msg )
+init () =
+    -- Not shared.currentUser: at startup that one comes from the session token,
+    -- which has no datosDeCobro and may be stale, and this form edits both.
+    ( { form = Form.initial [] validateUpdateMeParams, saving = False, user = Loading }
+    , Effect.sendCmd (Api.getMe (RemoteData.fromResult >> GotUser))
+    )
 
 
 validateUpdateMeParams : Validation CustomFormError UpdateMeParams
@@ -83,19 +75,14 @@ seedForm user =
         validateUpdateMeParams
 
 
-waitAndCheckUser : Effect Msg
-waitAndCheckUser =
-    Effect.sendCmd <| Task.perform (\_ -> CheckIfUserIsPresent) (Process.sleep 100)
-
-
 type Msg
     = FormMsg Form.Msg
     | Saved (Result Http.Error User)
-    | CheckIfUserIsPresent
+    | GotUser (WebData User)
 
 
-update : Shared.Model -> Msg -> Model -> ( Model, Effect Msg )
-update shared msg model =
+update : Msg -> Model -> ( Model, Effect Msg )
+update msg model =
     case msg of
         FormMsg Form.Submit ->
             let
@@ -121,7 +108,7 @@ update shared msg model =
             )
 
         Saved (Ok user) ->
-            ( { model | saving = False, form = seedForm user }
+            ( { model | saving = False, form = seedForm user, user = Success user }
             , Effect.batch
                 [ Effect.sendSharedMsg (Shared.Msg.CurrentUserLoaded (Ok user))
                 , Effect.sendToast { level = ToastSuccess, content = "Guardamos tus cambios" }
@@ -133,25 +120,19 @@ update shared msg model =
             , Effect.sendToast { level = ToastDanger, content = "No pudimos guardar los cambios" }
             )
 
-        CheckIfUserIsPresent ->
-            case shared.currentUser of
-                Success user ->
-                    ( { model | form = seedForm user }
-                    , Effect.none
-                    )
+        GotUser (Success user) ->
+            ( { model | form = seedForm user, user = Success user }
+            , Effect.none
+            )
 
-                NotAsked ->
-                    ( model, waitAndCheckUser )
-
-                Loading ->
-                    ( model, waitAndCheckUser )
-
-                Failure _ ->
-                    ( model, Effect.none )
+        GotUser user ->
+            ( { model | user = user }
+            , Effect.none
+            )
 
 
-view : Shared.Model -> Model -> View Msg
-view shared model =
+view : Model -> View Msg
+view model =
     { title = "Mi cuenta"
     , body =
         [ div [ class "container py-4" ]
@@ -159,7 +140,7 @@ view shared model =
                 [ div [ class "col-12 col-md-8 col-lg-6" ]
                     [ Bs.card []
                         [ Bs.cardHeader [] [ text "Mi cuenta" ]
-                        , Bs.cardBody [] [ viewBody shared.currentUser model ]
+                        , Bs.cardBody [] [ viewBody model.user model ]
                         ]
                     ]
                 ]

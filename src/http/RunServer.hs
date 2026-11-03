@@ -18,9 +18,10 @@ import System.Posix (Handler (..), installHandler, sigTERM)
 
 import BananaSplit.Persistence qualified as Persistence
 import BananaSplit.Receipts (ReceiptsReaderConfig (..))
-import BananaSplit.Telemetry (Telemetry, logAttr, logError, logInfo, registerRuntimeMetrics, runLogging, withTelemetry)
+import BananaSplit.Telemetry (Telemetry, logAttr, logError, logInfo, logWarn, registerRuntimeMetrics, runLogging, withTelemetry)
 import Site.Auth (mkSessionKey)
 import Site.Config (createConfig)
+import Site.Frontend (loadFrontendShell)
 import Site.Mailer (mkMailer)
 import Site.Server qualified
 import Site.Telemetry (traceApiMiddleware, tracedMailer)
@@ -62,6 +63,14 @@ runBackendCon config telemetry = do
 
   mailer <- tracedMailer telemetry <$> mkMailer config
 
+  frontendShell <-
+    loadFrontendShell "./public/index.html" >>= \case
+      Right shell -> pure (Just shell)
+      Left reason -> do
+        runLogging telemetry $
+          logWarn "server.frontend_unavailable" [logAttr "error.message" reason]
+        pure Nothing
+
   let appState =
         App
           { beamConnectionPool = beamPool
@@ -75,6 +84,7 @@ runBackendCon config telemetry = do
           , authPepper = encodeUtf8 jwtSecret
           , cookieSecure = cookieSecure'
           , mailer = mailer
+          , frontendShell = frontendShell
           , telemetry = telemetry
           }
 

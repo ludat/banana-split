@@ -1,6 +1,7 @@
-module Pages.Home_ exposing (CrearGrupoForm, Model, Msg, page)
+module Pages.Home_ exposing (CrearGrupoForm, Model, Modo(..), Msg, config, page)
 
 import Components.Bootstrap as Bs
+import Components.Landing as Landing
 import Effect exposing (Effect, pushRoutePath)
 import Form exposing (Form, Msg(..))
 import Form.Field
@@ -8,7 +9,7 @@ import Form.Validate exposing (Validation, andMap, andThen, field, nonEmpty, str
 import Generated.Api as Api exposing (EstadoParaUsuario(..), GrupoParaUsuario, Moneda)
 import Html exposing (Html, a, div, i, input, label, span, text)
 import Html.Attributes as Attr exposing (class, classList, for, id, placeholder, required, type_)
-import Html.Events exposing (onSubmit)
+import Html.Events exposing (onClick, onSubmit)
 import Layouts
 import Models.Moneda as Moneda
 import Models.Monto as Monto
@@ -24,13 +25,41 @@ import View exposing (View)
 
 page : Shared.Model -> Route () -> Page Model Msg
 page shared _ =
-    Page.new
-        { init = init shared
-        , update = update shared
-        , subscriptions = subscriptions
-        , view = view shared
-        }
+    -- elm-land reconoce el tipo de página buscando `Page.new` en `page`, así
+    -- que no puede quedar escondido en `config`.
+    Page.new (config SegunSesion shared)
         |> Page.withLayout (\_ -> Layouts.Default {})
+
+
+{-| `/` muestra la landing a quien no inició sesión y la home a quien sí;
+`/landing` (ver `Pages.Landing`) la muestra siempre. Es la misma página para
+que el "Comenzá" de la landing cree el grupo igual que el formulario de la home.
+
+El layout es siempre el Default: elm-land no vuelve a inicializar el layout
+cuando cambia el Shared, así que no se puede elegir según la sesión, que se
+resuelve después de cargar la página.
+
+-}
+type Modo
+    = SegunSesion
+    | SiempreLanding
+
+
+config :
+    Modo
+    -> Shared.Model
+    ->
+        { init : () -> ( Model, Effect Msg )
+        , update : Msg -> Model -> ( Model, Effect Msg )
+        , subscriptions : Model -> Sub Msg
+        , view : Model -> View Msg
+        }
+config modo shared =
+    { init = init shared
+    , update = update shared
+    , subscriptions = subscriptions
+    , view = view modo shared
+    }
 
 
 {-| What the crear-grupo form produces. For an anonymous creator the first
@@ -47,6 +76,7 @@ type alias CrearGrupoForm =
 type alias Model =
     { form : Form CustomFormError CrearGrupoForm
     , misGrupos : WebData (List GrupoParaUsuario)
+    , crearGrupoAbierto : Bool
     }
 
 
@@ -54,6 +84,7 @@ init : Shared.Model -> () -> ( Model, Effect Msg )
 init shared () =
     ( { form = Form.initial [] (validate (isLoggedIn shared))
       , misGrupos = RemoteData.Loading
+      , crearGrupoAbierto = False
       }
     , Effect.batch
         [ Effect.setUnsavedChangesWarning False
@@ -76,6 +107,8 @@ type Msg
     | UpdateForm Form.Msg
     | GrupoCreated Api.Grupo
     | GotMisGrupos (WebData (List GrupoParaUsuario))
+    | AbrirCrearGrupo
+    | CerrarCrearGrupo
 
 
 validate : Bool -> Validation CustomFormError CrearGrupoForm
@@ -105,6 +138,16 @@ update shared msg model =
 
         GotMisGrupos misGrupos ->
             ( { model | misGrupos = misGrupos }
+            , Effect.none
+            )
+
+        AbrirCrearGrupo ->
+            ( { model | crearGrupoAbierto = True }
+            , Effect.none
+            )
+
+        CerrarCrearGrupo ->
+            ( { model | crearGrupoAbierto = False }
             , Effect.none
             )
 
@@ -162,23 +205,60 @@ subscriptions _ =
     Sub.none
 
 
-view : Shared.Model -> Model -> View Msg
-view shared model =
+view : Modo -> Shared.Model -> Model -> View Msg
+view modo shared model =
     { title = "Banana split"
     , body =
-        [ div [ class "container py-4" ]
-            [ div [ class "row justify-content-center g-4" ] <|
-                case shared.currentUser of
-                    Success _ ->
+        case ( modo, shared.currentUser ) of
+            ( SiempreLanding, _ ) ->
+                viewLanding shared model
+
+            ( SegunSesion, Success _ ) ->
+                [ div [ class "container py-4" ]
+                    [ div [ class "row justify-content-center g-4" ]
                         [ div [ class "col-12 col-md-8 col-lg-6" ] [ viewMisGrupos model.misGrupos ]
                         , div [ class "col-12 col-md-8 col-lg-6" ] [ viewCrearGrupo shared model ]
                         ]
+                    ]
+                ]
 
-                    _ ->
-                        [ div [ class "col-12 col-md-6" ] [ viewCrearGrupo shared model ] ]
-            ]
-        ]
+            -- Mientras se resuelve la sesión no mostramos nada, así a quien ya
+            -- inició sesión no le aparece la landing por un instante.
+            ( SegunSesion, Loading ) ->
+                [ div [ class "d-flex justify-content-center py-5" ] [ Bs.spinner [] ] ]
+
+            ( SegunSesion, _ ) ->
+                viewLanding shared model
     }
+
+
+viewLanding : Shared.Model -> Model -> List (Html Msg)
+viewLanding shared model =
+    [ Landing.view { onComenzar = AbrirCrearGrupo }
+    , Bs.modal
+        { id = "landing-modal-crear-grupo"
+        , isOpen = model.crearGrupoAbierto
+        , onClose = CerrarCrearGrupo
+        , title = "Crear grupo"
+        , centered = True
+        , body =
+            [ Html.form [ id "landing-crear-grupo", onSubmit (UpdateForm Submit) ]
+                (viewCrearGrupoCampos shared model)
+            ]
+        , footer =
+            [ Bs.btn Bs.Transparent [ Telemetry.click "landing.cancel_create_grupo", onClick CerrarCrearGrupo ] [ text "Cancelar" ]
+            , Bs.btn Bs.Primary
+                [ id "landing-crear-grupo-submit"
+                , Telemetry.click "landing.create_grupo"
+                , type_ "submit"
+
+                -- The button lives in the modal footer, outside the form.
+                , Attr.attribute "form" "landing-crear-grupo"
+                ]
+                [ text "Crear" ]
+            ]
+        }
+    ]
 
 
 {-| The grupos where the signed-in user claimed a participante, each linking to
@@ -300,58 +380,64 @@ viewInvalidos cantidad =
 
 viewCrearGrupo : Shared.Model -> Model -> Html Msg
 viewCrearGrupo shared model =
+    Html.form [ id "home-crear-grupo", class "card", onSubmit (UpdateForm Submit) ]
+        [ Bs.cardHeader [] [ text "Crear grupo" ]
+        , Bs.cardBody [] <|
+            viewCrearGrupoCampos shared model
+                ++ [ Bs.btn Bs.Primary
+                        [ id "crear-grupo"
+                        , Telemetry.click "home.create_grupo"
+                        , type_ "submit"
+                        ]
+                        [ text "Crear" ]
+                   ]
+        ]
+
+
+viewCrearGrupoCampos : Shared.Model -> Model -> List (Html Msg)
+viewCrearGrupoCampos shared model =
     let
         nombreField =
             Form.getFieldAsString "nombre" model.form
     in
-    Html.form [ id "home-crear-grupo", class "card", onSubmit (UpdateForm Submit) ]
-        [ Bs.cardHeader [] [ text "Crear grupo" ]
-        , Bs.cardBody []
-            [ div [ class "mb-3" ]
-                [ label [ for "nombre", class "form-label" ] [ text "Nombre" ]
+    [ div [ class "mb-3" ]
+        [ label [ for "nombre", class "form-label" ] [ text "Nombre" ]
+        , Html.map UpdateForm <|
+            input
+                [ id "nombre"
+                , type_ "text"
+                , classList [ ( "form-control", True ), ( "is-invalid", hasErrorField nombreField ) ]
+                , placeholder "After del viernes, Vacaciones a Calamuchita"
+                , required True
+                , Attr.value (Maybe.withDefault "" nombreField.value)
+                , Html.Events.onInput (Form.Input nombreField.path Form.Text << Form.Field.String)
+                ]
+                []
+        , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField nombreField ]
+        ]
+    , case shared.currentUser of
+        Success user ->
+            div [ class "mb-3 form-text" ]
+                [ text ("Vas a participar del grupo como " ++ user.nombre ++ ".") ]
+
+        _ ->
+            let
+                participanteField =
+                    Form.getFieldAsString "participante" model.form
+            in
+            div [ class "mb-3" ]
+                [ label [ for "participante", class "form-label" ] [ text "Participante" ]
                 , Html.map UpdateForm <|
                     input
-                        [ id "nombre"
+                        [ id "participante"
                         , type_ "text"
-                        , classList [ ( "form-control", True ), ( "is-invalid", hasErrorField nombreField ) ]
-                        , placeholder "After del viernes, Vacaciones a Calamuchita"
+                        , classList [ ( "form-control", True ), ( "is-invalid", hasErrorField participanteField ) ]
+                        , placeholder "Juan"
                         , required True
-                        , Attr.value (Maybe.withDefault "" nombreField.value)
-                        , Html.Events.onInput (Form.Input nombreField.path Form.Text << Form.Field.String)
+                        , Attr.value (Maybe.withDefault "" participanteField.value)
+                        , Html.Events.onInput (Form.Input participanteField.path Form.Text << Form.Field.String)
                         ]
                         []
-                , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField nombreField ]
+                , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField participanteField ]
                 ]
-            , case shared.currentUser of
-                Success user ->
-                    div [ class "mb-3 form-text" ]
-                        [ text ("Vas a participar del grupo como " ++ user.nombre ++ ".") ]
-
-                _ ->
-                    let
-                        participanteField =
-                            Form.getFieldAsString "participante" model.form
-                    in
-                    div [ class "mb-3" ]
-                        [ label [ for "participante", class "form-label" ] [ text "Participante" ]
-                        , Html.map UpdateForm <|
-                            input
-                                [ id "participante"
-                                , type_ "text"
-                                , classList [ ( "form-control", True ), ( "is-invalid", hasErrorField participanteField ) ]
-                                , placeholder "Juan"
-                                , required True
-                                , Attr.value (Maybe.withDefault "" participanteField.value)
-                                , Html.Events.onInput (Form.Input participanteField.path Form.Text << Form.Field.String)
-                                ]
-                                []
-                        , div [ class "invalid-feedback" ] [ Html.map UpdateForm <| errorForField participanteField ]
-                        ]
-            , Bs.btn Bs.Primary
-                [ id "crear-grupo"
-                , Telemetry.click "home.create_grupo"
-                , type_ "submit"
-                ]
-                [ text "Crear" ]
-            ]
-        ]
+    ]

@@ -21,7 +21,9 @@
       "link": [
         { "rel": "icon", "type": "image/png", "href": "/favicon.png" }
       ],
-      "script": []
+      "script": [
+        { "src": "/api/initial-data.js", "defer": true }
+      ]
     },
     "router": {
       "useHashRouting": false
