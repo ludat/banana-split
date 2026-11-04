@@ -8,18 +8,16 @@ module Site.Server (
 ) where
 
 import Control.Monad.Reader
-import Network.HTTP.Types.Status (ok200)
 import Network.Wai
-import Network.Wai.Application.Static (defaultWebAppSettings)
 import Protolude hiding (Handler)
 import Servant
 import Servant.Server.Generic
-import WaiAppStatic.Types (StaticSettings (..))
 
 import BananaSplit.Telemetry (logAttr, logError, runLogging)
 import Site.Api
 import Site.Auth (AuthContext, authHandler, sessionAuthHandler)
 import Site.Handler.Auth
+import Site.Handler.Frontend (handleFrontend, handleInitialDataScript)
 import Site.Handler.Grupos
 import Site.Handler.InboundEmail (WebhookApi, handleInboundEmail)
 import Site.Handler.Pagos
@@ -29,11 +27,11 @@ import Site.Handler.Transferencias
 import Site.Types
 
 -- | The full HTTP surface: the Elm-facing 'Api' plus the provider-facing
--- 'WebhookApi' (kept separate so servant-elm never sees it), both under @\/api@,
--- and the static site as a fallback.
+-- 'WebhookApi' and the dev server's initial data (kept separate so servant-elm
+-- never sees them), all under @\/api@, and the frontend as a fallback.
 type ServedApi =
-  "api" :> (ToServantApi Api :<|> WebhookApi)
-    :<|> Raw
+  "api" :> (ToServantApi Api :<|> WebhookApi :<|> "initial-data.js" :> RawM)
+    :<|> RawM
 
 serverT :: ServerT ServedApi AppHandler
 serverT =
@@ -85,12 +83,9 @@ serverT =
         -- , _routePagoDelete = handlePagoDelete
         }
       :<|> handleInboundEmail
+      :<|> handleInitialDataScript
   )
-    :<|> serveDirectoryWith
-      (defaultWebAppSettings "./public")
-        { ss404Handler = Just $ \_req cb -> do
-            cb $ responseFile ok200 [("Content-Type", "text/html")] "./public/index.html" Nothing
-        }
+    :<|> handleFrontend
 
 proxyApi :: Proxy ServedApi
 proxyApi = Proxy

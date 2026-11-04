@@ -78,6 +78,9 @@ grupoIdFromPath path =
         Path.Cuenta ->
             Nothing
 
+        Path.Landing ->
+            Nothing
+
 
 lookupParticipante : GrupoLike g -> ParticipanteId -> Participante
 lookupParticipante grupo participanteId =

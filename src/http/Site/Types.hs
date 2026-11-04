@@ -20,6 +20,7 @@ import BananaSplit.Receipts
 import BananaSplit.Telemetry (Telemetry (..))
 import BananaSplit.Telemetry qualified as Telemetry
 import Preludat
+import Site.Frontend (FrontendShell)
 import Site.Mailer (Mailer)
 
 data App = App
@@ -33,6 +34,9 @@ data App = App
   -- ^ Whether session cookies are marked @Secure@ (HTTPS only). Off in dev.
   , mailer :: Mailer
   -- ^ Delivers login confirmation codes (console in dev, email in prod).
+  , frontendShell :: Maybe FrontendShell
+  -- ^ @public\/index.html@, parsed at startup. 'Nothing' when there is no built
+  -- frontend to serve (a backend run on its own in dev).
   , telemetry :: Telemetry
   -- ^ Los providers y el estado de logging de Katip, todo junto: es lo que hace
   -- que las instancias de abajo sean cirugía sobre un solo campo, y lo único que

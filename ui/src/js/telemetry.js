@@ -183,6 +183,24 @@ export function nameClickSpan(element, span) {
 }
 
 // ---------------------------------------------------------------------------
+// Section views
+// ---------------------------------------------------------------------------
+
+// Una sección cuenta como vista cuando se ve la mitad, o, si es más alta que la
+// pantalla, cuando ocupa la mitad de la pantalla: una sección larga nunca llega
+// a verse entera en un celular.
+//
+// La usa `track-view`, en interop.js.
+const SECTION_SEEN_FRACTION = 0.5;
+export const SECTION_THRESHOLDS = Array.from({ length: 21 }, (_, i) => i / 20);
+
+export function isSectionSeen(entry, viewportHeight) {
+  if (!entry.isIntersecting) return false;
+  if (entry.intersectionRatio >= SECTION_SEEN_FRACTION) return true;
+  return entry.intersectionRect.height >= viewportHeight * SECTION_SEEN_FRACTION;
+}
+
+// ---------------------------------------------------------------------------
 // Span scrubbing
 // ---------------------------------------------------------------------------
 

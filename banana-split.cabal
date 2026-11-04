@@ -168,7 +168,9 @@ library http
     Site.Api
     Site.Auth
     Site.Config
+    Site.Frontend
     Site.Handler.Auth
+    Site.Handler.Frontend
     Site.Handler.Grupos
     Site.Handler.InboundEmail
     Site.Handler.Pagos
@@ -193,6 +195,7 @@ library http
     lens,
     memory,
     random,
+    xmlhtml,
 
 executable banana-split
   import: base-settings, threaded-rts
@@ -232,6 +235,7 @@ test-suite spec
     BananaSplitSpec
     Integracion.ConcurrenciaSpec
     Site.AuthSpec
+    Site.FrontendSpec
     Site.Handler.InboundEmailSpec
     Site.TelemetrySpec
     TestRunner
@@ -247,5 +251,6 @@ test-suite spec
     hspec,
     lens,
     vector,
+    xmlhtml,
 
   build-tool-depends: hspec-discover:hspec-discover
