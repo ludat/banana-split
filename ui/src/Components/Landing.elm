@@ -21,13 +21,13 @@ repositorio =
 view : { onComenzar : msg } -> Html msg
 view config =
     div [ Attr.id "landing" ]
-        [ viewHero config
-        , viewDestacados
-        , viewCasosDeUso
-        , viewFunciones
-        , viewAporte
-        , viewCodigoAbierto
-        , viewFooter
+        [ Telemetry.seccionVista "landing.hero" (viewHero config)
+        , Telemetry.seccionVista "landing.destacados" viewDestacados
+        , Telemetry.seccionVista "landing.casos_de_uso" viewCasosDeUso
+        , Telemetry.seccionVista "landing.funciones" viewFunciones
+        , Telemetry.seccionVista "landing.aporte" viewAporte
+        , Telemetry.seccionVista "landing.codigo_abierto" viewCodigoAbierto
+        , Telemetry.seccionVista "landing.footer" viewFooter
         ]
 
 
@@ -240,19 +240,19 @@ viewFooter =
                 [ div [ class "col-12 col-md-6" ]
                     [ div [ class "h4 mb-1" ] [ text "Banana Split" ]
                     , small [ class "text-body-secondary d-block mb-2" ] [ text "Aplicación de gastos compartidos" ]
-                    , a [ class "text-reset fs-5", Attr.href repositorio, Attr.target "_blank", Attr.rel "noopener", Attr.attribute "aria-label" "GitHub" ]
+                    , a [ class "text-reset fs-5", Attr.href repositorio, Attr.target "_blank", Attr.rel "noopener", Attr.attribute "aria-label" "GitHub", Telemetry.click "landing.footer_github" ]
                         [ i [ class "bi bi-github" ] [] ]
                     ]
                 , div [ class "col-6 col-md-3" ]
                     [ ul [ class "list-unstyled small mb-0" ]
-                        [ li [ class "mb-1" ] [ a [ class "link-secondary", Path.href Path.Login ] [ text "Iniciar sesión" ] ]
-                        , li [ class "mb-1" ] [ a [ class "link-secondary", Path.href Path.Home_ ] [ text "Inicio" ] ]
+                        [ li [ class "mb-1" ] [ a [ class "link-secondary", Path.href Path.Login, Telemetry.click "landing.footer_login" ] [ text "Iniciar sesión" ] ]
+                        , li [ class "mb-1" ] [ a [ class "link-secondary", Path.href Path.Home_, Telemetry.click "landing.footer_inicio" ] [ text "Inicio" ] ]
                         ]
                     ]
                 , div [ class "col-6 col-md-3" ]
                     [ ul [ class "list-unstyled small mb-0" ]
-                        [ li [ class "mb-1" ] [ a [ class "link-secondary", Attr.href repositorio, Attr.target "_blank", Attr.rel "noopener" ] [ text "Código fuente" ] ]
-                        , li [ class "mb-1" ] [ a [ class "link-secondary", Attr.href (repositorio ++ "/issues"), Attr.target "_blank", Attr.rel "noopener" ] [ text "Reportar un problema" ] ]
+                        [ li [ class "mb-1" ] [ a [ class "link-secondary", Attr.href repositorio, Attr.target "_blank", Attr.rel "noopener", Telemetry.click "landing.footer_codigo" ] [ text "Código fuente" ] ]
+                        , li [ class "mb-1" ] [ a [ class "link-secondary", Attr.href (repositorio ++ "/issues"), Attr.target "_blank", Attr.rel "noopener", Telemetry.click "landing.footer_issues" ] [ text "Reportar un problema" ] ]
                         ]
                     ]
                 ]

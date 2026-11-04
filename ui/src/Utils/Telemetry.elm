@@ -1,4 +1,4 @@
-module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, changelogFeedback, click, codigoDeLoginRechazado, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaDetalleDeItemAbierto, repartijaFiltro, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, severityToString, trackDecodeErrors)
+module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, changelogFeedback, click, codigoDeLoginRechazado, crearGrupo, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaDetalleDeItemAbierto, repartijaFiltro, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, seccionVista, severityToString, trackDecodeErrors)
 
 import Html
 import Html.Attributes
@@ -27,6 +27,43 @@ comparten el nombre, nunca llevan un id ni nada de la persona.
 click : String -> Html.Attribute msg
 click nombre =
     Html.Attributes.attribute "data-track" nombre
+
+
+{-| Envuelve una parte de la pantalla para saber si alguien llegó a verla: la
+primera vez que queda a la vista se manda `app.section_viewed` con el nombre en
+`app.section` (ver `track-view` en `js/telemetry.js`). Una vez por cada vez que
+se monta, o sea por visita a la pantalla.
+
+El nombre sigue la misma regla que `click`: `<pantalla>.<sección>`, literal.
+
+-}
+seccionVista : String -> Html.Html msg -> Html.Html msg
+seccionVista nombre contenido =
+    Html.node "track-view"
+        [ Html.Attributes.attribute "name" nombre
+        , Html.Attributes.style "display" "block"
+        ]
+        [ contenido ]
+
+
+{-| El intento de crear un grupo, desde la landing o desde la home. El resultado
+es "ok", "error" (la API lo rechazó) o "invalido" (faltaban campos).
+-}
+crearGrupo : { origen : String, resultado : String } -> Maybe TelemetryEvent
+crearGrupo { origen, resultado } =
+    Just
+        { name = "app.grupo.create"
+        , severity =
+            if resultado == "error" then
+                Warn
+
+            else
+                Info
+        , attributes =
+            [ ( "app.grupo.origen", Json.string origen )
+            , ( "outcome", Json.string resultado )
+            ]
+        }
 
 
 trackDecodeErrors : String -> WebData a -> Maybe TelemetryEvent

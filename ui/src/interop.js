@@ -4,7 +4,13 @@ import "bootstrap";
 import "./styles.css";
 import "./stepper.css";
 import "./js/MontoInput";
-import { initTelemetry, recordEvent, recordFeedback } from "./js/telemetry";
+import {
+  initTelemetry,
+  isSectionSeen,
+  recordEvent,
+  recordFeedback,
+  SECTION_THRESHOLDS,
+} from "./js/telemetry";
 
 initTelemetry();
 
@@ -93,6 +99,36 @@ const readInitialData = () => {
   if (element) return JSON.parse(element.getAttribute("content"));
   return window.initialData ?? null;
 };
+
+// `<track-view name="landing.hero">` (ver `Utils.Telemetry.seccionVista` del
+// lado Elm) manda `app.section_viewed` la primera vez que se ve, y después deja
+// de mirar: una vez por cada vez que se monta, que en Elm es una por visita a
+// la pantalla.
+customElements.define(
+  "track-view",
+  class extends HTMLElement {
+    connectedCallback() {
+      this.observer = new IntersectionObserver(
+        (entries) => {
+          if (!entries.some((entry) => isSectionSeen(entry, window.innerHeight))) return;
+          recordEvent("app.section_viewed", { "app.section": this.getAttribute("name") });
+          this.stop();
+        },
+        { threshold: SECTION_THRESHOLDS }
+      );
+      this.observer.observe(this);
+    }
+
+    disconnectedCallback() {
+      this.stop();
+    }
+
+    stop() {
+      this.observer?.disconnect();
+      this.observer = null;
+    }
+  }
+);
 
 // Mientras está en la página, cada pedido de cierre (el botón atrás de
 // Android, Escape en desktop) se convierte en un evento `close` sobre el

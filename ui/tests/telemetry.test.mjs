@@ -29,6 +29,7 @@ import {
   deploymentEnvironment,
   displayMode,
   installLogProvider,
+  isSectionSeen,
   nameClickSpan,
   recordEvent,
   recordFeedback,
@@ -640,4 +641,19 @@ test("a click outside any tracked element is left alone", () => {
 
   assert.equal(span.name, "click");
   assert.deepEqual(span.attributes, {});
+});
+
+function intersection(isIntersecting, intersectionRatio, height) {
+  return { isIntersecting, intersectionRatio, intersectionRect: { height } };
+}
+
+test("a section is seen once half of it is on screen", () => {
+  assert.equal(isSectionSeen(intersection(true, 0.5, 100), 800), true);
+  assert.equal(isSectionSeen(intersection(true, 0.3, 100), 800), false);
+  assert.equal(isSectionSeen(intersection(false, 0, 0), 800), false);
+});
+
+test("a section taller than the screen is seen once it fills half of it", () => {
+  assert.equal(isSectionSeen(intersection(true, 0.2, 400), 800), true);
+  assert.equal(isSectionSeen(intersection(true, 0.2, 300), 800), false);
 });

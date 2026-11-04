@@ -20,6 +20,7 @@ import Route.Path as Path
 import Shared
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
 import Utils.Telemetry as Telemetry
+import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
 
 
@@ -103,9 +104,9 @@ isLoggedIn shared =
 
 
 type Msg
-    = NoOp
-    | UpdateForm Form.Msg
+    = UpdateForm Form.Msg
     | GrupoCreated Api.Grupo
+    | GrupoNoCreado
     | GotMisGrupos (WebData (List GrupoParaUsuario))
     | AbrirCrearGrupo
     | CerrarCrearGrupo
@@ -129,13 +130,20 @@ update shared msg model =
     let
         validation =
             validate (isLoggedIn shared)
+
+        -- El modal solo existe en la landing; el formulario de la home está
+        -- siempre a la vista.
+        origen =
+            if model.crearGrupoAbierto then
+                "landing"
+
+            else
+                "home"
+
+        registrarCreacion resultado =
+            Effect.telemetryEvent (Telemetry.crearGrupo { origen = origen, resultado = resultado })
     in
     case msg of
-        NoOp ->
-            ( model
-            , Effect.none
-            )
-
         GotMisGrupos misGrupos ->
             ( { model | misGrupos = misGrupos }
             , Effect.none
@@ -161,7 +169,7 @@ update shared msg model =
                                     GrupoCreated grupo
 
                                 Err _ ->
-                                    NoOp
+                                    GrupoNoCreado
                     in
                     ( { model | form = Form.update validation Form.Submit model.form }
                     , Effect.sendCmd <|
@@ -177,7 +185,7 @@ update shared msg model =
 
                 Nothing ->
                     ( { model | form = Form.update validation Form.Submit model.form }
-                    , Effect.none
+                    , registrarCreacion "invalido"
                     )
 
         UpdateForm formMsg ->
@@ -196,6 +204,15 @@ update shared msg model =
                     [] ->
                         Effect.none
                 , pushRoutePath <| Path.Grupos_Id_ { id = grupo.id }
+                , registrarCreacion "ok"
+                ]
+            )
+
+        GrupoNoCreado ->
+            ( model
+            , Effect.batch
+                [ Effect.sendToast { level = ToastDanger, content = "No pudimos crear el grupo, probá de nuevo" }
+                , registrarCreacion "error"
                 ]
             )
 
