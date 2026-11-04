@@ -178,7 +178,7 @@ viewAporte =
                 , Attr.attribute "loading" "lazy"
                 , Attr.width 1200
                 , Attr.height 819
-                , Attr.style "max-width" "32rem"
+                , Attr.style "width" "32rem"
                 ]
                 []
             , p [ class "lead text-body-secondary mx-auto mb-0", Attr.style "max-width" "40rem" ]
