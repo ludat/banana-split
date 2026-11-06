@@ -199,13 +199,22 @@ viewRightColumn store zone ahora userId model grupo =
     if estaCongelado grupo then
         case store |> Store.getTransferencias model.grupoId of
             Success transferencias ->
-                viewUltimasTransferenciasCard zone ahora grupo transferencias
+                viewUltimasTransferenciasCard zone ahora grupo (delCongelamientoActual grupo transferencias)
 
             _ ->
                 text ""
 
     else
         viewUltimosPagosCard userId store model grupo
+
+
+{-| El resumen de un grupo congelado es sobre el plan de este congelamiento. Las
+de antes —planes viejos y las registradas a mano— ya son historia y se ven en la
+lista de gastos.
+-}
+delCongelamientoActual : Grupo -> List Api.Transferencia -> List Api.Transferencia
+delCongelamientoActual grupo =
+    List.filter (Transferencia.esPropuesta grupo)
 
 
 viewLeftColumn : Store -> Zone -> Maybe String -> Model -> Grupo -> Html Msg
@@ -223,7 +232,7 @@ viewLeftColumn store zone userId model grupo =
         Success Api.GrupoCongelado ->
             case store |> Store.getTransferencias model.grupoId of
                 Success transferencias ->
-                    viewGrupoCongelado zone userId grupo transferencias
+                    viewGrupoCongelado zone userId grupo (delCongelamientoActual grupo transferencias)
 
                 Failure _ ->
                     Bs.alert Bs.AlertDanger [] [ text "Error cargando las transferencias del grupo." ]
@@ -575,12 +584,6 @@ viewMisTransferenciasCard zone grupo rol transferencias =
         textos =
             textosDe rol
 
-        -- El contador va sobre el plan y no sobre la lista: las que registraste
-        -- a mano antes de congelar se siguen viendo como filas, pero no son algo
-        -- que te quede por hacer.
-        delPlan =
-            transferencias |> List.filter (Transferencia.esPropuesta grupo)
-
         progreso =
             Transferencia.progresoDelPlan grupo transferencias
     in
@@ -600,7 +603,7 @@ viewMisTransferenciasCard zone grupo rol transferencias =
                 [ viewEtiqueta [] [ text "Tus transferencias" ]
                 , div [ class "d-flex align-items-center gap-2" ]
                     [ span [ class "text-body-secondary small" ] [ text textos.contador ]
-                    , Bs.badge (colorDelContador rol delPlan ++ " fw-normal")
+                    , Bs.badge (colorDelContador rol transferencias ++ " fw-normal")
                         []
                         [ text (String.fromInt progreso.completadas ++ " / " ++ String.fromInt progreso.total) ]
                     ]

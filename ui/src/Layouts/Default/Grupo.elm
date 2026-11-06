@@ -593,7 +593,7 @@ viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info shar
 
 {-| "Agregar gasto" sigue siendo un click; el resto de lo que se puede cargar
 va en el menú de al lado. Solo desktop: en mobile está el botón del medio de la
-navbar.
+navbar, y registrar una transferencia queda en el menú "Más".
 -}
 viewBotonAgregar : Path.Path -> Grupo -> Html Msg
 viewBotonAgregar currentPath grupo =
@@ -1135,7 +1135,7 @@ viewBottomNav currentPath share grupo =
                 [ i [ class "bi bi-three-dots" ] []
                 , Html.span [] [ text "Más" ]
                 ]
-            , ul [ class "dropdown-menu dropdown-menu-end shadow" ]
+            , ul [ class "dropdown-menu dropdown-menu-end shadow" ] <|
                 [ li []
                     [ a
                         [ class "dropdown-item"
@@ -1184,6 +1184,23 @@ viewBottomNav currentPath share grupo =
                         ]
                     ]
                 ]
+                    ++ (if estaCongelado grupo then
+                            []
+
+                        else
+                            [ li [] [ Html.hr [ class "dropdown-divider" ] [] ]
+                            , li []
+                                [ a
+                                    (class "dropdown-item"
+                                        :: Telemetry.click "nav_bottom.new_transferencia"
+                                        :: TransferenciaModal.linkANuevaTransferencia AbrirPopup currentPath
+                                    )
+                                    [ i [ class "bi bi-arrow-left-right me-2" ] []
+                                    , text "Registrar transferencia"
+                                    ]
+                                ]
+                            ]
+                       )
             ]
         ]
 
