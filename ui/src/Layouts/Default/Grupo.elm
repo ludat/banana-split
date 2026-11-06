@@ -3,6 +3,7 @@ module Layouts.Default.Grupo exposing (Agregarme, ErrorAlAgregarme, Model, Msg, 
 import Browser.Dom
 import Components.Bootstrap as Bs
 import Components.PagoDetalleModal as PagoDetalleModal
+import Components.TransferenciaModal as TransferenciaModal
 import Css
 import Dict
 import Effect exposing (Effect)
@@ -42,13 +43,19 @@ type alias Props =
 layout : Props -> Shared.Model -> Route () -> Layout Layouts.Default.Props Model Msg contentMsg
 layout _ shared route =
     Layout.new
-        { init = \() -> init route
-        , update = update (PagoDetalleModal.context shared route) shared.store shared.currentUser
-        , view = view shared.store route.path shared.participanteId shared.origin shared.currentUser
+        { init = \() -> init (TransferenciaModal.context shared route) route
+        , update =
+            update
+                { pago = PagoDetalleModal.context shared route
+                , transferencia = TransferenciaModal.context shared route
+                }
+                shared.store
+                shared.currentUser
+        , view = view (TransferenciaModal.context shared route) shared.store route.path shared.participanteId shared.origin shared.currentUser
         , subscriptions = subscriptions
         }
         |> Layout.withParentProps {}
-        |> Layout.withOnUrlChanged (PagoModalMsg << PagoDetalleModal.onUrlChanged)
+        |> Layout.withOnUrlChanged UrlChanged
 
 
 
@@ -58,6 +65,7 @@ layout _ shared route =
 type alias Model =
     { qrShare : Maybe { title : String, url : String }
     , pagoModal : PagoDetalleModal.Model
+    , transferenciaModal : TransferenciaModal.Model
     , agregarme : Maybe Agregarme
     }
 
@@ -89,17 +97,24 @@ validateAgregarme =
         |> V.andMap (V.field "nombre" anyString)
 
 
-init : Route () -> ( Model, Effect Msg )
-init route =
+init : TransferenciaModal.Context -> Route () -> ( Model, Effect Msg )
+init transferenciaCtx route =
     let
         ( pagoModal, modalEffect ) =
             PagoDetalleModal.init route
+
+        ( transferenciaModal, transferenciaEffect ) =
+            TransferenciaModal.init transferenciaCtx
     in
     ( { qrShare = Nothing
       , pagoModal = pagoModal
+      , transferenciaModal = transferenciaModal
       , agregarme = Nothing
       }
-    , Effect.map PagoModalMsg modalEffect
+    , Effect.batch
+        [ Effect.map PagoModalMsg modalEffect
+        , Effect.map TransferenciaModalMsg transferenciaEffect
+        ]
     )
 
 
@@ -113,6 +128,8 @@ type Msg
     | OpenQrShare { title : String, url : String }
     | CloseQrShare
     | PagoModalMsg PagoDetalleModal.Msg
+    | TransferenciaModalMsg TransferenciaModal.Msg
+    | UrlChanged { from : Route (), to : Route () }
     | AbrirPopup PagoDetalleModal.Ruta
     | AbrirAgregarme ULID
     | CerrarAgregarme
@@ -121,11 +138,35 @@ type Msg
     | NoOp
 
 
-update : PagoDetalleModal.Context -> Store -> WebData User -> Msg -> Model -> ( Model, Effect Msg )
+type alias Contextos =
+    { pago : PagoDetalleModal.Context
+    , transferencia : TransferenciaModal.Context
+    }
+
+
+update : Contextos -> Store -> WebData User -> Msg -> Model -> ( Model, Effect Msg )
 update ctx store currentUser msg model =
     case msg of
         NoOp ->
             ( model, Effect.none )
+
+        -- Cada modal mira su propio parámetro de la URL.
+        UrlChanged cambio ->
+            let
+                ( conPago, efectoPago ) =
+                    update ctx store currentUser (PagoModalMsg (PagoDetalleModal.onUrlChanged cambio)) model
+
+                ( conTransferencia, efectoTransferencia ) =
+                    update ctx store currentUser (TransferenciaModalMsg (TransferenciaModal.onUrlChanged cambio)) conPago
+            in
+            ( conTransferencia, Effect.batch [ efectoPago, efectoTransferencia ] )
+
+        TransferenciaModalMsg subMsg ->
+            let
+                ( transferenciaModal, eff ) =
+                    TransferenciaModal.update ctx.transferencia subMsg model.transferenciaModal
+            in
+            ( { model | transferenciaModal = transferenciaModal }, Effect.map TransferenciaModalMsg eff )
 
         AbrirAgregarme grupoId ->
             ( { model
@@ -204,7 +245,7 @@ update ctx store currentUser msg model =
         PagoModalMsg subMsg ->
             let
                 ( pagoModal, eff ) =
-                    PagoDetalleModal.update ctx store subMsg model.pagoModal
+                    PagoDetalleModal.update ctx.pago store subMsg model.pagoModal
             in
             ( { model | pagoModal = pagoModal }, Effect.map PagoModalMsg eff )
 
@@ -280,14 +321,15 @@ subscriptions _ =
 
 
 view :
-    Store
+    TransferenciaModal.Context
+    -> Store
     -> Path.Path
     -> Maybe ULID
     -> String
     -> WebData User
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view store currentPath manualPick origin currentUser { toContentMsg, model, content } =
+view transferenciaCtx store currentPath manualPick origin currentUser { toContentMsg, model, content } =
     let
         remoteGrupo =
             grupoIdFromPath currentPath
@@ -329,6 +371,13 @@ view store currentPath manualPick origin currentUser { toContentMsg, model, cont
             Success grupo ->
                 Html.map (toContentMsg << PagoModalMsg) <|
                     PagoDetalleModal.view store grupo model.pagoModal
+
+            _ ->
+                text ""
+        , case remoteGrupo of
+            Success grupo ->
+                Html.map (toContentMsg << TransferenciaModalMsg) <|
+                    TransferenciaModal.view transferenciaCtx grupo model.transferenciaModal
 
             _ ->
                 text ""
@@ -498,14 +547,7 @@ viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info shar
                         -- Fuera de las secciones con tabs (la repartija) se
                         -- está mirando un gasto puntual, no cargando gastos.
                         , if info.showTabs then
-                            a
-                                (class "btn btn-primary d-inline-flex align-items-center"
-                                    :: Telemetry.click "grupo.new_gasto"
-                                    :: PagoDetalleModal.linkANuevoGasto AbrirPopup currentPath
-                                )
-                                [ i [ class "bi bi-plus-lg me-1" ] []
-                                , text "Agregar gasto"
-                                ]
+                            viewBotonAgregar currentPath grupo
 
                           else
                             text ""
@@ -546,6 +588,57 @@ viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info shar
 
           else
             text ""
+        ]
+
+
+{-| "Agregar gasto" sigue siendo un click; el resto de lo que se puede cargar
+va en el menú de al lado. Solo desktop: en mobile está el botón del medio de la
+navbar.
+-}
+viewBotonAgregar : Path.Path -> Grupo -> Html Msg
+viewBotonAgregar currentPath grupo =
+    div [ Attr.id "grupo-agregar", class "btn-group" ]
+        [ a
+            (class "btn btn-primary d-inline-flex align-items-center"
+                :: Telemetry.click "grupo.new_gasto"
+                :: PagoDetalleModal.linkANuevoGasto AbrirPopup currentPath
+            )
+            [ i [ class "bi bi-plus-lg me-1" ] []
+            , text "Agregar gasto"
+            ]
+        , button
+            [ type_ "button"
+            , class "btn btn-primary dropdown-toggle dropdown-toggle-split"
+            , Attr.attribute "data-bs-toggle" "dropdown"
+            , Attr.attribute "aria-expanded" "false"
+            , Telemetry.click "grupo.agregar_mas"
+            ]
+            [ span [ class "visually-hidden" ] [ text "Más opciones" ] ]
+        , ul [ class "dropdown-menu dropdown-menu-end shadow" ]
+            [ li []
+                (if estaCongelado grupo then
+                    -- Congelado se marcan las calculadas; registrar a mano lo
+                    -- rechaza el backend.
+                    [ span [ class "dropdown-item disabled" ]
+                        [ i [ class "bi bi-arrow-left-right me-2" ] []
+                        , text "Registrar transferencia"
+                        ]
+                    , div [ class "px-3 small text-muted", style "max-width" "16rem" ]
+                        [ text "No disponible mientras se saldan deudas." ]
+                    ]
+
+                 else
+                    [ a
+                        (class "dropdown-item"
+                            :: Telemetry.click "grupo.new_transferencia"
+                            :: TransferenciaModal.linkANuevaTransferencia AbrirPopup currentPath
+                        )
+                        [ i [ class "bi bi-arrow-left-right me-2" ] []
+                        , text "Registrar transferencia"
+                        ]
+                    ]
+                )
+            ]
         ]
 
 

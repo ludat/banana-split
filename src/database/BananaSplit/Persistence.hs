@@ -65,6 +65,7 @@ module BananaSplit.Persistence (
   borrarTransferencia,
   crearTransferenciaSaldada,
   desmarcarTransferenciaSaldada,
+  editarTransferencia,
   marcarTransferenciaSaldada,
   normalizarTasa,
   recalcularResumenGasto,
@@ -82,7 +83,7 @@ import Data.Map.Strict qualified as Map
 import Data.Pool qualified as Pool
 import Data.String (String)
 import Data.Text qualified as Text
-import Data.Time (NominalDiffTime, addUTCTime, getCurrentTime)
+import Data.Time (NominalDiffTime, UTCTime, addUTCTime, getCurrentTime)
 import Database.Beam as Beam
 import Database.Beam.Backend.SQL (BeamSqlBackendCanSerialize)
 import Database.Beam.Postgres hiding (Pg)
@@ -1638,24 +1639,59 @@ crearTransferenciaSaldada grupoId participanteFrom participanteTo monto moneda =
 
   pure transferencia
 
-marcarTransferenciaSaldada :: ULID -> ULID -> Pg ()
+-- | Devuelve cómo quedó, o 'Nothing' si no es de ese grupo.
+marcarTransferenciaSaldada :: ULID -> ULID -> Pg (Maybe M.Transferencia)
 marcarTransferenciaSaldada grupoId transferenciaId = do
   ahora <- liftIO getCurrentTime
-  runUpdate
-    $ update
-      db.transferencias
-      (\t -> t.saldada_at <-. val_ (Just ahora))
-      (\t -> t.id ==. val_ transferenciaId &&. t.grupo ==. GrupoId (val_ grupoId))
+  cambiarSaldadaAt grupoId transferenciaId (Just ahora)
 
 -- | La vuelve a dejar pendiente. Solo tiene sentido con el grupo congelado, que
 -- es lo único que le da lugar a una transferencia pendiente.
-desmarcarTransferenciaSaldada :: ULID -> ULID -> Pg ()
+desmarcarTransferenciaSaldada :: ULID -> ULID -> Pg (Maybe M.Transferencia)
 desmarcarTransferenciaSaldada grupoId transferenciaId =
-  runUpdate
-    $ update
-      db.transferencias
-      (\t -> t.saldada_at <-. val_ Nothing)
-      (\t -> t.id ==. val_ transferenciaId &&. t.grupo ==. GrupoId (val_ grupoId))
+  cambiarSaldadaAt grupoId transferenciaId Nothing
+
+-- | Con @RETURNING@, así quien la cambió se entera de cómo quedó sin una
+-- segunda query.
+cambiarSaldadaAt :: ULID -> ULID -> Maybe UTCTime -> Pg (Maybe M.Transferencia)
+cambiarSaldadaAt grupoId transferenciaId saldadaAt = do
+  filas <-
+    runPgUpdateReturningList
+      $ updateReturning
+        db.transferencias
+        (\t -> t.saldada_at <-. val_ saldadaAt)
+        (\t -> t.id ==. val_ transferenciaId &&. t.grupo ==. GrupoId (val_ grupoId))
+        identity
+  pure $ transferenciaDesdeFila <$> headMay filas
+
+-- | Corrige quién, a quién y cuánto. No toca 'saldada_at': editarla no cambia
+-- cuándo se movió la plata. 'Nothing' si no es de ese grupo.
+editarTransferencia ::
+  ULID
+  -> ULID
+  -> M.ParticipanteId
+  -> M.ParticipanteId
+  -> M.Monto
+  -> M.Moneda
+  -> Pg (Maybe M.Transferencia)
+editarTransferencia grupoId transferenciaId participanteFrom participanteTo monto moneda = do
+  filas <-
+    runPgUpdateReturningList
+      $ updateReturning
+        db.transferencias
+        ( \t ->
+            mconcat
+              [ case t.participante_from of
+                  ParticipanteId columna -> columna <-. val_ (M.participanteId2ULID participanteFrom)
+              , case t.participante_to of
+                  ParticipanteId columna -> columna <-. val_ (M.participanteId2ULID participanteTo)
+              , t.monto_en_unidades_minimas <-. val_ (aUnidadesMinimas moneda monto)
+              , t.moneda <-. val_ moneda
+              ]
+        )
+        (\t -> t.id ==. val_ transferenciaId &&. t.grupo ==. GrupoId (val_ grupoId))
+        identity
+  pure $ transferenciaDesdeFila <$> headMay filas
 
 -- | La borra del todo, para cuando esa transferencia nunca pasó. Distinto de
 -- desmarcarla, que la deja pendiente porque todavía hay que hacerla.
@@ -1698,19 +1734,18 @@ filasDeTransferencias cuales = do
     pure t
   pure
     $ rows
-    & fmap
-      ( \t ->
-          ( case t.grupo of GrupoId grupoId -> grupoId
-          , M.Transferencia
-              { M.id = t.id
-              , M.from = M.ParticipanteId $ case t.participante_from of ParticipanteId ulid -> ulid
-              , M.to = M.ParticipanteId $ case t.participante_to of ParticipanteId ulid -> ulid
-              , M.monto = desdeUnidadesMinimas t.moneda t.monto_en_unidades_minimas
-              , M.moneda = t.moneda
-              , M.saldadaAt = t.saldada_at
-              }
-          )
-      )
+    & fmap (\t -> (case t.grupo of GrupoId grupoId -> grupoId, transferenciaDesdeFila t))
+
+transferenciaDesdeFila :: Transferencia -> M.Transferencia
+transferenciaDesdeFila t =
+  M.Transferencia
+    { M.id = t.id
+    , M.from = M.ParticipanteId $ case t.participante_from of ParticipanteId ulid -> ulid
+    , M.to = M.ParticipanteId $ case t.participante_to of ParticipanteId ulid -> ulid
+    , M.monto = desdeUnidadesMinimas t.moneda t.monto_en_unidades_minimas
+    , M.moneda = t.moneda
+    , M.saldadaAt = t.saldada_at
+    }
 
 -- | En qué monedas hay pagos cargados. Es lo único que las pantallas de monedas
 -- necesitan saber de los pagos, así que no hace falta hidratarlos para eso.

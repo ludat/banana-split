@@ -66,9 +66,7 @@ handleGetNetos grupoId = do
       `orElseMay` throwJsonError err404 "Grupo no encontrado"
 
   case grupo.congeladoAt of
-    Just _ -> do
-      transferencias <- runBeamFastRead $ fetchTransferencias grupoId
-      pure $ GrupoCongelado ResumenCongelado{transferencias = transferencias}
+    Just _ -> pure GrupoCongelado
     Nothing -> do
       transferencias <- runBeamFastRead $ fetchTransferencias grupoId
       netosDeGastos <- runBeamFastRead $ netosDeGrupo grupoId
@@ -84,7 +82,6 @@ handleGetNetos grupoId = do
             , consolidado = consolidarNetos tabla (netosConSaldo netos)
             , cantidadPagos = conteo.total
             , cantidadPagosInvalidos = conteo.invalidos
-            , transferencias = transferencias
             }
 
 handleDeleteParticipante :: ULID -> ULID -> AppHandler DeleteParticipanteResult

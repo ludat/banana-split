@@ -1,8 +1,8 @@
-module Models.Store exposing (empty, ensureGrupo, ensurePagos, ensureResumen, getGrupo, getPago, getPagos, getRepartija, getResumen, invalidatePagos, invalidateResumen, refreshGrupo, refreshPago, refreshPagos, refreshRepartija, refreshResumen, setGrupo, setPago, update, updateRepartijaForFrontend)
+module Models.Store exposing (empty, ensureGrupo, ensurePagos, ensureResumen, ensureTransferencias, getGrupo, getPago, getPagos, getRepartija, getResumen, getTransferencias, invalidatePagos, invalidateResumen, refreshGrupo, refreshPago, refreshPagos, refreshRepartija, refreshResumen, refreshTransferencias, removeTransferencia, setGrupo, setPago, setTransferencia, update, updateRepartijaForFrontend)
 
 import Dict
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Grupo, Pago, RepartijaForFrontend, ResumenGrupo, ShallowPago, ULID)
+import Generated.Api as Api exposing (Grupo, Pago, RepartijaForFrontend, ResumenGrupo, ShallowPago, Transferencia, ULID)
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
@@ -54,6 +54,42 @@ update msg store =
         InvalidatePagos grupoId ->
             ( { store | pagosPorGrupo = store.pagosPorGrupo |> Dict.remove grupoId }, Effect.none )
 
+        TransferenciasFetched grupoId transferencias ->
+            ( { store | transferenciasPorGrupo = store.transferenciasPorGrupo |> Dict.insert grupoId transferencias }
+            , Effect.telemetryEvent <| trackDecodeErrors "getGrupoByIdTransferencias" transferencias
+            )
+
+        FetchTransferencias grupoId ->
+            ( store
+            , Effect.sendCmd <| Api.getGrupoByIdTransferencias grupoId (RemoteData.fromResult >> TransferenciasFetched grupoId >> StoreMsg)
+            )
+
+        TransferenciaActualizada grupoId transferencia ->
+            ( store
+                |> mapTransferencias grupoId
+                    (\transferencias ->
+                        if List.any (\t -> t.id == transferencia.id) transferencias then
+                            transferencias
+                                |> List.map
+                                    (\t ->
+                                        if t.id == transferencia.id then
+                                            transferencia
+
+                                        else
+                                            t
+                                    )
+
+                        else
+                            transferencias ++ [ transferencia ]
+                    )
+            , Effect.none
+            )
+
+        TransferenciaBorrada grupoId transferenciaId ->
+            ( store |> mapTransferencias grupoId (List.filter (\t -> t.id /= transferenciaId))
+            , Effect.none
+            )
+
         PagoFetched pagoId pago ->
             ( store |> savePago pagoId pago
             , Effect.telemetryEvent <| trackDecodeErrors "getGrupoByIdPagosByPagoId" pago
@@ -85,6 +121,18 @@ saveResumen grupoId resumen store =
         | resumenes =
             store.resumenes
                 |> Dict.insert grupoId resumen
+    }
+
+
+{-| Si la lista no está cargada no hay nada que actualizar: cuando alguien la
+pida va a venir ya con el cambio.
+-}
+mapTransferencias : ULID -> (List Transferencia -> List Transferencia) -> Store -> Store
+mapTransferencias grupoId f store =
+    { store
+        | transferenciasPorGrupo =
+            store.transferenciasPorGrupo
+                |> Dict.update grupoId (Maybe.map (RemoteData.map f))
     }
 
 
@@ -229,6 +277,44 @@ ensureResumen grupoId store =
             Effect.none
 
 
+ensureTransferencias : ULID -> Store -> Effect msg
+ensureTransferencias grupoId store =
+    case getTransferencias grupoId store of
+        NotAsked ->
+            Effect.sendStoreMsg <| FetchTransferencias grupoId
+
+        Loading ->
+            Effect.none
+
+        Failure _ ->
+            Effect.none
+
+        Success _ ->
+            Effect.none
+
+
+refreshTransferencias : ULID -> Effect msg
+refreshTransferencias grupoId =
+    Effect.sendStoreMsg <| FetchTransferencias grupoId
+
+
+setTransferencia : ULID -> Transferencia -> Effect msg
+setTransferencia grupoId transferencia =
+    Effect.sendStoreMsg <| TransferenciaActualizada grupoId transferencia
+
+
+removeTransferencia : ULID -> ULID -> Effect msg
+removeTransferencia grupoId transferenciaId =
+    Effect.sendStoreMsg <| TransferenciaBorrada grupoId transferenciaId
+
+
+getTransferencias : ULID -> Store -> WebData (List Transferencia)
+getTransferencias grupoId store =
+    store.transferenciasPorGrupo
+        |> Dict.get grupoId
+        |> Maybe.withDefault NotAsked
+
+
 invalidateResumen : ULID -> Effect msg
 invalidateResumen grupoId =
     Effect.sendStoreMsg <| InvalidateResumen grupoId
@@ -280,5 +366,6 @@ empty =
     , repartijas = Dict.empty
     , resumenes = Dict.empty
     , pagosPorGrupo = Dict.empty
+    , transferenciasPorGrupo = Dict.empty
     , pagos = Dict.empty
     }

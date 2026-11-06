@@ -1,4 +1,4 @@
-module Models.Transferencia exposing (Estado(..), conFlechas, esPropuesta, estaHecha, estado, frase, monto, participante, progresoDelPlan)
+module Models.Transferencia exposing (Estado(..), conFlechas, conFlechasPara, esPropuesta, estaHecha, estado, frase, monto, participante, progresoDelPlan)
 
 import Generated.Api exposing (Grupo, Moneda, ParticipanteId, Transferencia)
 import Html exposing (Html, span, text)
@@ -91,6 +91,31 @@ conFlechas grupo t =
     [ participante grupo t.from
     , flecha
     , monto grupo.monedaPorDefecto t
+    , flecha
+    , participante grupo t.to
+    ]
+
+
+{-| Como `conFlechas`, con el monto del color de lo que significa para quien
+mira: verde si transfirió (pagó, como el "Pagué" de un gasto), rojo si le
+transfirieron. Si no está en ninguna punta, el monto queda como siempre.
+-}
+conFlechasPara : Maybe ParticipanteId -> Grupo -> Transferencia -> List (Html msg)
+conFlechasPara yo grupo t =
+    let
+        color =
+            if yo == Just t.from then
+                "text-success"
+
+            else if yo == Just t.to then
+                "text-danger"
+
+            else
+                ""
+    in
+    [ participante grupo t.from
+    , flecha
+    , span [ class color ] [ monto grupo.monedaPorDefecto t ]
     , flecha
     , participante grupo t.to
     ]

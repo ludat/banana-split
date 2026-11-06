@@ -2,18 +2,13 @@ module Pages.Grupos.GrupoId_.Transferencias exposing (Confirmacion, Model, Msg, 
 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)
-import Form exposing (Form)
-import Form.Init as Form
-import Form.Validate as V exposing (Validation)
-import Generated.Api as Api exposing (Grupo, Moneda, NuevaTransferenciaParams, Transferencia, ULID)
-import Generated.Moneda exposing (escalaDe)
-import Html exposing (Html, div, em, h6, i, label, li, p, span, strong, text, ul)
+import Generated.Api as Api exposing (Grupo, Moneda, Transferencia, ULID)
+import Html exposing (Html, div, em, h6, i, li, p, span, strong, text, ul)
 import Html.Attributes as Attr exposing (class)
-import Html.Events exposing (onClick, onSubmit)
+import Html.Events exposing (onClick)
 import Http
 import Layouts
 import Models.Moneda as Moneda
-import Models.Monto as Monto
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Models.Transferencia as Transferencia
@@ -22,7 +17,6 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Shared
 import Time exposing (Zone)
-import Utils.Form exposing (CustomFormError)
 import Utils.Posix as Posix exposing (Posix)
 import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toasts
@@ -32,15 +26,11 @@ import View exposing (View)
 
 page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
-    let
-        yo =
-            Shared.currentParticipante shared route.params.grupoId
-    in
     Page.new
         { init = \() -> init route.params.grupoId shared.store
-        , update = update yo
+        , update = update
         , subscriptions = subscriptions
-        , view = view shared.store shared.timezone shared.now yo
+        , view = view shared.store shared.timezone shared.now
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 
@@ -48,7 +38,6 @@ page shared route =
 type alias Model =
     { grupoId : String
     , confirmando : Maybe Confirmacion
-    , nuevaForm : Maybe (Form CustomFormError NuevaTransferenciaParams)
     , mostrarModalDeConfirmacion : Bool
     , congelarGrupoRequest : WebData Grupo
     , bannerAbierto : Bool
@@ -79,7 +68,6 @@ init : ULID -> Store -> ( Model, Effect Msg )
 init grupoId store =
     ( { grupoId = grupoId
       , confirmando = Nothing
-      , nuevaForm = Nothing
       , mostrarModalDeConfirmacion = False
       , congelarGrupoRequest = NotAsked
       , bannerAbierto = False
@@ -87,6 +75,7 @@ init grupoId store =
       }
     , Effect.batch
         [ Store.ensureResumen grupoId store
+        , Store.ensureTransferencias grupoId store
         , Store.ensureGrupo grupoId store
         , Effect.getCurrentUser grupoId
         ]
@@ -99,11 +88,8 @@ type Msg
     | BorrarTransferencia ULID
     | SaldarTransferencia ULID
     | DesmarcarTransferencia ULID
-    | TransferenciaResponse String (Result Http.Error ULID)
-    | AbrirNuevaTransferencia Moneda
-    | CerrarNuevaTransferencia
-    | NuevaForm Form.Msg
-    | TransferenciaCreada (Result Http.Error Transferencia)
+    | TransferenciaCambiada String (Result Http.Error Transferencia)
+    | TransferenciaBorrada (Result Http.Error ULID)
     | MostrarModalDeCongelarGrupo
     | CancelarModalDeCongelarGrupo
     | CongelarGrupo
@@ -113,34 +99,41 @@ type Msg
     | DescongelarGrupoResponse (Result Http.Error Grupo)
 
 
-validarNuevaTransferencia : ULID -> Validation CustomFormError NuevaTransferenciaParams
-validarNuevaTransferencia from =
-    V.field "moneda" Moneda.validate
-        |> V.andThen
-            (\moneda ->
-                V.succeed (\to monto -> NuevaTransferenciaParams from to monto moneda)
-                    |> V.andMap (V.field "to" (V.string |> V.andThen V.nonEmpty))
-                    |> V.andMap (V.field "monto" (Monto.validateMonto moneda))
-            )
-
-
-{-| Todas las acciones terminan igual: la transferencia cambió de estado y hay que
-releer el resumen, porque los netos ya no son los mismos.
+{-| Cada mutación devuelve cómo quedó la transferencia, así que la lista se
+actualiza en el store sin volver a pedirla. El resumen solo se relee cuando
+cambian los netos, que es al crear o borrar una con el grupo abierto: marcar y
+desmarcar pasan congelado, donde el resumen no tiene netos.
 -}
-refrescarYAvisar : Model -> String -> ( Model, Effect Msg )
-refrescarYAvisar model mensaje =
+actualizarYAvisar : Model -> Bool -> Effect Msg -> String -> ( Model, Effect Msg )
+actualizarYAvisar model cambianLosNetos actualizarStore mensaje =
     ( { model | confirmando = Nothing }
     , Effect.batch
-        -- Solo el resumen: marcar una transferencia ya no crea un pago, así que
-        -- ni los pagos ni el grupo cambian.
-        [ Store.refreshResumen model.grupoId
+        [ actualizarStore
+        , if cambianLosNetos then
+            Store.refreshResumen model.grupoId
+
+          else
+            Effect.none
         , Toasts.pushToast Toasts.ToastSuccess mensaje
         ]
     )
 
 
-update : Maybe ULID -> Msg -> Model -> ( Model, Effect Msg )
-update yo msg model =
+{-| Si algo falló no se sabe cómo quedó: se relee todo.
+-}
+releerYAvisarError : Model -> String -> ( Model, Effect Msg )
+releerYAvisarError model mensaje =
+    ( model
+    , Effect.batch
+        [ Store.refreshTransferencias model.grupoId
+        , Store.refreshResumen model.grupoId
+        , Toasts.pushToast Toasts.ToastDanger mensaje
+        ]
+    )
+
+
+update : Msg -> Model -> ( Model, Effect Msg )
+update msg model =
     case msg of
         MostrarModalDeCongelarGrupo ->
             ( { model | mostrarModalDeConfirmacion = True }
@@ -162,6 +155,8 @@ update yo msg model =
             , Effect.batch
                 [ Store.refreshGrupo model.grupoId
                 , Store.refreshResumen model.grupoId
+                , -- Congelar crea las pendientes.
+                  Store.refreshTransferencias model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Empezaron a saldarse las deudas"
                 ]
             )
@@ -186,12 +181,12 @@ update yo msg model =
 
         DescongelarGrupoResponse (Ok grupo) ->
             -- Desactivar tira las pendientes y el grupo vuelve a aceptar
-            -- gastos: cambia la pantalla entera, así que se releen las dos
-            -- cosas.
+            -- gastos: cambia la pantalla entera, así que se relee todo.
             ( { model | descongelarGrupoRequest = Success grupo, bannerAbierto = False }
             , Effect.batch
                 [ Store.refreshGrupo model.grupoId
                 , Store.refreshResumen model.grupoId
+                , Store.refreshTransferencias model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "El grupo dejó de saldar deudas"
                 ]
             )
@@ -199,57 +194,6 @@ update yo msg model =
         DescongelarGrupoResponse (Err error) ->
             ( { model | descongelarGrupoRequest = Failure error }
             , Toasts.pushToast Toasts.ToastDanger "No se pudo dejar de saldar deudas"
-            )
-
-        AbrirNuevaTransferencia monedaPorDefecto ->
-            ( { model
-                | nuevaForm =
-                    Just <|
-                        Form.initial
-                            [ Form.setString "moneda" (Moneda.toString monedaPorDefecto) ]
-                            (validarNuevaTransferencia (Maybe.withDefault "" yo))
-              }
-            , Effect.none
-            )
-
-        CerrarNuevaTransferencia ->
-            ( { model | nuevaForm = Nothing }
-            , Effect.none
-            )
-
-        NuevaForm formMsg ->
-            case ( model.nuevaForm, yo ) of
-                ( Just form, Just from ) ->
-                    let
-                        validacion =
-                            validarNuevaTransferencia from
-
-                        actualizado =
-                            Form.update validacion formMsg form
-                    in
-                    case ( formMsg, Form.getOutput actualizado ) of
-                        ( Form.Submit, Just params ) ->
-                            ( { model | nuevaForm = Just actualizado }
-                            , Effect.sendCmd <|
-                                Api.postGrupoByIdTransferencias model.grupoId params TransferenciaCreada
-                            )
-
-                        _ ->
-                            ( { model | nuevaForm = Just actualizado }, Effect.none )
-
-                _ ->
-                    ( model, Effect.none )
-
-        TransferenciaCreada (Ok _) ->
-            let
-                ( cerrado, efecto ) =
-                    refrescarYAvisar model "Se registró la transferencia"
-            in
-            ( { cerrado | nuevaForm = Nothing }, efecto )
-
-        TransferenciaCreada (Err _) ->
-            ( model
-            , Toasts.pushToast Toasts.ToastDanger "No se pudo registrar la transferencia"
             )
 
         PedirConfirmacion confirmacion ->
@@ -263,7 +207,7 @@ update yo msg model =
                 Api.deleteGrupoByIdTransferenciasByTransferenciaId
                     model.grupoId
                     transferenciaId
-                    (TransferenciaResponse "Se borró la transferencia")
+                    TransferenciaBorrada
             )
 
         CancelarConfirmacion ->
@@ -277,7 +221,7 @@ update yo msg model =
                 Api.postGrupoByIdTransferenciasByTransferenciaIdSaldar
                     model.grupoId
                     transferenciaId
-                    (TransferenciaResponse "Se registró la transferencia")
+                    (TransferenciaCambiada "Se registró la transferencia")
             )
 
         DesmarcarTransferencia transferenciaId ->
@@ -286,19 +230,26 @@ update yo msg model =
                 Api.deleteGrupoByIdTransferenciasByTransferenciaIdSaldar
                     model.grupoId
                     transferenciaId
-                    (TransferenciaResponse "La transferencia volvió a quedar pendiente")
+                    (TransferenciaCambiada "La transferencia volvió a quedar pendiente")
             )
 
-        TransferenciaResponse mensaje (Ok _) ->
-            refrescarYAvisar model mensaje
+        TransferenciaCambiada mensaje (Ok transferencia) ->
+            actualizarYAvisar model
+                False
+                (Store.setTransferencia model.grupoId transferencia)
+                mensaje
 
-        TransferenciaResponse _ (Err _) ->
-            ( model
-            , Effect.batch
-                [ Store.refreshResumen model.grupoId
-                , Toasts.pushToast Toasts.ToastDanger "No se pudo cambiar el estado de la transferencia"
-                ]
-            )
+        TransferenciaCambiada _ (Err _) ->
+            releerYAvisarError model "No se pudo cambiar el estado de la transferencia"
+
+        TransferenciaBorrada (Ok transferenciaId) ->
+            actualizarYAvisar model
+                True
+                (Store.removeTransferencia model.grupoId transferenciaId)
+                "Se borró la transferencia"
+
+        TransferenciaBorrada (Err _) ->
+            releerYAvisarError model "No se pudo borrar la transferencia"
 
 
 subscriptions : Model -> Sub Msg
@@ -306,8 +257,8 @@ subscriptions _ =
     Sub.none
 
 
-view : Store -> Zone -> Posix -> Maybe ULID -> Model -> View Msg
-view store zone ahora yo model =
+view : Store -> Zone -> Posix -> Model -> View Msg
+view store zone ahora model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Loading...", body = [] }
@@ -324,7 +275,7 @@ view store zone ahora yo model =
                 [ div [ class "container-fluid py-3" ]
                     [ div [ class "row justify-content-center" ]
                         [ div [ class "col-md-10 col-lg-7 col-xl-5" ]
-                            [ viewContent store zone ahora yo model grupo ]
+                            [ viewContent store zone ahora model grupo ]
                         ]
                     ]
                 ]
@@ -336,9 +287,13 @@ iconoCongelado =
     "bi bi-cash-stack"
 
 
-viewContent : Store -> Zone -> Posix -> Maybe ULID -> Model -> Grupo -> Html Msg
-viewContent store zone ahora yo model grupo =
-    case store |> Store.getResumen model.grupoId of
+viewContent : Store -> Zone -> Posix -> Model -> Grupo -> Html Msg
+viewContent store zone ahora model grupo =
+    case
+        RemoteData.map2 Tuple.pair
+            (store |> Store.getResumen model.grupoId)
+            (store |> Store.getTransferencias model.grupoId)
+    of
         NotAsked ->
             div [ class "text-muted" ] [ text "Cargando..." ]
 
@@ -348,10 +303,10 @@ viewContent store zone ahora yo model grupo =
         Failure _ ->
             Bs.alert Bs.AlertDanger [] [ text "Error cargando los datos del grupo." ]
 
-        Success (Api.GrupoAbierto resumen) ->
+        Success ( Api.GrupoAbierto resumen, transferencias ) ->
             let
                 hechas =
-                    resumen.transferencias
+                    transferencias
                         |> List.filter Transferencia.estaHecha
                         |> List.sortBy .id
                         |> List.reverse
@@ -371,13 +326,12 @@ viewContent store zone ahora yo model grupo =
                         , div [ class "list-group list-group-flush" ]
                             (hechas |> List.map (viewTransferencia zone ahora grupo Borrar))
                         ]
-                , viewNuevaTransferencia yo grupo model
                 , buscarConfirmacion model.confirmando hechas
                     |> viewConfirmacionModal grupo
                 , viewActivacionModal model
                 ]
 
-        Success (Api.GrupoCongelado resumen) ->
+        Success ( Api.GrupoCongelado, transferencias ) ->
             let
                 ordenadas : List Transferencia -> List Transferencia
                 ordenadas =
@@ -389,7 +343,7 @@ viewContent store zone ahora yo model grupo =
                 -- El plan que calculó este congelamiento, que es lo que hay para hacer.
                 calculadas : List Transferencia
                 calculadas =
-                    resumen.transferencias
+                    transferencias
                         |> List.filter (Transferencia.esPropuesta grupo)
                         |> ordenadas
 
@@ -398,7 +352,7 @@ viewContent store zone ahora yo model grupo =
                 -- hacerles.
                 anteriores : List Transferencia
                 anteriores =
-                    resumen.transferencias
+                    transferencias
                         |> List.filter (not << Transferencia.esPropuesta grupo)
                         |> ordenadas
             in
@@ -412,7 +366,7 @@ viewContent store zone ahora yo model grupo =
                   else
                     viewCalculadas zone ahora grupo calculadas
                 , viewAnteriores zone ahora grupo anteriores
-                , buscarConfirmacion model.confirmando resumen.transferencias
+                , buscarConfirmacion model.confirmando transferencias
                     |> viewConfirmacionModal grupo
                 ]
 
@@ -932,97 +886,5 @@ viewConfirmacionModal grupo confirmando =
 
                 Nothing ->
                     text ""
-            ]
-        }
-
-
-viewNuevaTransferencia : Maybe ULID -> Grupo -> Model -> Html Msg
-viewNuevaTransferencia yo grupo model =
-    case yo of
-        Nothing ->
-            text ""
-
-        Just from ->
-            div [ Attr.id "transferencias-registrar", class "mt-4" ]
-                [ Bs.btn Bs.Transparent
-                    [ class "btn-sm text-muted p-0"
-                    , Telemetry.click "transferencias.new_open"
-                    , onClick (AbrirNuevaTransferencia grupo.monedaPorDefecto)
-                    ]
-                    [ text "Registrar una transferencia que hice" ]
-                , viewNuevaTransferenciaModal from grupo model.nuevaForm
-                ]
-
-
-viewNuevaTransferenciaModal : ULID -> Grupo -> Maybe (Form CustomFormError NuevaTransferenciaParams) -> Html Msg
-viewNuevaTransferenciaModal from grupo nuevaForm =
-    let
-        campos =
-            case nuevaForm of
-                Nothing ->
-                    []
-
-                Just form ->
-                    let
-                        moneda =
-                            Form.getFieldAsString "moneda" form
-                                |> .value
-                                |> Maybe.andThen Moneda.fromString
-                                |> Maybe.withDefault grupo.monedaPorDefecto
-                    in
-                    [ Html.map NuevaForm <|
-                        -- El botón de submit vive en el footer del modal, fuera
-                        -- de este form; se asocia con el atributo `form`.
-                        Html.form [ Attr.id "transferencias-nueva-form", onSubmit Form.Submit ]
-                            [ div [ class "mb-3" ]
-                                [ label [ class "form-label" ] [ text "A quién" ]
-                                , Bs.selectInput
-                                    (( "", "Elegí a quién le transferiste" )
-                                        :: (grupo.participantes
-                                                |> List.filter (\p -> p.id /= from)
-                                                |> List.map (\p -> ( p.id, p.nombre ))
-                                           )
-                                    )
-                                    (Form.getFieldAsString "to" form)
-                                    []
-                                ]
-                            , div [ class "row g-2" ]
-                                [ div [ class "col-8" ]
-                                    [ label [ class "form-label" ] [ text "Cuánto" ]
-                                    , Bs.montoInput (escalaDe moneda)
-                                        (Form.getFieldAsString "monto" form)
-                                        []
-                                    ]
-                                , div [ class "col-4" ]
-                                    [ label [ class "form-label" ] [ text "Moneda" ]
-                                    , Bs.selectInput
-                                        (Moneda.todas |> List.map (\m -> ( Moneda.toString m, Moneda.toString m )))
-                                        (Form.getFieldAsString "moneda" form)
-                                        []
-                                    ]
-                                ]
-                            ]
-                    , div [ class "form-text mt-2" ]
-                        [ text "Queda registrada como realizada y cuenta en los netos del grupo." ]
-                    ]
-    in
-    Bs.modal
-        { id = "transferencias-modal-nueva"
-        , isOpen = nuevaForm /= Nothing
-        , onClose = CerrarNuevaTransferencia
-        , title = "Registrar una transferencia que hice"
-        , centered = True
-        , body = campos
-        , footer =
-            [ Bs.btn Bs.Secondary
-                [ Telemetry.click "transferencias.new_cancel", onClick CerrarNuevaTransferencia ]
-                [ text "Cancelar" ]
-            , Bs.btn Bs.Primary
-                [ Attr.id "registrar-transferencia"
-                , Telemetry.click "transferencias.new_submit"
-                , Attr.type_ "submit"
-                , Attr.attribute "form" "transferencias-nueva-form"
-                ]
-                [ text "Registrar" ]
             ]
         }

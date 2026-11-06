@@ -64,6 +64,7 @@ init route store =
       }
     , Effect.batch
         [ Store.ensureResumen grupoId store
+        , Store.ensureTransferencias grupoId store
         , Store.ensureGrupo grupoId store
         , -- Los gastos los pide Shared cuando resuelve el participante, que es
           -- lo que este mensaje dispara.
@@ -88,7 +89,7 @@ type Msg
     | PedirConfirmacion Api.Transferencia
     | CancelarConfirmacion
     | SaldarTransferencia ULID
-    | TransferenciaResponse String (Result Http.Error ULID)
+    | TransferenciaResponse String (Result Http.Error Api.Transferencia)
     | AbrirPopup PagoDetalleModal.Ruta
 
 
@@ -122,10 +123,12 @@ update msg model =
                     (TransferenciaResponse "Se registró la transferencia")
             )
 
-        TransferenciaResponse mensaje (Ok _) ->
+        TransferenciaResponse mensaje (Ok transferencia) ->
+            -- Marcar pasa con el grupo congelado, donde el resumen no tiene
+            -- netos: alcanza con actualizar la transferencia.
             ( model
             , Effect.batch
-                [ Store.refreshResumen model.grupoId
+                [ Store.setTransferencia model.grupoId transferencia
                 , Toasts.pushToast Toasts.ToastSuccess mensaje
                 ]
             )
@@ -133,7 +136,7 @@ update msg model =
         TransferenciaResponse _ (Err _) ->
             ( model
             , Effect.batch
-                [ Store.refreshResumen model.grupoId
+                [ Store.refreshTransferencias model.grupoId
                 , Toasts.pushToast Toasts.ToastDanger "No se pudo cambiar el estado de la transferencia"
                 ]
             )
@@ -194,9 +197,9 @@ está pasando son gastos, y congelado son transferencias.
 viewRightColumn : Store -> Zone -> Posix -> Maybe String -> Model -> Grupo -> Html Msg
 viewRightColumn store zone ahora userId model grupo =
     if estaCongelado grupo then
-        case store |> Store.getResumen model.grupoId of
-            Success (Api.GrupoCongelado resumen) ->
-                viewUltimasTransferenciasCard zone ahora grupo resumen.transferencias
+        case store |> Store.getTransferencias model.grupoId of
+            Success transferencias ->
+                viewUltimasTransferenciasCard zone ahora grupo transferencias
 
             _ ->
                 text ""
@@ -217,8 +220,16 @@ viewLeftColumn store zone userId model grupo =
         Failure _ ->
             Bs.alert Bs.AlertDanger [] [ text "Error cargando los datos del grupo." ]
 
-        Success (Api.GrupoCongelado resumen) ->
-            viewGrupoCongelado zone userId grupo resumen
+        Success Api.GrupoCongelado ->
+            case store |> Store.getTransferencias model.grupoId of
+                Success transferencias ->
+                    viewGrupoCongelado zone userId grupo transferencias
+
+                Failure _ ->
+                    Bs.alert Bs.AlertDanger [] [ text "Error cargando las transferencias del grupo." ]
+
+                _ ->
+                    div [ class "text-muted" ] [ text "Cargando..." ]
 
         Success (Api.GrupoAbierto resumen) ->
             if resumen.cantidadPagos == 0 then
@@ -408,8 +419,8 @@ los netos. Las deudas ya están decididas y los netos no se mueven más, así qu
 lo que va acá es cuánta plata te falta mover y con quién. Lo que viene haciendo
 el resto está en la columna de al lado.
 -}
-viewGrupoCongelado : Zone -> Maybe String -> Grupo -> Api.ResumenCongelado -> Html Msg
-viewGrupoCongelado zone userId grupo resumen =
+viewGrupoCongelado : Zone -> Maybe String -> Grupo -> List Api.Transferencia -> Html Msg
+viewGrupoCongelado zone userId grupo transferencias =
     div [ class "d-flex flex-column gap-3" ]
         (case userId of
             Nothing ->
@@ -422,7 +433,7 @@ viewGrupoCongelado zone userId grupo resumen =
                 let
                     mios : Rol -> List Api.Transferencia
                     mios rol =
-                        resumen.transferencias
+                        transferencias
                             |> List.filter (\t -> miLado rol t == uid)
                             -- Por id, que no cambia cuando la marcás: la fila se
                             -- queda donde estaba en vez de saltar de lugar justo

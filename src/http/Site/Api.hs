@@ -78,12 +78,17 @@ data Api routes
       routes :- "grupo" :> Capture "id" ULID :> "freeze" :> Delete '[JSON] Grupo
   , _routeGrupoTasasDeCambioPut ::
       routes :- "grupo" :> Capture "id" ULID :> "tasas-de-cambio" :> Capture "moneda" Moneda :> ReqBody '[JSON] [TasaDeCambio] :> Put '[JSON] [TasaDeCambio]
+  , -- Hechas y pendientes, en orden de creación.
+    _routeTransferenciasGet ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Get '[JSON] [Transferencia]
   , _routeTransferenciaSaldar ::
-      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Post '[JSON] ULID
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Post '[JSON] Transferencia
   , _routeTransferenciaDesmarcar ::
-      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Delete '[JSON] ULID
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> "saldar" :> Delete '[JSON] Transferencia
   , _routeTransferenciaPost ::
       routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> ReqBody '[JSON] NuevaTransferenciaParams :> Post '[JSON] Transferencia
+  , _routeTransferenciaUpdate ::
+      routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> ReqBody '[JSON] NuevaTransferenciaParams :> Put '[JSON] Transferencia
   , _routeTransferenciaDelete ::
       routes :- "grupo" :> Capture "id" ULID :> "transferencias" :> Capture "transferenciaId" ULID :> Delete '[JSON] ULID
   , _routeReceiptImageParse ::
@@ -205,25 +210,21 @@ data UpdateGrupoParams = UpdateGrupoParams
   }
   deriving (Show, Eq, Generic)
 
+-- | Las transferencias no viajan acá: tienen su propio endpoint, así que
+-- saldar una no obliga a volver a sumar los netos de todos los gastos.
 data ResumenGrupo
   = GrupoAbierto ResumenAbierto
-  | GrupoCongelado ResumenCongelado
+  | -- | Congelado ya no hay netos que mostrar: las deudas quedaron fijadas en
+    -- las transferencias.
+    GrupoCongelado
   deriving (Show, Eq, Generic)
 
 data ResumenAbierto = ResumenAbierto
   { netos :: PorMoneda (Netos Monto)
+  -- ^ Incluyen las transferencias hechas.
   , consolidado :: ConsolidadoNetos
   , cantidadPagos :: Int
   , cantidadPagosInvalidos :: Int
-  , -- Sin congelar solo puede haber hechas: las pendientes las crea congelar.
-    transferencias :: [Transferencia]
-  }
-  deriving (Show, Eq, Generic)
-
--- | Congelado el grupo ya no hay netos que mostrar: las deudas quedaron
--- fijadas en estas transferencias, hechas y pendientes en la misma lista.
-data ResumenCongelado = ResumenCongelado
-  { transferencias :: [Transferencia]
   }
   deriving (Show, Eq, Generic)
 
@@ -283,8 +284,6 @@ Elm.deriveBoth Elm.defaultOptions ''CreateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''CreateGrupoAsUserParams
 Elm.deriveBoth Elm.defaultOptions ''UpdateGrupoParams
 Elm.deriveBoth Elm.defaultOptions ''ResumenAbierto
-
-Elm.deriveBoth Elm.defaultOptions ''ResumenCongelado
 
 Elm.deriveBoth Elm.defaultOptions ''ResumenGrupo
 Elm.deriveBoth Elm.defaultOptions ''NuevaTransferenciaParams
