@@ -61,6 +61,8 @@ module BananaSplit.Persistence (
   netosDeGrupo,
   CongelamientoRechazado (..),
   congelarGrupo,
+  GrupoNoEditable (..),
+  withGrupoDescongelado,
   guardarTasasDeCambio,
   borrarTransferencia,
   crearTransferenciaSaldada,
@@ -1580,6 +1582,28 @@ congelarGrupo grupoId = runExceptT $ do
           (\g -> g.congelado_at <-. val_ (Just ahora))
           (\g -> g.id ==. val_ grupoId)
       pure $ grupo{M.congeladoAt = Just ahora}
+
+data GrupoNoEditable
+  = GrupoInexistente
+  | GrupoYaCongelado
+  deriving stock (Show, Eq)
+
+-- | Corre la acción solo si el grupo existe y no está congelado, viéndolo
+-- dentro de la misma transacción que la acción. Tiene que ser la de escritura:
+-- su SERIALIZABLE es lo que hace que un 'congelarGrupo' concurrente no pueda
+-- colarse entre el chequeo y la acción (ver 'conTransaccionDeEscritura').
+withGrupoDescongelado :: ULID -> Pg a -> Pg (Either GrupoNoEditable a)
+withGrupoDescongelado grupoId accion = do
+  congeladoAt <-
+    runSelectReturningOne
+      $ select
+      $ fmap (.congelado_at)
+      $ filter_ (\g -> g.id ==. val_ grupoId)
+      $ all_ db.grupos
+  case congeladoAt of
+    Nothing -> pure $ Left GrupoInexistente
+    Just (Just _) -> pure $ Left GrupoYaCongelado
+    Just Nothing -> Right <$> accion
 
 unfreezeGrupo :: ULID -> Pg ()
 unfreezeGrupo grupoId = do

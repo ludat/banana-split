@@ -186,12 +186,27 @@ instance Telemetry.MonadTelemetry Pg where
       Otel.inSpan' telemetria.tracer nombre Otel.defaultSpanArguments $ \span ->
         conQueriesEnElSpan span telemetria conn (accion span)
 
+-- | La transacción de cualquier cosa que escriba.
+--
+-- Va en SERIALIZABLE porque hay escrituras que deciden según lo que leen y
+-- escriben filas distintas de las que leyeron: congelar lee los netos y escribe
+-- el grupo, y editar una transferencia lee que el grupo no esté congelado y
+-- escribe la transferencia. En REPEATABLE READ esas dos pueden correr a la vez
+-- sin chocar (write skew) y el plan congelado queda calculado con datos viejos;
+-- en SERIALIZABLE el resultado tiene que ser equivalente a haberlas corrido una
+-- después de la otra, y si no lo es Postgres aborta una. Lo mismo con el cache
+-- del resumen de un gasto, que se calcula leyendo claims que otra transacción
+-- puede estar cambiando.
+--
+-- De ahí el reintento: fallar con @40001@ es parte del protocolo, no un error.
+-- La transacción que aborta no dejó nada escrito, así que volver a correr el
+-- bloque entero es seguro, siempre que adentro no haya efectos fuera de la base.
 conTransaccionDeEscritura :: Telemetry -> Connection -> Pg a -> IO a
 conTransaccionDeEscritura telemetria conn accion =
   enElSpanDeLaTransaccion telemetria "db.write" $ \span ->
     Transaction.withTransactionModeRetry
       Transaction.TransactionMode
-        { Transaction.isolationLevel = Transaction.RepeatableRead
+        { Transaction.isolationLevel = Transaction.Serializable
         , Transaction.readWriteMode = Transaction.ReadWrite
         }
       isSerializationError

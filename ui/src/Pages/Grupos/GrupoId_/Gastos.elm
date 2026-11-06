@@ -57,8 +57,8 @@ fechaDe movimiento =
 en que se marcó. Para ordenarlas juntas, ese instante pasa al día en la zona
 del navegador.
 -}
-movimientos : Zone -> List ShallowPago -> List Transferencia -> List Movimiento
-movimientos zone pagos transferencias =
+mkMovimientos : Zone -> List ShallowPago -> List Transferencia -> List Movimiento
+mkMovimientos zone pagos transferencias =
     List.map Gasto pagos
         ++ List.filterMap
             (\t -> t.saldadaAt |> Maybe.map (\saldadaAt -> TransferenciaHecha (Date.fromPosix zone saldadaAt) t))
@@ -129,7 +129,11 @@ view zone participanteId store model =
 
 viewMovimientos : Zone -> Maybe ULID -> Store -> Model -> Grupo -> Html Msg
 viewMovimientos zone participanteId store model grupo =
-    case store |> Store.getPagos model.grupoId of
+    case
+        RemoteData.map2 (mkMovimientos zone)
+            (store |> Store.getPagos model.grupoId)
+            (store |> Store.getTransferencias model.grupoId)
+    of
         NotAsked ->
             div [ class "text-muted" ] [ text "Cargando..." ]
 
@@ -139,16 +143,8 @@ viewMovimientos zone participanteId store model grupo =
         Failure _ ->
             Bs.alert Bs.AlertDanger [] [ text "Error cargando los gastos." ]
 
-        Success pagos ->
-            let
-                -- Los gastos no esperan a las transferencias: si todavía no
-                -- llegaron, aparecen cuando lleguen.
-                lista =
-                    movimientos zone
-                        pagos
-                        (store |> Store.getTransferencias model.grupoId |> RemoteData.withDefault [])
-            in
-            if List.isEmpty lista then
+        Success movimientos ->
+            if List.isEmpty movimientos then
                 Bs.alert Bs.AlertInfo
                     []
                     [ text "Todavía no hay gastos registrados. "
@@ -162,7 +158,7 @@ viewMovimientos zone participanteId store model grupo =
             else
                 Bs.card [ id "gastos-lista" ]
                     [ Bs.listGroupKeyed [ class "list-group-flush" ]
-                        (lista
+                        (movimientos
                             |> List.map
                                 (\movimiento ->
                                     case movimiento of

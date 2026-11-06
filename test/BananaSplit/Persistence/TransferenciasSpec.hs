@@ -13,7 +13,7 @@ import BananaSplit.Monto (Monto)
 import BananaSplit.Participante
 import BananaSplit.Persistence
 import BananaSplit.Persistence.SpecHook
-import BananaSplit.ULID (ULID)
+import BananaSplit.ULID (ULID, nullUlid)
 
 spec :: SpecWith RunDb
 spec = do
@@ -174,6 +174,26 @@ spec = do
 
       guardadas <- runDb $ fetchTransferencias grupo.id
       hechas guardadas `shouldBe` [entre otra una 20 USD]
+
+  describe "withGrupoDescongelado" $ do
+    it "corre la acción si el grupo no está congelado" $ \(RunDb runDb) -> do
+      (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+
+      resultado <- runDb $ withGrupoDescongelado grupo.id $ crearTransferenciaSaldada grupo.id otra una 20 USD
+      fmap resumir resultado `shouldBe` Right (entre otra una 20 USD)
+
+    it "no la corre si el grupo está congelado" $ \(RunDb runDb) -> do
+      (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+      congelarConDeuda runDb grupo una otra 100
+
+      resultado <- runDb $ withGrupoDescongelado grupo.id $ crearTransferenciaSaldada grupo.id otra una 20 USD
+      fmap resumir resultado `shouldBe` Left GrupoYaCongelado
+
+      guardadas <- runDb $ fetchTransferencias grupo.id
+      hechas guardadas `shouldBe` []
+
+    it "no la corre si el grupo no existe" $ \(RunDb runDb) -> do
+      runDb (withGrupoDescongelado nullUlid (pure ())) `shouldReturn` Left GrupoInexistente
 
   describe "crearTransferenciaSaldada" $ do
     it "nace hecha, sin pasar por un congelamiento" $ \(RunDb runDb) -> do
