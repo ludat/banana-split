@@ -22,6 +22,7 @@ import Models.Grupo exposing (GrupoLike, claimErrorMessage, currentParticipante,
 import Models.Repartija as Repartija
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
+import Models.Transferencia as Transferencia
 import QRCode
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
@@ -114,6 +115,7 @@ init transferenciaCtx route =
     , Effect.batch
         [ Effect.map PagoModalMsg modalEffect
         , Effect.map TransferenciaModalMsg transferenciaEffect
+        , Store.ensureTransferencias transferenciaCtx.grupoId transferenciaCtx.store
         ]
     )
 
@@ -529,7 +531,7 @@ viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info shar
                             :: text info.title
                             :: viewAlertaDelTitulo currentPath store
                         )
-                    , viewBadgeCongelado grupo
+                    , viewBadgeCongelado store grupo
                     ]
 
                 -- Solo desktop. En mobile el "Ver como" baja a su propia banda
@@ -686,15 +688,36 @@ viewAlertaDelTitulo currentPath store =
             []
 
 
-viewBadgeCongelado : Grupo -> Html Msg
-viewBadgeCongelado grupo =
+viewBadgeCongelado : Store -> Grupo -> Html Msg
+viewBadgeCongelado store grupo =
     if estaCongelado grupo then
+        let
+            saldadas =
+                case Store.getTransferencias grupo.id store of
+                    Success transferencias ->
+                        let
+                            progreso =
+                                Transferencia.progresoDelPlan grupo transferencias
+                        in
+                        progreso.completadas == progreso.total
+
+                    _ ->
+                        False
+        in
         div [ class "mt-2" ]
-            [ Bs.badge "d-inline-flex align-items-center gap-1 text-uppercase text-white"
-                [ Bs.fondoCongelado ]
-                [ i [ class "bi bi-cash-stack" ] []
-                , text "Saldando deudas"
-                ]
+            [ if saldadas then
+                Bs.badge "d-inline-flex align-items-center gap-1 text-uppercase text-bg-success"
+                    []
+                    [ i [ class "bi bi-check2-circle" ] []
+                    , text "Deudas saldadas"
+                    ]
+
+              else
+                Bs.badge "d-inline-flex align-items-center gap-1 text-uppercase text-white"
+                    [ Bs.fondoCongelado ]
+                    [ i [ class "bi bi-cash-stack" ] []
+                    , text "Saldando deudas"
+                    ]
             ]
 
     else
