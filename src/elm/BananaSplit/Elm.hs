@@ -88,7 +88,6 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy DeleteParticipanteResult)
     , DefineElm (Proxy :: Proxy ResumenGrupo)
     , DefineElm (Proxy :: Proxy ResumenAbierto)
-    , DefineElm (Proxy :: Proxy ResumenCongelado)
     , DefineElm (Proxy :: Proxy (PorParticipante Monto))
     , DefineElm (Proxy :: Proxy (Netos Monto))
     , DefineElm (Proxy :: Proxy (PorMoneda (Netos Monto)))

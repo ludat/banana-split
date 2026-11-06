@@ -11,20 +11,18 @@ module Site.Handler.Pagos (
   handlePagosGet,
 ) where
 
-import Protolude
-import Servant (err404)
-
 import BananaSplit
 import BananaSplit.Persistence (
   deletePago,
-  fetchGrupo,
   fetchPago,
   fetchShallowPagos,
   savePago,
   updatePago,
+  withGrupoDescongelado,
  )
+import Preludat
 import Site.Api
-import Site.Handler.Utils (err423, orElseMay, runBeamFastRead, runBeamWrite, throwJsonError)
+import Site.Handler.Utils (runBeamFastRead, runBeamWrite, throwGrupoNoEditable)
 import Site.Types
 
 -- | El listado de gastos es la lectura más pesada de la app y no decide nada
@@ -39,16 +37,13 @@ handlePagoGet grupoId pagoId = do
 
 handlePagoPost :: ULID -> Pago -> AppHandler Pago
 handlePagoPost grupoId pago = do
-  grupo <-
-    runBeamFastRead (fetchGrupo grupoId)
-      `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when (estaCongelado grupo) $ throwJsonError err423 "El grupo está congelado"
-  runBeamWrite (savePago grupoId pago)
+  runBeamWrite (withGrupoDescongelado grupoId $ savePago grupoId pago)
+    `orElse` throwGrupoNoEditable
 
 handlePagoResumenPost :: Pago -> AppHandler ResumenPago
 handlePagoResumenPost pago = do
-  pure $
-    ResumenPago
+  pure
+    $ ResumenPago
       { resumen = resumenGastos2ResumenNetos $ getResumenGasto pago
       , resumenPagadores = getResumen pago.monto pago.pagadores
       , resumenDeudores = getResumen pago.monto pago.deudores
@@ -56,17 +51,11 @@ handlePagoResumenPost pago = do
 
 handleDeletePago :: ULID -> ULID -> AppHandler ULID
 handleDeletePago grupoId pagoId = do
-  grupo <-
-    runBeamFastRead (fetchGrupo grupoId)
-      `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when (estaCongelado grupo) $ throwJsonError err423 "El grupo está congelado"
-  runBeamWrite (deletePago pagoId)
+  runBeamWrite (withGrupoDescongelado grupoId $ deletePago pagoId)
+    `orElse` throwGrupoNoEditable
   pure pagoId
 
 handlePagoUpdate :: ULID -> ULID -> Pago -> AppHandler Pago
 handlePagoUpdate grupoId pagoId pago = do
-  grupo <-
-    runBeamFastRead (fetchGrupo grupoId)
-      `orElseMay` throwJsonError err404 "Grupo no encontrado"
-  when (estaCongelado grupo) $ throwJsonError err423 "El grupo está congelado"
-  runBeamWrite $ updatePago grupoId pagoId pago
+  runBeamWrite (withGrupoDescongelado grupoId $ updatePago grupoId pagoId pago)
+    `orElse` throwGrupoNoEditable

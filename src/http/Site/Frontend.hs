@@ -62,19 +62,19 @@ renderFrontendShell (FrontendShell document) initialData =
     & withHead (\children -> filter (not . isDevScript) children <> [inlineData])
     & Html.render
     & toLazyByteString
- where
-  isDevScript node =
-    Html.tagName node == Just "script" && Html.getAttribute "src" node == Just initialDataScriptPath
-  inlineData =
-    Html.Element
-      { elementTag = "meta"
-      , elementAttrs =
-          [ ("name", "initial-data")
-          , ("content", decodeUtf8 (BSL.toStrict (Aeson.encode initialData)))
-          ]
-      , elementChildren = []
-      }
-  withHead f = fromMaybe document . traverseHead (Just . f)
+  where
+    isDevScript node =
+      Html.tagName node == Just "script" && Html.getAttribute "src" node == Just initialDataScriptPath
+    inlineData =
+      Html.Element
+        { elementTag = "meta"
+        , elementAttrs =
+            [ ("name", "initial-data")
+            , ("content", decodeUtf8 (BSL.toStrict (Aeson.encode initialData)))
+            ]
+        , elementChildren = []
+        }
+    withHead f = fromMaybe document . traverseHead (Just . f)
 
 -- | What 'initialDataScriptPath' answers: the same data, as a script that
 -- leaves it in @window.initialData@. Being a file of its own, there is no HTML
@@ -87,12 +87,12 @@ traverseHead :: ([Html.Node] -> Maybe [Html.Node]) -> Html.Document -> Maybe Htm
 traverseHead f document = do
   content <- inChild "html" (inChild "head" f) (Html.docContent document)
   pure document{Html.docContent = content}
- where
-  -- Apply @g@ to the children of the first element called @tag@.
-  inChild tag g = \case
-    [] -> Nothing
-    node@Html.Element{} : rest
-      | Html.elementTag node == tag -> do
-          children <- g (Html.elementChildren node)
-          pure (node{Html.elementChildren = children} : rest)
-    node : rest -> (node :) <$> inChild tag g rest
+  where
+    -- Apply @g@ to the children of the first element called @tag@.
+    inChild tag g = \case
+      [] -> Nothing
+      node@Html.Element{} : rest
+        | Html.elementTag node == tag -> do
+            children <- g (Html.elementChildren node)
+            pure (node{Html.elementChildren = children} : rest)
+      node : rest -> (node :) <$> inChild tag g rest

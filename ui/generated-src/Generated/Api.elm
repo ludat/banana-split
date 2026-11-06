@@ -391,13 +391,13 @@ jsonEncDeleteParticipanteResult  val =
 
 type ResumenGrupo  =
     GrupoAbierto ResumenAbierto
-    | GrupoCongelado ResumenCongelado
+    | GrupoCongelado 
 
 jsonDecResumenGrupo : Json.Decode.Decoder ( ResumenGrupo )
 jsonDecResumenGrupo =
     let jsonDecDictResumenGrupo = Dict.fromList
             [ ("GrupoAbierto", Json.Decode.lazy (\_ -> Json.Decode.map GrupoAbierto (jsonDecResumenAbierto)))
-            , ("GrupoCongelado", Json.Decode.lazy (\_ -> Json.Decode.map GrupoCongelado (jsonDecResumenCongelado)))
+            , ("GrupoCongelado", Json.Decode.lazy (\_ -> Json.Decode.succeed GrupoCongelado))
             ]
     in  decodeSumObjectWithSingleField  "ResumenGrupo" jsonDecDictResumenGrupo
 
@@ -405,7 +405,7 @@ jsonEncResumenGrupo : ResumenGrupo -> Value
 jsonEncResumenGrupo  val =
     let keyval v = case v of
                     GrupoAbierto v1 -> ("GrupoAbierto", encodeValue (jsonEncResumenAbierto v1))
-                    GrupoCongelado v1 -> ("GrupoCongelado", encodeValue (jsonEncResumenCongelado v1))
+                    GrupoCongelado  -> ("GrupoCongelado", encodeValue (Json.Encode.list identity []))
     in encodeSumObjectWithSingleField keyval val
 
 
@@ -415,17 +415,15 @@ type alias ResumenAbierto  =
    , consolidado: ConsolidadoNetos
    , cantidadPagos: Int
    , cantidadPagosInvalidos: Int
-   , transferencias: (List Transferencia)
    }
 
 jsonDecResumenAbierto : Json.Decode.Decoder ( ResumenAbierto )
 jsonDecResumenAbierto =
-   Json.Decode.succeed (\pnetos pconsolidado pcantidadPagos pcantidadPagosInvalidos ptransferencias -> {netos = pnetos, consolidado = pconsolidado, cantidadPagos = pcantidadPagos, cantidadPagosInvalidos = pcantidadPagosInvalidos, transferencias = ptransferencias})
+   Json.Decode.succeed (\pnetos pconsolidado pcantidadPagos pcantidadPagosInvalidos -> {netos = pnetos, consolidado = pconsolidado, cantidadPagos = pcantidadPagos, cantidadPagosInvalidos = pcantidadPagosInvalidos})
    |> required "netos" (jsonDecPorMoneda (jsonDecNetos (jsonDecMonto)))
    |> required "consolidado" (jsonDecConsolidadoNetos)
    |> required "cantidadPagos" (Json.Decode.int)
    |> required "cantidadPagosInvalidos" (Json.Decode.int)
-   |> required "transferencias" (Json.Decode.list (jsonDecTransferencia))
 
 jsonEncResumenAbierto : ResumenAbierto -> Value
 jsonEncResumenAbierto  val =
@@ -434,22 +432,8 @@ jsonEncResumenAbierto  val =
    , ("consolidado", jsonEncConsolidadoNetos val.consolidado)
    , ("cantidadPagos", Json.Encode.int val.cantidadPagos)
    , ("cantidadPagosInvalidos", Json.Encode.int val.cantidadPagosInvalidos)
-   , ("transferencias", (Json.Encode.list jsonEncTransferencia) val.transferencias)
    ]
 
-
-
-type alias ResumenCongelado  =
-   { transferencias: (List Transferencia)
-   }
-
-jsonDecResumenCongelado : Json.Decode.Decoder ( ResumenCongelado )
-jsonDecResumenCongelado =
-   Json.Decode.succeed (\ptransferencias -> {transferencias = ptransferencias}) |> custom (Json.Decode.list (jsonDecTransferencia))
-
-jsonEncResumenCongelado : ResumenCongelado -> Value
-jsonEncResumenCongelado  val =
-   (Json.Encode.list jsonEncTransferencia) val.transferencias
 
 
 type alias PorParticipante a = (List (ParticipanteId, a))
@@ -1996,7 +1980,37 @@ putGrupoByIdTasasdecambioByMoneda capture_id capture_moneda body toMsg =
                 Nothing
             }
 
-postGrupoByIdTransferenciasByTransferenciaIdSaldar : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
+getGrupoByIdTransferencias : ULID -> (Result Http.Error  ((List Transferencia))  -> msg) -> Cmd msg
+getGrupoByIdTransferencias capture_id toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "transferencias"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg (Json.Decode.list (jsonDecTransferencia))
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postGrupoByIdTransferenciasByTransferenciaIdSaldar : ULID -> ULID -> (Result Http.Error  (Transferencia)  -> msg) -> Cmd msg
 postGrupoByIdTransferenciasByTransferenciaIdSaldar capture_id capture_transferenciaId toMsg =
     let
         params =
@@ -2021,14 +2035,14 @@ postGrupoByIdTransferenciasByTransferenciaIdSaldar capture_id capture_transferen
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg jsonDecULID
+                Http.expectJson toMsg jsonDecTransferencia
             , timeout =
                 Nothing
             , tracker =
                 Nothing
             }
 
-deleteGrupoByIdTransferenciasByTransferenciaIdSaldar : ULID -> ULID -> (Result Http.Error  (ULID)  -> msg) -> Cmd msg
+deleteGrupoByIdTransferenciasByTransferenciaIdSaldar : ULID -> ULID -> (Result Http.Error  (Transferencia)  -> msg) -> Cmd msg
 deleteGrupoByIdTransferenciasByTransferenciaIdSaldar capture_id capture_transferenciaId toMsg =
     let
         params =
@@ -2053,7 +2067,7 @@ deleteGrupoByIdTransferenciasByTransferenciaIdSaldar capture_id capture_transfer
             , body =
                 Http.emptyBody
             , expect =
-                Http.expectJson toMsg jsonDecULID
+                Http.expectJson toMsg jsonDecTransferencia
             , timeout =
                 Nothing
             , tracker =
@@ -2078,6 +2092,37 @@ postGrupoByIdTransferencias capture_id body toMsg =
                     [ "grupo"
                     , (capture_id)
                     , "transferencias"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncNuevaTransferenciaParams body)
+            , expect =
+                Http.expectJson toMsg jsonDecTransferencia
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+putGrupoByIdTransferenciasByTransferenciaId : ULID -> ULID -> NuevaTransferenciaParams -> (Result Http.Error  (Transferencia)  -> msg) -> Cmd msg
+putGrupoByIdTransferenciasByTransferenciaId capture_id capture_transferenciaId body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "transferencias"
+                    , (capture_transferenciaId)
                     ]
                     params
             , body =

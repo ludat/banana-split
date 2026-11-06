@@ -5,6 +5,7 @@ module Site.Handler.Utils (
   orElseMay,
   orElse_,
   redirect,
+  throwGrupoNoEditable,
   throwJsonError,
 
   -- * Base de datos
@@ -16,7 +17,7 @@ import Control.Monad.Error.Class
 import Data.Aeson
 import Servant
 
-import BananaSplit.Persistence (runBeamFastRead, runBeamWrite)
+import BananaSplit.Persistence (GrupoNoEditable (..), runBeamFastRead, runBeamWrite)
 import Preludat
 import Site.Types
 
@@ -50,3 +51,11 @@ throwJsonError serverError errorMessage =
       { errBody = encode $ object ["error" .= errorMessage]
       , errHeaders = errHeaders serverError ++ [("Content-Type", "application/json")]
       }
+
+-- | Para el 'Left' de 'BananaSplit.Persistence.withGrupoDescongelado':
+--
+-- > runBeamWrite (withGrupoDescongelado grupoId accion) `orElse` throwGrupoNoEditable
+throwGrupoNoEditable :: GrupoNoEditable -> AppHandler a
+throwGrupoNoEditable = \case
+  GrupoInexistente -> throwJsonError err404 "Grupo no encontrado"
+  GrupoYaCongelado -> throwJsonError err423 "El grupo está congelado"

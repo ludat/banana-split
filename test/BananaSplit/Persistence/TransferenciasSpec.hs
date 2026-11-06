@@ -13,7 +13,7 @@ import BananaSplit.Monto (Monto)
 import BananaSplit.Participante
 import BananaSplit.Persistence
 import BananaSplit.Persistence.SpecHook
-import BananaSplit.ULID (ULID)
+import BananaSplit.ULID (ULID, nullUlid)
 
 spec :: SpecWith RunDb
 spec = do
@@ -79,11 +79,13 @@ spec = do
       congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
 
-      runDb $ marcarTransferenciaSaldada grupo.id pendiente
+      marcada <- runDb $ marcarTransferenciaSaldada grupo.id pendiente
 
       guardadas <- runDb $ fetchTransferencias grupo.id
       pendientes guardadas `shouldBe` []
       hechas guardadas `shouldBe` [entre otra una 100 ARS]
+      -- Devuelve la misma que quedó guardada.
+      marcada `shouldBe` headMay guardadas
 
     it "no toca las transferencias de otro grupo" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
@@ -91,7 +93,7 @@ spec = do
       congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
 
-      runDb $ marcarTransferenciaSaldada ajeno.id pendiente
+      runDb (marcarTransferenciaSaldada ajeno.id pendiente) `shouldReturn` Nothing
 
       guardadas <- runDb $ fetchTransferencias grupo.id
       hechas guardadas `shouldBe` []
@@ -101,22 +103,23 @@ spec = do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
       congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
-      runDb $ marcarTransferenciaSaldada grupo.id pendiente
+      _ <- runDb $ marcarTransferenciaSaldada grupo.id pendiente
 
-      runDb $ desmarcarTransferenciaSaldada grupo.id pendiente
+      desmarcada <- runDb $ desmarcarTransferenciaSaldada grupo.id pendiente
 
       guardadas <- runDb $ fetchTransferencias grupo.id
       hechas guardadas `shouldBe` []
       pendientes guardadas `shouldBe` [entre otra una 100 ARS]
+      desmarcada `shouldBe` headMay guardadas
 
     it "no toca las transferencias de otro grupo" $ \(RunDb runDb) -> do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
       (ajeno, _, _) <- grupoDeDos (RunDb runDb)
       congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
-      runDb $ marcarTransferenciaSaldada grupo.id pendiente
+      _ <- runDb $ marcarTransferenciaSaldada grupo.id pendiente
 
-      runDb $ desmarcarTransferenciaSaldada ajeno.id pendiente
+      runDb (desmarcarTransferenciaSaldada ajeno.id pendiente) `shouldReturn` Nothing
 
       guardadas <- runDb $ fetchTransferencias grupo.id
       pendientes guardadas `shouldBe` []
@@ -126,7 +129,7 @@ spec = do
       (grupo, una, otra) <- grupoDeDos (RunDb runDb)
       congelarConDeuda runDb grupo una otra 100
       pendiente <- unaPendiente runDb grupo.id
-      runDb $ marcarTransferenciaSaldada grupo.id pendiente
+      _ <- runDb $ marcarTransferenciaSaldada grupo.id pendiente
       -- Otro gasto y otro congelamiento para que quede una pendiente al lado de
       -- la hecha: la deuda vieja ya la saldó la transferencia de arriba.
       _ <- runDb $ savePago grupo.id $ gastoEntre ARS 40 una otra
@@ -146,6 +149,51 @@ spec = do
 
       descongelado <- runDb $ fetchGrupo grupo.id
       (descongelado >>= (.congeladoAt)) `shouldBe` Nothing
+
+  describe "editarTransferencia" $ do
+    it "cambia quién, a quién y cuánto, y deja la fecha" $ \(RunDb runDb) -> do
+      (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+      creada <- runDb $ crearTransferenciaSaldada grupo.id otra una 20 USD
+      -- La fecha como quedó en la db, que la guarda con menos precisión que
+      -- la que devuelve 'crearTransferenciaSaldada'.
+      antes <- runDb $ fetchTransferencias grupo.id
+
+      editada <- runDb $ editarTransferencia grupo.id creada.id una otra 35 ARS
+
+      fmap resumir editada `shouldBe` Just (entre una otra 35 ARS)
+      (editada >>= (.saldadaAt)) `shouldBe` (headMay antes >>= (.saldadaAt))
+      guardadas <- runDb $ fetchTransferencias grupo.id
+      guardadas `shouldBe` maybeToList editada
+
+    it "no toca la de otro grupo" $ \(RunDb runDb) -> do
+      (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+      (ajeno, _, _) <- grupoDeDos (RunDb runDb)
+      creada <- runDb $ crearTransferenciaSaldada grupo.id otra una 20 USD
+
+      runDb (editarTransferencia ajeno.id creada.id una otra 35 ARS) `shouldReturn` Nothing
+
+      guardadas <- runDb $ fetchTransferencias grupo.id
+      hechas guardadas `shouldBe` [entre otra una 20 USD]
+
+  describe "withGrupoDescongelado" $ do
+    it "corre la acción si el grupo no está congelado" $ \(RunDb runDb) -> do
+      (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+
+      resultado <- runDb $ withGrupoDescongelado grupo.id $ crearTransferenciaSaldada grupo.id otra una 20 USD
+      fmap resumir resultado `shouldBe` Right (entre otra una 20 USD)
+
+    it "no la corre si el grupo está congelado" $ \(RunDb runDb) -> do
+      (grupo, una, otra) <- grupoDeDos (RunDb runDb)
+      congelarConDeuda runDb grupo una otra 100
+
+      resultado <- runDb $ withGrupoDescongelado grupo.id $ crearTransferenciaSaldada grupo.id otra una 20 USD
+      fmap resumir resultado `shouldBe` Left GrupoYaCongelado
+
+      guardadas <- runDb $ fetchTransferencias grupo.id
+      hechas guardadas `shouldBe` []
+
+    it "no la corre si el grupo no existe" $ \(RunDb runDb) -> do
+      runDb (withGrupoDescongelado nullUlid (pure ())) `shouldReturn` Left GrupoInexistente
 
   describe "crearTransferenciaSaldada" $ do
     it "nace hecha, sin pasar por un congelamiento" $ \(RunDb runDb) -> do
