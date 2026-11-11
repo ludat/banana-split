@@ -3,6 +3,7 @@ module Models.Monto exposing
     , add
     , asDeltaHtml
     , diffText
+    , porUnidad
     , sub
     , toFloat
     , toRawString
@@ -169,6 +170,32 @@ asDeltaHtml monto =
             )
         ]
         [ text (toSignedString monto) ]
+
+
+{-| Redondea la mitad lejos del cero, a los decimales que ya tiene el monto.
+-}
+porUnidad : Int -> Monto -> Maybe { monto : Monto, exacto : Bool }
+porUnidad cantidad monto =
+    if cantidad <= 0 then
+        Nothing
+
+    else
+        let
+            redondeado =
+                (2 * Basics.abs monto.valor + cantidad) // (2 * cantidad)
+        in
+        Just
+            { monto =
+                { lugaresDespuesDeLaComa = monto.lugaresDespuesDeLaComa
+                , valor =
+                    if monto.valor < 0 then
+                        -redondeado
+
+                    else
+                        redondeado
+                }
+            , exacto = modBy cantidad monto.valor == 0
+            }
 
 
 abs : Monto -> Monto

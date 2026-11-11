@@ -1210,15 +1210,17 @@ type alias RepartijaForFrontend  =
    { repartija: Repartija
    , pagoId: ULID
    , pagoNombre: String
+   , pagoMoneda: Moneda
    , detalle: DetalleRepartija
    }
 
 jsonDecRepartijaForFrontend : Json.Decode.Decoder ( RepartijaForFrontend )
 jsonDecRepartijaForFrontend =
-   Json.Decode.succeed (\prepartija ppagoId ppagoNombre pdetalle -> {repartija = prepartija, pagoId = ppagoId, pagoNombre = ppagoNombre, detalle = pdetalle})
+   Json.Decode.succeed (\prepartija ppagoId ppagoNombre ppagoMoneda pdetalle -> {repartija = prepartija, pagoId = ppagoId, pagoNombre = ppagoNombre, pagoMoneda = ppagoMoneda, detalle = pdetalle})
    |> required "repartija" (jsonDecRepartija)
    |> required "pagoId" (jsonDecULID)
    |> required "pagoNombre" (Json.Decode.string)
+   |> required "pagoMoneda" (jsonDecMoneda)
    |> required "detalle" (jsonDecDetalleRepartija)
 
 jsonEncRepartijaForFrontend : RepartijaForFrontend -> Value
@@ -1227,6 +1229,7 @@ jsonEncRepartijaForFrontend  val =
    [ ("repartija", jsonEncRepartija val.repartija)
    , ("pagoId", jsonEncULID val.pagoId)
    , ("pagoNombre", Json.Encode.string val.pagoNombre)
+   , ("pagoMoneda", jsonEncMoneda val.pagoMoneda)
    , ("detalle", jsonEncDetalleRepartija val.detalle)
    ]
 
@@ -1377,6 +1380,146 @@ jsonEncDetalleSinReclamar  val =
    , ("montoTotal", jsonEncMonto val.montoTotal)
    , ("porParticipante", (jsonEncNetos (jsonEncMonto)) val.porParticipante)
    ]
+
+
+
+type AccionDeRepartija  =
+    AgregarUnidades ULID Int
+    | QuitarUnidades ULID Int
+    | SepararUnidades ULID Int String
+    | RepartirProporcionalmente ULID
+    | AgregarItem String Monto Int
+    | UnirItems ULID ULID String
+
+jsonDecAccionDeRepartija : Json.Decode.Decoder ( AccionDeRepartija )
+jsonDecAccionDeRepartija =
+    let jsonDecDictAccionDeRepartija = Dict.fromList
+            [ ("AgregarUnidades", Json.Decode.lazy (\_ -> Json.Decode.map2 AgregarUnidades (Json.Decode.index 0 (jsonDecULID)) (Json.Decode.index 1 (Json.Decode.int))))
+            , ("QuitarUnidades", Json.Decode.lazy (\_ -> Json.Decode.map2 QuitarUnidades (Json.Decode.index 0 (jsonDecULID)) (Json.Decode.index 1 (Json.Decode.int))))
+            , ("SepararUnidades", Json.Decode.lazy (\_ -> Json.Decode.map3 SepararUnidades (Json.Decode.index 0 (jsonDecULID)) (Json.Decode.index 1 (Json.Decode.int)) (Json.Decode.index 2 (Json.Decode.string))))
+            , ("RepartirProporcionalmente", Json.Decode.lazy (\_ -> Json.Decode.map RepartirProporcionalmente (jsonDecULID)))
+            , ("AgregarItem", Json.Decode.lazy (\_ -> Json.Decode.map3 AgregarItem (Json.Decode.index 0 (Json.Decode.string)) (Json.Decode.index 1 (jsonDecMonto)) (Json.Decode.index 2 (Json.Decode.int))))
+            , ("UnirItems", Json.Decode.lazy (\_ -> Json.Decode.map3 UnirItems (Json.Decode.index 0 (jsonDecULID)) (Json.Decode.index 1 (jsonDecULID)) (Json.Decode.index 2 (Json.Decode.string))))
+            ]
+    in  decodeSumObjectWithSingleField  "AccionDeRepartija" jsonDecDictAccionDeRepartija
+
+jsonEncAccionDeRepartija : AccionDeRepartija -> Value
+jsonEncAccionDeRepartija  val =
+    let keyval v = case v of
+                    AgregarUnidades v1 v2 -> ("AgregarUnidades", encodeValue (Json.Encode.list identity [jsonEncULID v1, Json.Encode.int v2]))
+                    QuitarUnidades v1 v2 -> ("QuitarUnidades", encodeValue (Json.Encode.list identity [jsonEncULID v1, Json.Encode.int v2]))
+                    SepararUnidades v1 v2 v3 -> ("SepararUnidades", encodeValue (Json.Encode.list identity [jsonEncULID v1, Json.Encode.int v2, Json.Encode.string v3]))
+                    RepartirProporcionalmente v1 -> ("RepartirProporcionalmente", encodeValue (jsonEncULID v1))
+                    AgregarItem v1 v2 v3 -> ("AgregarItem", encodeValue (Json.Encode.list identity [Json.Encode.string v1, jsonEncMonto v2, Json.Encode.int v3]))
+                    UnirItems v1 v2 v3 -> ("UnirItems", encodeValue (Json.Encode.list identity [jsonEncULID v1, jsonEncULID v2, Json.Encode.string v3]))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type AccionDeRepartijaInvalida  =
+    ItemNoEncontrado 
+    | ItemSinUnidades 
+    | CantidadDeUnidadesInvalida 
+    | NoPuedeQuedarSinItems 
+    | UnirConElMismoItem 
+    | ItemSinNombre 
+
+jsonDecAccionDeRepartijaInvalida : Json.Decode.Decoder ( AccionDeRepartijaInvalida )
+jsonDecAccionDeRepartijaInvalida = 
+    let jsonDecDictAccionDeRepartijaInvalida = Dict.fromList [("ItemNoEncontrado", ItemNoEncontrado), ("ItemSinUnidades", ItemSinUnidades), ("CantidadDeUnidadesInvalida", CantidadDeUnidadesInvalida), ("NoPuedeQuedarSinItems", NoPuedeQuedarSinItems), ("UnirConElMismoItem", UnirConElMismoItem), ("ItemSinNombre", ItemSinNombre)]
+    in  decodeSumUnaries "AccionDeRepartijaInvalida" jsonDecDictAccionDeRepartijaInvalida
+
+jsonEncAccionDeRepartijaInvalida : AccionDeRepartijaInvalida -> Value
+jsonEncAccionDeRepartijaInvalida  val =
+    case val of
+        ItemNoEncontrado -> Json.Encode.string "ItemNoEncontrado"
+        ItemSinUnidades -> Json.Encode.string "ItemSinUnidades"
+        CantidadDeUnidadesInvalida -> Json.Encode.string "CantidadDeUnidadesInvalida"
+        NoPuedeQuedarSinItems -> Json.Encode.string "NoPuedeQuedarSinItems"
+        UnirConElMismoItem -> Json.Encode.string "UnirConElMismoItem"
+        ItemSinNombre -> Json.Encode.string "ItemSinNombre"
+
+
+
+type ResultadoAccionDeRepartija  =
+    AccionDeRepartijaAceptada RepartijaForFrontend
+    | AccionDeRepartijaRechazada AccionDeRepartijaInvalida
+
+jsonDecResultadoAccionDeRepartija : Json.Decode.Decoder ( ResultadoAccionDeRepartija )
+jsonDecResultadoAccionDeRepartija =
+    let jsonDecDictResultadoAccionDeRepartija = Dict.fromList
+            [ ("AccionDeRepartijaAceptada", Json.Decode.lazy (\_ -> Json.Decode.map AccionDeRepartijaAceptada (jsonDecRepartijaForFrontend)))
+            , ("AccionDeRepartijaRechazada", Json.Decode.lazy (\_ -> Json.Decode.map AccionDeRepartijaRechazada (jsonDecAccionDeRepartijaInvalida)))
+            ]
+    in  decodeSumObjectWithSingleField  "ResultadoAccionDeRepartija" jsonDecDictResultadoAccionDeRepartija
+
+jsonEncResultadoAccionDeRepartija : ResultadoAccionDeRepartija -> Value
+jsonEncResultadoAccionDeRepartija  val =
+    let keyval v = case v of
+                    AccionDeRepartijaAceptada v1 -> ("AccionDeRepartijaAceptada", encodeValue (jsonEncRepartijaForFrontend v1))
+                    AccionDeRepartijaRechazada v1 -> ("AccionDeRepartijaRechazada", encodeValue (jsonEncAccionDeRepartijaInvalida v1))
+    in encodeSumObjectWithSingleField keyval val
+
+
+
+type alias PedidoDePreviewDeAccion  =
+   { repartija: Repartija
+   , accion: AccionDeRepartija
+   }
+
+jsonDecPedidoDePreviewDeAccion : Json.Decode.Decoder ( PedidoDePreviewDeAccion )
+jsonDecPedidoDePreviewDeAccion =
+   Json.Decode.succeed (\prepartija paccion -> {repartija = prepartija, accion = paccion})
+   |> required "repartija" (jsonDecRepartija)
+   |> required "accion" (jsonDecAccionDeRepartija)
+
+jsonEncPedidoDePreviewDeAccion : PedidoDePreviewDeAccion -> Value
+jsonEncPedidoDePreviewDeAccion  val =
+   Json.Encode.object
+   [ ("repartija", jsonEncRepartija val.repartija)
+   , ("accion", jsonEncAccionDeRepartija val.accion)
+   ]
+
+
+
+type alias PreviewDeAccion  =
+   { repartija: Repartija
+   , detalle: DetalleRepartija
+   }
+
+jsonDecPreviewDeAccion : Json.Decode.Decoder ( PreviewDeAccion )
+jsonDecPreviewDeAccion =
+   Json.Decode.succeed (\prepartija pdetalle -> {repartija = prepartija, detalle = pdetalle})
+   |> required "repartija" (jsonDecRepartija)
+   |> required "detalle" (jsonDecDetalleRepartija)
+
+jsonEncPreviewDeAccion : PreviewDeAccion -> Value
+jsonEncPreviewDeAccion  val =
+   Json.Encode.object
+   [ ("repartija", jsonEncRepartija val.repartija)
+   , ("detalle", jsonEncDetalleRepartija val.detalle)
+   ]
+
+
+
+type ResultadoPreviewDeAccion  =
+    PreviewDeAccionAceptada PreviewDeAccion
+    | PreviewDeAccionRechazada AccionDeRepartijaInvalida
+
+jsonDecResultadoPreviewDeAccion : Json.Decode.Decoder ( ResultadoPreviewDeAccion )
+jsonDecResultadoPreviewDeAccion =
+    let jsonDecDictResultadoPreviewDeAccion = Dict.fromList
+            [ ("PreviewDeAccionAceptada", Json.Decode.lazy (\_ -> Json.Decode.map PreviewDeAccionAceptada (jsonDecPreviewDeAccion)))
+            , ("PreviewDeAccionRechazada", Json.Decode.lazy (\_ -> Json.Decode.map PreviewDeAccionRechazada (jsonDecAccionDeRepartijaInvalida)))
+            ]
+    in  decodeSumObjectWithSingleField  "ResultadoPreviewDeAccion" jsonDecDictResultadoPreviewDeAccion
+
+jsonEncResultadoPreviewDeAccion : ResultadoPreviewDeAccion -> Value
+jsonEncResultadoPreviewDeAccion  val =
+    let keyval v = case v of
+                    PreviewDeAccionAceptada v1 -> ("PreviewDeAccionAceptada", encodeValue (jsonEncPreviewDeAccion v1))
+                    PreviewDeAccionRechazada v1 -> ("PreviewDeAccionRechazada", encodeValue (jsonEncAccionDeRepartijaInvalida v1))
+    in encodeSumObjectWithSingleField keyval val
 
 
 postGrupo : CreateGrupoParams -> (Result Http.Error  (Grupo)  -> msg) -> Cmd msg
@@ -1829,8 +1972,8 @@ getRepartijasByRepartijaId capture_repartijaId toMsg =
                 Nothing
             }
 
-putRepartijasByRepartijaId : ULID -> RepartijaClaim -> (Result Http.Error  (RepartijaForFrontend)  -> msg) -> Cmd msg
-putRepartijasByRepartijaId capture_repartijaId body toMsg =
+putRepartijasByRepartijaIdClaims : ULID -> RepartijaClaim -> (Result Http.Error  (RepartijaForFrontend)  -> msg) -> Cmd msg
+putRepartijasByRepartijaIdClaims capture_repartijaId body toMsg =
     let
         params =
             List.filterMap identity
@@ -1846,6 +1989,7 @@ putRepartijasByRepartijaId capture_repartijaId body toMsg =
                 Url.Builder.crossOrigin "/api"
                     [ "repartijas"
                     , (capture_repartijaId)
+                    , "claims"
                     ]
                     params
             , body =
@@ -1882,6 +2026,66 @@ deleteRepartijasClaimsByClaimId capture_claimId toMsg =
                 Http.emptyBody
             , expect =
                 Http.expectJson toMsg jsonDecRepartijaForFrontend
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postRepartijasAccionesPreview : PedidoDePreviewDeAccion -> (Result Http.Error  (ResultadoPreviewDeAccion)  -> msg) -> Cmd msg
+postRepartijasAccionesPreview body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , "acciones"
+                    , "preview"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncPedidoDePreviewDeAccion body)
+            , expect =
+                Http.expectJson toMsg jsonDecResultadoPreviewDeAccion
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+postRepartijasByRepartijaIdAcciones : ULID -> AccionDeRepartija -> (Result Http.Error  (ResultadoAccionDeRepartija)  -> msg) -> Cmd msg
+postRepartijasByRepartijaIdAcciones capture_repartijaId body toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "POST"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , (capture_repartijaId)
+                    , "acciones"
+                    ]
+                    params
+            , body =
+                Http.jsonBody (jsonEncAccionDeRepartija body)
+            , expect =
+                Http.expectJson toMsg jsonDecResultadoAccionDeRepartija
             , timeout =
                 Nothing
             , tracker =

@@ -94,6 +94,7 @@ library
   hs-source-dirs: src/core/
   exposed-modules:
     BananaSplit
+    BananaSplit.AccionDeRepartija
     BananaSplit.Core
     BananaSplit.Deudas
     BananaSplit.Email
@@ -129,6 +130,7 @@ library database
     BananaSplit.Persistence.Pg
     BananaSplit.Persistence.ResumenGuardado
     BananaSplit.Persistence.Schema
+    BananaSplit.Persistence.UbicacionDeRepartija
     BananaSplit.PgRoll
 
   build-depends:
@@ -216,6 +218,8 @@ test-suite spec
   hs-source-dirs: test
   main-is: Spec.hs
   other-modules:
+    BananaSplit.AccionDeRepartijaSpec
+    BananaSplit.CambiosDeClaimsSpec
     BananaSplit.Deudas.TelemetriaSpec
     BananaSplit.DeudasSpec
     BananaSplit.MonedaSpec

@@ -3,6 +3,8 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Site.Handler.Repartijas (
+  handleRepartijaAccion,
+  handleRepartijaAccionPreview,
   handleRepartijaClaimDelete,
   handleRepartijaClaimPut,
   handleRepartijaGet,
@@ -10,10 +12,18 @@ module Site.Handler.Repartijas (
 
 import Servant (err404)
 
-import BananaSplit (RepartijaClaim (..), RepartijaForFrontend (..))
+import BananaSplit (AccionDeRepartija, RepartijaClaim (..), RepartijaForFrontend (..), detalleRepartija)
+import BananaSplit.AccionDeRepartija qualified as AccionDeRepartija
 import BananaSplit.Persistence
 import BananaSplit.ULID (ULID)
+import BananaSplit.ULID qualified as ULID
 import Preludat
+import Site.Api (
+  PedidoDePreviewDeAccion (..),
+  PreviewDeAccion (..),
+  ResultadoAccionDeRepartija (..),
+  ResultadoPreviewDeAccion (..),
+ )
 import Site.Handler.Utils
 import Site.Types
 
@@ -23,21 +33,52 @@ handleRepartijaGet repartijaId = do
 
 handleRepartijaClaimPut :: ULID -> RepartijaClaim -> AppHandler RepartijaForFrontend
 handleRepartijaClaimPut repartijaId repartijaClaim =
-  ( runBeamWrite
-      ( fetchGrupoIdFromRepartija repartijaId
-          >>= traverse
-            (\grupoId -> withGrupoDescongelado grupoId $ saveRepartijaClaim repartijaId repartijaClaim)
-      )
-      `orElseMay` throwJsonError err404 "Repartija no encontrada"
-  )
-    `orElse` throwGrupoNoEditable
+  runBeamWrite
+    ( do
+        maybeGrupoId <- fetchGrupoIdFromRepartija repartijaId
+        case maybeGrupoId of
+          Nothing -> pure Nothing
+          Just grupoId ->
+            Just <$> withGrupoDescongelado grupoId (saveRepartijaClaim repartijaId repartijaClaim)
+    )
+    & orElseNoEncontradoONoEditable "Repartija no encontrada"
 
 handleRepartijaClaimDelete :: ULID -> AppHandler RepartijaForFrontend
 handleRepartijaClaimDelete claimId =
-  ( runBeamWrite
-      ( fetchGrupoIdFromClaim claimId
-          >>= traverse (\grupoId -> withGrupoDescongelado grupoId $ deleteRepartijaClaim claimId)
-      )
-      `orElseMay` throwJsonError err404 "Claim no encontrado"
-  )
+  runBeamWrite
+    ( do
+        maybeGrupoId <- fetchGrupoIdFromClaim claimId
+        case maybeGrupoId of
+          Nothing -> pure Nothing
+          Just grupoId -> Just <$> withGrupoDescongelado grupoId (deleteRepartijaClaim claimId)
+    )
+    & orElseNoEncontradoONoEditable "Claim no encontrado"
+
+handleRepartijaAccionPreview :: PedidoDePreviewDeAccion -> AppHandler ResultadoPreviewDeAccion
+handleRepartijaAccionPreview pedido = do
+  nuevoItemId <- liftIO ULID.getULID
+  pure
+    $ case AccionDeRepartija.aplicarAccionDeRepartija nuevoItemId pedido.accion pedido.repartija of
+      Left motivo -> PreviewDeAccionRechazada motivo
+      Right repartija ->
+        PreviewDeAccionAceptada
+          PreviewDeAccion{repartija = repartija, detalle = detalleRepartija repartija}
+
+handleRepartijaAccion :: ULID -> AccionDeRepartija -> AppHandler ResultadoAccionDeRepartija
+handleRepartijaAccion repartijaId accion =
+  runBeamWrite
+    ( do
+        maybeUbicacion <- fetchUbicacionDeRepartija repartijaId
+        case maybeUbicacion of
+          Nothing -> pure Nothing
+          Just ubicacion ->
+            Just <$> withGrupoDescongelado ubicacion.grupoId (aplicarAccionDeRepartija ubicacion accion)
+    )
+    & orElseNoEncontradoONoEditable "Repartija no encontrada"
+    <&> either AccionDeRepartijaRechazada AccionDeRepartijaAceptada
+
+orElseNoEncontradoONoEditable ::
+  Text -> AppHandler (Maybe (Either GrupoNoEditable a)) -> AppHandler a
+orElseNoEncontradoONoEditable mensaje resultado =
+  (resultado `orElseMay` throwJsonError err404 mensaje)
     `orElse` throwGrupoNoEditable

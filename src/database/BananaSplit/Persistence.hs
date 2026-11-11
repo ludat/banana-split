@@ -32,6 +32,7 @@ module BananaSplit.Persistence (
   recomputePagos,
   addParticipante,
   addParticipanteForUser,
+  aplicarAccionDeRepartija,
   editarParticipante,
   usoDeParticipante,
   claimParticipante,
@@ -51,6 +52,8 @@ module BananaSplit.Persistence (
   updateUser,
   fetchGrupoIdFromClaim,
   fetchGrupoIdFromRepartija,
+  UbicacionDeRepartija (..),
+  fetchUbicacionDeRepartija,
   fetchPago,
   fetchRepartija,
   ConteoDeGastos (..),
@@ -100,6 +103,7 @@ import BananaSplit.Persistence.Pg
 import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..))
 import BananaSplit.Persistence.ResumenGuardado qualified as ResumenGuardado
 import BananaSplit.Persistence.Schema
+import BananaSplit.Persistence.UbicacionDeRepartija (UbicacionDeRepartija (..))
 import BananaSplit.PgRoll qualified as PgRoll
 import BananaSplit.PorParticipante qualified as PorParticipante
 import BananaSplit.Telemetry qualified as Telemetry
@@ -1316,7 +1320,7 @@ fetchRepartija unRepartijaId = do
   claims <- claimsDeItems (fmap (RepartijaItemId . (.repartijaitemId)) items)
 
   pure
-    $ M.repartijaForFrontend pagoId pagoNombre
+    $ M.repartijaForFrontend pagoId pagoNombre moneda
     $ M.Repartija
       { id = repartija.id
       , nombre = pagoNombre
@@ -1391,7 +1395,72 @@ recalcularRepartija grupoId repartijaId = do
       case repartijaDePago repartijaId pago of
         Nothing -> fetchRepartija repartijaId
         Just repartija ->
-          pure $ M.repartijaForFrontend pago.pagoId pago.nombre repartija
+          pure $ M.repartijaForFrontend pago.pagoId pago.nombre pago.moneda repartija
+
+aplicarAccionDeRepartija ::
+  UbicacionDeRepartija
+  -> M.AccionDeRepartija
+  -> Pg (Either M.AccionDeRepartijaInvalida M.RepartijaForFrontend)
+aplicarAccionDeRepartija ubicacion accion = do
+  pago <- fetchPago ubicacion.grupoId ubicacion.pagoId
+  antes <-
+    pure (repartijaDePago ubicacion.repartijaId pago)
+      `orElseMay` panic "el gasto no tiene la repartija"
+  nuevoItemId <- liftIO ULID.getULID
+  for (M.aplicarAccionDeRepartija nuevoItemId accion antes) $ \despues -> do
+    -- 'savePago' no guarda los claims. Van antes que el gasto porque guardarlo
+    -- calcula el resumen con los claims que encuentra.
+    guardarCambiosDeClaims (M.cambiosDeClaims antes.claims despues.claims)
+    guardado <- savePago ubicacion.grupoId (conRepartija despues pago)
+    pure
+      $ repartijaDePago ubicacion.repartijaId guardado
+      & fromMaybe (panic "el gasto guardado perdió su repartija")
+      & M.repartijaForFrontend guardado.pagoId guardado.nombre guardado.moneda
+
+-- | Se borra primero, así un claim nuevo puede ocupar el lugar (participante e
+-- item) de uno borrado.
+guardarCambiosDeClaims :: M.CambiosDeClaims -> Pg ()
+guardarCambiosDeClaims cambios = do
+  unless (null cambios.borrados)
+    $ runDelete
+    $ delete db.repartija_claims (\c -> c.repartijaclaimId `in_` fmap val_ cambios.borrados)
+  claims <- forM cambios.nuevosOModificados $ \claim ->
+    if claim.id == nullUlid
+      then do
+        claimId <- liftIO ULID.getULID
+        pure
+          M.RepartijaClaim
+            { M.id = claimId
+            , M.participante = claim.participante
+            , M.itemId = claim.itemId
+            , M.cantidad = claim.cantidad
+            }
+      else pure claim
+  unless (null claims)
+    $ runInsert
+    $ insertOnConflict
+      db.repartija_claims
+      (insertValues (fmap claimToRow claims))
+      (conflictingFields (\c -> (c.repartijaclaimParticipante, c.repartijaclaimRepartijaItem)))
+      onConflictUpdateAll
+
+conRepartija :: M.Repartija -> M.Pago -> M.Pago
+conRepartija repartija pago =
+  M.Pago
+    { M.pagoId = pago.pagoId
+    , M.monto = pago.monto
+    , M.moneda = pago.moneda
+    , M.nombre = pago.nombre
+    , M.fecha = pago.fecha
+    , M.pagadores = reemplazar pago.pagadores
+    , M.deudores = reemplazar pago.deudores
+    }
+  where
+    reemplazar distribucion = case distribucion.tipo of
+      M.TipoDistribucionRepartija r
+        | r.id == repartija.id ->
+            M.Distribucion{M.id = distribucion.id, M.tipo = M.TipoDistribucionRepartija repartija}
+      _ -> distribucion
 
 -- | La repartija de un gasto, buscándola en las dos distribuciones (puede estar
 -- tanto del lado de los pagadores como del de los deudores).
@@ -1400,11 +1469,10 @@ repartijaDePago repartijaId pago =
   [pago.pagadores, pago.deudores]
     & mapMaybe
       ( \distribucion -> case distribucion.tipo of
-          M.TipoDistribucionRepartija repartija
-            | repartija.id == repartijaId -> Just repartija
+          M.TipoDistribucionRepartija repartija -> Just repartija
           _ -> Nothing
       )
-    & head
+    & find (\repartija -> repartija.id == repartijaId)
 
 deleteRepartijaClaim :: ULID -> Pg M.RepartijaForFrontend
 deleteRepartijaClaim claimId = do
@@ -1865,6 +1933,15 @@ guardarTasasDeCambio grupoId moneda tasas = do
 fetchGrupoIdFromRepartija :: ULID -> Pg (Maybe ULID)
 fetchGrupoIdFromRepartija repartijaId =
   runSelectReturningOne $ select $ grupoIdDePago <$> pagoDeRepartijaId repartijaId
+
+fetchUbicacionDeRepartija :: ULID -> Pg (Maybe UbicacionDeRepartija)
+fetchUbicacionDeRepartija repartijaId =
+  runSelectReturningOne
+    (select $ (\pago -> (pago.pagoId, grupoIdDePago pago)) <$> pagoDeRepartijaId repartijaId)
+    <&> fmap
+      ( \(pagoId, grupoId) ->
+          UbicacionDeRepartija{repartijaId = repartijaId, pagoId = pagoId, grupoId = grupoId}
+      )
 
 fetchGrupoIdFromClaim :: ULID -> Pg (Maybe ULID)
 fetchGrupoIdFromClaim claimId =

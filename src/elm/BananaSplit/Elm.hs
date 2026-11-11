@@ -128,6 +128,12 @@ generateElmFiles = do
     , DefineElm (Proxy :: Proxy DiferenciaDeUnidades)
     , DefineElm (Proxy :: Proxy ResolucionDeItem)
     , DefineElm (Proxy :: Proxy DetalleSinReclamar)
+    , DefineElm (Proxy :: Proxy AccionDeRepartija)
+    , DefineElm (Proxy :: Proxy AccionDeRepartijaInvalida)
+    , DefineElm (Proxy :: Proxy ResultadoAccionDeRepartija)
+    , DefineElm (Proxy :: Proxy PedidoDePreviewDeAccion)
+    , DefineElm (Proxy :: Proxy PreviewDeAccion)
+    , DefineElm (Proxy :: Proxy ResultadoPreviewDeAccion)
     ]
     (Proxy :: Proxy (ToServantApi Api))
 

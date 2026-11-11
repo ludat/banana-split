@@ -1,11 +1,15 @@
-module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (Ayuda, Feedback, Filtros, Model, Msg, OrigenAyuda, page)
+module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (AccionEnCurso, Ayuda, Feedback, Filtros, Model, Msg, OrigenAyuda, TipoDeAccion, page)
 
 import Components.Bootstrap as Bs
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (DetalleDeItem, DetalleRepartija, DiferenciaDeUnidades(..), DistribucionDeSobras(..), EstadoDeItem(..), Repartija, RepartijaClaim, RepartijaItem, ResolucionDeItem(..), ULID)
+import Form exposing (Form)
+import Form.Init as Form
+import Form.Validate as V exposing (Validation)
+import Generated.Api as Api exposing (AccionDeRepartija(..), AccionDeRepartijaInvalida(..), DetalleDeItem, DetalleRepartija, DiferenciaDeUnidades(..), DistribucionDeSobras(..), EstadoDeItem(..), Moneda, Repartija, RepartijaClaim, RepartijaForFrontend, RepartijaItem, ResolucionDeItem(..), ResultadoAccionDeRepartija(..), ResultadoPreviewDeAccion(..), ULID)
+import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, button, div, h4, h5, h6, i, input, p, span, strong, text)
 import Html.Attributes as Attr exposing (class, classList, disabled, type_, value)
-import Html.Events exposing (onCheck, onClick, onInput)
+import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
 import Layouts
 import List.Extra exposing (find)
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
@@ -20,8 +24,10 @@ import Route exposing (Route)
 import Set exposing (Set)
 import Shared
 import Shared.Msg
+import Utils.Form exposing (CustomFormError, anyString, isDataModifyingEvent, textInput)
 import Utils.Http exposing (viewHttpError)
 import Utils.Telemetry as Telemetry
+import Utils.Toasts.Types exposing (ToastLevel(..))
 import Utils.Ulid exposing (emptyUlid)
 import View exposing (View)
 
@@ -57,7 +63,31 @@ type alias Model =
     , detallesAbiertos : Set ULID
     , ayuda : Maybe Ayuda
     , feedback : Feedback
+    , accionEnCurso : Maybe AccionEnCurso
     }
+
+
+{-| Las reglas de qué se puede y qué no viven en el backend
+(`BananaSplit.AccionDeRepartija`): acá sólo se muestra lo que contesta.
+-}
+type alias AccionEnCurso =
+    { tipo : TipoDeAccion
+    , form : Form CustomFormError AccionDeRepartija
+    , preview : WebData ResultadoPreviewDeAccion
+    , confirmacion : WebData ResultadoAccionDeRepartija
+    }
+
+
+{-| Las que tocan un item lo traen, tal como estaba al abrir el modal (ver
+`conItemActual`).
+-}
+type TipoDeAccion
+    = AgregarUnidadesAlItem RepartijaItem
+    | QuitarUnidadesDelItem RepartijaItem
+    | SepararUnidadesDelItem RepartijaItem
+    | RepartirItemProporcionalmente RepartijaItem
+    | UnirItemConOtro RepartijaItem
+    | AgregarItemNuevo
 
 
 {-| La encuesta sobre el rediseño. Recién cuando alguien ya opinó se le ofrece
@@ -109,6 +139,7 @@ init grupoId repartijaId store =
       , detallesAbiertos = Set.empty
       , ayuda = Nothing
       , feedback = SinResponder
+      , accionEnCurso = Nothing
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
@@ -147,6 +178,11 @@ type Msg
     | ComentarioFeedbackCambiado String
     | AbrirComentarioFeedback
     | EnviarComentarioFeedback
+    | AbrirAccion TipoDeAccion
+    | CerrarAccion
+    | AccionForm Form.Msg
+    | PreviewDeAccionRecibido AccionDeRepartija (WebData ResultadoPreviewDeAccion)
+    | AccionRespondida AccionEnCurso (WebData ResultadoAccionDeRepartija)
 
 
 update : Maybe ULID -> Store -> Msg -> Model -> ( Model, Effect Msg )
@@ -311,6 +347,155 @@ update maybeParticipanteId store msg model =
                 SinResponder ->
                     ( model, Effect.none )
 
+        AbrirAccion tipo ->
+            case repartijaCargada store model of
+                Just cargada ->
+                    let
+                        ( accion, effect ) =
+                            pedirPreview cargada.repartija
+                                { tipo = tipo
+                                , form =
+                                    Form.initial
+                                        [ Form.setString "cantidad" "1"
+                                        , Form.setString "nombre" (itemDeAccion tipo |> Maybe.map .nombre |> Maybe.withDefault "")
+                                        ]
+                                        (validarAccion cargada.pagoMoneda tipo)
+                                , preview = NotAsked
+                                , confirmacion = NotAsked
+                                }
+                    in
+                    ( { model | accionEnCurso = Just accion }, effect )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        -- Cerrar mientras se confirma no cancela el pedido: cuando conteste,
+        -- `AccionRespondida` lo aplica igual y avisa con un toast.
+        CerrarAccion ->
+            ( { model | accionEnCurso = Nothing }
+            , Effect.none
+            )
+
+        AccionForm Form.Submit ->
+            case ( model.accionEnCurso, Maybe.andThen accionPedida model.accionEnCurso ) of
+                ( Just accion, Just pedida ) ->
+                    if puedeConfirmar accion then
+                        ( { model | accionEnCurso = Just { accion | confirmacion = Loading } }
+                        , Effect.sendCmd <|
+                            Api.postRepartijasByRepartijaIdAcciones model.repartijaId
+                                pedida
+                                (RemoteData.fromResult >> AccionRespondida accion)
+                        )
+
+                    else
+                        ( model, Effect.none )
+
+                _ ->
+                    ( model, Effect.none )
+
+        AccionForm formMsg ->
+            case repartijaCargada store model of
+                Just cargada ->
+                    editarAccionEnCurso model
+                        (\accion ->
+                            let
+                                conForm =
+                                    { accion | form = Form.update (validarAccion cargada.pagoMoneda accion.tipo) formMsg accion.form }
+                            in
+                            if isDataModifyingEvent formMsg then
+                                pedirPreview cargada.repartija conForm
+
+                            else
+                                ( conForm, Effect.none )
+                        )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        -- Mientras se escribe pueden volver previews de cantidades que ya no
+        -- son las del modal: solo vale el de lo que se está pidiendo ahora.
+        PreviewDeAccionRecibido pedida resultado ->
+            conAccionEnCurso model
+                (\accion ->
+                    if accionPedida accion == Just pedida then
+                        ( { accion | preview = resultado }, Effect.none )
+
+                    else
+                        ( accion, Effect.none )
+                )
+
+        -- El total del gasto no cambia, pero sí cuánto consumió cada uno, así
+        -- que el resumen y los gastos de otras pantallas quedan viejos.
+        --
+        -- Que el modal esté esperando no garantiza que sea el que mandó esta
+        -- respuesta: con el modal cerrado durante el envío, otro abierto y
+        -- confirmado antes de que conteste el primero, la respuesta del primero
+        -- se tomaría como del segundo. Pide un confirm más lento que un preview
+        -- entero más varios clicks; se acepta sin un número de envío.
+        AccionRespondida enviada resultado ->
+            let
+                esDelModalAbierto =
+                    Maybe.map estaConfirmando model.accionEnCurso == Just True
+
+                conConfirmacion =
+                    if esDelModalAbierto then
+                        { model | accionEnCurso = Maybe.map (\accion -> { accion | confirmacion = resultado }) model.accionEnCurso }
+
+                    else
+                        model
+
+                telemetria resultadoDeTelemetria =
+                    Effect.telemetryEvent
+                        (Telemetry.repartijaAccion
+                            { accion = tipoDeAccionToString enviada.tipo, resultado = resultadoDeTelemetria }
+                        )
+
+                avisarSiNoSeVe contenido =
+                    if esDelModalAbierto then
+                        Effect.none
+
+                    else
+                        Effect.sendToast { level = ToastDanger, content = contenido }
+            in
+            case resultado of
+                Success (AccionDeRepartijaAceptada repartijaResultante) ->
+                    ( if esDelModalAbierto then
+                        { model | accionEnCurso = Nothing }
+
+                      else
+                        model
+                    , Effect.batch
+                        [ Store.updateRepartijaForFrontend model.repartijaId repartijaResultante
+                        , Store.invalidateResumen model.grupoId
+                        , Store.invalidatePagos model.grupoId
+                        , Effect.sendToast { level = ToastSuccess, content = mensajeDeAccionAplicada enviada }
+                        , telemetria "aplicada"
+                        ]
+                    )
+
+                Success (AccionDeRepartijaRechazada motivo) ->
+                    ( conConfirmacion
+                    , Effect.batch
+                        [ avisarSiNoSeVe (explicacionDeRechazo enviada.tipo motivo)
+                        , telemetria (motivoToString motivo)
+                        ]
+                    )
+
+                Failure _ ->
+                    ( conConfirmacion
+                    , avisarSiNoSeVe
+                        (case itemDeAccion enviada.tipo of
+                            Just item ->
+                                "No pudimos aplicar el cambio a " ++ item.nombre ++ ". Probá de nuevo."
+
+                            Nothing ->
+                                "No pudimos agregar el item. Probá de nuevo."
+                        )
+                    )
+
+                _ ->
+                    ( model, Effect.none )
+
         -- Crear, cambiar o borrar un claim contesta la repartija como quedó,
         -- con su detalle recalculado: se guarda tal cual, sin tocar nada acá.
         RepartijaClaimResponded webDataRepartija ->
@@ -361,7 +546,7 @@ update maybeParticipanteId store msg model =
                                     ( { model | pendingItemOperation = Just item.id, repartirModalItem = Nothing }
                                     , if newCantidad > 0 then
                                         Effect.sendCmd <|
-                                            Api.putRepartijasByRepartijaId model.repartijaId
+                                            Api.putRepartijasByRepartijaIdClaims model.repartijaId
                                                 { id = emptyUlid
                                                 , participante = participanteId
                                                 , itemId = item.id
@@ -379,7 +564,7 @@ update maybeParticipanteId store msg model =
                                     ( { model | pendingItemOperation = Just item.id, repartirModalItem = Nothing }
                                     , if deltaCantidad > 0 then
                                         Effect.sendCmd <|
-                                            Api.putRepartijasByRepartijaId model.repartijaId
+                                            Api.putRepartijasByRepartijaIdClaims model.repartijaId
                                                 { id = emptyUlid
                                                 , participante = participanteId
                                                 , itemId = item.id
@@ -402,7 +587,7 @@ update maybeParticipanteId store msg model =
                 Just participanteId ->
                     ( { model | pendingItemOperation = Just item.id, repartirModalItem = Nothing }
                     , Effect.sendCmd <|
-                        Api.putRepartijasByRepartijaId model.repartijaId
+                        Api.putRepartijasByRepartijaIdClaims model.repartijaId
                             { id = emptyUlid
                             , participante = participanteId
                             , itemId = item.id
@@ -425,6 +610,226 @@ update maybeParticipanteId store msg model =
 
                 Nothing ->
                     ( model, Effect.none )
+
+
+conAccionEnCurso : Model -> (AccionEnCurso -> ( AccionEnCurso, Effect Msg )) -> ( Model, Effect Msg )
+conAccionEnCurso model f =
+    case model.accionEnCurso of
+        Just accion ->
+            let
+                ( accionNueva, effect ) =
+                    f accion
+            in
+            ( { model | accionEnCurso = Just accionNueva }, effect )
+
+        Nothing ->
+            ( model, Effect.none )
+
+
+editarAccionEnCurso : Model -> (AccionEnCurso -> ( AccionEnCurso, Effect Msg )) -> ( Model, Effect Msg )
+editarAccionEnCurso model f =
+    conAccionEnCurso model
+        (\accion ->
+            if estaConfirmando accion then
+                ( accion, Effect.none )
+
+            else
+                f accion
+        )
+
+
+estaConfirmando : AccionEnCurso -> Bool
+estaConfirmando accion =
+    RemoteData.isLoading accion.confirmacion
+
+
+puedeConfirmar : AccionEnCurso -> Bool
+puedeConfirmar accion =
+    case accion.preview of
+        Success (PreviewDeAccionAceptada _) ->
+            not (estaConfirmando accion)
+
+        _ ->
+            False
+
+
+accionPedida : AccionEnCurso -> Maybe AccionDeRepartija
+accionPedida accion =
+    Form.getOutput accion.form
+
+
+validarAccion : Moneda -> TipoDeAccion -> Validation CustomFormError AccionDeRepartija
+validarAccion moneda tipo =
+    let
+        cantidad =
+            V.field "cantidad" V.int
+
+        nombre =
+            V.field "nombre" anyString
+    in
+    case tipo of
+        AgregarUnidadesAlItem item ->
+            V.map (AgregarUnidades item.id) cantidad
+
+        QuitarUnidadesDelItem item ->
+            V.map (QuitarUnidades item.id) cantidad
+
+        SepararUnidadesDelItem item ->
+            V.map2 (SepararUnidades item.id) cantidad nombre
+
+        RepartirItemProporcionalmente item ->
+            V.succeed (RepartirProporcionalmente item.id)
+
+        UnirItemConOtro item ->
+            V.map2 (UnirItems item.id) (V.field "otroItem" V.string) nombre
+
+        AgregarItemNuevo ->
+            V.map3 AgregarItem nombre (V.field "monto" (Monto.validateMonto moneda)) cantidad
+
+
+itemDeAccion : TipoDeAccion -> Maybe RepartijaItem
+itemDeAccion tipo =
+    case tipo of
+        AgregarUnidadesAlItem item ->
+            Just item
+
+        QuitarUnidadesDelItem item ->
+            Just item
+
+        SepararUnidadesDelItem item ->
+            Just item
+
+        RepartirItemProporcionalmente item ->
+            Just item
+
+        UnirItemConOtro item ->
+            Just item
+
+        AgregarItemNuevo ->
+            Nothing
+
+
+{-| La acción con el item como está ahora en la repartija, por si cambió
+mientras el modal estaba abierto.
+-}
+conItemActual : Repartija -> TipoDeAccion -> TipoDeAccion
+conItemActual repartija tipo =
+    let
+        actual item =
+            repartija.items
+                |> find (\i -> i.id == item.id)
+                |> Maybe.withDefault item
+    in
+    case tipo of
+        AgregarUnidadesAlItem item ->
+            AgregarUnidadesAlItem (actual item)
+
+        QuitarUnidadesDelItem item ->
+            QuitarUnidadesDelItem (actual item)
+
+        SepararUnidadesDelItem item ->
+            SepararUnidadesDelItem (actual item)
+
+        RepartirItemProporcionalmente item ->
+            RepartirItemProporcionalmente (actual item)
+
+        UnirItemConOtro item ->
+            UnirItemConOtro (actual item)
+
+        AgregarItemNuevo ->
+            AgregarItemNuevo
+
+
+repartijaCargada : Store -> Model -> Maybe RepartijaForFrontend
+repartijaCargada store model =
+    store
+        |> Store.getRepartija model.repartijaId
+        |> RemoteData.toMaybe
+
+
+pedirPreview : Repartija -> AccionEnCurso -> ( AccionEnCurso, Effect Msg )
+pedirPreview repartija accion =
+    case accionPedida accion of
+        Just pedida ->
+            ( { accion | preview = Loading, confirmacion = NotAsked }
+            , Effect.sendCmd <|
+                Api.postRepartijasAccionesPreview { repartija = repartija, accion = pedida }
+                    (RemoteData.fromResult >> PreviewDeAccionRecibido pedida)
+            )
+
+        Nothing ->
+            ( { accion | preview = NotAsked, confirmacion = NotAsked }, Effect.none )
+
+
+tipoDeAccionToString : TipoDeAccion -> String
+tipoDeAccionToString tipo =
+    case tipo of
+        AgregarUnidadesAlItem _ ->
+            "agregar_unidades"
+
+        QuitarUnidadesDelItem _ ->
+            "quitar_unidades"
+
+        SepararUnidadesDelItem _ ->
+            "separar_unidades"
+
+        RepartirItemProporcionalmente _ ->
+            "repartir_proporcionalmente"
+
+        UnirItemConOtro _ ->
+            "unir_items"
+
+        AgregarItemNuevo ->
+            "agregar_item"
+
+
+motivoToString : AccionDeRepartijaInvalida -> String
+motivoToString motivo =
+    case motivo of
+        ItemNoEncontrado ->
+            "item_no_encontrado"
+
+        ItemSinUnidades ->
+            "item_sin_unidades"
+
+        CantidadDeUnidadesInvalida ->
+            "cantidad_invalida"
+
+        NoPuedeQuedarSinItems ->
+            "ultimo_item"
+
+        UnirConElMismoItem ->
+            "mismo_item"
+
+        ItemSinNombre ->
+            "item_sin_nombre"
+
+
+mensajeDeAccionAplicada : AccionEnCurso -> String
+mensajeDeAccionAplicada accion =
+    case accion.tipo of
+        AgregarUnidadesAlItem item ->
+            "Agregamos unidades a " ++ item.nombre
+
+        QuitarUnidadesDelItem item ->
+            "Quitamos unidades de " ++ item.nombre
+
+        SepararUnidadesDelItem item ->
+            "Separamos unidades de " ++ item.nombre ++ " en un item nuevo"
+
+        RepartirItemProporcionalmente item ->
+            "Repartimos " ++ item.nombre ++ " entre todos"
+
+        UnirItemConOtro item ->
+            "Unimos los items en " ++ item.nombre
+
+        AgregarItemNuevo ->
+            case accionPedida accion of
+                Just (AgregarItem nombre _ _) ->
+                    "Agregamos " ++ String.trim nombre
+
+                _ ->
+                    "Agregamos el item"
 
 
 
@@ -470,6 +875,13 @@ view userId { introDismissed } store model =
                             , div [ Attr.id "repartija-participantes-mobile", class "d-lg-none mb-3" ] [ viewParticipantes model grupo repartija ]
                             , div [ Attr.id "repartija-items-header" ] [ viewItemsHeader userId grupo model.filtros ]
                             , div [ Attr.id "repartija-items" ] [ viewItems model userId grupo detalle repartija ]
+                            , button
+                                [ type_ "button"
+                                , class "btn btn-outline-secondary d-inline-flex align-items-center gap-2 mb-3"
+                                , Telemetry.click "repartija.add_item"
+                                , onClick (AbrirAccion AgregarItemNuevo)
+                                ]
+                                [ i [ class "bi bi-plus-lg" ] [], text "Agregar item" ]
                             ]
                         , div [ Attr.id "repartija-lateral", class "col-12 col-lg-4" ]
                             [ div [ Attr.id "repartija-participantes", class "d-none d-lg-block mb-3" ] [ viewParticipantes model grupo repartija ]
@@ -480,6 +892,7 @@ view userId { introDismissed } store model =
                     , viewRepartirModal model.repartirModalItem
                     , viewDetalleModal grupo detalle repartija model.detalleModalItem
                     , viewAyudaModal model.ayuda
+                    , viewAccionModal grupo repartijaPage.pagoMoneda repartija model.accionEnCurso
                     ]
                 ]
             }
@@ -1063,12 +1476,15 @@ viewItemCard model userId grupo detalle repartija item deItem =
                 [ h5 [ class "card-title mb-1" ] [ text item.nombre ]
                 , div [ class "mb-1" ] [ badgeDeItem deItem ]
                 , div [ class "small" ]
-                    [ strong [] [ text "Cantidad: " ]
-                    , text (String.fromInt item.cantidad)
-                    , span [ class "mx-2 text-body-secondary" ] [ text "•" ]
-                    , strong [] [ text "Total: " ]
-                    , text ("$ " ++ Monto.toString item.monto)
-                    ]
+                    ([ strong [] [ text "Cantidad: " ]
+                     , text (String.fromInt item.cantidad)
+                     ]
+                        ++ viewPrecioUnitario item
+                        ++ [ span [ class "mx-2 text-body-secondary" ] [ text "•" ]
+                           , strong [] [ text "Total: " ]
+                           , text ("$ " ++ Monto.toString item.monto)
+                           ]
+                    )
                 ]
             , div [ class "d-flex flex-column align-items-center align-items-md-end gap-2 flex-shrink-0" ] botones
             ]
@@ -1202,13 +1618,75 @@ viewItemCard model userId grupo detalle repartija item deItem =
                                     )
                                 ]
                         ]
+
+                botonDeAccion track icono label tipo habilitado =
+                    button
+                        [ type_ "button"
+                        , class "btn btn-sm btn-outline-secondary d-inline-flex align-items-center gap-1"
+                        , disabled (not habilitado)
+                        , Telemetry.click track
+                        , onClick (AbrirAccion (tipo item))
+                        ]
+                        [ i [ class ("bi " ++ icono) ] [], text label ]
+
+                acciones =
+                    div [ class "d-flex flex-wrap align-items-center gap-2 mt-3 pt-3 border-top" ]
+                        [ span [ class "fw-semibold me-2" ] [ text "Acciones" ]
+                        , botonDeAccion "repartija.item_action_add" "bi-plus-lg" "Agregar unidades" AgregarUnidadesAlItem True
+                        , botonDeAccion "repartija.item_action_remove" "bi-dash-lg" "Quitar unidades" QuitarUnidadesDelItem (item.cantidad > 1)
+                        , botonDeAccion "repartija.item_action_split" "bi-scissors" "Separar en un item nuevo" SepararUnidadesDelItem (item.cantidad > 1)
+                        , botonDeAccion "repartija.item_action_merge" "bi-union" "Unir con otro item" UnirItemConOtro hayOtrosItems
+                        , botonDeAccion "repartija.item_action_proportional" "bi-pie-chart" "Repartir proporcionalmente" RepartirItemProporcionalmente hayOtrosItems
+                        ]
+
+                -- Unir necesita otro item, y la repartija no puede quedar sin
+                -- ninguno.
+                hayOtrosItems =
+                    List.length repartija.items > 1
             in
             div [ class "bg-body-tertiary p-3 rounded-bottom" ]
-                [ div [ class "row g-3" ] [ modoDeReparto, tuParte, participantes ] ]
+                [ div [ class "row g-3" ] [ modoDeReparto, tuParte, participantes ]
+                , acciones
+                ]
 
           else
             text ""
         ]
+
+
+viewPrecioUnitario : RepartijaItem -> List (Html msg)
+viewPrecioUnitario item =
+    case precioUnitarioTexto item of
+        Just precio ->
+            [ span [ class "mx-2 text-body-secondary" ] [ text "•" ]
+            , text precio
+            ]
+
+        Nothing ->
+            []
+
+
+{-| Si la división no es exacta se marca con `≈`, para que nadie multiplique y
+crea que la cuenta no cierra.
+-}
+precioUnitarioTexto : RepartijaItem -> Maybe String
+precioUnitarioTexto item =
+    if item.cantidad > 1 then
+        Monto.porUnidad item.cantidad item.monto
+            |> Maybe.map
+                (\precio ->
+                    (if precio.exacto then
+                        "$ "
+
+                     else
+                        "≈ $ "
+                    )
+                        ++ Monto.toString precio.monto
+                        ++ " c/u"
+                )
+
+    else
+        Nothing
 
 
 nombreDelReparto : EstadoDeItem -> String
@@ -1653,6 +2131,435 @@ viewDetalleModal grupo detalle repartija maybeItem =
         , footer =
             [ Bs.btn Bs.Transparent [ Telemetry.click "repartija.item_detail_close", onClick CerrarDetalleDeItem ] [ text "Cerrar" ] ]
         }
+
+
+viewAccionModal : GrupoLike g -> Moneda -> Repartija -> Maybe AccionEnCurso -> Html Msg
+viewAccionModal grupo moneda repartija maybeAccion =
+    case maybeAccion of
+        Nothing ->
+            text ""
+
+        Just accion ->
+            let
+                tipo =
+                    conItemActual repartija accion.tipo
+
+                ( titulo, explicacion ) =
+                    case tipo of
+                        AgregarItemNuevo ->
+                            ( "Agregar un item"
+                            , "Se agrega un item nuevo, sin reclamos. Lo que vale sale de la propina, así que el total del gasto no cambia."
+                            )
+
+                        AgregarUnidadesAlItem _ ->
+                            ( "Agregar unidades"
+                            , "Se suman unidades al item con el mismo precio por unidad. Lo que el item pasa a valer de más sale de la propina, así que el total del gasto no cambia."
+                            )
+
+                        QuitarUnidadesDelItem _ ->
+                            ( "Quitar unidades"
+                            , "Se sacan unidades del item con el mismo precio por unidad. Lo que el item pasa a valer de menos se suma a la propina, así que el total del gasto no cambia. Lo que ya reclamó cada uno no cambia."
+                            )
+
+                        SepararUnidadesDelItem _ ->
+                            ( "Separar en un item nuevo"
+                            , "Las unidades separadas pasan a un item nuevo, sin reclamos, con el mismo precio por unidad. El total del gasto no cambia."
+                            )
+
+                        RepartirItemProporcionalmente _ ->
+                            ( "Repartir proporcionalmente"
+                            , "Lo que vale el item se reparte entre todos, en proporción a lo que consumió cada uno. El item sale de la lista y sus reclamos se borran. El total del gasto no cambia."
+                            )
+
+                        UnirItemConOtro _ ->
+                            ( "Unir con otro item"
+                            , "Los dos items quedan en uno solo, con las unidades y el total de los dos. Si los reclamos de los dos son de la misma forma (todos por cantidad o todos en partes iguales) se juntan; si no, el item unido queda sin reclamar. El total del gasto no cambia."
+                            )
+
+                enviando =
+                    estaConfirmando accion
+            in
+            Bs.modal
+                { id = "repartija-modal-accion"
+                , isOpen = True
+                , onClose = CerrarAccion
+                , centered = False
+                , title =
+                    case itemDeAccion tipo of
+                        Just item ->
+                            titulo ++ ": " ++ item.nombre
+
+                        Nothing ->
+                            titulo
+                , body =
+                    [ p [] [ text explicacion ]
+                    , Html.form [ Attr.id "repartija-form-accion", onSubmit (AccionForm Form.Submit) ]
+                        [ viewDatosDeAccion moneda repartija tipo accion ]
+                    , viewPreviewDeAccion grupo repartija tipo accion
+                    , case accion.confirmacion of
+                        Failure e ->
+                            div [ class "mt-3" ] [ viewHttpError e ]
+
+                        Success (AccionDeRepartijaRechazada motivo) ->
+                            div [ class "alert alert-danger mt-3 mb-0" ] [ text (explicacionDeRechazo tipo motivo) ]
+
+                        _ ->
+                            text ""
+                    ]
+                , footer =
+                    [ Bs.btn Bs.Transparent
+                        [ Telemetry.click "repartija.action_cancel", onClick CerrarAccion ]
+                        [ text
+                            (if enviando then
+                                "Cerrar"
+
+                             else
+                                "Cancelar"
+                            )
+                        ]
+                    , Bs.btn Bs.Primary
+                        [ class "d-inline-flex align-items-center gap-2"
+                        , type_ "submit"
+                        , Attr.attribute "form" "repartija-form-accion"
+                        , disabled (not (puedeConfirmar accion))
+                        , Telemetry.click "repartija.action_confirm"
+                        ]
+                        [ if enviando then
+                            span [ class "spinner-border spinner-border-sm", Attr.attribute "aria-hidden" "true" ] []
+
+                          else
+                            text ""
+                        , text "Confirmar"
+                        ]
+                    ]
+                }
+
+
+viewDatosDeAccion : Moneda -> Repartija -> TipoDeAccion -> AccionEnCurso -> Html Msg
+viewDatosDeAccion moneda repartija tipo accion =
+    let
+        bloqueado =
+            estaConfirmando accion
+
+        campo nombreDelCampo =
+            Form.getFieldAsString nombreDelCampo accion.form
+
+        campoDeCantidad label maximo ayuda =
+            [ Html.label [ class "form-label", Attr.for "accion-item-cantidad" ] [ text label ]
+            , Html.map AccionForm <|
+                textInput
+                    ([ type_ "number"
+                     , Attr.id "accion-item-cantidad"
+                     , Attr.min "1"
+                     , disabled bloqueado
+                     ]
+                        ++ maximo
+                    )
+                    (campo "cantidad")
+            , div [ class "form-text" ] [ text ayuda ]
+            ]
+
+        cantidadDelItem item =
+            "El item tiene " ++ unidades item.cantidad ++ "."
+
+        hastaQuedarUna item =
+            [ Attr.max (String.fromInt (item.cantidad - 1)) ]
+
+        campoDeNombre label =
+            [ Html.label [ class "form-label mt-3", Attr.for "accion-item-nombre" ] [ text label ]
+            , Html.map AccionForm <|
+                textInput [ Attr.id "accion-item-nombre", disabled bloqueado ] (campo "nombre")
+            ]
+    in
+    case tipo of
+        AgregarItemNuevo ->
+            div [ class "mb-3" ]
+                [ Html.label [ class "form-label", Attr.for "accion-item-nombre" ] [ text "Nombre" ]
+                , Html.map AccionForm <|
+                    textInput
+                        [ Attr.id "accion-item-nombre"
+                        , Attr.placeholder "Ej: Postre"
+                        , disabled bloqueado
+                        ]
+                        (campo "nombre")
+                , Html.label [ class "form-label mt-3", Attr.for "monto" ] [ text "Monto total" ]
+                , Html.map AccionForm <|
+                    Bs.montoInput (escalaDe moneda) (campo "monto") [ disabled bloqueado ]
+                , div [ class "form-text mb-3" ] [ text "Lo que valen todas las unidades juntas." ]
+                , div [] (campoDeCantidad "Unidades" [] "Cuántas unidades son.")
+                ]
+
+        AgregarUnidadesAlItem item ->
+            div [ class "mb-3" ] (campoDeCantidad "Unidades a agregar" [] (cantidadDelItem item))
+
+        QuitarUnidadesDelItem item ->
+            div [ class "mb-3" ] (campoDeCantidad "Unidades a quitar" (hastaQuedarUna item) (cantidadDelItem item))
+
+        SepararUnidadesDelItem item ->
+            div [ class "mb-3" ]
+                (campoDeCantidad "Unidades a separar" (hastaQuedarUna item) (cantidadDelItem item)
+                    ++ campoDeNombre "Nombre del item nuevo"
+                )
+
+        RepartirItemProporcionalmente _ ->
+            text ""
+
+        UnirItemConOtro item ->
+            let
+                resumenConPrecio i =
+                    [ Just (unidades i.cantidad)
+                    , precioUnitarioTexto i
+                    , Just ("$ " ++ Monto.toString i.monto)
+                    ]
+                        |> List.filterMap identity
+                        |> String.join " · "
+
+                opciones =
+                    ( "", "Elegí un item" )
+                        :: (repartija.items
+                                |> List.filter (\otro -> otro.id /= item.id)
+                                |> List.map (\otro -> ( otro.id, otro.nombre ++ " · " ++ resumenConPrecio otro ))
+                           )
+            in
+            div [ class "mb-3" ]
+                (Html.label [ class "form-label", Attr.for "otroItem" ] [ text "Unir con" ]
+                    :: Html.map AccionForm (Bs.selectInput opciones (campo "otroItem") [ disabled bloqueado ])
+                    :: div [ class "form-text" ] [ text ("Este item: " ++ resumenConPrecio item ++ ".") ]
+                    :: campoDeNombre "Nombre del item unido"
+                )
+
+
+viewPreviewDeAccion : GrupoLike g -> Repartija -> TipoDeAccion -> AccionEnCurso -> Html Msg
+viewPreviewDeAccion grupo repartija tipo accion =
+    case accion.preview of
+        NotAsked ->
+            div [ class "alert alert-secondary mb-0" ]
+                [ text
+                    (case tipo of
+                        UnirItemConOtro _ ->
+                            "Elegí con qué item unirlo para ver cómo queda."
+
+                        AgregarItemNuevo ->
+                            "Poné el monto y las unidades para ver cómo queda."
+
+                        _ ->
+                            "Poné cuántas unidades para ver cómo queda."
+                    )
+                ]
+
+        Loading ->
+            div [ class "d-flex align-items-center gap-2 text-body-secondary" ]
+                [ span [ class "spinner-border spinner-border-sm", Attr.attribute "aria-hidden" "true" ] []
+                , text "Calculando cómo queda…"
+                ]
+
+        Failure e ->
+            viewHttpError e
+
+        Success (PreviewDeAccionRechazada motivo) ->
+            div [ class "alert alert-warning mb-0" ] [ text (explicacionDeRechazo tipo motivo) ]
+
+        Success (PreviewDeAccionAceptada despues) ->
+            let
+                item =
+                    itemDeAccion tipo
+
+                idsDeAntes =
+                    List.map .id repartija.items
+
+                resumenDeItem i =
+                    unidades i.cantidad ++ " · $ " ++ Monto.toString i.monto
+
+                badgeDespues i =
+                    Repartija.detalleDeItem despues.detalle i.id
+                        |> Maybe.map (\deItem -> div [ class "mt-1" ] [ badgeDeItem deItem ])
+                        |> Maybe.withDefault (text "")
+
+                fila titulo contenido =
+                    Bs.listGroupItem [] (div [ class "fw-semibold" ] [ text titulo ] :: contenido)
+
+                flecha =
+                    i [ class "bi bi-arrow-right mx-2" ] []
+
+                itemDespues =
+                    item |> Maybe.andThen (\antes -> despues.repartija.items |> find (\i -> i.id == antes.id))
+
+                antesYDespues antes ahora =
+                    div []
+                        [ span [ class "text-body-secondary" ] [ text antes ]
+                        , flecha
+                        , text ahora
+                        ]
+
+                filaDelItem =
+                    case ( item, itemDespues ) of
+                        ( Just antes, Just itemQueQueda ) ->
+                            [ fila antes.nombre
+                                [ antesYDespues (resumenDeItem antes) (resumenDeItem itemQueQueda)
+                                , badgeDespues itemQueQueda
+                                ]
+                            ]
+
+                        ( Just antes, Nothing ) ->
+                            [ fila antes.nombre [ antesYDespues (resumenDeItem antes) "se reparte entre todos" ] ]
+
+                        ( Nothing, _ ) ->
+                            []
+
+                otrosQueSeVan =
+                    repartija.items
+                        |> List.filter
+                            (\i -> Just i.id /= Maybe.map .id item && not (List.any (\d -> d.id == i.id) despues.repartija.items))
+
+                nombreDelQueQueda =
+                    case ( itemDespues, item ) of
+                        ( Just queQueda, _ ) ->
+                            queQueda.nombre
+
+                        ( Nothing, Just antes ) ->
+                            antes.nombre
+
+                        ( Nothing, Nothing ) ->
+                            ""
+
+                filasDeLosQueSeVan =
+                    otrosQueSeVan
+                        |> List.map
+                            (\i ->
+                                fila i.nombre
+                                    [ antesYDespues (resumenDeItem i) ("se une a " ++ nombreDelQueQueda) ]
+                            )
+
+                filaDePropina =
+                    if repartija.extra == despues.repartija.extra then
+                        []
+
+                    else
+                        [ fila "Propina"
+                            [ antesYDespues ("$ " ++ Monto.toString repartija.extra)
+                                ("$ " ++ Monto.toString despues.repartija.extra)
+                            ]
+                        ]
+
+                involucrados =
+                    List.filterMap identity [ Maybe.map .id item ] ++ List.map .id otrosQueSeVan
+
+                reclamosDeAntes =
+                    repartija.claims |> List.filter (\c -> List.member c.itemId involucrados)
+
+                nombres claims =
+                    claims
+                        |> List.map (\c -> lookupNombreParticipante grupo c.participante)
+                        |> List.Extra.unique
+                        |> String.join ", "
+
+                reclamoDespues itemId claim =
+                    Bs.listGroupItem [ class "d-flex justify-content-between gap-3" ]
+                        [ span []
+                            [ text (lookupNombreParticipante grupo claim.participante)
+                            , span [ class "text-body-secondary ms-2" ]
+                                [ text
+                                    (case claim.cantidad of
+                                        Just n ->
+                                            unidades n
+
+                                        Nothing ->
+                                            "Una parte igual"
+                                    )
+                                ]
+                            ]
+                        , span [] [ text ("$ " ++ Monto.toString (Repartija.consumoDeItem despues.detalle itemId (Just claim.participante))) ]
+                        ]
+
+                reclamos =
+                    case tipo of
+                        RepartirItemProporcionalmente _ ->
+                            if List.isEmpty reclamosDeAntes then
+                                text ""
+
+                            else
+                                div [ class "alert alert-warning mt-3 mb-0" ]
+                                    [ text ("Se borran los reclamos de " ++ nombres reclamosDeAntes ++ ".") ]
+
+                        UnirItemConOtro unido ->
+                            let
+                                reclamosDeDespues =
+                                    despues.repartija.claims |> List.filter (\c -> c.itemId == unido.id)
+                            in
+                            if List.isEmpty reclamosDeDespues then
+                                if List.isEmpty reclamosDeAntes then
+                                    text ""
+
+                                else
+                                    div [ class "alert alert-warning mt-3 mb-0" ]
+                                        [ text
+                                            ("Unos reclamos son por cantidad y otros en partes iguales, así que no se pueden juntar: el item unido queda sin reclamar y se borran los reclamos de "
+                                                ++ nombres reclamosDeAntes
+                                                ++ "."
+                                            )
+                                        ]
+
+                            else
+                                div [ class "mt-3" ]
+                                    [ h6 [ class "fw-semibold" ] [ text "Quién lo reclama después" ]
+                                    , Bs.listGroup [] (List.map (reclamoDespues unido.id) reclamosDeDespues)
+                                    ]
+
+                        _ ->
+                            text ""
+
+                filasNuevas =
+                    despues.repartija.items
+                        |> List.filter (\i -> not (List.member i.id idsDeAntes))
+                        |> List.map
+                            (\nuevo ->
+                                fila ("Item nuevo: " ++ nuevo.nombre)
+                                    [ div [] [ text (resumenDeItem nuevo) ]
+                                    , badgeDespues nuevo
+                                    ]
+                            )
+            in
+            div []
+                [ h6 [ class "fw-semibold" ] [ text "Así va a quedar" ]
+                , Bs.listGroup [] (filaDelItem ++ filasDeLosQueSeVan ++ filasNuevas ++ filaDePropina)
+                , reclamos
+                ]
+
+
+explicacionDeRechazo : TipoDeAccion -> AccionDeRepartijaInvalida -> String
+explicacionDeRechazo tipo motivo =
+    let
+        hastaQuedarUna item =
+            "Tiene que ser entre 1 y "
+                ++ String.fromInt (item.cantidad - 1)
+                ++ ": al item le tiene que quedar al menos una unidad."
+    in
+    case motivo of
+        ItemNoEncontrado ->
+            "Este item ya no está en la repartija. Recargá la página para ver cómo quedó."
+
+        ItemSinUnidades ->
+            "El item no tiene unidades, así que no se sabe cuánto vale cada una."
+
+        CantidadDeUnidadesInvalida ->
+            case tipo of
+                QuitarUnidadesDelItem item ->
+                    hastaQuedarUna item
+
+                SepararUnidadesDelItem item ->
+                    hastaQuedarUna item
+
+                _ ->
+                    "Tiene que ser al menos 1 unidad."
+
+        ItemSinNombre ->
+            "Ponele un nombre al item."
+
+        NoPuedeQuedarSinItems ->
+            "Es el único item de la repartija, y la repartija no puede quedar sin items."
+
+        UnirConElMismoItem ->
+            "Elegí otro item para unir."
 
 
 viewAyudaModal : Maybe Ayuda -> Html Msg

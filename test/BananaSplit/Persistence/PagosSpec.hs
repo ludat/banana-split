@@ -15,6 +15,7 @@ import Protolude
 import Test.Hspec
 import Test.QuickCheck
 
+import BananaSplit.AccionDeRepartija (AccionDeRepartija (..))
 import BananaSplit.Core
 import BananaSplit.Deudas
 import BananaSplit.Moneda
@@ -110,6 +111,63 @@ spec =
       repartijaSinClaim.repartija.claims `shouldBe` []
       shallowInvalid <- runDb $ fetchShallowPagos grupo.id Nothing
       fmap esValido shallowInvalid `shouldBe` [False]
+
+    it "agregar unidades a un item las saca de la propina y conserva los claims" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Test Grupo" "alguien"
+      pago <- runDb $ saveRepartijaPagoConPropina grupo
+      let repartija = repartijaDe pago
+          item = primerItem repartija
+      _ <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) item.id Nothing)
+
+      resultado <- runDb $ enLaRepartija repartija.id $ \u -> aplicarAccionDeRepartija u (AgregarUnidades item.id 1)
+      fmap (.repartija.extra) resultado `shouldBe` Right 100
+
+      guardado <- runDb $ fetchPago grupo.id pago.pagoId
+      guardado.monto `shouldBe` 300
+      (repartijaDe guardado).items `shouldBe` [RepartijaItem item.id "Item" 200 2]
+      (repartijaDe guardado).extra `shouldBe` 100
+      fmap (.itemId) (repartijaDe guardado).claims `shouldBe` [item.id]
+      shallow <- runDb $ fetchShallowPagos grupo.id Nothing
+      fmap esValido shallow `shouldBe` [True]
+
+    it "unir dos items mueve los claims del que se borra al que queda" $ \(RunDb runDb) -> do
+      grupo <- runDb $ createGrupo "Test Grupo" "alguien"
+      pago <-
+        runDb $
+          savePago grupo.id $
+            Pago
+              { pagoId = nullUlid
+              , monto = 300
+              , moneda = ARS
+              , nombre = "Cena"
+              , fecha = fromGregorian 2025 1 1
+              , pagadores =
+                  Distribucion nullUlid $
+                    TipoDistribucionPartes $
+                      DistribucionPartes nullUlid [Ponderado 1 (participanteDe grupo)]
+              , deudores =
+                  Distribucion nullUlid $
+                    TipoDistribucionRepartija $
+                      Repartija
+                        nullUlid
+                        "Cena"
+                        0
+                        SobrasNoDistribuir
+                        [RepartijaItem nullUlid "Una" 100 1, RepartijaItem nullUlid "Dos" 200 2]
+                        []
+              }
+      let repartija = repartijaDe pago
+      (queda, seVa) <- case repartija.items of
+        [a, b] -> pure (a, b)
+        _ -> panic "esperaba dos items"
+      _ <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) seVa.id (Just 2))
+
+      resultado <- runDb $ enLaRepartija repartija.id $ \u -> aplicarAccionDeRepartija u (UnirItems queda.id seVa.id "Unido")
+      void resultado `shouldBe` Right ()
+
+      guardado <- runDb $ fetchRepartija repartija.id
+      fmap (.id) guardado.repartija.items `shouldBe` [queda.id]
+      fmap (\c -> (c.itemId, c.cantidad)) guardado.repartija.claims `shouldBe` [(queda.id, Just 2)]
 
     -- Al terminar la transacción el cache tiene que estar bien, sin depender de
     -- que alguien lo lea después: cualquier cosa que sume 'pagado_y_consumido_en_gasto' por su
@@ -430,6 +488,26 @@ saveInvalidRepartijaPago grupo =
               Repartija nullUlid "Cena" 0 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] []
       }
 
+-- | Un gasto de $300 con una repartija de un item de $100 y $200 de propina.
+saveRepartijaPagoConPropina :: Grupo -> Pg Pago
+saveRepartijaPagoConPropina grupo =
+  savePago grupo.id $
+    Pago
+      { pagoId = nullUlid
+      , monto = 300
+      , moneda = ARS
+      , nombre = "Cena"
+      , fecha = fromGregorian 2025 1 1
+      , pagadores =
+          Distribucion nullUlid $
+            TipoDistribucionPartes $
+              DistribucionPartes nullUlid [Ponderado 1 (participanteDe grupo)]
+      , deudores =
+          Distribucion nullUlid $
+            TipoDistribucionRepartija $
+              Repartija nullUlid "Cena" 200 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] []
+      }
+
 -- | Count distribuciones not referenced by any pago. Their subtype rows
 -- (partes/repartijas y sus items) son huérfanas y deberían haberse borrado.
 countOrphanedDistribuciones :: Pg Int
@@ -450,6 +528,11 @@ participanteDe :: Grupo -> ParticipanteId
 participanteDe grupo = case grupo.participantes of
   (p : _) -> ParticipanteId p.id
   [] -> panic "el grupo deberia tener un participante"
+
+enLaRepartija :: ULID -> (UbicacionDeRepartija -> Pg a) -> Pg a
+enLaRepartija repartijaId accion =
+  fetchUbicacionDeRepartija repartijaId
+    >>= maybe (panic "la repartija deberia existir") accion
 
 repartijaDe :: Pago -> Repartija
 repartijaDe pago = case pago.deudores.tipo of

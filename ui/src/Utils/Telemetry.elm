@@ -1,4 +1,4 @@
-module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, changelogFeedback, click, codigoDeLoginRechazado, crearGrupo, feedbackGeneral, gastoEdicionAbandonada, repartijaAyudaAbierta, repartijaDetalleDeItemAbierto, repartijaFiltro, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, seccionVista, severityToString, trackDecodeErrors)
+module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, changelogFeedback, click, codigoDeLoginRechazado, crearGrupo, feedbackGeneral, gastoEdicionAbandonada, repartijaAccion, repartijaAyudaAbierta, repartijaDetalleDeItemAbierto, repartijaFiltro, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, seccionVista, severityToString, trackDecodeErrors)
 
 import Html
 import Html.Attributes
@@ -247,6 +247,20 @@ repartijaAyudaAbierta { ayuda, origen } =
         , attributes =
             [ ( "app.repartija.ayuda", Json.string ayuda )
             , ( "app.repartija.origen", Json.string origen )
+            ]
+        }
+
+
+{-| El resultado es `aplicada` o el motivo por el que el backend la rechazó.
+-}
+repartijaAccion : { accion : String, resultado : String } -> Maybe TelemetryEvent
+repartijaAccion { accion, resultado } =
+    Just
+        { name = "app.repartija.action"
+        , severity = Info
+        , attributes =
+            [ ( "app.repartija.accion", Json.string accion )
+            , ( "app.repartija.resultado", Json.string resultado )
             ]
         }
 

@@ -67,9 +67,23 @@ data Api routes
     _routeRepartijaGet ::
       routes :- "repartijas" :> Capture "repartijaId" ULID :> Get '[JSON] RepartijaForFrontend
   , _routeRepartijaClaimPut ::
-      routes :- "repartijas" :> Capture "repartijaId" ULID :> ReqBody '[JSON] RepartijaClaim :> Put '[JSON] RepartijaForFrontend
+      routes :- "repartijas" :> Capture "repartijaId" ULID :> ReqBody '[JSON] RepartijaClaim :> "claims" :> Put '[JSON] RepartijaForFrontend
   , _routeRepartijaClaimDelete ::
       routes :- "repartijas" :> "claims" :> Capture "claimId" ULID :> Delete '[JSON] RepartijaForFrontend
+  , _routeRepartijaAccionPreview ::
+      routes
+        :- "repartijas"
+          :> "acciones"
+          :> "preview"
+          :> ReqBody '[JSON] PedidoDePreviewDeAccion
+          :> Post '[JSON] ResultadoPreviewDeAccion
+  , _routeRepartijaAccion ::
+      routes
+        :- "repartijas"
+          :> Capture "repartijaId" ULID
+          :> "acciones"
+          :> ReqBody '[JSON] AccionDeRepartija
+          :> Post '[JSON] ResultadoAccionDeRepartija
   , -- , _routeRepartijaToPago ::
     --   routes :- "repartijas" :> Capture "repartijaId" ULID :> Post '[JSON] Text
     _routeGrupoFreeze ::
@@ -272,6 +286,30 @@ data DeleteParticipanteResult
   | DeleteRejected ParticipanteError
   deriving (Show, Eq, Generic)
 
+-- | Same pattern as 'ClaimParticipanteResult': an action that can't be applied
+-- says why, so it has to reach the frontend as a 200.
+data ResultadoAccionDeRepartija
+  = AccionDeRepartijaAceptada RepartijaForFrontend
+  | AccionDeRepartijaRechazada AccionDeRepartijaInvalida
+  deriving (Show, Eq, Generic)
+
+data PedidoDePreviewDeAccion = PedidoDePreviewDeAccion
+  { repartija :: Repartija
+  , accion :: AccionDeRepartija
+  }
+  deriving (Show, Eq, Generic)
+
+data PreviewDeAccion = PreviewDeAccion
+  { repartija :: Repartija
+  , detalle :: DetalleRepartija
+  }
+  deriving (Show, Eq, Generic)
+
+data ResultadoPreviewDeAccion
+  = PreviewDeAccionAceptada PreviewDeAccion
+  | PreviewDeAccionRechazada AccionDeRepartijaInvalida
+  deriving (Show, Eq, Generic)
+
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteAddParams
 Elm.deriveBoth Elm.defaultOptions ''ParticipanteUpdateParams
 Elm.deriveBoth Elm.defaultOptions ''RequestCodeParams
@@ -292,3 +330,7 @@ Elm.deriveBoth Elm.defaultOptions ''ReceiptImageRequest
 Elm.deriveBoth Elm.defaultOptions ''ReceiptImageResponse
 Elm.deriveBoth Elm.defaultOptions ''ClaimParticipanteResult
 Elm.deriveBoth Elm.defaultOptions ''DeleteParticipanteResult
+Elm.deriveBoth Elm.defaultOptions ''ResultadoAccionDeRepartija
+Elm.deriveBoth Elm.defaultOptions ''PedidoDePreviewDeAccion
+Elm.deriveBoth Elm.defaultOptions ''PreviewDeAccion
+Elm.deriveBoth Elm.defaultOptions ''ResultadoPreviewDeAccion
