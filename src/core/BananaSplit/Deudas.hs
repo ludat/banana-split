@@ -565,12 +565,13 @@ nadie = ParticipanteId nullUlid
 
 -- | Lo que el frontend recibe de una repartija. Pasa por acá para que el
 -- desglose no pueda quedar desfasado de los claims con los que se calculó.
-repartijaForFrontend :: ULID -> Text -> Repartija -> RepartijaForFrontend
-repartijaForFrontend pagoId pagoNombre repartija =
+repartijaForFrontend :: ULID -> Text -> Moneda -> Repartija -> RepartijaForFrontend
+repartijaForFrontend pagoId pagoNombre pagoMoneda repartija =
   RepartijaForFrontend
     { repartija = repartija
     , pagoId = pagoId
     , pagoNombre = pagoNombre
+    , pagoMoneda = pagoMoneda
     , detalle = detalleRepartija repartija
     }
 

@@ -66,6 +66,10 @@ changelog =
       , title = "Tus grupos de un vistazo"
       , description = "En la pantalla principal ahora ves cómo está cada uno de tus grupos sin tener que entrar."
       }
+    , { date = Date.fromCalendarDate 2026 Nov 11
+      , title = "Ajustá una repartija después de crearla"
+      , description = "¿Llegó otra ronda, alguien se llevó parte de un plato o se pidió un postre más? Ahora podés ajustar los items de una repartija para que refleje lo que consumió cada uno, sin tocar el total del gasto."
+      }
     , { date = Date.fromCalendarDate 2026 Nov 14
       , title = "Mejor manejo de participantes y datos para transferencias"
       , description = "Ahora podés agregarte a un grupo si no estás en la lista, editar el nombre de un participante. Además podés cargar cómo querés recibir la plata (alias, CBU, en efectivo...) en tu cuenta o en cada participante, y se muestra en el resumen junto a lo que te tienen que transferir."

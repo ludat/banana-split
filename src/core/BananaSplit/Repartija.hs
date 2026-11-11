@@ -5,13 +5,16 @@
 
 module BananaSplit.Repartija where
 
+import Data.Map.Strict qualified as Map
+import Data.Set qualified as Set
 import Elm.Derive qualified as Elm
 import Protolude
 
+import BananaSplit.Moneda (Moneda)
 import BananaSplit.Monto (Monto)
 import BananaSplit.Netos (Netos)
 import BananaSplit.Participante (ParticipanteId)
-import BananaSplit.ULID (ULID)
+import BananaSplit.ULID (ULID, nullUlid)
 
 data Repartija = Repartija
   { id :: ULID
@@ -45,10 +48,31 @@ data RepartijaClaim = RepartijaClaim
   }
   deriving (Show, Eq, Generic)
 
+data CambiosDeClaims = CambiosDeClaims
+  { nuevosOModificados :: [RepartijaClaim]
+  , borrados :: [ULID]
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Lo que no cambió no aparece, así guardar una acción que no toca los claims
+-- no escribe nada.
+cambiosDeClaims :: [RepartijaClaim] -> [RepartijaClaim] -> CambiosDeClaims
+cambiosDeClaims antes despues =
+  CambiosDeClaims
+    { nuevosOModificados =
+        despues & filter (\c -> c.id == nullUlid || Map.lookup c.id antesPorId /= Just c)
+    , borrados =
+        antes & fmap (.id) & filter (`Set.notMember` idsDespues)
+    }
+  where
+    antesPorId = Map.fromList [(c.id, c) | c <- antes]
+    idsDespues = Set.fromList [c.id | c <- despues, c.id /= nullUlid]
+
 data RepartijaForFrontend = RepartijaForFrontend
   { repartija :: Repartija
   , pagoId :: ULID
   , pagoNombre :: Text
+  , pagoMoneda :: Moneda
   , detalle :: DetalleRepartija
   }
   deriving (Show, Eq, Generic)

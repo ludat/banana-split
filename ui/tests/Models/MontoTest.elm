@@ -28,4 +28,16 @@ suite =
             , test "handles negatives" <|
                 \_ -> Expect.equal (Monto 2 -50) (Monto.add (Monto 0 1) (Monto 2 -150))
             ]
+        , describe "porUnidad"
+            [ test "exacto" <|
+                \_ -> Expect.equal (Just { monto = Monto 2 500, exacto = True }) (Monto.porUnidad 3 (Monto 2 1500))
+            , test "redondea para abajo" <|
+                \_ -> Expect.equal (Just { monto = Monto 2 333, exacto = False }) (Monto.porUnidad 3 (Monto 2 1000))
+            , test "redondea la mitad para arriba" <|
+                \_ -> Expect.equal (Just { monto = Monto 0 3, exacto = False }) (Monto.porUnidad 2 (Monto 0 5))
+            , test "negativos redondean lejos del cero" <|
+                \_ -> Expect.equal (Just { monto = Monto 0 -3, exacto = False }) (Monto.porUnidad 2 (Monto 0 -5))
+            , test "sin unidades no hay precio" <|
+                \_ -> Expect.equal Nothing (Monto.porUnidad 0 (Monto 2 1500))
+            ]
         ]

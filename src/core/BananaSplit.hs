@@ -1,4 +1,5 @@
 module BananaSplit (
+  module BananaSplit.AccionDeRepartija,
   module BananaSplit.Core,
   module BananaSplit.Deudas,
   module BananaSplit.Email,
@@ -11,6 +12,7 @@ module BananaSplit (
   module BananaSplit.User,
 ) where
 
+import BananaSplit.AccionDeRepartija
 import BananaSplit.Core
 import BananaSplit.Deudas
 import BananaSplit.Email
