@@ -242,10 +242,15 @@ update store msg model =
             , Effect.none
             )
 
-        TasasGuardadas (Ok _) ->
+        TasasGuardadas (Ok tasas) ->
             ( { model | tasasForm = Nothing }
             , Effect.batch
-                [ Store.refreshResumen model.grupoId
+                [ Store.getGrupo model.grupoId store
+                    |> RemoteData.toMaybe
+                    |> Maybe.map (\grupo -> Store.setGrupo model.grupoId { grupo | tasasDeCambio = tasas })
+                    |> Maybe.withDefault Effect.none
+                , Store.refreshGrupo model.grupoId
+                , Store.refreshResumen model.grupoId
                 , Toasts.pushToast Toasts.ToastSuccess "Tasas de cambio guardadas"
                 ]
             )
