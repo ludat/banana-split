@@ -2,11 +2,10 @@ module Pages.Grupos.Id_ exposing (Model, Msg, Tab, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
+import Components.Movimientos as Movimientos
 import Components.PagoDetalleModal as PagoDetalleModal
-import Components.ResumenGasto as ResumenGasto
-import Date
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Grupo, Moneda, Netos, ShallowPago, ULID)
+import Generated.Api as Api exposing (Grupo, Moneda, Netos, ULID)
 import Html exposing (Html, a, button, div, i, li, p, span, table, tbody, td, text, th, thead, tr, ul)
 import Html.Attributes as Attr exposing (class, classList, style, type_)
 import Html.Events exposing (onClick)
@@ -26,7 +25,6 @@ import Shared
 import Svg
 import Svg.Attributes as SvgAttr
 import Time exposing (Zone)
-import Utils.Day
 import Utils.Posix as Posix exposing (Posix)
 import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toasts
@@ -205,7 +203,7 @@ viewRightColumn store zone ahora userId model grupo =
                 text ""
 
     else
-        viewUltimosPagosCard userId store model grupo
+        viewUltimosMovimientosCard zone userId store model grupo
 
 
 {-| El resumen de un grupo congelado es sobre el plan de este congelamiento. Las
@@ -683,7 +681,7 @@ viewFilaTransferencia zone grupo rol t =
 moviendo sin tener que entrar a la pantalla de transferencias. Muestra solo las
 últimas y no lleva a la lista completa: desde el resumen lo único que hay para
 hacer es marcar lo tuyo, y editar las transferencias del grupo es otra cosa.
-Ocupa el lugar —y la forma— que tiene "Ultimos gastos" con el grupo abierto.
+Ocupa el lugar —y la forma— que tiene "Ultimos movimientos" con el grupo abierto.
 -}
 viewUltimasTransferenciasCard : Zone -> Posix -> Grupo -> List Api.Transferencia -> Html Msg
 viewUltimasTransferenciasCard zone ahora grupo transferencias =
@@ -920,48 +918,38 @@ viewTab tab tabActual etiqueta simbolo netoUsuario =
         ]
 
 
-viewUltimosPagosCard : Maybe ULID -> Store -> Model -> Grupo -> Html Msg
-viewUltimosPagosCard participanteId store model grupo =
-    case store |> Store.getPagos model.grupoId of
-        Success pagos ->
-            let
-                ultimosPagos =
-                    pagos
-                        |> List.sortWith (\p1 p2 -> compare p2.pagoId p1.pagoId)
+{-| Lo mismo que la lista de gastos —gastos y transferencias hechas—, recortado
+a los últimos. Acá van por orden de carga y no por fecha: lo que importa es qué
+se agregó recién, aunque sea un gasto de hace un mes.
+-}
+viewUltimosMovimientosCard : Zone -> Maybe ULID -> Store -> Model -> Grupo -> Html Msg
+viewUltimosMovimientosCard zone participanteId store model grupo =
+    case
+        RemoteData.map2 (Movimientos.mkMovimientos zone)
+            (store |> Store.getPagos model.grupoId)
+            (store |> Store.getTransferencias model.grupoId)
+    of
+        Success movimientos ->
+            Bs.card [ Attr.id "resumen-ultimos-movimientos" ]
+                [ Bs.cardHeader [] [ text "Ultimos movimientos" ]
+                , Bs.listGroupKeyed [ class "list-group-flush" ]
+                    (movimientos
+                        |> Movimientos.porId
                         |> List.take 5
-            in
-            Bs.card [ Attr.id "resumen-ultimos-gastos" ]
-                [ Bs.cardHeader [] [ text "Ultimos gastos" ]
-                , Bs.listGroup [ class "list-group-flush" ]
-                    (ultimosPagos |> List.map (viewUltimoPago participanteId grupo.id grupo.monedaPorDefecto))
+                        |> List.map
+                            (Movimientos.viewMovimiento
+                                { abrirPopup = AbrirPopup
+                                , desde = Path.Grupos_Id_ { id = grupo.id }
+                                , telemetria = "resumen"
+                                , participanteId = participanteId
+                                , grupo = grupo
+                                }
+                            )
+                    )
                 ]
 
         _ ->
             text ""
-
-
-viewUltimoPago : Maybe ULID -> ULID -> Moneda -> ShallowPago -> Html Msg
-viewUltimoPago participanteId grupoId monedaPorDefecto pago =
-    Bs.listGroupItem
-        [ class "list-group-item-action p-0" ]
-        [ a
-            (class "d-flex align-items-center gap-3 px-3 py-2 text-reset text-decoration-none"
-                :: Telemetry.click "resumen.open_gasto"
-                :: PagoDetalleModal.linkAGasto AbrirPopup (Path.Grupos_Id_ { id = grupoId }) pago.pagoId
-            )
-            [ div
-                [ class "text-center border rounded px-2 py-1 flex-shrink-0"
-                , style "min-width" "2.5rem"
-                ]
-                [ div [ class "text-muted text-uppercase lh-1", style "font-size" "0.6em" ]
-                    [ text (Utils.Day.mesAbreviado pago.fecha) ]
-                , div [ class "fw-bold lh-1" ] [ text (String.fromInt (Date.day pago.fecha)) ]
-                ]
-            , ResumenGasto.viewFila participanteId monedaPorDefecto pago
-            , ResumenGasto.viewIconoInvalido pago
-            , ResumenGasto.viewBadgeRepartija pago
-            ]
-        ]
 
 
 viewNetoCard : String -> Maybe ( String, Api.Monto ) -> GrupoLike g -> Moneda -> Moneda -> Bool -> Html Msg
