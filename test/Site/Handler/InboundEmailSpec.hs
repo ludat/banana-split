@@ -4,6 +4,7 @@ module Site.Handler.InboundEmailSpec (
   spec,
 ) where
 
+import Data.Aeson qualified as Aeson
 import Data.Map.Strict qualified as Map
 import Data.Time (Day, fromGregorian)
 import Protolude
@@ -134,6 +135,17 @@ spec = do
               }
       fmap show (extractGrupoId payload) `shouldBe` Right grupoUlid
 
+  describe "ParsedDistribucion decoding" $ do
+    it "reads the extra of a repartija" $ do
+      Aeson.eitherDecode
+        "{\"tipo\":\"repartija\",\"items\":[{\"nombre\":\"Pizza\",\"monto\":800,\"cantidad\":1}],\"extra\":80}"
+        `shouldBe` Right (ParsedRepartija [ParsedReceiptItem "Pizza" 800 1] 80)
+
+    it "defaults a missing or null extra to 0" $ do
+      Aeson.eitherDecode "{\"items\":[]}" `shouldBe` Right (ParsedRepartija [] 0)
+      Aeson.eitherDecode "{\"tipo\":\"repartija\",\"items\":[],\"extra\":null}"
+        `shouldBe` Right (ParsedRepartija [] 0)
+
   describe "resolvePago" $ do
     it "resolves a valid pago (fixed payer, evenly-split debtors)" $ do
       let pago = resolvePago testGrupo today baseParsed
@@ -193,6 +205,7 @@ spec = do
                     [ ParsedReceiptItem "Pizza" 800 1
                     , ParsedReceiptItem "Vino" 200 1
                     ]
+                    100
               } ::
               ParsedEmailPago
       case repartijaOf (resolvePago testGrupo today parsed).deudores of
@@ -203,9 +216,10 @@ spec = do
           fmap (.nombre) r.items `shouldBe` ["Pizza", "Vino"]
           fmap (.monto) r.items `shouldBe` [scientificToMonto 800, scientificToMonto 200]
           fmap (.cantidad) r.items `shouldBe` [1, 1]
+          r.extra `shouldBe` scientificToMonto 100
 
     it "keeps an itemized side with no items empty rather than failing" $ do
-      let parsed = baseParsed{deudores = ParsedRepartija []} :: ParsedEmailPago
+      let parsed = baseParsed{deudores = ParsedRepartija [] 0} :: ParsedEmailPago
       case repartijaOf (resolvePago testGrupo today parsed).deudores of
         Nothing -> expectationFailure "expected a repartija distribution"
         Just r -> r.items `shouldBe` []

@@ -315,8 +315,15 @@ renderDistribucion names dist =
       | null dp.partes -> "<li><em>sin asignar</em></li>"
       | otherwise -> foldMap (renderParte names) dp.partes
     TipoDistribucionRepartija r
-      | null r.items -> "<li><em>sin items</em></li>"
-      | otherwise -> foldMap renderItem r.items
+      | null r.items -> "<li><em>sin items</em></li>" <> renderPropina r.extra
+      | otherwise -> foldMap renderItem r.items <> renderPropina r.extra
+
+-- | The repartija's propina (its 'extra') as one more row, omitted when there
+-- is none.
+renderPropina :: Monto -> Text
+renderPropina propina
+  | propina == 0 = ""
+  | otherwise = "<li>Propina: " <> monto2Text propina <> "</li>"
 
 renderParte :: Map ULID Text -> Parte -> Text
 renderParte names parte =
@@ -443,7 +450,7 @@ resolveDistribucion :: Text -> Set ULID -> ParsedDistribucion -> Distribucion
 resolveDistribucion nombre validIds parsed =
   case parsed of
     ParsedPartes shares -> resolvePartes validIds shares
-    ParsedRepartija items -> resolveRepartija nombre items
+    ParsedRepartija items extra -> resolveRepartija nombre items (scientificToMonto extra)
 
 resolvePartes :: Set ULID -> [ParsedShare] -> Distribucion
 resolvePartes validIds shares =
@@ -452,8 +459,10 @@ resolvePartes validIds shares =
     , tipo = TipoDistribucionPartes (DistribucionPartes nullUlid (mapMaybe (resolveShare validIds) shares))
     }
 
-resolveRepartija :: Text -> [ParsedReceiptItem] -> Distribucion
-resolveRepartija nombre items =
+-- | @extra@ is the tip / service charge on top of the items; the repartija
+-- splits it in proportion to what each one claimed.
+resolveRepartija :: Text -> [ParsedReceiptItem] -> Monto -> Distribucion
+resolveRepartija nombre items extra =
   Distribucion
     { id = nullUlid
     , tipo =
@@ -461,7 +470,7 @@ resolveRepartija nombre items =
           Repartija
             { id = nullUlid
             , nombre = nombre
-            , extra = 0
+            , extra = extra
             , distribucionDeSobras = SobrasNoDistribuir
             , items =
                 items
