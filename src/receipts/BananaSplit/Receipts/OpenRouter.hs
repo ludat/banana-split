@@ -249,15 +249,17 @@ analyzePagoFromEmail config context subject body =
 emailPagoContextText :: EmailPagoContext -> Text
 emailPagoContextText context =
   [__i|
-  Grupo: #{context.grupoNombre}
+  Grupo: #{grupoNombre}
 
   Participantes (id — nombre):
   #{participantesText}
 
   Monedas permitidas: #{monedasList}
-  Moneda por defecto: #{context.monedaPorDefecto}
+  Moneda por defecto: #{monedaPorDefecto}
   |]
   where
+    grupoNombre = context.grupoNombre
+    monedaPorDefecto = context.monedaPorDefecto
     participantesText =
       Text.intercalate "\n" $
         context.participantes <&> \p ->
