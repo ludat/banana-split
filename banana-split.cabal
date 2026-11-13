@@ -222,6 +222,7 @@ test-suite spec
     BananaSplit.CambiosDeClaimsSpec
     BananaSplit.Deudas.TelemetriaSpec
     BananaSplit.DeudasSpec
+    BananaSplit.EstabilidadSpec
     BananaSplit.MonedaSpec
     BananaSplit.TelemetrySpec
     BananaSplit.Telemetry.QueryTracingSpec
