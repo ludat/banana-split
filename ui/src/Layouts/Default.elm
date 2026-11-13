@@ -31,7 +31,7 @@ layout : Props -> Shared.Model -> Route () -> Layout () Model Msg contentMsg
 layout _ shared route =
     Layout.new
         { init = \() -> init
-        , update = update shared.today
+        , update = update shared.lastReadChangelog shared.today
         , view = view (currentLocation route) shared.toasties shared.lastReadChangelog shared.today shared.currentUser
         , subscriptions = subscriptions
         }
@@ -87,8 +87,8 @@ type Msg
     | DoLogout
 
 
-update : Date -> Msg -> Model -> ( Model, Effect Msg )
-update now msg model =
+update : Maybe Date -> Date -> Msg -> Model -> ( Model, Effect Msg )
+update lastReadChangelog now msg model =
     case msg of
         ToastMsg toastMsg ->
             ( model
@@ -135,7 +135,7 @@ update now msg model =
             , Effect.telemetryEvent
                 (Telemetry.changelogFeedback
                     { opinion = Opinion.toString opinion
-                    , novedades = List.map .title (Changelog.recentChangelog Nothing now)
+                    , novedades = List.map .title (Changelog.recentChangelog lastReadChangelog now)
                     }
                 )
             )
@@ -196,11 +196,6 @@ view location toasts lastReadChangelog now currentUser { toContentMsg, model, co
 
         unread =
             List.length recentEntries
-
-        -- The modal always shows the recent entries as if they were unread, so
-        -- it isn't empty after the user has marked them as read.
-        modalEntries =
-            Changelog.recentChangelog Nothing now
     in
     { title =
         if content.title == "" then
@@ -214,7 +209,7 @@ view location toasts lastReadChangelog now currentUser { toContentMsg, model, co
         , Html.map toContentMsg <|
             viewOffcanvas location model unread currentUser
         , Html.map toContentMsg <|
-            viewChangelogModal model modalEntries
+            viewChangelogModal model recentEntries
         , Html.map toContentMsg <|
             viewFeedbackModal model
         , Html.map toContentMsg <|
@@ -451,17 +446,21 @@ viewChangelogModal model entries =
         , title = "Novedades"
         , centered = False
         , body =
-            [ Bs.listGroup [] (List.map viewChangelogEntry entries)
-            , if List.isEmpty entries then
-                text ""
+            if List.isEmpty entries then
+                [ Html.p [ class "mb-0 text-center text-muted" ] [ text "No hay novedades nuevas." ] ]
 
-              else
-                viewChangelogOpinion model.changelogOpinion
-            ]
+            else
+                [ Bs.listGroup [] (List.map viewChangelogEntry entries)
+                , viewChangelogOpinion model.changelogOpinion
+                ]
         , footer =
-            [ Bs.btn Bs.Transparent [ Telemetry.click "changelog.close", onClick CloseChangelog ] [ text "Cerrar" ]
-            , Bs.btn Bs.Primary [ Telemetry.click "changelog.mark_read", onClick MarkChangelogReadAndClose ] [ text "Marcar como leído" ]
-            ]
+            Bs.btn Bs.Transparent [ Telemetry.click "changelog.close", onClick CloseChangelog ] [ text "Cerrar" ]
+                :: (if List.isEmpty entries then
+                        []
+
+                    else
+                        [ Bs.btn Bs.Primary [ Telemetry.click "changelog.mark_read", onClick MarkChangelogReadAndClose ] [ text "Marcar como leído" ] ]
+                   )
         }
 
 
