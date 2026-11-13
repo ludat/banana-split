@@ -3,10 +3,9 @@ module Pages.Grupos.GrupoId_.Gastos exposing (Model, Msg, page)
 import Components.Bootstrap as Bs
 import Components.Movimientos as Movimientos
 import Components.PagoDetalleModal as PagoDetalleModal
-import Components.ResumenGasto as ResumenGasto
 import Effect exposing (Effect)
-import Generated.Api exposing (Grupo, ShallowPago, ULID)
-import Html exposing (Html, a, div, i, span, text)
+import Generated.Api exposing (Grupo, ULID)
+import Html exposing (Html, a, div, text)
 import Html.Attributes exposing (class, id)
 import Layouts
 import Models.Store as Store
@@ -96,10 +95,7 @@ view zone participanteId store model =
 viewMovimientos : Zone -> Maybe ULID -> Store -> Model -> Grupo -> Html Msg
 viewMovimientos zone participanteId store model grupo =
     case
-        RemoteData.map2
-            (\pagos transferencias ->
-                ( pagos, Movimientos.mkMovimientos zone pagos transferencias |> Movimientos.cronologico )
-            )
+        RemoteData.map2 (\pagos transferencias -> Movimientos.mkMovimientos zone pagos transferencias |> Movimientos.cronologico)
             (store |> Store.getPagos model.grupoId)
             (store |> Store.getTransferencias model.grupoId)
     of
@@ -112,7 +108,7 @@ viewMovimientos zone participanteId store model grupo =
         Failure _ ->
             Bs.alert Bs.AlertDanger [] [ text "Error cargando los gastos." ]
 
-        Success ( pagos, movimientos ) ->
+        Success movimientos ->
             if List.isEmpty movimientos then
                 Bs.alert Bs.AlertInfo
                     []
@@ -125,78 +121,17 @@ viewMovimientos zone participanteId store model grupo =
                     ]
 
             else
-                div []
-                    [ viewRepartijasActivas participanteId grupo pagos
-                    , Bs.card [ id "gastos-lista" ]
-                        [ Bs.listGroupKeyed [ class "list-group-flush" ]
-                            (movimientos
-                                |> List.map
-                                    (Movimientos.viewMovimiento
-                                        { abrirPopup = AbrirPopup
-                                        , desde = Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }
-                                        , telemetria = "gastos"
-                                        , participanteId = participanteId
-                                        , grupo = grupo
-                                        }
-                                    )
-                            )
-                        ]
-                    ]
-
-
-viewRepartijasActivas : Maybe ULID -> Grupo -> List ShallowPago -> Html Msg
-viewRepartijasActivas participanteId grupo pagos =
-    case List.filter ResumenGasto.esRepartijaActiva pagos of
-        [] ->
-            text ""
-
-        activas ->
-            let
-                ( meFalta, resto ) =
-                    List.partition (ResumenGasto.leFaltaReclamar participanteId) activas
-
-                titulo =
-                    (if List.length activas == 1 then
-                        "1 repartija activa"
-
-                     else
-                        String.fromInt (List.length activas) ++ " repartijas activas"
-                    )
-                        ++ (if List.isEmpty meFalta then
-                                ""
-
-                            else
-                                " · te falta reclamar en " ++ String.fromInt (List.length meFalta)
-                           )
-
-                fila leFalta pago =
-                    a
-                        (class "d-flex align-items-center gap-2 text-reset text-decoration-none"
-                            :: Telemetry.click "gastos.open_repartija_activa"
-                            :: PagoDetalleModal.linkAGasto AbrirPopup (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }) pago.pagoId
-                        )
-                        [ ResumenGasto.viewBadgeRepartija pago
-                        , span
-                            [ class
-                                (if leFalta then
-                                    "text-truncate fw-semibold"
-
-                                 else
-                                    "text-truncate"
+                Bs.card [ id "gastos-lista" ]
+                    [ Bs.listGroupKeyed [ class "list-group-flush" ]
+                        (movimientos
+                            |> List.map
+                                (Movimientos.viewMovimiento
+                                    { abrirPopup = AbrirPopup
+                                    , desde = Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }
+                                    , telemetria = "gastos"
+                                    , participanteId = participanteId
+                                    , grupo = grupo
+                                    }
                                 )
-                            ]
-                            [ text pago.nombre ]
-                        , if leFalta then
-                            Bs.badge "text-bg-primary rounded-pill flex-shrink-0 d-inline-flex align-items-center gap-1"
-                                []
-                                [ i [ class "bi bi-hand-index-thumb" ] [], text "Te falta reclamar" ]
-
-                          else
-                            text ""
-                        ]
-            in
-            div [ id "gastos-repartijas-activas", class "mb-3" ]
-                [ div [ class "text-uppercase fw-semibold small mb-2" ] [ text titulo ]
-                , div [ class "d-flex flex-column gap-1" ]
-                    (List.map (fila True) meFalta ++ List.map (fila False) resto)
-                ]
+                        )
+                    ]
