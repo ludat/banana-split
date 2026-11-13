@@ -49,7 +49,7 @@ import Models.Moneda as Moneda
 import Models.Monto as Monto
 import Models.PagoForm exposing (ModoPartes, Section(..), distribucionDeSobrasToString, mostrarMontoFijoField, mostrarPartesField, validatePago, validatePagoInSection)
 import Models.Parte as Parte
-import Models.ResumenNetos exposing (errorAccionableEn, errorMensaje, getDeudasFromResumen)
+import Models.ResumenNetos exposing (EstadoDelGasto(..), errorAccionableEn, errorMensaje, estadoDelGasto, getDeudasFromResumen)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Process
@@ -1150,38 +1150,60 @@ viewContent grupo pago resumen model =
 
 errorToggle : String -> Set.Set String -> List ErrorResumen -> Html Msg
 errorToggle key expanded errores =
-    if List.isEmpty errores then
-        text ""
+    case estadoDelGasto errores of
+        Valido ->
+            text ""
 
-    else
-        button
-            [ type_ "button"
-            , class "btn btn-link p-0 ms-2 align-baseline text-warning"
-            , attribute "aria-label" "Mostrar errores"
-            , attribute "aria-expanded"
-                (if Set.member key expanded then
-                    "true"
+        Incompleto ->
+            botonDeErrores key expanded { icono = "bi-hourglass-split", color = "text-body-secondary" }
 
-                 else
-                    "false"
-                )
-            , Telemetry.click "gasto.toggle_errors"
-            , onClick (ToggleErrors key)
-            ]
-            [ i [ class "bi bi-exclamation-triangle-fill" ] [] ]
+        Roto ->
+            botonDeErrores key expanded { icono = "bi-exclamation-triangle-fill", color = "text-warning" }
+
+
+botonDeErrores : String -> Set.Set String -> { icono : String, color : String } -> Html Msg
+botonDeErrores key expanded { icono, color } =
+    button
+        [ type_ "button"
+        , class ("btn btn-link p-0 ms-2 align-baseline " ++ color)
+        , attribute "aria-label" "Mostrar errores"
+        , attribute "aria-expanded"
+            (if Set.member key expanded then
+                "true"
+
+             else
+                "false"
+            )
+        , Telemetry.click "gasto.toggle_errors"
+        , onClick (ToggleErrors key)
+        ]
+        [ i [ class ("bi " ++ icono) ] [] ]
 
 
 errorList : String -> Set.Set String -> List ErrorResumen -> Html Msg
 errorList key expanded errores =
-    if Set.member key expanded && not (List.isEmpty errores) then
-        Bs.alert Bs.AlertWarning
-            [ class "py-2 mt-2 mb-0 small" ]
-            [ ul [ class "mb-0 ps-3" ]
-                (errores |> List.map (\error -> li [] [ text (errorMensaje error.tipo) ]))
-            ]
+    if Set.member key expanded then
+        case estadoDelGasto errores of
+            Valido ->
+                text ""
+
+            Incompleto ->
+                listaDeErrores Bs.AlertInfo errores
+
+            Roto ->
+                listaDeErrores Bs.AlertWarning errores
 
     else
         text ""
+
+
+listaDeErrores : Bs.AlertVariant -> List ErrorResumen -> Html Msg
+listaDeErrores variante errores =
+    Bs.alert variante
+        [ class "py-2 mt-2 mb-0 small" ]
+        [ ul [ class "mb-0 ps-3" ]
+            (errores |> List.map (\error -> li [] [ text (errorMensaje error.tipo) ]))
+        ]
 
 
 viewInfo : Grupo -> Pago -> ResumenPago -> Html Msg

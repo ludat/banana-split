@@ -33,7 +33,7 @@ import Preludat
 
 data ResumenGuardado = ResumenGuardado
   { errores :: [M.ErrorResumen]
-  , participantesEnRepartija :: Maybe Int
+  , participantesEnRepartija :: Maybe [M.ParticipanteId]
   }
   deriving stock (Generic, Show, Eq)
   deriving anyclass (ToJSON)

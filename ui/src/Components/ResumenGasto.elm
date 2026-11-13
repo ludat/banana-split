@@ -1,4 +1,4 @@
-module Components.ResumenGasto exposing (viewBadgeRepartija, viewFila, viewIconoInvalido)
+module Components.ResumenGasto exposing (esRepartijaActiva, leFaltaReclamar, viewBadgeRepartija, viewFila, viewIconoInvalido)
 
 {-| La fila de un gasto en la lista, con lo que el resumen cacheado agrega:
 cuánto consumió y cuánto pagó el participante que está mirando, por qué el gasto
@@ -10,12 +10,7 @@ import Html exposing (Html, div, i, span, text)
 import Html.Attributes exposing (class, title)
 import Models.Moneda as Moneda
 import Models.Monto as Monto
-import Models.ResumenNetos exposing (errorMensaje)
-
-
-esValido : ShallowPago -> Bool
-esValido pago =
-    List.isEmpty pago.resumen.errores
+import Models.ResumenNetos exposing (EstadoDelGasto(..), errorMensaje, estadoDelGasto, seArreglaReclamando)
 
 
 {-| El cuerpo de la fila: nombre, monto total y la línea personal. Los tres
@@ -32,24 +27,41 @@ viewFila participanteId monedaPorDefecto pago =
         ]
 
 
-{-| El triángulo de alerta, con los motivos como tooltip.
-
-"Todavía no lo calculamos" es uno de esos motivos (`ErrorNoCalculado`), así que
-acá no hay nada especial que hacer: un gasto cuyo resumen no se pudo leer no se
-sabe si cierra, y eso es una razón más por la que no está bien.
-
+{-| El icono de un gasto que no cierra, con los motivos como tooltip.
 -}
 viewIconoInvalido : ShallowPago -> Html msg
 viewIconoInvalido pago =
-    if esValido pago then
-        text ""
+    case estadoDelGasto pago.resumen.errores of
+        Valido ->
+            text ""
 
-    else
-        i
-            [ class "bi bi-exclamation-triangle-fill text-warning flex-shrink-0"
-            , title (motivos pago)
-            ]
-            []
+        Roto ->
+            i
+                [ class "bi bi-exclamation-triangle-fill text-warning flex-shrink-0"
+                , title (motivos pago)
+                ]
+                []
+
+        Incompleto ->
+            i
+                [ class "bi bi-hourglass-split text-body-secondary flex-shrink-0"
+                , title (motivos pago)
+                ]
+                []
+
+
+esRepartijaActiva : ShallowPago -> Bool
+esRepartijaActiva pago =
+    List.any (\error -> seArreglaReclamando error.tipo) pago.resumen.errores
+
+
+leFaltaReclamar : Maybe ULID -> ShallowPago -> Bool
+leFaltaReclamar participanteId pago =
+    Maybe.map2
+        (\yo reclamaron -> esRepartijaActiva pago && not (List.member yo reclamaron))
+        participanteId
+        pago.resumen.participantesEnRepartija
+        |> Maybe.withDefault False
 
 
 motivos : ShallowPago -> String
@@ -64,7 +76,7 @@ reparte por repartija.
 -}
 viewBadgeRepartija : ShallowPago -> Html msg
 viewBadgeRepartija pago =
-    case pago.resumen.participantesEnRepartija of
+    case Maybe.map List.length pago.resumen.participantesEnRepartija of
         Just cuantos ->
             span
                 [ class "badge bg-body-secondary text-body-secondary d-flex align-items-center gap-1 flex-shrink-0"

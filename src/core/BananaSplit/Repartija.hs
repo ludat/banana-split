@@ -99,7 +99,7 @@ data DetalleRepartija = DetalleRepartija
   deriving (Show, Eq, Generic)
 
 data DetalleDeItem = DetalleDeItem
-  { itemId :: ULID
+  { item :: RepartijaItem
   , consumos :: Netos Monto
   , montoSinReclamar :: Monto
   , estado :: EstadoDeItem
@@ -163,10 +163,10 @@ Elm.deriveBoth Elm.defaultOptions ''DistribucionDeSobras
 Elm.deriveBoth Elm.defaultOptions ''DiferenciaDeUnidades
 Elm.deriveBoth Elm.defaultOptions ''EstadoDeItem
 Elm.deriveBoth Elm.defaultOptions ''ResolucionDeItem
+Elm.deriveBoth Elm.defaultOptions ''RepartijaItem
 Elm.deriveBoth Elm.defaultOptions ''DetalleDeItem
 Elm.deriveBoth Elm.defaultOptions ''DetalleSinReclamar
 Elm.deriveBoth Elm.defaultOptions ''DetalleRepartija
-Elm.deriveBoth Elm.defaultOptions ''RepartijaItem
 Elm.deriveBoth Elm.defaultOptions ''RepartijaClaim
 Elm.deriveBoth Elm.defaultOptions ''ShallowRepartija
 Elm.deriveBoth Elm.defaultOptions ''Repartija

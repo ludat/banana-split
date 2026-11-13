@@ -193,7 +193,7 @@ data ResumenGasto = ResumenGasto
   { pagado :: Netos Monto
   , consumido :: Netos Monto
   , errores :: [ErrorResumen]
-  , participantesEnRepartija :: Maybe Int
+  , participantesEnRepartija :: Maybe [ParticipanteId]
   }
   deriving (Show, Eq, Generic)
 
@@ -222,7 +222,7 @@ getResumenGasto pago =
             repartija.claims
               & fmap (.participante)
               & ordNub
-              & length
+              & sort
               & Just
           _ -> Nothing
       }

@@ -1290,11 +1290,11 @@ viewItemsHeader userId grupo filtros =
         ]
 
 
-cumpleFiltros : Maybe ULID -> Filtros -> Repartija -> ( RepartijaItem, DetalleDeItem ) -> Bool
-cumpleFiltros userId filtros repartija ( item, deItem ) =
+cumpleFiltros : Maybe ULID -> Filtros -> Repartija -> DetalleDeItem -> Bool
+cumpleFiltros userId filtros repartija deItem =
     let
         reclamadoPor participanteId =
-            Repartija.claimsDeItem repartija item
+            Repartija.claimsDeItem repartija deItem.item
                 |> List.any (\c -> c.participante == participanteId)
 
         cumple filtroActivo participanteId =
@@ -1308,18 +1308,7 @@ cumpleFiltros userId filtros repartija ( item, deItem ) =
 
 viewItems : Model -> Maybe ULID -> GrupoLike g -> DetalleRepartija -> Repartija -> Html Msg
 viewItems model userId grupo detalle repartija =
-    let
-        -- Cada item con lo que calculó el backend de él. El detalle trae todos
-        -- los items de la repartija, así que acá no se pierde ninguno.
-        conDetalle =
-            repartija.items
-                |> List.filterMap
-                    (\item ->
-                        Repartija.detalleDeItem detalle item.id
-                            |> Maybe.map (\deItem -> ( item, deItem ))
-                    )
-    in
-    case List.filter (cumpleFiltros userId model.filtros repartija) conDetalle of
+    case List.filter (cumpleFiltros userId model.filtros repartija) detalle.porItem of
         [] ->
             p [ class "text-muted text-center py-4" ]
                 [ if List.isEmpty repartija.items then
@@ -1332,7 +1321,7 @@ viewItems model userId grupo detalle repartija =
         items ->
             div []
                 (items
-                    |> List.map (\( item, deItem ) -> viewItemCard model userId grupo detalle repartija item deItem)
+                    |> List.map (viewItemCard model userId grupo detalle repartija)
                 )
 
 
@@ -1345,9 +1334,12 @@ unidades n =
         String.fromInt n ++ " unidades"
 
 
-viewItemCard : Model -> Maybe ULID -> GrupoLike g -> DetalleRepartija -> Repartija -> RepartijaItem -> DetalleDeItem -> Html Msg
-viewItemCard model userId grupo detalle repartija item deItem =
+viewItemCard : Model -> Maybe ULID -> GrupoLike g -> DetalleRepartija -> Repartija -> DetalleDeItem -> Html Msg
+viewItemCard model userId grupo detalle repartija deItem =
     let
+        item =
+            deItem.item
+
         claims =
             Repartija.claimsDeItem repartija item
 
