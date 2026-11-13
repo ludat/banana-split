@@ -482,6 +482,7 @@ resolveRepartija nombre items extra =
                       , cantidad = item.cantidad
                       }
             , claims = [] -- filled in later when consumers claim items
+            , noConsumieron = []
             }
     }
 

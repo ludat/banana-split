@@ -911,15 +911,17 @@ type alias ResumenGasto  =
    , consumido: (Netos Monto)
    , errores: (List ErrorResumen)
    , participantesEnRepartija: (Maybe (List ParticipanteId))
+   , noConsumieronEnRepartija: (List ParticipanteId)
    }
 
 jsonDecResumenGasto : Json.Decode.Decoder ( ResumenGasto )
 jsonDecResumenGasto =
-   Json.Decode.succeed (\ppagado pconsumido perrores pparticipantesEnRepartija -> {pagado = ppagado, consumido = pconsumido, errores = perrores, participantesEnRepartija = pparticipantesEnRepartija})
+   Json.Decode.succeed (\ppagado pconsumido perrores pparticipantesEnRepartija pnoConsumieronEnRepartija -> {pagado = ppagado, consumido = pconsumido, errores = perrores, participantesEnRepartija = pparticipantesEnRepartija, noConsumieronEnRepartija = pnoConsumieronEnRepartija})
    |> required "pagado" (jsonDecNetos (jsonDecMonto))
    |> required "consumido" (jsonDecNetos (jsonDecMonto))
    |> required "errores" (Json.Decode.list (jsonDecErrorResumen))
    |> fnullable "participantesEnRepartija" (Json.Decode.list (jsonDecParticipanteId))
+   |> required "noConsumieronEnRepartija" (Json.Decode.list (jsonDecParticipanteId))
 
 jsonEncResumenGasto : ResumenGasto -> Value
 jsonEncResumenGasto  val =
@@ -928,6 +930,7 @@ jsonEncResumenGasto  val =
    , ("consumido", (jsonEncNetos (jsonEncMonto)) val.consumido)
    , ("errores", (Json.Encode.list jsonEncErrorResumen) val.errores)
    , ("participantesEnRepartija", (maybeEncode ((Json.Encode.list jsonEncParticipanteId))) val.participantesEnRepartija)
+   , ("noConsumieronEnRepartija", (Json.Encode.list jsonEncParticipanteId) val.noConsumieronEnRepartija)
    ]
 
 
@@ -1115,17 +1118,19 @@ type alias Repartija  =
    , distribucionDeSobras: DistribucionDeSobras
    , items: (List RepartijaItem)
    , claims: (List RepartijaClaim)
+   , noConsumieron: (List ParticipanteId)
    }
 
 jsonDecRepartija : Json.Decode.Decoder ( Repartija )
 jsonDecRepartija =
-   Json.Decode.succeed (\pid pnombre pextra pdistribucionDeSobras pitems pclaims -> {id = pid, nombre = pnombre, extra = pextra, distribucionDeSobras = pdistribucionDeSobras, items = pitems, claims = pclaims})
+   Json.Decode.succeed (\pid pnombre pextra pdistribucionDeSobras pitems pclaims pnoConsumieron -> {id = pid, nombre = pnombre, extra = pextra, distribucionDeSobras = pdistribucionDeSobras, items = pitems, claims = pclaims, noConsumieron = pnoConsumieron})
    |> required "id" (jsonDecULID)
    |> required "nombre" (Json.Decode.string)
    |> required "extra" (jsonDecMonto)
    |> required "distribucionDeSobras" (jsonDecDistribucionDeSobras)
    |> required "items" (Json.Decode.list (jsonDecRepartijaItem))
    |> required "claims" (Json.Decode.list (jsonDecRepartijaClaim))
+   |> required "noConsumieron" (Json.Decode.list (jsonDecParticipanteId))
 
 jsonEncRepartija : Repartija -> Value
 jsonEncRepartija  val =
@@ -1136,6 +1141,7 @@ jsonEncRepartija  val =
    , ("distribucionDeSobras", jsonEncDistribucionDeSobras val.distribucionDeSobras)
    , ("items", (Json.Encode.list jsonEncRepartijaItem) val.items)
    , ("claims", (Json.Encode.list jsonEncRepartijaClaim) val.claims)
+   , ("noConsumieron", (Json.Encode.list jsonEncParticipanteId) val.noConsumieron)
    ]
 
 
@@ -2026,6 +2032,68 @@ deleteRepartijasClaimsByClaimId capture_claimId toMsg =
                     [ "repartijas"
                     , "claims"
                     , (capture_claimId)
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecRepartijaForFrontend
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+putRepartijasByRepartijaIdNoconsumieronByParticipanteId : ULID -> ULID -> (Result Http.Error  (RepartijaForFrontend)  -> msg) -> Cmd msg
+putRepartijasByRepartijaIdNoconsumieronByParticipanteId capture_repartijaId capture_participanteId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "PUT"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , (capture_repartijaId)
+                    , "no-consumieron"
+                    , (capture_participanteId)
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg jsonDecRepartijaForFrontend
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+deleteRepartijasByRepartijaIdNoconsumieronByParticipanteId : ULID -> ULID -> (Result Http.Error  (RepartijaForFrontend)  -> msg) -> Cmd msg
+deleteRepartijasByRepartijaIdNoconsumieronByParticipanteId capture_repartijaId capture_participanteId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "DELETE"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "repartijas"
+                    , (capture_repartijaId)
+                    , "no-consumieron"
+                    , (capture_participanteId)
                     ]
                     params
             , body =

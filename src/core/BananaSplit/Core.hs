@@ -194,6 +194,7 @@ data ResumenGasto = ResumenGasto
   , consumido :: Netos Monto
   , errores :: [ErrorResumen]
   , participantesEnRepartija :: Maybe [ParticipanteId]
+  , noConsumieronEnRepartija :: [ParticipanteId]
   }
   deriving (Show, Eq, Generic)
 
@@ -224,7 +225,10 @@ getResumenGasto pago =
               & ordNub
               & sort
               & Just
-          _ -> Nothing
+          TipoDistribucionPartes _ -> Nothing
+      , noConsumieronEnRepartija = case pago.deudores.tipo of
+          TipoDistribucionRepartija repartija -> sort repartija.noConsumieron
+          TipoDistribucionPartes _ -> []
       }
 
 netosDeResumenGasto :: ResumenGasto -> Netos Monto

@@ -23,6 +23,7 @@ data Repartija = Repartija
   , distribucionDeSobras :: DistribucionDeSobras
   , items :: [RepartijaItem]
   , claims :: [RepartijaClaim]
+  , noConsumieron :: [ParticipanteId]
   }
   deriving (Show, Eq, Generic)
 

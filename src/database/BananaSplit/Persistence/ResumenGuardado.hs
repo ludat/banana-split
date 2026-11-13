@@ -34,6 +34,7 @@ import Preludat
 data ResumenGuardado = ResumenGuardado
   { errores :: [M.ErrorResumen]
   , participantesEnRepartija :: Maybe [M.ParticipanteId]
+  , noConsumieronEnRepartija :: [M.ParticipanteId]
   }
   deriving stock (Generic, Show, Eq)
   deriving anyclass (ToJSON)
@@ -48,12 +49,15 @@ instance FromJSON ResumenGuardado where
       <$> optional (o .: "errores")
       .!= erroresDeErroresFaltantes
       <*> optional (o .: "participantesEnRepartija")
+      <*> optional (o .: "noConsumieronEnRepartija")
+      .!= []
 
 resumen2Guardado :: M.ResumenGasto -> ResumenGuardado
 resumen2Guardado resumen =
   ResumenGuardado
     { errores = resumen.errores
     , participantesEnRepartija = resumen.participantesEnRepartija
+    , noConsumieronEnRepartija = resumen.noConsumieronEnRepartija
     }
 
 esValido_ ::

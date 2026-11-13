@@ -51,7 +51,7 @@ spec =
           nuevosDeudores =
             Distribucion nullUlid $
               TipoDistribucionRepartija $
-                Repartija nullUlid "Cena" 0 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] []
+                Repartija nullUlid "Cena" 0 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] [] []
       _ <- runDb $ updatePago grupo.id pago.pagoId pago{pagadores = nuevosPagadores, deudores = nuevosDeudores}
 
       runDb countOrphanedDistribuciones `shouldReturn` 0
@@ -155,6 +155,7 @@ spec =
                         SobrasNoDistribuir
                         [RepartijaItem nullUlid "Una" 100 1, RepartijaItem nullUlid "Dos" 200 2]
                         []
+                        []
               }
       let repartija = repartijaDe pago
       (queda, seVa) <- case repartija.items of
@@ -168,6 +169,40 @@ spec =
       guardado <- runDb $ fetchRepartija repartija.id
       fmap (.id) guardado.repartija.items `shouldBe` [queda.id]
       fmap (\c -> (c.itemId, c.cantidad)) guardado.repartija.claims `shouldBe` [(queda.id, Just 2)]
+
+    it "marcar que no consumió se guarda, llega al resumen y se puede deshacer" $ \(RunDb runDb) -> do
+      (grupo, _, otro) <- runDb grupoConDosParticipantes
+      pago <- runDb $ saveInvalidRepartijaPago grupo
+      let repartija = repartijaDe pago
+
+      marcada <- runDb $ marcarNoConsumio repartija.id otro
+      marcada.repartija.noConsumieron `shouldBe` [otro]
+      gastos <- runDb $ fetchShallowPagos grupo.id Nothing
+      fmap (.resumen.noConsumieronEnRepartija) gastos `shouldBe` [[otro]]
+
+      desmarcada <- runDb $ desmarcarNoConsumio repartija.id otro
+      desmarcada.repartija.noConsumieron `shouldBe` []
+
+    it "reclamar un item borra la marca de que no consumió" $ \(RunDb runDb) -> do
+      (grupo, _, otro) <- runDb grupoConDosParticipantes
+      pago <- runDb $ saveInvalidRepartijaPago grupo
+      let repartija = repartijaDe pago
+      _ <- runDb $ marcarNoConsumio repartija.id otro
+
+      reclamada <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid otro (primerItem repartija).id Nothing)
+      reclamada.repartija.noConsumieron `shouldBe` []
+
+    it "editar el gasto conserva quiénes no consumieron" $ \(RunDb runDb) -> do
+      (grupo, _, otro) <- runDb grupoConDosParticipantes
+      pago <- runDb $ saveInvalidRepartijaPago grupo
+      let repartija = repartijaDe pago
+      _ <- runDb $ marcarNoConsumio repartija.id otro
+
+      _ <- runDb $ savePago grupo.id pago
+      guardada <- runDb $ fetchRepartija repartija.id
+      guardada.repartija.noConsumieron `shouldBe` [otro]
+      gastos <- runDb $ fetchShallowPagos grupo.id Nothing
+      fmap (.resumen.noConsumieronEnRepartija) gastos `shouldBe` [[otro]]
 
     -- Al terminar la transacción el cache tiene que estar bien, sin depender de
     -- que alguien lo lea después: cualquier cosa que sume 'pagado_y_consumido_en_gasto' por su
@@ -485,7 +520,7 @@ saveInvalidRepartijaPago grupo =
       , deudores =
           Distribucion nullUlid $
             TipoDistribucionRepartija $
-              Repartija nullUlid "Cena" 0 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] []
+              Repartija nullUlid "Cena" 0 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] [] []
       }
 
 -- | Un gasto de $300 con una repartija de un item de $100 y $200 de propina.
@@ -505,7 +540,7 @@ saveRepartijaPagoConPropina grupo =
       , deudores =
           Distribucion nullUlid $
             TipoDistribucionRepartija $
-              Repartija nullUlid "Cena" 200 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] []
+              Repartija nullUlid "Cena" 200 SobrasNoDistribuir [RepartijaItem nullUlid "Item" 100 1] [] []
       }
 
 -- | Count distribuciones not referenced by any pago. Their subtype rows
@@ -557,7 +592,7 @@ instance Arbitrary TipoDistribucion where
   arbitrary =
     oneof
       [ pure $ TipoDistribucionPartes $ DistribucionPartes nullUlid []
-      , TipoDistribucionRepartija <$> (Repartija nullUlid "nombre" <$> arbitrary <*> arbitrary <*> pure [] <*> pure [])
+      , TipoDistribucionRepartija <$> (Repartija nullUlid "nombre" <$> arbitrary <*> arbitrary <*> pure [] <*> pure [] <*> pure [])
       ]
 
 instance Arbitrary Distribucion where

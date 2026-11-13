@@ -41,6 +41,7 @@ spec = do
         , distribucionDeSobras = SobrasNoDistribuir
         , claims = []
         , items = []
+        , noConsumieron = []
         }
     err objeto tipo = ErrorResumen{objeto = objeto, tipo = tipo}
 
@@ -210,7 +211,7 @@ spec = do
         `shouldBe` [err [] (ErrorRepartijaItemsReclamadosDeFormaMixta ["Pizza"])]
 
   describe "getResumenGasto" $ do
-    it "en una repartija lista quiénes reclamaron, una vez cada uno" $ do
+    it "en una repartija lista quiénes reclamaron, una vez cada uno, y quiénes no consumieron" $ do
       let item1 = fakeUlid 2
           item2 = fakeUlid 3
           r =
@@ -221,6 +222,7 @@ spec = do
                   , RepartijaClaim (fakeUlid 101) u1 item2 (Just 1)
                   , RepartijaClaim (fakeUlid 102) u2 item2 (Just 1)
                   ]
+              , noConsumieron = [u3]
               }
           pago =
             pagoValido
@@ -229,6 +231,7 @@ spec = do
               , deudores = distribucionRepartija r
               }
       (getResumenGasto pago).participantesEnRepartija `shouldBe` Just (sort [u1, u2])
+      (getResumenGasto pago).noConsumieronEnRepartija `shouldBe` [u3]
 
     it "si no es repartija no lista participantes" $ do
       let pago =
@@ -238,6 +241,7 @@ spec = do
               , deudores = distribucionMontosEspecificos [(u2, 500)]
               }
       (getResumenGasto pago).participantesEnRepartija `shouldBe` Nothing
+      (getResumenGasto pago).noConsumieronEnRepartija `shouldBe` []
 
     it "con pagadores y deudores que no balancean devuelve errores con objeto correcto" $ do
       let pago =

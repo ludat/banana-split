@@ -255,6 +255,7 @@ prepararEscenario telemetry conn = conTransaccionDeEscritura telemetry conn $ do
                     , M.RepartijaItem nullUlid "Item B" 50 1
                     ]
                 , M.claims = []
+                , M.noConsumieron = []
                 }
         }
 

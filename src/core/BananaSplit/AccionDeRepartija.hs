@@ -155,6 +155,7 @@ aplicarAccionDeRepartija nuevoItemId accion repartija =
         , distribucionDeSobras = repartija.distribucionDeSobras
         , items = items
         , claims = claims
+        , noConsumieron = repartija.noConsumieron
         }
 
     -- Si las unidades de los dos valen distinto, una unidad del item unido no

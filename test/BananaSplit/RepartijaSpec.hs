@@ -15,6 +15,7 @@ fakeRepartija =
     , distribucionDeSobras = SobrasProporcional
     , claims = []
     , items = []
+    , noConsumieron = []
     }
 
 spec :: Spec

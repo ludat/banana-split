@@ -77,6 +77,8 @@ module BananaSplit.Persistence (
   savePago,
   saveRepartija,
   saveRepartijaClaim,
+  marcarNoConsumio,
+  desmarcarNoConsumio,
   unfreezeGrupo,
   updateGrupo,
   updatePago,
@@ -753,6 +755,7 @@ resumenDesde netos guardado =
     , M.consumido = lado (.consumido_en_unidades_minimas) netos
     , M.errores = guardado.errores
     , M.participantesEnRepartija = guardado.participantesEnRepartija
+    , M.noConsumieronEnRepartija = guardado.noConsumieronEnRepartija
     }
   where
     lado columna =
@@ -990,6 +993,7 @@ usoDeParticipante = \case
   "fk_partes_deudores_participante_id" -> Just M.UsedInGasto
   "fk_partes_pagadores_participante__id" -> Just M.UsedInGasto
   "fk_repartijas_claims_participante__id" -> Just M.UsedInRepartija
+  "fk_repartija_no_consumieron_participante__id" -> Just M.UsedInRepartija
   "fk_transacciones_congeladas_participante_from__id" -> Just M.UsedInTransferencia
   "fk_transacciones_congeladas_participante_to__id" -> Just M.UsedInTransferencia
   _ -> Nothing
@@ -1057,19 +1061,19 @@ recomputePagos = go 1 0 nullUlid
     go lote total ultimoId = do
       resultado <- Telemetry.inSpan' "recompute-pagos.lote" $ \span -> do
         Otel.addAttribute span "app.recompute.lote" lote
-        resultado <- runBeamWrite $ do
-          batch <- runSelectReturningList $ select $ do
-            limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
-              p <- all_ db.pagos
-              guard_ (p.pagoId >. val_ ultimoId)
-              pure (p.pagoId, p.pagoGrupo)
-          case NE.nonEmpty batch of
-            Nothing -> pure Nothing
-            Just batchNE -> do
-              forM_ batchNE $ \(pagoId, GrupoId grupoId) -> do
+        batch <- runBeamFastRead $ runSelectReturningList $ select $ do
+          limit_ recomputePagosBatchSize $ orderBy_ (asc_ . fst) $ do
+            p <- all_ db.pagos
+            guard_ (p.pagoId >. val_ ultimoId)
+            pure (p.pagoId, p.pagoGrupo)
+        resultado <- case NE.nonEmpty batch of
+          Nothing -> pure Nothing
+          Just batchNE -> do
+            forM_ batchNE $ \(pagoId, GrupoId grupoId) ->
+              runBeamWrite $ do
                 pago <- fetchPago grupoId pagoId
                 void $ savePago grupoId pago
-              pure $ Just (NE.length batchNE, fst $ NE.last batchNE)
+            pure $ Just (NE.length batchNE, fst $ NE.last batchNE)
         Otel.addAttribute span "app.recompute.pagos" $ maybe 0 fst resultado
         pure resultado
       case resultado of
@@ -1263,10 +1267,12 @@ saveRepartija moneda distribucionId repartijaSinId = do
   items <- saveRepartijaItems moneda repartijaId repartija.items
 
   claims <- claimsDeItems (fmap (RepartijaItemId . (.id)) items)
+  noConsumieron <- noConsumieronDe repartijaId
   pure
     repartija
       { M.items = items
       , M.claims = claims
+      , M.noConsumieron = noConsumieron
       }
 
 saveRepartijaItems :: M.Moneda -> ULID -> [M.RepartijaItem] -> Pg [M.RepartijaItem]
@@ -1318,6 +1324,7 @@ fetchRepartija unRepartijaId = do
     guard_ $ item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartija.id)
     pure item
   claims <- claimsDeItems (fmap (RepartijaItemId . (.repartijaitemId)) items)
+  noConsumieron <- noConsumieronDe repartija.id
 
   pure
     $ M.repartijaForFrontend pagoId pagoNombre moneda
@@ -1327,6 +1334,7 @@ fetchRepartija unRepartijaId = do
       , extra = desdeUnidadesMinimas moneda repartija.extra_en_unidades_minimas
       , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
       , claims = claims
+      , noConsumieron = noConsumieron
       , items =
           items
             & fmap
@@ -1348,6 +1356,14 @@ claimDesdeFila r =
     , M.participante = M.ParticipanteId $ case r.repartijaclaimParticipante of ParticipanteId ulid -> ulid
     , M.itemId = case r.repartijaclaimRepartijaItem of RepartijaItemId ulid -> ulid
     }
+
+noConsumieronDe :: ULID -> Pg [M.ParticipanteId]
+noConsumieronDe repartijaId = do
+  filas <- runSelectReturningList $ select $ do
+    fila <- all_ db.repartija_no_consumieron
+    guard_ (fila.repartija ==. val_ (DistribucionRepartijaId repartijaId))
+    pure fila.participante
+  pure $ fmap (\(ParticipanteId p) -> M.ParticipanteId p) filas
 
 claimsDeItems :: [RepartijaItemId] -> Pg [M.RepartijaClaim]
 claimsDeItems itemIds = do
@@ -1380,7 +1396,47 @@ saveRepartijaClaim repartijaId repartijaClaim = do
       onConflictUpdateAll
   -- (onConflictUpdateSet (\fields _oldValues ->
   --   repartijaClaimCantidad fields <-. val_ (fromIntegral <$> M.repartijaClaimCantidad claim')))
+  borrarNoConsumio repartijaId claim'.participante
   recalcularRepartija grupoId repartijaId
+
+marcarNoConsumio :: ULID -> M.ParticipanteId -> Pg M.RepartijaForFrontend
+marcarNoConsumio repartijaId participanteId = do
+  grupoId <-
+    fetchGrupoIdFromRepartija repartijaId
+      `orElseMay` panic "grupoId not found"
+  runInsert
+    $ insertOnConflict
+      db.repartija_no_consumieron
+      ( insertValues
+          [ RepartijaNoConsumio
+              { repartija = DistribucionRepartijaId repartijaId
+              , participante = participanteId2Persistent participanteId
+              }
+          ]
+      )
+      anyConflict
+      onConflictDoNothing
+  recalcularRepartija grupoId repartijaId
+
+desmarcarNoConsumio :: ULID -> M.ParticipanteId -> Pg M.RepartijaForFrontend
+desmarcarNoConsumio repartijaId participanteId = do
+  grupoId <-
+    fetchGrupoIdFromRepartija repartijaId
+      `orElseMay` panic "grupoId not found"
+  borrarNoConsumio repartijaId participanteId
+  recalcularRepartija grupoId repartijaId
+
+borrarNoConsumio :: ULID -> M.ParticipanteId -> Pg ()
+borrarNoConsumio repartijaId participanteId =
+  runDelete
+    $ delete
+      db.repartija_no_consumieron
+      ( \fila ->
+          fila.repartija
+            ==. val_ (DistribucionRepartijaId repartijaId)
+            &&. fila.participante
+            ==. val_ (participanteId2Persistent participanteId)
+      )
 
 -- | Lo que le contesta al frontend una mutación de los claims de una
 -- repartija: la repartija como quedó, con el resumen de su gasto ya

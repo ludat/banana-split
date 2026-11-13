@@ -1640,6 +1640,7 @@ defaultRepartija =
     , nombre = "GENERATED"
     , items = []
     , claims = []
+    , noConsumieron = []
     , extra = Monto.zero
     , distribucionDeSobras = SobrasNoDistribuir
     }

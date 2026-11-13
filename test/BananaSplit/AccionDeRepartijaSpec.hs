@@ -29,6 +29,7 @@ repartija =
         , RepartijaItem otroItemId "Papas" (mkMonto 2 1000) 1
         ]
     , claims = [RepartijaClaim (fakeUlid 100) (participante 1) itemId (Just 3)]
+    , noConsumieron = []
     }
 
 aplicar :: AccionDeRepartija -> Repartija -> Either AccionDeRepartijaInvalida Repartija

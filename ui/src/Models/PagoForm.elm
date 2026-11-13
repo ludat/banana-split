@@ -137,6 +137,7 @@ validateRepartija moneda =
             )
         |> V.andMap (V.field "items" (V.list (validateRepartijaItem moneda)))
         |> V.andMap (V.field "claims" (V.succeed []))
+        |> V.andMap (V.succeed [])
 
 
 validateRepartijaItem : Moneda -> V.Validation CustomFormError RepartijaItem

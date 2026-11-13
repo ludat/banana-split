@@ -74,6 +74,10 @@ changelog =
       , title = "Mejor manejo de participantes y datos para transferencias"
       , description = "Ahora podés agregarte a un grupo si no estás en la lista, editar el nombre de un participante. Además podés cargar cómo querés recibir la plata (alias, CBU, en efectivo...) en tu cuenta o en cada participante, y se muestra en el resumen junto a lo que te tienen que transferir."
       }
+    , { date = Date.fromCalendarDate 2026 Nov 15
+      , title = "Las repartijas que te faltan"
+      , description = "Ahora podés ver las repartijas que todavía reclames. Si no consumiste nada de alguna, avisalo desde la repartija y deja de aparecerte como pendiente."
+      }
     ]
 
 

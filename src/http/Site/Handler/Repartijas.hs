@@ -8,11 +8,19 @@ module Site.Handler.Repartijas (
   handleRepartijaClaimDelete,
   handleRepartijaClaimPut,
   handleRepartijaGet,
+  handleRepartijaNoConsumioDelete,
+  handleRepartijaNoConsumioPut,
 ) where
 
 import Servant (err404)
 
-import BananaSplit (AccionDeRepartija, RepartijaClaim (..), RepartijaForFrontend (..), detalleRepartija)
+import BananaSplit (
+  AccionDeRepartija,
+  ParticipanteId (..),
+  RepartijaClaim (..),
+  RepartijaForFrontend (..),
+  detalleRepartija,
+ )
 import BananaSplit.AccionDeRepartija qualified as AccionDeRepartija
 import BananaSplit.Persistence
 import BananaSplit.ULID (ULID)
@@ -53,6 +61,30 @@ handleRepartijaClaimDelete claimId =
           Just grupoId -> Just <$> withGrupoDescongelado grupoId (deleteRepartijaClaim claimId)
     )
     & orElseNoEncontradoONoEditable "Claim no encontrado"
+
+handleRepartijaNoConsumioPut :: ULID -> ULID -> AppHandler RepartijaForFrontend
+handleRepartijaNoConsumioPut repartijaId participanteId =
+  runBeamWrite
+    ( do
+        maybeGrupoId <- fetchGrupoIdFromRepartija repartijaId
+        case maybeGrupoId of
+          Nothing -> pure Nothing
+          Just grupoId ->
+            Just <$> withGrupoDescongelado grupoId (marcarNoConsumio repartijaId (ParticipanteId participanteId))
+    )
+    & orElseNoEncontradoONoEditable "Repartija no encontrada"
+
+handleRepartijaNoConsumioDelete :: ULID -> ULID -> AppHandler RepartijaForFrontend
+handleRepartijaNoConsumioDelete repartijaId participanteId =
+  runBeamWrite
+    ( do
+        maybeGrupoId <- fetchGrupoIdFromRepartija repartijaId
+        case maybeGrupoId of
+          Nothing -> pure Nothing
+          Just grupoId ->
+            Just <$> withGrupoDescongelado grupoId (desmarcarNoConsumio repartijaId (ParticipanteId participanteId))
+    )
+    & orElseNoEncontradoONoEditable "Repartija no encontrada"
 
 handleRepartijaAccionPreview :: PedidoDePreviewDeAccion -> AppHandler ResultadoPreviewDeAccion
 handleRepartijaAccionPreview pedido = do

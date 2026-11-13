@@ -58,7 +58,11 @@ esRepartijaActiva pago =
 leFaltaReclamar : Maybe ULID -> ShallowPago -> Bool
 leFaltaReclamar participanteId pago =
     Maybe.map2
-        (\yo reclamaron -> esRepartijaActiva pago && not (List.member yo reclamaron))
+        (\yo reclamaron ->
+            esRepartijaActiva pago
+                && not (List.member yo reclamaron)
+                && not (List.member yo pago.resumen.noConsumieronEnRepartija)
+        )
         participanteId
         pago.resumen.participantesEnRepartija
         |> Maybe.withDefault False

@@ -1,0 +1,26 @@
+operations:
+  - create_table:
+      name: repartija_no_consumieron
+      constraints:
+        - name: repartija_no_consumieron__repartija_participante
+          type: primary_key
+          columns:
+            - repartija__id
+            - participante__id
+      columns:
+        - name: repartija__id
+          type: text
+          nullable: false
+          references:
+            table: repartijas
+            column: id
+            name: fk_repartija_no_consumieron_repartija__id
+            on_delete: CASCADE
+        - name: participante__id
+          type: text
+          nullable: false
+          references:
+            table: participantes
+            column: id
+            name: fk_repartija_no_consumieron_participante__id
+            on_delete: CASCADE

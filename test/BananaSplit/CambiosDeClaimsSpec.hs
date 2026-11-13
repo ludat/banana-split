@@ -43,6 +43,7 @@ spec = describe "cambiosDeClaims" $ do
                 , RepartijaClaim (fakeUlid 201) (participante 1) otroItem (Just 1)
                 , RepartijaClaim (fakeUlid 202) (participante 2) (fakeUlid 4) Nothing
                 ]
+            , noConsumieron = []
             }
         unida =
           either (panic . show) identity $

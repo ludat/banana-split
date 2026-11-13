@@ -39,6 +39,7 @@ data BananaSplitDb f = BananaSplitDb
   , repartijas :: f (TableEntity DistribucionRepartijaT)
   , repartija_items :: f (TableEntity RepartijaItemT)
   , repartija_claims :: f (TableEntity RepartijaClaimT)
+  , repartija_no_consumieron :: f (TableEntity RepartijaNoConsumioT)
   , transferencias :: f (TableEntity TransferenciaT)
   , tasas_de_cambio :: f (TableEntity TasaDeCambioT)
   }
@@ -467,6 +468,22 @@ deriving instance Show RepartijaClaimId
 instance Table RepartijaClaimT where
   data PrimaryKey RepartijaClaimT f = RepartijaClaimId (C f ULID) deriving (Generic, Beamable)
   primaryKey = RepartijaClaimId . (.repartijaclaimId)
+
+data RepartijaNoConsumioT f = RepartijaNoConsumio
+  { repartija :: PrimaryKey DistribucionRepartijaT f
+  , participante :: PrimaryKey ParticipanteT f
+  }
+  deriving (Generic, Beamable)
+
+type RepartijaNoConsumio = RepartijaNoConsumioT Identity
+
+deriving instance Show RepartijaNoConsumio
+
+instance Table RepartijaNoConsumioT where
+  data PrimaryKey RepartijaNoConsumioT f
+    = RepartijaNoConsumioId (PrimaryKey DistribucionRepartijaT f) (PrimaryKey ParticipanteT f)
+    deriving (Generic, Beamable)
+  primaryKey fila = RepartijaNoConsumioId fila.repartija fila.participante
 
 -- | Una transferencia entre dos participantes. Nace pendiente al congelar el
 -- grupo y, cuando alguien la marca como hecha, deja de ser una sugerencia y

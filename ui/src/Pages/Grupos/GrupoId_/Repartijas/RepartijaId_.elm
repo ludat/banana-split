@@ -163,6 +163,8 @@ type Msg
     | ChangeCurrentClaim RepartijaItem Int
     | JoinCurrentClaim RepartijaItem
     | LeaveCurrentClaim RepartijaClaim
+    | MarcarNoConsumi
+    | DesmarcarNoConsumi
     | RepartijaClaimResponded (WebData Api.RepartijaForFrontend)
     | ToggleFiltroReclamadosPorVos
     | ToggleFiltroNoResueltos
@@ -611,6 +613,32 @@ update maybeParticipanteId store msg model =
                 Nothing ->
                     ( model, Effect.none )
 
+        MarcarNoConsumi ->
+            case maybeParticipanteId of
+                Just participanteId ->
+                    ( model
+                    , Effect.sendCmd <|
+                        Api.putRepartijasByRepartijaIdNoconsumieronByParticipanteId model.repartijaId
+                            participanteId
+                            (RemoteData.fromResult >> RepartijaClaimResponded)
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
+        DesmarcarNoConsumi ->
+            case maybeParticipanteId of
+                Just participanteId ->
+                    ( model
+                    , Effect.sendCmd <|
+                        Api.deleteRepartijasByRepartijaIdNoconsumieronByParticipanteId model.repartijaId
+                            participanteId
+                            (RemoteData.fromResult >> RepartijaClaimResponded)
+                    )
+
+                Nothing ->
+                    ( model, Effect.none )
+
 
 conAccionEnCurso : Model -> (AccionEnCurso -> ( AccionEnCurso, Effect Msg )) -> ( Model, Effect Msg )
 conAccionEnCurso model f =
@@ -882,6 +910,7 @@ view userId { introDismissed } store model =
                                 , onClick (AbrirAccion AgregarItemNuevo)
                                 ]
                                 [ i [ class "bi bi-plus-lg" ] [], text "Agregar item" ]
+                            , viewNoConsumi userId repartija
                             ]
                         , div [ Attr.id "repartija-lateral", class "col-12 col-lg-4" ]
                             [ div [ Attr.id "repartija-participantes", class "d-none d-lg-block mb-3" ] [ viewParticipantes model grupo repartija ]
@@ -980,6 +1009,42 @@ viewIntro =
             ]
             []
         ]
+
+
+viewNoConsumi : Maybe ULID -> Repartija -> Html Msg
+viewNoConsumi userId repartija =
+    case userId of
+        Nothing ->
+            text ""
+
+        Just yo ->
+            if List.member yo repartija.noConsumieron then
+                div [ class "d-flex align-items-center gap-2 text-body-secondary small mb-3" ]
+                    [ i [ class "bi bi-slash-circle" ] []
+                    , text "Marcaste que no consumiste nada."
+                    , button
+                        [ type_ "button"
+                        , class "btn btn-link btn-sm p-0 align-baseline"
+                        , Telemetry.click "repartija.no_consumi_deshacer"
+                        , onClick DesmarcarNoConsumi
+                        ]
+                        [ text "Deshacer" ]
+                    ]
+
+            else if List.any (\claim -> claim.participante == yo) repartija.claims then
+                text ""
+
+            else
+                div [ class "d-flex align-items-center gap-2 text-body-secondary small mb-3" ]
+                    [ text "¿No consumiste nada de esto?"
+                    , button
+                        [ type_ "button"
+                        , class "btn btn-link btn-sm p-0 align-baseline"
+                        , Telemetry.click "repartija.no_consumi"
+                        , onClick MarcarNoConsumi
+                        ]
+                        [ text "Avisá que no participaste" ]
+                    ]
 
 
 viewAlertaNoResueltos : Model -> DetalleRepartija -> Repartija -> Html Msg
@@ -1153,18 +1218,31 @@ viewParticipantes model grupo repartija =
                     []
                 ]
             , if model.participantesExpandido then
+                let
+                    ( noConsumieron, sinResponder ) =
+                        sinClaims
+                            |> List.partition (\p -> List.member p.id repartija.noConsumieron)
+                in
                 div []
                     [ div [ class "mt-2 d-flex align-items-center flex-wrap gap-2" ]
                         (cuenta "text-bg-primary" "Ya reclamaron items" conClaims
                             :: List.map chipDeParticipante conClaims
                         )
-                    , if List.isEmpty sinClaims then
+                    , if List.isEmpty noConsumieron then
                         text ""
 
                       else
                         div [ class "mt-3" ]
-                            [ h6 [ class "fw-semibold" ] [ text "No reclamaron items" ]
-                            , grupoDeNombres "text-bg-secondary" "Aún no reclamaron items" sinClaims
+                            [ h6 [ class "fw-semibold" ] [ text "No consumieron" ]
+                            , grupoDeNombres "text-bg-light" "Marcaron que no consumieron nada" noConsumieron
+                            ]
+                    , if List.isEmpty sinResponder then
+                        text ""
+
+                      else
+                        div [ class "mt-3" ]
+                            [ h6 [ class "fw-semibold" ] [ text "Todavía no respondieron" ]
+                            , grupoDeNombres "text-bg-secondary" "Aún no reclamaron items" sinResponder
                             ]
                     ]
 
