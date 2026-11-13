@@ -601,6 +601,8 @@ type TipoErrorResumen  =
     ErrorRepartijaSinItems 
     | ErrorRepartijaTotalItemsNoCoincide Monto Monto
     | ErrorRepartijaSinClaims 
+    | ErrorRepartijaItemsSinReclamar (List String) Monto
+    | ErrorRepartijaItemsReclamadosDeFormaMixta (List String)
     | ErrorRepartijaTotalReclamadoNoCoincide Monto Monto
     | ErrorPartesVacias 
     | ErrorPartesMontoFijoSuperaTotal Monto Monto
@@ -613,6 +615,8 @@ jsonDecTipoErrorResumen =
             [ ("ErrorRepartijaSinItems", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorRepartijaSinItems))
             , ("ErrorRepartijaTotalItemsNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorRepartijaTotalItemsNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
             , ("ErrorRepartijaSinClaims", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorRepartijaSinClaims))
+            , ("ErrorRepartijaItemsSinReclamar", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorRepartijaItemsSinReclamar (Json.Decode.index 0 (Json.Decode.list (Json.Decode.string))) (Json.Decode.index 1 (jsonDecMonto))))
+            , ("ErrorRepartijaItemsReclamadosDeFormaMixta", Json.Decode.lazy (\_ -> Json.Decode.map ErrorRepartijaItemsReclamadosDeFormaMixta (Json.Decode.list (Json.Decode.string))))
             , ("ErrorRepartijaTotalReclamadoNoCoincide", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorRepartijaTotalReclamadoNoCoincide (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
             , ("ErrorPartesVacias", Json.Decode.lazy (\_ -> Json.Decode.succeed ErrorPartesVacias))
             , ("ErrorPartesMontoFijoSuperaTotal", Json.Decode.lazy (\_ -> Json.Decode.map2 ErrorPartesMontoFijoSuperaTotal (Json.Decode.index 0 (jsonDecMonto)) (Json.Decode.index 1 (jsonDecMonto))))
@@ -627,6 +631,8 @@ jsonEncTipoErrorResumen  val =
                     ErrorRepartijaSinItems  -> ("ErrorRepartijaSinItems", encodeValue (Json.Encode.list identity []))
                     ErrorRepartijaTotalItemsNoCoincide v1 v2 -> ("ErrorRepartijaTotalItemsNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
                     ErrorRepartijaSinClaims  -> ("ErrorRepartijaSinClaims", encodeValue (Json.Encode.list identity []))
+                    ErrorRepartijaItemsSinReclamar v1 v2 -> ("ErrorRepartijaItemsSinReclamar", encodeValue (Json.Encode.list identity [(Json.Encode.list Json.Encode.string) v1, jsonEncMonto v2]))
+                    ErrorRepartijaItemsReclamadosDeFormaMixta v1 -> ("ErrorRepartijaItemsReclamadosDeFormaMixta", encodeValue ((Json.Encode.list Json.Encode.string) v1))
                     ErrorRepartijaTotalReclamadoNoCoincide v1 v2 -> ("ErrorRepartijaTotalReclamadoNoCoincide", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
                     ErrorPartesVacias  -> ("ErrorPartesVacias", encodeValue (Json.Encode.list identity []))
                     ErrorPartesMontoFijoSuperaTotal v1 v2 -> ("ErrorPartesMontoFijoSuperaTotal", encodeValue (Json.Encode.list identity [jsonEncMonto v1, jsonEncMonto v2]))
@@ -904,7 +910,7 @@ type alias ResumenGasto  =
    { pagado: (Netos Monto)
    , consumido: (Netos Monto)
    , errores: (List ErrorResumen)
-   , participantesEnRepartija: (Maybe Int)
+   , participantesEnRepartija: (Maybe (List ParticipanteId))
    }
 
 jsonDecResumenGasto : Json.Decode.Decoder ( ResumenGasto )
@@ -913,7 +919,7 @@ jsonDecResumenGasto =
    |> required "pagado" (jsonDecNetos (jsonDecMonto))
    |> required "consumido" (jsonDecNetos (jsonDecMonto))
    |> required "errores" (Json.Decode.list (jsonDecErrorResumen))
-   |> fnullable "participantesEnRepartija" (Json.Decode.int)
+   |> fnullable "participantesEnRepartija" (Json.Decode.list (jsonDecParticipanteId))
 
 jsonEncResumenGasto : ResumenGasto -> Value
 jsonEncResumenGasto  val =
@@ -921,7 +927,7 @@ jsonEncResumenGasto  val =
    [ ("pagado", (jsonEncNetos (jsonEncMonto)) val.pagado)
    , ("consumido", (jsonEncNetos (jsonEncMonto)) val.consumido)
    , ("errores", (Json.Encode.list jsonEncErrorResumen) val.errores)
-   , ("participantesEnRepartija", (maybeEncode (Json.Encode.int)) val.participantesEnRepartija)
+   , ("participantesEnRepartija", (maybeEncode ((Json.Encode.list jsonEncParticipanteId))) val.participantesEnRepartija)
    ]
 
 
@@ -1262,7 +1268,7 @@ jsonEncDetalleRepartija  val =
 
 
 type alias DetalleDeItem  =
-   { itemId: ULID
+   { item: RepartijaItem
    , consumos: (Netos Monto)
    , montoSinReclamar: Monto
    , estado: EstadoDeItem
@@ -1271,8 +1277,8 @@ type alias DetalleDeItem  =
 
 jsonDecDetalleDeItem : Json.Decode.Decoder ( DetalleDeItem )
 jsonDecDetalleDeItem =
-   Json.Decode.succeed (\pitemId pconsumos pmontoSinReclamar pestado presolucion -> {itemId = pitemId, consumos = pconsumos, montoSinReclamar = pmontoSinReclamar, estado = pestado, resolucion = presolucion})
-   |> required "itemId" (jsonDecULID)
+   Json.Decode.succeed (\pitem pconsumos pmontoSinReclamar pestado presolucion -> {item = pitem, consumos = pconsumos, montoSinReclamar = pmontoSinReclamar, estado = pestado, resolucion = presolucion})
+   |> required "item" (jsonDecRepartijaItem)
    |> required "consumos" (jsonDecNetos (jsonDecMonto))
    |> required "montoSinReclamar" (jsonDecMonto)
    |> required "estado" (jsonDecEstadoDeItem)
@@ -1281,7 +1287,7 @@ jsonDecDetalleDeItem =
 jsonEncDetalleDeItem : DetalleDeItem -> Value
 jsonEncDetalleDeItem  val =
    Json.Encode.object
-   [ ("itemId", jsonEncULID val.itemId)
+   [ ("item", jsonEncRepartijaItem val.item)
    , ("consumos", (jsonEncNetos (jsonEncMonto)) val.consumos)
    , ("montoSinReclamar", jsonEncMonto val.montoSinReclamar)
    , ("estado", jsonEncEstadoDeItem val.estado)

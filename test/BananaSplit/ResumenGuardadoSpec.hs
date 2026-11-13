@@ -15,7 +15,9 @@ import Test.Hspec
 
 import BananaSplit.Deudas (ErrorResumen (..), TipoErrorResumen (..))
 import BananaSplit.Monto (mkMonto)
+import BananaSplit.Participante (ParticipanteId)
 import BananaSplit.Persistence.ResumenGuardado (ResumenGuardado (..), erroresDeErroresFaltantes)
+import BananaSplit.TestUtils (participante)
 
 spec :: Spec
 spec = describe "ResumenGuardado" $ do
@@ -27,7 +29,7 @@ spec = describe "ResumenGuardado" $ do
       ida
         ResumenGuardado
           { errores = [ErrorResumen{objeto = ["deudores"], tipo = ErrorRepartijaSinClaims}]
-          , participantesEnRepartija = Just 3
+          , participantesEnRepartija = Just tresParticipantes
           }
 
     it "un gasto inválido con un error con montos adentro" $
@@ -42,6 +44,14 @@ spec = describe "ResumenGuardado" $ do
           , participantesEnRepartija = Nothing
           }
 
+    it "un gasto inválido con un error con nombres de items" $
+      ida
+        ResumenGuardado
+          { errores =
+              [ErrorResumen{objeto = [], tipo = ErrorRepartijaItemsSinReclamar ["Pizza", "Birra"] (mkMonto 2 1500)}]
+          , participantesEnRepartija = Just []
+          }
+
   -- Lo que hace falta que ande para que un cambio de formato no sea un
   -- apagón: cada campo ilegible cae solo, sin llevarse los demás.
   describe "degrada campo por campo" $ do
@@ -53,22 +63,34 @@ spec = describe "ResumenGuardado" $ do
       leer (object ["errores" .= ([] :: [ErrorResumen]), "participantesEnRepartija" .= ("tres" :: Text)])
         `shouldBe` Just ResumenGuardado{errores = [], participantesEnRepartija = Nothing}
 
+    it "participantesEnRepartija viejo, como un número, queda en su default" $
+      leer (object ["errores" .= ([] :: [ErrorResumen]), "participantesEnRepartija" .= (3 :: Int)])
+        `shouldBe` Just ResumenGuardado{errores = [], participantesEnRepartija = Nothing}
+
     it "errores ilegible deja el gasto sin calcular pero conserva el resto" $
-      leer (object ["errores" .= ("cualquier cosa" :: Text), "participantesEnRepartija" .= (3 :: Int)])
-        `shouldBe` Just ResumenGuardado{errores = erroresDeErroresFaltantes, participantesEnRepartija = Just 3}
+      leer (object ["errores" .= ("cualquier cosa" :: Text), "participantesEnRepartija" .= tresParticipantes])
+        `shouldBe` Just
+          ResumenGuardado{errores = erroresDeErroresFaltantes, participantesEnRepartija = Just tresParticipantes}
 
     it "un error con un constructor que ya no existe también" $
       leer
         ( object
-            [ "errores" .= [object ["objeto" .= ([] :: [Text]), "tipo" .= object ["ErrorDeUnaVersionFutura" .= ([] :: [Value])]]]
-            , "participantesEnRepartija" .= (2 :: Int)
+            [ "errores"
+                .= [ object
+                       [ "objeto" .= ([] :: [Text])
+                       , "tipo" .= object ["ErrorDeUnaVersionFutura" .= ([] :: [Value])]
+                       ]
+                   ]
+            , "participantesEnRepartija" .= tresParticipantes
             ]
         )
-        `shouldBe` Just ResumenGuardado{errores = erroresDeErroresFaltantes, participantesEnRepartija = Just 2}
+        `shouldBe` Just
+          ResumenGuardado{errores = erroresDeErroresFaltantes, participantesEnRepartija = Just tresParticipantes}
 
     it "errores ausente es lo mismo que ilegible: no sabemos si cierra" $
-      leer (object ["participantesEnRepartija" .= (1 :: Int)])
-        `shouldBe` Just ResumenGuardado{errores = erroresDeErroresFaltantes, participantesEnRepartija = Just 1}
+      leer (object ["participantesEnRepartija" .= tresParticipantes])
+        `shouldBe` Just
+          ResumenGuardado{errores = erroresDeErroresFaltantes, participantesEnRepartija = Just tresParticipantes}
 
     it "un campo que ya no usamos se ignora" $
       leer (object ["errores" .= ([] :: [ErrorResumen]), "unCampoViejo" .= ("algo" :: Text)])
@@ -84,6 +106,9 @@ spec = describe "ResumenGuardado" $ do
 
     it "null" $
       leer Null `shouldBe` Nothing
+
+tresParticipantes :: [ParticipanteId]
+tresParticipantes = fmap participante [1, 2, 3]
 
 -- | Codificar y volver a leer tiene que dar lo mismo.
 ida :: ResumenGuardado -> Expectation

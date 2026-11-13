@@ -37,7 +37,7 @@ está repartiendo y si deja la repartija lista para repartir.
 detalleDeItem : DetalleRepartija -> ULID -> Maybe DetalleDeItem
 detalleDeItem detalle itemId =
     detalle.porItem
-        |> List.Extra.find (\deItem -> deItem.itemId == itemId)
+        |> List.Extra.find (\deItem -> deItem.item.id == itemId)
 
 
 hayItemsNoResueltos : DetalleRepartija -> Bool

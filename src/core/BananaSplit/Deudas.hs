@@ -101,6 +101,10 @@ data TipoErrorResumen
   | -- | totalItems, totalPago
     ErrorRepartijaTotalItemsNoCoincide Monto Monto
   | ErrorRepartijaSinClaims
+  | -- | nombres de los items, monto sin reclamar
+    ErrorRepartijaItemsSinReclamar [Text] Monto
+  | -- | nombres de los items
+    ErrorRepartijaItemsReclamadosDeFormaMixta [Text]
   | -- | totalReclamado, totalPago
     ErrorRepartijaTotalReclamadoNoCoincide Monto Monto
   | ErrorPartesVacias
@@ -207,17 +211,29 @@ instance HasResumen Repartija where
             totalPorItems
             mempty
             [ErrorResumen{objeto = mempty, tipo = ErrorRepartijaSinClaims}]
-      | totalReclamado /= totalPago ->
-          ResumenNetos
-            totalPorItems
-            netosReclamados
-            [ErrorResumen{objeto = mempty, tipo = ErrorRepartijaTotalReclamadoNoCoincide totalReclamado totalPago}]
-      | otherwise ->
+      | totalReclamado == totalPago ->
           ResumenNetos totalPorItems netosReclamados []
+      | not (null reclamadosDeFormaMixta) ->
+          conError (ErrorRepartijaItemsReclamadosDeFormaMixta (fmap (.nombre) reclamadosDeFormaMixta))
+      | not (null sinReclamar) ->
+          conError (ErrorRepartijaItemsSinReclamar (fmap fst sinReclamar) (sum (fmap snd sinReclamar)))
+      | otherwise ->
+          conError (ErrorRepartijaTotalReclamadoNoCoincide totalReclamado totalPago)
     where
       totalPorItems = totalRepartija repartija
-      netosReclamados = calcularNetosRepartija repartija
+      detalle = detalleRepartija repartija
+      netosReclamados = detalle.totales
       totalReclamado = totalNetos netosReclamados
+      conError tipo =
+        ResumenNetos totalPorItems netosReclamados [ErrorResumen{objeto = mempty, tipo = tipo}]
+      reclamadosDeFormaMixta =
+        detalle.porItem
+          & filter (\d -> d.estado == EstadoRepartoIncorrecto)
+          & fmap (.item)
+      sinReclamar =
+        detalle.porItem
+          & filter (\d -> d.resolucion == ItemNoResuelto && d.montoSinReclamar > 0)
+          & fmap (\d -> (d.item.nombre, d.montoSinReclamar))
 
 minimizeTransferencias ::
   (MonadTelemetry m, KatipContext m) => Netos Monto -> m [TransferenciaSugerida]
@@ -634,7 +650,7 @@ detalleRepartija repartija =
              & fmap
                ( \repartido ->
                    DetalleDeItem
-                     { itemId = repartido.item.id
+                     { item = repartido.item
                      , consumos = repartido.consumos
                      , montoSinReclamar = repartido.montoSinDueño
                      , estado = repartido.estado

@@ -99,7 +99,7 @@ spec = do
       (getResumen 500 (distribucionRepartija r)).errores
         `shouldBe` [err [] ErrorRepartijaSinClaims]
 
-    it "con total reclamado que no coincide devuelve ErrorRepartijaTotalReclamadoNoCoincide" $ do
+    it "con items sin reclamar devuelve ErrorRepartijaItemsSinReclamar con los items y el monto" $ do
       let item1 = fakeUlid 2
           item2 = fakeUlid 3
           r =
@@ -112,9 +112,8 @@ spec = do
                   [ RepartijaClaim (fakeUlid 100) u1 item1 (Just 1)
                   ]
               }
-      let res = getResumen 500 (distribucionRepartija r)
-      res.errores
-        `shouldBe` [err [] (ErrorRepartijaTotalReclamadoNoCoincide (totalNetos res.netos) 500)]
+      (getResumen 500 (distribucionRepartija r)).errores
+        `shouldBe` [err [] (ErrorRepartijaItemsSinReclamar ["Item1", "Item2"] 350)]
 
     it "con todo bien no devuelve errores" $ do
       let item1 = fakeUlid 2
@@ -159,9 +158,8 @@ spec = do
                   , RepartijaClaim (fakeUlid 101) u2 item1 (Just 1)
                   ]
               }
-          res = getResumen 500 (distribucionRepartija r)
-      res.errores
-        `shouldBe` [err [] (ErrorRepartijaTotalReclamadoNoCoincide (totalNetos res.netos) 500)]
+      (getResumen 500 (distribucionRepartija r)).errores
+        `shouldBe` [err [] (ErrorRepartijaItemsSinReclamar ["Papitas"] 300)]
 
     it "SobrasProporcional reparte propina proporcionalmente entre los que reclamaron" $ do
       let item1 = fakeUlid 2
@@ -190,11 +188,57 @@ spec = do
                   [ RepartijaClaim (fakeUlid 100) u1 item1 (Just 1)
                   ]
               }
-          res = getResumen 250 (distribucionRepartija r)
-      res.errores
-        `shouldBe` [err [] (ErrorRepartijaTotalReclamadoNoCoincide (totalNetos res.netos) 250)]
+      (getResumen 250 (distribucionRepartija r)).errores
+        `shouldBe` [err [] (ErrorRepartijaItemsSinReclamar ["Birrita"] 100)]
+
+    it "con items reclamados de forma mixta devuelve ese error antes que los items sin reclamar" $ do
+      let item1 = fakeUlid 2
+          item2 = fakeUlid 3
+          r =
+            fakeRepartija
+              { items =
+                  [ RepartijaItem item1 "Pizza" 300 1
+                  , RepartijaItem item2 "Birra" 200 2
+                  ]
+              , claims =
+                  [ RepartijaClaim (fakeUlid 100) u1 item1 (Just 1)
+                  , RepartijaClaim (fakeUlid 101) u2 item1 Nothing
+                  , RepartijaClaim (fakeUlid 102) u1 item2 (Just 1)
+                  ]
+              }
+      (getResumen 500 (distribucionRepartija r)).errores
+        `shouldBe` [err [] (ErrorRepartijaItemsReclamadosDeFormaMixta ["Pizza"])]
 
   describe "getResumenGasto" $ do
+    it "en una repartija lista quiénes reclamaron, una vez cada uno" $ do
+      let item1 = fakeUlid 2
+          item2 = fakeUlid 3
+          r =
+            fakeRepartija
+              { items = [RepartijaItem item1 "Pizza" 300 1, RepartijaItem item2 "Birra" 200 2]
+              , claims =
+                  [ RepartijaClaim (fakeUlid 100) u2 item1 Nothing
+                  , RepartijaClaim (fakeUlid 101) u1 item2 (Just 1)
+                  , RepartijaClaim (fakeUlid 102) u2 item2 (Just 1)
+                  ]
+              }
+          pago =
+            pagoValido
+              { monto = 500
+              , pagadores = distribucionMontosEspecificos [(u1, 500)]
+              , deudores = distribucionRepartija r
+              }
+      (getResumenGasto pago).participantesEnRepartija `shouldBe` Just (sort [u1, u2])
+
+    it "si no es repartija no lista participantes" $ do
+      let pago =
+            pagoValido
+              { monto = 500
+              , pagadores = distribucionMontosEspecificos [(u1, 500)]
+              , deudores = distribucionMontosEspecificos [(u2, 500)]
+              }
+      (getResumenGasto pago).participantesEnRepartija `shouldBe` Nothing
+
     it "con pagadores y deudores que no balancean devuelve errores con objeto correcto" $ do
       let pago =
             pagoValido
