@@ -76,7 +76,7 @@ changelog =
       }
     , { date = Date.fromCalendarDate 2026 Nov 15
       , title = "Las repartijas que te faltan"
-      , description = "Ahora podés ver las repartijas que todavía reclames. Si no consumiste nada de alguna, avisalo desde la repartija y deja de aparecerte como pendiente."
+      , description = "Ahora podés ver las repartijas que todavía falta que reclames. Si no consumiste nada, avisalo desde la repartija y deja de aparecer como pendiente."
       }
     ]
 
