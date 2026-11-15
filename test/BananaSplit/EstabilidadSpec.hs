@@ -14,13 +14,15 @@ import BananaSplit.TestUtils
 spec :: Spec
 spec = describe "Estabilidad de los netos de un gasto" $ do
   it "no dependen del orden de las partes, los items, los claims ni los que no consumieron" $
-    property $ forAll genPago $ \pago ->
-      forAll (reordenar pago) $ \reordenado ->
-        lasCuentasDe reordenado === lasCuentasDe pago
+    property $
+      forAll genPago $ \pago ->
+        forAll (reordenar pago) $ \reordenado ->
+          lasCuentasDe reordenado === lasCuentasDe pago
 
   it "no dependen de los ids de los claims, los items ni las distribuciones" $
-    property $ forAll genPago $ \pago ->
-      lasCuentasDe (renumerar pago) === lasCuentasDe pago
+    property $
+      forAll genPago $ \pago ->
+        lasCuentasDe (renumerar pago) === lasCuentasDe pago
 
   xit "no dependen de la escala con la que vienen los montos" $
     let gastoDe monto =
@@ -36,12 +38,13 @@ spec = describe "Estabilidad de los netos de un gasto" $ do
     in calcularNetosPago (gastoDe 100) `shouldBe` calcularNetosPago (gastoDe (mkMonto 2 10000))
 
   it "el generador produce gastos válidos y repartijas" $
-    property $ forAll genPago $ \pago ->
-      let resumen = getResumenGasto pago
-      in cover 30 (gastoEsValido pago) "válido"
-           $ cover 20 (isJust resumen.participantesEnRepartija) "repartija"
-           $ cover 10 (isJust resumen.participantesEnRepartija && gastoEsValido pago) "repartija válida"
-           $ property True
+    property $
+      forAll genPago $ \pago ->
+        let resumen = getResumenGasto pago
+        in cover 30 (gastoEsValido pago) "válido" $
+             cover 20 (isJust resumen.participantesEnRepartija) "repartija" $
+               cover 10 (isJust resumen.participantesEnRepartija && gastoEsValido pago) "repartija válida" $
+                 property True
 
 -- | Lo que sale de un gasto para el resto del sistema. Se compara también el
 -- 'show' porque el 'Eq' de 'Decimal' iguala 10 con 10.00 y esa diferencia
@@ -106,8 +109,8 @@ genPago = do
 
 genPartes :: [ParticipanteId] -> Gen [Parte]
 genPartes ps =
-  listOf1
-    $ oneof
+  listOf1 $
+    oneof
       [ MontoFijo <$> genMonto 0 5000 <*> elements ps
       , Ponderado <$> choose (0, 5) <*> elements ps
       , PonderadoYMontoFijo <$> genMonto 0 5000 <*> choose (0, 5) <*> elements ps
