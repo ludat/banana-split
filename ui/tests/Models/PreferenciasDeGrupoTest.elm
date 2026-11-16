@@ -8,10 +8,15 @@ import Models.PreferenciasDeGrupo as PreferenciasDeGrupo exposing (CambioDePrefe
 import Test exposing (Test, describe, test)
 
 
-decodificar : String -> Result Json.Decode.Error (List ( String, Maybe String ))
+decodificar : String -> Result Json.Decode.Error { preferencias : List ( String, Maybe String ), ilegibles : List String }
 decodificar json =
     Json.Decode.decodeString PreferenciasDeGrupo.decoder json
-        |> Result.map (Dict.toList >> List.map (Tuple.mapSecond .participanteId))
+        |> Result.map
+            (\leidas ->
+                { preferencias = leidas.preferencias |> Dict.toList |> List.map (Tuple.mapSecond .participanteId)
+                , ilegibles = leidas.ilegibles
+                }
+            )
 
 
 suite : Test
@@ -48,21 +53,21 @@ decoder =
         [ test "lee el participante de cada grupo" <|
             \_ ->
                 decodificar """{ "a": { "participanteId": "p1" }, "b": {} }"""
-                    |> Expect.equal (Ok [ ( "a", Just "p1" ), ( "b", Nothing ) ])
-        , test "un campo que no se entiende queda en su valor por defecto" <|
+                    |> Expect.equal (Ok { preferencias = [ ( "a", Just "p1" ), ( "b", Nothing ) ], ilegibles = [] })
+        , test "un campo que no se entiende queda en su valor por defecto y se reporta" <|
             \_ ->
                 decodificar """{ "a": { "participanteId": 42 } }"""
-                    |> Expect.equal (Ok [ ( "a", Nothing ) ])
-        , test "los campos desconocidos no molestan" <|
+                    |> Expect.equal (Ok { preferencias = [ ( "a", Nothing ) ], ilegibles = [ "participanteId" ] })
+        , test "los campos desconocidos no molestan ni se reportan" <|
             \_ ->
                 decodificar """{ "a": { "participanteId": "p1", "otraCosa": "x" } }"""
-                    |> Expect.equal (Ok [ ( "a", Just "p1" ) ])
+                    |> Expect.equal (Ok { preferencias = [ ( "a", Just "p1" ) ], ilegibles = [] })
         , test "un grupo que no es un objeto no afecta a los demás" <|
             \_ ->
                 decodificar """{ "a": "basura", "b": { "participanteId": "p1" } }"""
-                    |> Expect.equal (Ok [ ( "a", Nothing ), ( "b", Just "p1" ) ])
+                    |> Expect.equal (Ok { preferencias = [ ( "a", Nothing ), ( "b", Just "p1" ) ], ilegibles = [ "grupo" ] })
         , test "si no es un objeto no hay preferencias" <|
             \_ ->
                 decodificar "null"
-                    |> Expect.equal (Ok [])
+                    |> Expect.equal (Ok { preferencias = [], ilegibles = [ "preferencias" ] })
         ]

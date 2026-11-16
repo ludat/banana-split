@@ -26,6 +26,7 @@ import Route exposing (Route)
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Time
+import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toast
 import Utils.Toasts.Types exposing (ToastLevel(..))
 
@@ -40,7 +41,7 @@ type alias Flags =
     , timeZone : String
     , lastReadChangelog : Maybe Int
     , repartijaIntroDismissed : Bool
-    , preferenciasDeGrupos : Dict ULID PreferenciasDeGrupo
+    , preferenciasDeGrupos : PreferenciasDeGrupo.Leidas
     , origin : String
     , initialData : Maybe InitialData
     }
@@ -64,7 +65,7 @@ decoder =
         (Json.Decode.field "repartijaIntroDismissed" Json.Decode.bool)
         (Json.Decode.oneOf
             [ Json.Decode.field "preferenciasDeGrupos" PreferenciasDeGrupo.decoder
-            , Json.Decode.succeed Dict.empty
+            , Json.Decode.succeed { preferencias = Dict.empty, ilegibles = [ "preferencias" ] }
             ]
         )
         (Json.Decode.field "origin" Json.Decode.string)
@@ -96,7 +97,7 @@ init possiblyFlags _ =
                     , timeZone = "UTC"
                     , lastReadChangelog = Nothing
                     , repartijaIntroDismissed = False
-                    , preferenciasDeGrupos = Dict.empty
+                    , preferenciasDeGrupos = { preferencias = Dict.empty, ilegibles = [] }
                     , origin = ""
                     , initialData = Nothing
                     }
@@ -126,7 +127,7 @@ init possiblyFlags _ =
     ( { toasties = Toast.initialState
       , store = Store.empty
       , participanteElegido = Dict.empty
-      , preferenciasDeGrupos = flags.preferenciasDeGrupos
+      , preferenciasDeGrupos = flags.preferenciasDeGrupos.preferencias
       , currentUser = currentUser
       , now = now
       , today = Date.fromPosix timezone now
@@ -139,7 +140,10 @@ init possiblyFlags _ =
       , repartijaIntroDismissed = flags.repartijaIntroDismissed
       , origin = flags.origin
       }
-    , refrescarSesion
+    , Effect.batch
+        [ refrescarSesion
+        , Effect.telemetryEvent (Telemetry.preferenciasIlegibles flags.preferenciasDeGrupos.ilegibles)
+        ]
     )
 
 

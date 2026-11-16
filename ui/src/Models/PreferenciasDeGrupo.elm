@@ -1,4 +1,4 @@
-module Models.PreferenciasDeGrupo exposing (CambioDePreferencia(..), PreferenciasDeGrupo, aplicar, decoder, encodeCambio, vacias)
+module Models.PreferenciasDeGrupo exposing (CambioDePreferencia(..), Leidas, PreferenciasDeGrupo, aplicar, decoder, encodeCambio, vacias)
 
 {-| Lo que cada persona configura para un grupo en este navegador. Cada campo
 es una clave aparte de localStorage con el valor como string (ver
@@ -27,36 +27,72 @@ vacias =
     }
 
 
-{-| `{ grupoId: { campo: valor } }`.
+{-| `ilegibles` es qué no se pudo leer, para reportarlo: el nombre de cada campo
+que no se entendió, `"grupo"` por cada grupo que no era un objeto y
+`"preferencias"` si no lo era el total. Los campos desconocidos no cuentan:
+pueden ser de una versión más nueva.
 -}
-decoder : Json.Decode.Decoder (Dict ULID PreferenciasDeGrupo)
-decoder =
-    Json.Decode.value
-        |> Json.Decode.map
-            (\todas ->
-                objeto todas
-                    |> Dict.map (\_ campos -> desdeCampos (objeto campos))
-            )
-
-
-{-| Lo que no es un objeto cuenta como uno vacío.
--}
-objeto : Json.Decode.Value -> Dict String Json.Decode.Value
-objeto =
-    Json.Decode.decodeValue (Json.Decode.dict Json.Decode.value)
-        >> Result.withDefault Dict.empty
-
-
-desdeCampos : Dict String Json.Decode.Value -> PreferenciasDeGrupo
-desdeCampos campos =
-    { participanteId = campo "participanteId" Json.Decode.string campos
+type alias Leidas =
+    { preferencias : Dict ULID PreferenciasDeGrupo
+    , ilegibles : List String
     }
 
 
-campo : String -> Json.Decode.Decoder a -> Dict String Json.Decode.Value -> Maybe a
+{-| `{ grupoId: { campo: valor } }`. Nunca falla.
+-}
+decoder : Json.Decode.Decoder Leidas
+decoder =
+    Json.Decode.map leer Json.Decode.value
+
+
+leer : Json.Decode.Value -> Leidas
+leer todas =
+    case objeto todas of
+        Just grupos ->
+            let
+                leidos =
+                    Dict.map (\_ -> leerGrupo) grupos
+            in
+            { preferencias = Dict.map (\_ -> Tuple.first) leidos
+            , ilegibles = leidos |> Dict.values |> List.concatMap Tuple.second
+            }
+
+        Nothing ->
+            { preferencias = Dict.empty, ilegibles = [ "preferencias" ] }
+
+
+leerGrupo : Json.Decode.Value -> ( PreferenciasDeGrupo, List String )
+leerGrupo valor =
+    case objeto valor of
+        Just campos ->
+            let
+                ( participanteId, ilegiblesDeParticipanteId ) =
+                    campo "participanteId" Json.Decode.string campos
+            in
+            ( { participanteId = participanteId }, ilegiblesDeParticipanteId )
+
+        Nothing ->
+            ( vacias, [ "grupo" ] )
+
+
+objeto : Json.Decode.Value -> Maybe (Dict String Json.Decode.Value)
+objeto =
+    Json.Decode.decodeValue (Json.Decode.dict Json.Decode.value) >> Result.toMaybe
+
+
+campo : String -> Json.Decode.Decoder a -> Dict String Json.Decode.Value -> ( Maybe a, List String )
 campo nombre decoderDelValor campos =
-    Dict.get nombre campos
-        |> Maybe.andThen (Json.Decode.decodeValue decoderDelValor >> Result.toMaybe)
+    case Dict.get nombre campos of
+        Just valor ->
+            case Json.Decode.decodeValue decoderDelValor valor of
+                Ok leido ->
+                    ( Just leido, [] )
+
+                Err _ ->
+                    ( Nothing, [ nombre ] )
+
+        Nothing ->
+            ( Nothing, [] )
 
 
 {-| Se cambia de a un campo, así lo que se guarda es sólo esa clave y no se

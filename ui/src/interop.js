@@ -44,13 +44,22 @@ const clavesQueMatchean = (regex) => {
 };
 
 const migrarCurrentUser = () => {
-  for (const [vieja, grupoId] of clavesQueMatchean(CURRENT_USER_KEY)) {
+  const viejas = clavesQueMatchean(CURRENT_USER_KEY);
+  if (viejas.length === 0) return;
+  let migradas = 0;
+  for (const [vieja, grupoId] of viejas) {
     const nueva = preferenciaKey(grupoId, "participanteId");
     if (localStorage.getItem(nueva) === null) {
       localStorage.setItem(nueva, localStorage.getItem(vieja));
+      migradas++;
     }
     localStorage.removeItem(vieja);
   }
+  // Las descartadas son las que ya tenían la preferencia nueva.
+  recordEvent("app.preferencias.migrated", {
+    "app.preferencias.migrated_count": migradas,
+    "app.preferencias.discarded_count": viejas.length - migradas,
+  });
 };
 
 // { grupoId: { campo: valor } }
