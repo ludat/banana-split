@@ -23,7 +23,7 @@ import View exposing (View)
 page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route shared.store
+        { init = \() -> init route shared
         , update = update
         , subscriptions = subscriptions
         , view = view shared.timezone (Shared.currentParticipante shared route.params.grupoId) shared.store
@@ -47,19 +47,17 @@ update msg model =
             ( model, Effect.replaceRoute ruta )
 
 
-init : Route { grupoId : String } -> Store -> ( Model, Effect Msg )
-init route store =
+init : Route { grupoId : String } -> Shared.Model -> ( Model, Effect Msg )
+init route shared =
     let
         grupoId =
             route.params.grupoId
     in
     ( { grupoId = grupoId }
     , Effect.batch
-        [ Store.ensureGrupo grupoId store
-        , Store.ensureTransferencias grupoId store
-        , -- Los gastos los pide Shared cuando resuelve el participante, que
-          -- es lo que este mensaje dispara.
-          Effect.getCurrentUser grupoId
+        [ Store.ensureGrupo grupoId shared.store
+        , Store.ensureTransferencias grupoId shared.store
+        , Store.ensurePagos grupoId (Shared.currentParticipante shared grupoId) shared.store
         ]
     )
 

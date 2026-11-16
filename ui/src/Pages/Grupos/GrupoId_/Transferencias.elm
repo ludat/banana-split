@@ -58,7 +58,6 @@ init grupoId store =
         [ Store.ensureResumen grupoId store
         , Store.ensureTransferencias grupoId store
         , Store.ensureGrupo grupoId store
-        , Effect.getCurrentUser grupoId
         ]
     )
 

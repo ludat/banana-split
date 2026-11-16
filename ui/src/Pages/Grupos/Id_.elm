@@ -36,7 +36,7 @@ import View exposing (View)
 page : Shared.Model -> Route { id : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route shared.store
+        { init = \() -> init route shared
         , update = update
         , subscriptions = subscriptions
         , view = view shared.store shared.timezone shared.now (Shared.currentParticipante shared route.params.id)
@@ -51,8 +51,8 @@ type alias Model =
     }
 
 
-init : Route { id : String } -> Store -> ( Model, Effect Msg )
-init route store =
+init : Route { id : String } -> Shared.Model -> ( Model, Effect Msg )
+init route shared =
     let
         grupoId =
             route.params.id
@@ -62,12 +62,10 @@ init route store =
       , confirmando = Nothing
       }
     , Effect.batch
-        [ Store.ensureResumen grupoId store
-        , Store.ensureTransferencias grupoId store
-        , Store.ensureGrupo grupoId store
-        , -- Los gastos los pide Shared cuando resuelve el participante, que es
-          -- lo que este mensaje dispara.
-          Effect.getCurrentUser grupoId
+        [ Store.ensureResumen grupoId shared.store
+        , Store.ensureTransferencias grupoId shared.store
+        , Store.ensureGrupo grupoId shared.store
+        , Store.ensurePagos grupoId (Shared.currentParticipante shared grupoId) shared.store
         , Effect.setUnsavedChangesWarning False
         ]
     )
