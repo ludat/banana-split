@@ -18,7 +18,8 @@ import Http
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
-import Models.Grupo exposing (GrupoLike, claimErrorMessage, currentParticipante, estaCongelado, grupoIdFromPath, ownedParticipante, participanteErrorFromHttp)
+import Models.Grupo exposing (GrupoLike, claimErrorMessage, estaCongelado, findParticipante, grupoIdFromPath, ownedParticipante, participanteErrorFromHttp)
+import Models.PreferenciasDeGrupo exposing (CambioDePreferencia(..))
 import Models.Repartija as Repartija
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -27,8 +28,8 @@ import QRCode
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Route.Path as Path
-import Shared.Model as Shared
-import Shared.Msg as Shared
+import Shared
+import Shared.Msg
 import Svg.Attributes as SvgAttr
 import Task
 import Utils.Form exposing (CustomFormError, anyString, isDataModifyingEvent, textInput)
@@ -43,6 +44,10 @@ type alias Props =
 
 layout : Props -> Shared.Model -> Route () -> Layout Layouts.Default.Props Model Msg contentMsg
 layout _ shared route =
+    let
+        grupoId =
+            grupoIdFromPath route.path
+    in
     Layout.new
         { init = \() -> init (TransferenciaModal.context shared route) route
         , update =
@@ -52,7 +57,14 @@ layout _ shared route =
                 }
                 shared.store
                 shared.currentUser
-        , view = view (TransferenciaModal.context shared route) shared.store route.path shared.participanteId shared.origin shared.currentUser
+        , view =
+            view (TransferenciaModal.context shared route)
+                shared.store
+                route.path
+                (grupoId |> Maybe.andThen (Shared.currentParticipante shared))
+                (grupoId |> Maybe.andThen (Shared.participantePropio shared))
+                shared.origin
+                shared.currentUser
         , subscriptions = subscriptions
         }
         |> Layout.withParentProps {}
@@ -137,6 +149,8 @@ type Msg
     | CerrarAgregarme
     | AgregarmeForm Form.Msg
     | GotAgregarme (Result ErrorAlAgregarme Participante)
+    | VerComoParticipante ULID ULID
+    | IdentificarseComo ULID ULID
     | NoOp
 
 
@@ -230,8 +244,7 @@ update ctx store currentUser msg model =
                     ( { model | agregarme = Nothing }
                     , Effect.batch
                         [ Store.refreshGrupo agregarme.grupoId
-                        , Effect.sendSharedMsg <|
-                            Shared.SetCurrentParticipante { grupoId = agregarme.grupoId, participanteId = Just p.id }
+                        , identificarseComo currentUser agregarme.grupoId p
                         , Effect.sendToast { level = ToastSuccess, content = "Te agregamos al grupo como " ++ p.nombre }
                         ]
                     )
@@ -259,6 +272,20 @@ update ctx store currentUser msg model =
             , Effect.sendSharedMsg sharedMsg
             )
 
+        VerComoParticipante grupoId participanteId ->
+            ( model
+            , Effect.sendSharedMsg <|
+                Shared.Msg.SetCurrentParticipante { grupoId = grupoId, participanteId = participanteId }
+            )
+
+        IdentificarseComo grupoId participanteId ->
+            case Store.getGrupo grupoId store |> RemoteData.toMaybe |> Maybe.andThen (\grupo -> findParticipante grupo participanteId) of
+                Just p ->
+                    ( model, identificarseComo currentUser grupoId p )
+
+                Nothing ->
+                    ( model, Effect.none )
+
         ShareUrl data ->
             ( model
             , Effect.share data
@@ -273,6 +300,34 @@ update ctx store currentUser msg model =
             ( { model | qrShare = Nothing }
             , Effect.none
             )
+
+
+{-| Elegirse en la bienvenida o agregarse al grupo es decir quién sos acá. Sin
+cuenta queda en los ajustes. Con cuenta lo que vale es el reclamo: si nadie lo
+reclamó se reclama, y si ya es de alguien (o ya es tuyo, recién agregado) sólo
+cambia la sesión, como `VerComoParticipante`.
+-}
+identificarseComo : WebData User -> ULID -> Participante -> Effect Msg
+identificarseComo currentUser grupoId participante =
+    case currentUser of
+        Success _ ->
+            Effect.sendSharedMsg <|
+                -- Sin dueño: reclamarlo es lo que hace que la próxima vez no
+                -- haya que volver a elegir.
+                if participante.user == Nothing then
+                    Shared.Msg.ClaimParticipante { grupoId = grupoId, participanteId = participante.id }
+
+                else
+                    Shared.Msg.SetCurrentParticipante { grupoId = grupoId, participanteId = participante.id }
+
+        NotAsked ->
+            Effect.cambiarPreferenciaDeGrupo grupoId (ParticipanteId (Just participante.id))
+
+        Loading ->
+            Effect.cambiarPreferenciaDeGrupo grupoId (ParticipanteId (Just participante.id))
+
+        Failure _ ->
+            Effect.cambiarPreferenciaDeGrupo grupoId (ParticipanteId (Just participante.id))
 
 
 enviarAgregarme : WebData User -> Agregarme -> Model -> ( Model, Effect Msg )
@@ -327,26 +382,17 @@ view :
     -> Store
     -> Path.Path
     -> Maybe ULID
+    -> Maybe ULID
     -> String
     -> WebData User
     -> { toContentMsg : Msg -> contentMsg, content : View contentMsg, model : Model }
     -> View contentMsg
-view transferenciaCtx store currentPath manualPick origin currentUser { toContentMsg, model, content } =
+view transferenciaCtx store currentPath activeUser propio origin currentUser { toContentMsg, model, content } =
     let
         remoteGrupo =
             grupoIdFromPath currentPath
                 |> Maybe.map (\grupoId -> Store.getGrupo grupoId store)
                 |> Maybe.withDefault NotAsked
-
-        -- The participante to act as: the manual pick, or the participante the
-        -- logged-in account owns in this grupo (derived, never persisted).
-        activeUser =
-            case remoteGrupo of
-                Success grupo ->
-                    currentParticipante manualPick currentUser grupo
-
-                _ ->
-                    manualPick
     in
     { title = content.title
     , body =
@@ -363,7 +409,7 @@ view transferenciaCtx store currentPath manualPick origin currentUser { toConten
         , case remoteGrupo of
             Success grupo ->
                 Html.map toContentMsg <|
-                    viewGroupHeader origin currentPath activeUser currentUser store grupo
+                    viewGroupHeader origin currentPath activeUser propio currentUser store grupo
 
             _ ->
                 text ""
@@ -473,8 +519,8 @@ view transferenciaCtx store currentPath manualPick origin currentUser { toConten
     }
 
 
-viewGroupHeader : String -> Path.Path -> Maybe ULID -> WebData User -> Store -> Grupo -> Html Msg
-viewGroupHeader origin currentPath activeUser currentUser store grupo =
+viewGroupHeader : String -> Path.Path -> Maybe ULID -> Maybe ULID -> WebData User -> Store -> Grupo -> Html Msg
+viewGroupHeader origin currentPath activeUser propio currentUser store grupo =
     let
         info =
             headerInfo currentPath store currentUser grupo
@@ -488,7 +534,7 @@ viewGroupHeader origin currentPath activeUser currentUser store grupo =
         viewGroupHeaderDeBienvenida activeUser info share grupo
 
     else
-        viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info share
+        viewGroupHeaderCompleto currentPath activeUser propio currentUser store grupo info share
 
 
 {-| Mientras no eligió quién es, todavía no hay nada que hacer en el grupo: ni
@@ -519,8 +565,8 @@ viewGroupHeaderDeBienvenida activeUser info share grupo =
         ]
 
 
-viewGroupHeaderCompleto : Path.Path -> Maybe ULID -> WebData User -> Store -> Grupo -> HeaderInfo -> { title : String, url : String } -> Html Msg
-viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info share =
+viewGroupHeaderCompleto : Path.Path -> Maybe ULID -> Maybe ULID -> WebData User -> Store -> Grupo -> HeaderInfo -> { title : String, url : String } -> Html Msg
+viewGroupHeaderCompleto currentPath activeUser propio currentUser store grupo info share =
     div [ Attr.id "grupo-header", class "border-bottom" ]
         [ div [ class "container-fluid py-3" ]
             [ div [ class "d-flex flex-wrap align-items-start justify-content-between gap-3" ]
@@ -542,7 +588,7 @@ viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info shar
                         [ text "Ver como:"
                         , viewGlobalUserSelector activeUser grupo
                         ]
-                    , viewVerComoWarning currentUser activeUser grupo
+                    , viewVerComoWarning currentUser propio activeUser grupo
                     , div [ class "d-flex flex-wrap align-items-center gap-2" ]
                         [ viewShareDropdown textoCompartir share
 
@@ -566,7 +612,7 @@ viewGroupHeaderCompleto currentPath activeUser currentUser store grupo info shar
                     [ text "Ver como:"
                     , viewGlobalUserSelector activeUser grupo
                     ]
-                , viewVerComoWarning currentUser activeUser grupo
+                , viewVerComoWarning currentUser propio activeUser grupo
 
                 -- Compartir vive en el menú "Más" de la navbar inferior, pero
                 -- esa navbar solo existe en las secciones con tabs. Donde no
@@ -724,52 +770,65 @@ viewBadgeCongelado store grupo =
         text ""
 
 
-{-| Inline warning shown next to the "Ver como" toggle when a logged-in user is
-acting as a participante that isn't theirs. If that participante is unclaimed we
-offer a quick "reclamar"; if it's taken by someone else we just warn.
+{-| "No sos vos" cuando se está mirando como alguien que no es el propio. Con
+cuenta el propio es el que reclamaste y no lo guardado en el navegador
+(`Shared.participantePropio`), así que aparece aunque todavía no hayas
+reclamado a nadie, y si nadie reclamó a este, ofrece "reclamar".
 -}
-viewVerComoWarning : WebData User -> Maybe ULID -> Grupo -> Html Msg
-viewVerComoWarning currentUser activeUser grupo =
-    case ( currentUser, activeUser ) of
-        ( Success u, Just uid ) ->
-            case grupo.participantes |> List.filter (\p -> p.id == uid) |> List.head of
-                Just p ->
-                    if (p.user |> Maybe.map .id) == Just u.id then
-                        text ""
+viewVerComoWarning : WebData User -> Maybe ULID -> Maybe ULID -> Grupo -> Html Msg
+viewVerComoWarning currentUser guardado activeUser grupo =
+    case activeUser |> Maybe.andThen (findParticipante grupo) of
+        Just p ->
+            let
+                cuenta =
+                    RemoteData.toMaybe currentUser
 
-                    else
-                        let
-                            -- Only offer a quick "reclamar" when the participante
-                            -- is unclaimed AND the user doesn't already own one in
-                            -- the grupo (a user owns at most one).
-                            canClaim =
+                propio =
+                    case cuenta of
+                        Just u ->
+                            ownedParticipante u.id grupo |> Maybe.map .id
+
+                        Nothing ->
+                            guardado
+            in
+            if propio /= Just p.id && (propio /= Nothing || cuenta /= Nothing) then
+                let
+                    -- Only offer a quick "reclamar" when the participante is
+                    -- unclaimed AND the user doesn't already own one in the
+                    -- grupo (a user owns at most one).
+                    canClaim =
+                        case cuenta of
+                            Just u ->
                                 p.user == Nothing && ownedParticipante u.id grupo == Nothing
-                        in
-                        div [ class "d-flex align-items-center gap-1 text-warning small" ]
-                            (i [ class "bi bi-exclamation-triangle" ] []
-                                :: text "No sos vos"
-                                :: (if canClaim then
-                                        [ button
-                                            [ type_ "button"
-                                            , class "btn btn-sm btn-link p-0 text-decoration-none align-baseline"
-                                            , Telemetry.click "grupo.claim_from_warning"
-                                            , onClick
-                                                (ForwardSharedMessage <|
-                                                    Shared.ClaimParticipante { grupoId = grupo.id, participanteId = p.id }
-                                                )
-                                            ]
-                                            [ text "reclamar" ]
-                                        ]
 
-                                    else
-                                        []
-                                   )
-                            )
+                            Nothing ->
+                                False
+                in
+                div [ class "d-flex align-items-center gap-1 text-warning small" ]
+                    (i [ class "bi bi-exclamation-triangle" ] []
+                        :: text "No sos vos"
+                        :: (if canClaim then
+                                [ button
+                                    [ type_ "button"
+                                    , class "btn btn-sm btn-link p-0 text-decoration-none align-baseline"
+                                    , Telemetry.click "grupo.claim_from_warning"
+                                    , onClick
+                                        (ForwardSharedMessage <|
+                                            Shared.Msg.ClaimParticipante { grupoId = grupo.id, participanteId = p.id }
+                                        )
+                                    ]
+                                    [ text "reclamar" ]
+                                ]
 
-                Nothing ->
-                    text ""
+                            else
+                                []
+                           )
+                    )
 
-        _ ->
+            else
+                text ""
+
+        Nothing ->
             text ""
 
 
@@ -1417,8 +1476,9 @@ viewGlobalUserSelector : Maybe ULID -> GrupoLike r -> Html Msg
 viewGlobalUserSelector activeUser grupo =
     viewSelectorDeParticipante
         { attrs = [ class "form-select form-select-sm" ]
-        , vacio = option [ value "", selected (activeUser == Nothing) ] [ text "" ]
+        , vacio = option [ value "", selected (activeUser == Nothing), Attr.hidden True, Attr.disabled True ] [ text "" ]
         , opcion = []
+        , alElegir = VerComoParticipante grupo.id
         }
         activeUser
         grupo
@@ -1441,13 +1501,17 @@ viewSelectorDeBienvenida activeUser grupo =
             option [ value "", selected (activeUser == Nothing), Attr.hidden True, Attr.disabled True ]
                 [ text "Participantes de este grupo" ]
         , opcion = [ class "bg-body text-body" ]
+        , alElegir = IdentificarseComo grupo.id
         }
         activeUser
         grupo
 
 
+{-| La opción vacía es sólo un placeholder (va `disabled`): elegir "nadie"
+nunca es válido, así que si igual llega no manda nada.
+-}
 viewSelectorDeParticipante :
-    { attrs : List (Html.Attribute Msg), vacio : Html Msg, opcion : List (Html.Attribute Msg) }
+    { attrs : List (Html.Attribute Msg), vacio : Html Msg, opcion : List (Html.Attribute Msg), alElegir : ULID -> Msg }
     -> Maybe ULID
     -> GrupoLike r
     -> Html Msg
@@ -1455,18 +1519,13 @@ viewSelectorDeParticipante config activeUser grupo =
     select
         (on "change"
             (Decode.at [ "target", "value" ] Decode.string
-                |> Decode.map
+                |> Decode.andThen
                     (\value ->
-                        ForwardSharedMessage <|
-                            Shared.SetCurrentParticipante
-                                { grupoId = grupo.id
-                                , participanteId =
-                                    if value == "" then
-                                        Nothing
+                        if value == "" then
+                            Decode.fail "el placeholder no se elige"
 
-                                    else
-                                        Just value
-                                }
+                        else
+                            Decode.succeed (config.alElegir value)
                     )
             )
             :: config.attrs

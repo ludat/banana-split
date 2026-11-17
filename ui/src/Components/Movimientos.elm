@@ -9,7 +9,8 @@ import Components.PagoDetalleModal as PagoDetalleModal
 import Components.ResumenGasto as ResumenGasto
 import Components.TransferenciaModal as TransferenciaModal
 import Date exposing (Date)
-import Generated.Api exposing (Grupo, ShallowPago, Transferencia, ULID)
+import Dict exposing (Dict)
+import Generated.Api exposing (Grupo, PagadoYConsumido, ShallowPago, Transferencia, ULID)
 import Html exposing (Html, a, div, i, text)
 import Html.Attributes as Attr exposing (class, style)
 import Models.Transferencia
@@ -85,13 +86,15 @@ porId =
 
 {-| Una fila de la lista, con su clave para `Bs.listGroupKeyed`. `desde` es la
 página sobre la que se abren los popups y `telemetria`, el prefijo de los
-eventos de click (`"gastos"`, `"resumen"`).
+eventos de click (`"gastos"`, `"resumen"`). `pagadoYConsumido` es el del
+participante que mira, por gasto.
 -}
 viewMovimiento :
     { abrirPopup : PagoDetalleModal.Ruta -> msg
     , desde : Path.Path
     , telemetria : String
     , participanteId : Maybe ULID
+    , pagadoYConsumido : Dict ULID PagadoYConsumido
     , grupo : Grupo
     }
     -> Movimiento
@@ -106,7 +109,7 @@ viewMovimiento config movimiento =
 
 
 viewPago :
-    { r | abrirPopup : PagoDetalleModal.Ruta -> msg, desde : Path.Path, telemetria : String, participanteId : Maybe ULID, grupo : Grupo }
+    { r | abrirPopup : PagoDetalleModal.Ruta -> msg, desde : Path.Path, telemetria : String, pagadoYConsumido : Dict ULID PagadoYConsumido, grupo : Grupo }
     -> ShallowPago
     -> Html msg
 viewPago config pago =
@@ -118,7 +121,7 @@ viewPago config pago =
                 :: PagoDetalleModal.linkAGasto config.abrirPopup config.desde pago.pagoId
             )
             [ viewFecha pago.fecha
-            , ResumenGasto.viewFila config.participanteId config.grupo.monedaPorDefecto pago
+            , ResumenGasto.viewFila (Dict.get pago.pagoId config.pagadoYConsumido) config.grupo.monedaPorDefecto pago
             , ResumenGasto.viewIconoInvalido pago
             , ResumenGasto.viewBadgeRepartija pago
             ]

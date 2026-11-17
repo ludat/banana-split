@@ -5,6 +5,7 @@ import Components.Bootstrap as Bs
 import Components.Movimientos as Movimientos
 import Components.PagoDetalleModal as PagoDetalleModal
 import Components.ResumenGasto as ResumenGasto
+import Dict
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Grupo, Moneda, Netos, ULID)
 import Html exposing (Html, a, button, div, i, li, p, span, table, tbody, td, text, th, thead, tr, ul)
@@ -36,7 +37,7 @@ import View exposing (View)
 page : Shared.Model -> Route { id : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route shared.store
+        { init = \() -> init route shared
         , update = update
         , subscriptions = subscriptions
         , view = view shared.store shared.timezone shared.now (Shared.currentParticipante shared route.params.id)
@@ -51,8 +52,8 @@ type alias Model =
     }
 
 
-init : Route { id : String } -> Store -> ( Model, Effect Msg )
-init route store =
+init : Route { id : String } -> Shared.Model -> ( Model, Effect Msg )
+init route shared =
     let
         grupoId =
             route.params.id
@@ -62,12 +63,13 @@ init route store =
       , confirmando = Nothing
       }
     , Effect.batch
-        [ Store.ensureResumen grupoId store
-        , Store.ensureTransferencias grupoId store
-        , Store.ensureGrupo grupoId store
-        , -- Los gastos los pide Shared cuando resuelve el participante, que es
-          -- lo que este mensaje dispara.
-          Effect.getCurrentUser grupoId
+        [ Store.ensureResumen grupoId shared.store
+        , Store.ensureTransferencias grupoId shared.store
+        , Store.ensureGrupo grupoId shared.store
+        , Store.ensurePagos grupoId shared.store
+        , Shared.currentParticipante shared grupoId
+            |> Maybe.map (\participanteId -> Store.ensurePagadoYConsumido grupoId participanteId shared.store)
+            |> Maybe.withDefault Effect.none
         , Effect.setUnsavedChangesWarning False
         ]
     )
@@ -946,6 +948,10 @@ viewUltimosMovimientosCard zone participanteId store model grupo =
                                 , desde = Path.Grupos_Id_ { id = grupo.id }
                                 , telemetria = "resumen"
                                 , participanteId = participanteId
+                                , pagadoYConsumido =
+                                    participanteId
+                                        |> Maybe.map (\participante -> Store.getPagadoYConsumido model.grupoId participante store |> RemoteData.withDefault Dict.empty)
+                                        |> Maybe.withDefault Dict.empty
                                 , grupo = grupo
                                 }
                             )

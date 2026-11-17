@@ -13,6 +13,7 @@ import Html.Events exposing (onClick, onSubmit)
 import Layouts
 import Models.Moneda as Moneda
 import Models.Monto as Monto
+import Models.PreferenciasDeGrupo exposing (CambioDePreferencia(..))
 import Page exposing (Page)
 import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
@@ -196,10 +197,15 @@ update shared msg model =
         GrupoCreated grupo ->
             ( { model | form = Form.initial [] validation }
             , Effect.batch
-                [ -- Automatically select the first participante as current user
+                [ -- Quien crea el grupo es el primer participante. Con cuenta ya
+                  -- viene reclamado, así que no hay nada que guardar.
                   case grupo.participantes of
                     participante :: _ ->
-                        Effect.saveCurrentUser grupo.id participante.id
+                        if participante.user /= Nothing then
+                            Effect.none
+
+                        else
+                            Effect.cambiarPreferenciaDeGrupo grupo.id (ParticipanteId (Just participante.id))
 
                     [] ->
                         Effect.none

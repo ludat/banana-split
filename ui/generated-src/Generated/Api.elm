@@ -941,7 +941,7 @@ type alias ShallowPago  =
    , monto: Monto
    , moneda: Moneda
    , fecha: Day
-   , resumen: ResumenGasto
+   , resumen: ResumenGastoForFrontend
    }
 
 jsonDecShallowPago : Json.Decode.Decoder ( ShallowPago )
@@ -952,7 +952,7 @@ jsonDecShallowPago =
    |> required "monto" (jsonDecMonto)
    |> required "moneda" (jsonDecMoneda)
    |> required "fecha" (jsonDecDay)
-   |> required "resumen" (jsonDecResumenGasto)
+   |> required "resumen" (jsonDecResumenGastoForFrontend)
 
 jsonEncShallowPago : ShallowPago -> Value
 jsonEncShallowPago  val =
@@ -962,7 +962,53 @@ jsonEncShallowPago  val =
    , ("monto", jsonEncMonto val.monto)
    , ("moneda", jsonEncMoneda val.moneda)
    , ("fecha", jsonEncDay val.fecha)
-   , ("resumen", jsonEncResumenGasto val.resumen)
+   , ("resumen", jsonEncResumenGastoForFrontend val.resumen)
+   ]
+
+
+
+type alias ResumenGastoForFrontend  =
+   { errores: (List ErrorResumen)
+   , participantesEnRepartija: (Maybe (List ParticipanteId))
+   , noConsumieronEnRepartija: (List ParticipanteId)
+   }
+
+jsonDecResumenGastoForFrontend : Json.Decode.Decoder ( ResumenGastoForFrontend )
+jsonDecResumenGastoForFrontend =
+   Json.Decode.succeed (\perrores pparticipantesEnRepartija pnoConsumieronEnRepartija -> {errores = perrores, participantesEnRepartija = pparticipantesEnRepartija, noConsumieronEnRepartija = pnoConsumieronEnRepartija})
+   |> required "errores" (Json.Decode.list (jsonDecErrorResumen))
+   |> fnullable "participantesEnRepartija" (Json.Decode.list (jsonDecParticipanteId))
+   |> required "noConsumieronEnRepartija" (Json.Decode.list (jsonDecParticipanteId))
+
+jsonEncResumenGastoForFrontend : ResumenGastoForFrontend -> Value
+jsonEncResumenGastoForFrontend  val =
+   Json.Encode.object
+   [ ("errores", (Json.Encode.list jsonEncErrorResumen) val.errores)
+   , ("participantesEnRepartija", (maybeEncode ((Json.Encode.list jsonEncParticipanteId))) val.participantesEnRepartija)
+   , ("noConsumieronEnRepartija", (Json.Encode.list jsonEncParticipanteId) val.noConsumieronEnRepartija)
+   ]
+
+
+
+type alias PagadoYConsumido  =
+   { pagoId: ULID
+   , pagado: Monto
+   , consumido: Monto
+   }
+
+jsonDecPagadoYConsumido : Json.Decode.Decoder ( PagadoYConsumido )
+jsonDecPagadoYConsumido =
+   Json.Decode.succeed (\ppagoId ppagado pconsumido -> {pagoId = ppagoId, pagado = ppagado, consumido = pconsumido})
+   |> required "pagoId" (jsonDecULID)
+   |> required "pagado" (jsonDecMonto)
+   |> required "consumido" (jsonDecMonto)
+
+jsonEncPagadoYConsumido : PagadoYConsumido -> Value
+jsonEncPagadoYConsumido  val =
+   Json.Encode.object
+   [ ("pagoId", jsonEncULID val.pagoId)
+   , ("pagado", jsonEncMonto val.pagado)
+   , ("consumido", jsonEncMonto val.consumido)
    ]
 
 
@@ -1770,15 +1816,13 @@ postGrupoByIdPagos capture_id body toMsg =
                 Nothing
             }
 
-getGrupoByIdPagos : ULID -> (Maybe ULID) -> (Result Http.Error  ((List ShallowPago))  -> msg) -> Cmd msg
-getGrupoByIdPagos capture_id query_participante toMsg =
+getGrupoByIdPagos : ULID -> (Result Http.Error  ((List ShallowPago))  -> msg) -> Cmd msg
+getGrupoByIdPagos capture_id toMsg =
     let
         params =
             List.filterMap identity
             (List.concat
-                [ [ query_participante
-                    |> Maybe.map (Url.Builder.string "participante") ]
-                ])
+                [])
     in
         Http.request
             { method =
@@ -1796,6 +1840,38 @@ getGrupoByIdPagos capture_id query_participante toMsg =
                 Http.emptyBody
             , expect =
                 Http.expectJson toMsg (Json.Decode.list (jsonDecShallowPago))
+            , timeout =
+                Nothing
+            , tracker =
+                Nothing
+            }
+
+getGrupoByIdParticipantesByParticipanteIdPagadoyconsumido : ULID -> ULID -> (Result Http.Error  ((List PagadoYConsumido))  -> msg) -> Cmd msg
+getGrupoByIdParticipantesByParticipanteIdPagadoyconsumido capture_id capture_participanteId toMsg =
+    let
+        params =
+            List.filterMap identity
+            (List.concat
+                [])
+    in
+        Http.request
+            { method =
+                "GET"
+            , headers =
+                []
+            , url =
+                Url.Builder.crossOrigin "/api"
+                    [ "grupo"
+                    , (capture_id)
+                    , "participantes"
+                    , (capture_participanteId)
+                    , "pagado-y-consumido"
+                    ]
+                    params
+            , body =
+                Http.emptyBody
+            , expect =
+                Http.expectJson toMsg (Json.Decode.list (jsonDecPagadoYConsumido))
             , timeout =
                 Nothing
             , tracker =

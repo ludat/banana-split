@@ -88,14 +88,14 @@ spec =
 
       -- The items add up to the monto, but there are no claims yet, so the pago
       -- is invalid and the stored flag (read shallowly, without recomputing) is False.
-      shallowBefore <- runDb $ fetchShallowPagos grupo.id Nothing
+      shallowBefore <- runDb $ fetchShallowPagos grupo.id
       fmap esValido shallowBefore `shouldBe` [False]
 
       -- Claiming the whole item makes the montos add up. Saving the claim must
       -- update the stored flag on its own, since the resumen no longer recomputes
       -- validity on read.
       _ <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
-      shallowAfter <- runDb $ fetchShallowPagos grupo.id Nothing
+      shallowAfter <- runDb $ fetchShallowPagos grupo.id
       fmap esValido shallowAfter `shouldBe` [True]
 
     it "deleting a claim turns a valid repartija pago invalid again" $ \(RunDb runDb) -> do
@@ -104,12 +104,12 @@ spec =
       let repartija = repartijaDe pago
 
       repartijaConClaim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
-      shallowValid <- runDb $ fetchShallowPagos grupo.id Nothing
+      shallowValid <- runDb $ fetchShallowPagos grupo.id
       fmap esValido shallowValid `shouldBe` [True]
 
       repartijaSinClaim <- runDb $ deleteRepartijaClaim (primerClaim repartijaConClaim).id
       repartijaSinClaim.repartija.claims `shouldBe` []
-      shallowInvalid <- runDb $ fetchShallowPagos grupo.id Nothing
+      shallowInvalid <- runDb $ fetchShallowPagos grupo.id
       fmap esValido shallowInvalid `shouldBe` [False]
 
     it "agregar unidades a un item las saca de la propina y conserva los claims" $ \(RunDb runDb) -> do
@@ -127,7 +127,7 @@ spec =
       (repartijaDe guardado).items `shouldBe` [RepartijaItem item.id "Item" 200 2]
       (repartijaDe guardado).extra `shouldBe` 100
       fmap (.itemId) (repartijaDe guardado).claims `shouldBe` [item.id]
-      shallow <- runDb $ fetchShallowPagos grupo.id Nothing
+      shallow <- runDb $ fetchShallowPagos grupo.id
       fmap esValido shallow `shouldBe` [True]
 
     it "unir dos items mueve los claims del que se borra al que queda" $ \(RunDb runDb) -> do
@@ -177,7 +177,7 @@ spec =
 
       marcada <- runDb $ marcarNoConsumio repartija.id otro
       marcada.repartija.noConsumieron `shouldBe` [otro]
-      gastos <- runDb $ fetchShallowPagos grupo.id Nothing
+      gastos <- runDb $ fetchShallowPagos grupo.id
       fmap (.resumen.noConsumieronEnRepartija) gastos `shouldBe` [[otro]]
 
       desmarcada <- runDb $ desmarcarNoConsumio repartija.id otro
@@ -201,7 +201,7 @@ spec =
       _ <- runDb $ savePago grupo.id pago
       guardada <- runDb $ fetchRepartija repartija.id
       guardada.repartija.noConsumieron `shouldBe` [otro]
-      gastos <- runDb $ fetchShallowPagos grupo.id Nothing
+      gastos <- runDb $ fetchShallowPagos grupo.id
       fmap (.resumen.noConsumieronEnRepartija) gastos `shouldBe` [[otro]]
 
     -- Al terminar la transacción el cache tiene que estar bien, sin depender de
@@ -285,7 +285,7 @@ spec =
       _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
       antes <- runDb $ netosDeGrupo grupo.id
-      _ <- runDb $ fetchShallowPagos grupo.id Nothing
+      _ <- runDb $ fetchShallowPagos grupo.id
       runDb (netosDeGrupo grupo.id) `shouldReturn` antes
 
     -- Mientras corre el backfill de un cambio de formato, los blobs viejos no
@@ -303,10 +303,11 @@ spec =
         ensuciarResumen pago.pagoId $
           Aeson.object [("errores", Aeson.String "un formato que ya no existe")]
 
-      gastos <- runDb $ fetchShallowPagos grupo.id Nothing
+      gastos <- runDb $ fetchShallowPagos grupo.id
       fmap (fmap (.tipo) . (.errores) . (.resumen)) gastos `shouldBe` [[ErrorNoCalculado]]
       fmap esValido gastos `shouldBe` [False]
-      fmap ((.pagado) . (.resumen)) gastos `shouldBe` [netos [(uno, 100), (otro, 0)]]
+      partes <- runDb $ fetchPagadoYConsumido grupo.id uno
+      fmap (.pagado) partes `shouldBe` [100]
       runDb (netosDeGrupo grupo.id)
         `shouldReturn` (netos [(uno, 100), (otro, -100)] `enMoneda` ARS)
 
@@ -315,7 +316,7 @@ spec =
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
       runDb $ borrarResumen pago.pagoId
-      gastos <- runDb $ fetchShallowPagos grupo.id Nothing
+      gastos <- runDb $ fetchShallowPagos grupo.id
       fmap (fmap (.tipo) . (.errores) . (.resumen)) gastos `shouldBe` [[ErrorNoCalculado]]
 
     it "contarGastos cuenta los gastos y los invalidos" $ \(RunDb runDb) -> do
@@ -360,15 +361,14 @@ spec =
       runDb (contarGastos grupo.id) `shouldReturn` ConteoDeGastos{total = 1, invalidos = 0}
       runDb (contarGastos otroGrupo.id) `shouldReturn` ConteoDeGastos{total = 1, invalidos = 1}
 
-    it "con participante trae solo sus netos" $ \(RunDb runDb) -> do
+    it "lo pagado y consumido de un participante es solo lo suyo" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
-      _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
+      pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
 
-      gastos <- runDb $ fetchShallowPagos grupo.id (Just uno)
-      fmap ((.pagado) . (.resumen)) gastos `shouldBe` [netos [(uno, 100)]]
+      partes <- runDb $ fetchPagadoYConsumido grupo.id uno
       -- Con cero, no ausente: se guarda una fila por cada participante que
       -- aparece de alguno de los dos lados, con cero en el que no le toca.
-      fmap ((.consumido) . (.resumen)) gastos `shouldBe` [netos [(uno, 0)]]
+      partes `shouldBe` [PagadoYConsumido{pagoId = pago.pagoId, pagado = 100, consumido = 0}]
 
     -- Filtrar las filas por participante no puede hacer que un gasto donde esa
     -- persona no aparece se vea como cache frío: si no, se recalcularía entero
@@ -383,8 +383,8 @@ spec =
 
       -- Se ensucia el cache a mano: si la lectura lo recalculara, lo pisaría.
       runDb $ ensuciarPagadoYConsumido pago.pagoId
-      gastos <- runDb $ fetchShallowPagos grupo.id (Just tercero)
-      fmap esValido gastos `shouldBe` [True]
+      partes <- runDb $ fetchPagadoYConsumido grupo.id tercero
+      partes `shouldBe` []
 
       -- Si hubiera recalculado, la suciedad se habría ido y los netos darían
       -- los de verdad.
@@ -397,12 +397,12 @@ spec =
       -- puede significar "frío": lo que lo distingue es el resumen guardado.
       _ <- runDb $ savePago grupo.id $ (gastoEntre ARS 100 uno otro){deudores = distribucionVacia}
 
-      gastos <- runDb $ fetchShallowPagos grupo.id Nothing
+      gastos <- runDb $ fetchShallowPagos grupo.id
       fmap esValido gastos `shouldBe` [False]
       fmap ((.errores) . (.resumen)) gastos `shouldNotBe` [[]]
 
 esValido :: ShallowPago -> Bool
-esValido = resumenGastoEsValido . (.resumen)
+esValido = resumenGastoForFrontendEsValido . (.resumen)
 
 grupoConDosParticipantes :: Pg (Grupo, ParticipanteId, ParticipanteId)
 grupoConDosParticipantes = do
@@ -436,7 +436,7 @@ distribucionVacia = distribucionDe []
 -- | Los netos reconstruidos desde las distribuciones, sin pasar por el cache.
 netosRecalculados :: Grupo -> Pg (PorMoneda (Netos Monto))
 netosRecalculados grupo = do
-  shallowPagos <- fetchShallowPagos grupo.id Nothing
+  shallowPagos <- fetchShallowPagos grupo.id
   pagos <- traverse (fetchPago grupo.id . (.pagoId)) shallowPagos
   pure $ calcularNetosTotales pagos
 

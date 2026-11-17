@@ -21,8 +21,64 @@ const applyTheme = (dark) => {
 applyTheme(darkModeQuery.matches);
 darkModeQuery.addEventListener("change", (e) => applyTheme(e.matches));
 
-// Storage key format: "banana-split:grupo:{grupoId}:currentUser"
-const makeStorageKey = (grupoId) => `banana-split:grupo:${grupoId}:currentUser`;
+// Cada preferencia de cada grupo es una clave aparte, con el valor como string:
+// "split:grupo:{grupoId}:preferencia:{campo}". Escribir una no toca las demás,
+// así que las que esta versión no conoce no se pierden, y qué significa cada
+// valor lo decide Elm.
+const PREFERENCIA_KEY = /^split:grupo:([^:]+):preferencia:(.+)$/;
+const preferenciaKey = (grupoId, campo) => `split:grupo:${grupoId}:preferencia:${campo}`;
+
+// La clave de antes, que se escribía con cualquier cambio de participante.
+// Se migra una vez a su preferencia y se borra.
+const CURRENT_USER_KEY = /^banana-split:grupo:([^:]+):currentUser$/;
+
+// Se juntan antes de procesarlas porque procesar puede agregar o borrar claves
+// y correr los índices.
+const clavesQueMatchean = (regex) => {
+  const claves = [];
+  for (let i = 0; i < localStorage.length; i++) {
+    const match = localStorage.key(i).match(regex);
+    if (match) claves.push(match);
+  }
+  return claves;
+};
+
+const migrarCurrentUser = () => {
+  const viejas = clavesQueMatchean(CURRENT_USER_KEY);
+  if (viejas.length === 0) return;
+  let migradas = 0;
+  for (const [vieja, grupoId] of viejas) {
+    const nueva = preferenciaKey(grupoId, "participanteId");
+    if (localStorage.getItem(nueva) === null) {
+      localStorage.setItem(nueva, localStorage.getItem(vieja));
+      migradas++;
+    }
+    localStorage.removeItem(vieja);
+  }
+  // Las descartadas son las que ya tenían la preferencia nueva.
+  recordEvent("app.preferencias.migrated", {
+    "app.preferencias.migrated_count": migradas,
+    "app.preferencias.discarded_count": viejas.length - migradas,
+  });
+};
+
+// { grupoId: { campo: valor } }
+const leerPreferencias = () => {
+  const todas = {};
+  for (const [key, grupoId, campo] of clavesQueMatchean(PREFERENCIA_KEY)) {
+    todas[grupoId] = { ...todas[grupoId], [campo]: localStorage.getItem(key) };
+  }
+  return todas;
+};
+
+// null es borrarla.
+const guardarPreferencia = (grupoId, campo, valor) => {
+  if (valor === null) {
+    localStorage.removeItem(preferenciaKey(grupoId, campo));
+  } else {
+    localStorage.setItem(preferenciaKey(grupoId, campo), valor);
+  }
+};
 
 const beforeUnloadHandler = (event) => {
   event.preventDefault();
@@ -79,12 +135,14 @@ customElements.define(
 export const flags = ({ env }) => {
   const now = new Date();
   const lastReadRaw = localStorage.getItem("banana-split:lastReadChangelog");
+  migrarCurrentUser();
   return {
     now: now.getTime(),
     offset: - now.getTimezoneOffset(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     lastReadChangelog: lastReadRaw ? parseInt(lastReadRaw, 10) : null,
     repartijaIntroDismissed: localStorage.getItem("banana-split:repartijaIntroDismissed") !== null,
+    preferenciasDeGrupos: leerPreferencias(),
     origin: window.location.origin,
     initialData: readInitialData(),
   };
@@ -169,31 +227,10 @@ export const onReady = ({ app, env }) => {
       console.log(tag, data);
 
       switch (tag) {
-        case "SAVE_CURRENT_USER":
-          // data: { grupoId: string, participanteId: string }
-          if (data.grupoId && data.participanteId) {
-            localStorage.setItem(makeStorageKey(data.grupoId), data.participanteId);
-          }
-          break;
-
-        case "CLEAR_CURRENT_USER":
-          // data: { grupoId: string }
+        case "SAVE_PREFERENCIA_DE_GRUPO":
+          // data: { grupoId: string, campo: string, valor: string | null }
           if (data.grupoId) {
-            localStorage.removeItem(makeStorageKey(data.grupoId));
-          }
-          break;
-
-        case "GET_CURRENT_USER":
-          // data: { grupoId: string }
-          if (data.grupoId) {
-            const participanteId = localStorage.getItem(makeStorageKey(data.grupoId));
-            app.ports.incoming.send({
-              tag: "CURRENT_USER_LOADED",
-              data: {
-                grupoId: data.grupoId,
-                participanteId: participanteId,
-              },
-            });
+            guardarPreferencia(data.grupoId, data.campo, data.valor);
           }
           break;
         case "SET_UNSAVED_CHANGES_WARNING":

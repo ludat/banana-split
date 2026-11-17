@@ -3,9 +3,8 @@ port module Effect exposing
     , Location
     , back
     , batch
-    , clearCurrentUser
+    , cambiarPreferenciaDeGrupo
     , copy
-    , getCurrentUser
     , incoming
     , loadExternalUrl
     , map
@@ -15,8 +14,8 @@ port module Effect exposing
     , pushRoutePath
     , replaceRoute
     , replaceRoutePath
-    , saveCurrentUser
     , saveLastReadChangelog
+    , savePreferenciaDeGrupo
     , saveRepartijaIntroDismissed
     , sendCmd
     , sendFeedback
@@ -34,6 +33,7 @@ port module Effect exposing
 import Browser.Navigation
 import Dict exposing (Dict)
 import Json.Encode
+import Models.PreferenciasDeGrupo as PreferenciasDeGrupo exposing (CambioDePreferencia)
 import Models.Store.Types exposing (StoreMsg)
 import Route
 import Route.Path
@@ -193,39 +193,28 @@ sendSharedMsg msg =
 -- STORAGE PORTS
 
 
-saveCurrentUser : String -> String -> Effect msg
-saveCurrentUser grupoId userId =
+cambiarPreferenciaDeGrupo : String -> CambioDePreferencia -> Effect msg
+cambiarPreferenciaDeGrupo grupoId cambio =
+    sendSharedMsg <| Shared.Msg.CambiarPreferenciaDeGrupo grupoId cambio
+
+
+{-| Sólo la escribe en localStorage; para cambiar una preferencia usar
+`cambiarPreferenciaDeGrupo`.
+-}
+savePreferenciaDeGrupo : String -> CambioDePreferencia -> Effect msg
+savePreferenciaDeGrupo grupoId cambio =
+    let
+        { campo, valor } =
+            PreferenciasDeGrupo.encodeCambio cambio
+    in
     SendCmd <|
         outgoing
-            { tag = "SAVE_CURRENT_USER"
+            { tag = "SAVE_PREFERENCIA_DE_GRUPO"
             , data =
                 Json.Encode.object
                     [ ( "grupoId", Json.Encode.string grupoId )
-                    , ( "participanteId", Json.Encode.string userId )
-                    ]
-            }
-
-
-clearCurrentUser : String -> Effect msg
-clearCurrentUser grupoId =
-    SendCmd <|
-        outgoing
-            { tag = "CLEAR_CURRENT_USER"
-            , data =
-                Json.Encode.object
-                    [ ( "grupoId", Json.Encode.string grupoId )
-                    ]
-            }
-
-
-getCurrentUser : String -> Effect msg
-getCurrentUser grupoId =
-    SendCmd <|
-        outgoing
-            { tag = "GET_CURRENT_USER"
-            , data =
-                Json.Encode.object
-                    [ ( "grupoId", Json.Encode.string grupoId )
+                    , ( "campo", Json.Encode.string campo )
+                    , ( "valor", valor )
                     ]
             }
 

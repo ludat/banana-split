@@ -407,6 +407,19 @@ syncUrl path param =
     Effect.replaceRoute (rutaDelPopup path param)
 
 
+{-| Lo pagado y consumido, sólo el de quien mira: el de los demás lo tira
+`refreshPagos` y se pide si alguien lo mira.
+-}
+refrescarPagos : Context -> Effect Msg
+refrescarPagos ctx =
+    Effect.batch
+        [ Store.refreshPagos ctx.grupoId
+        , ctx.participanteId
+            |> Maybe.map (Store.refreshPagadoYConsumido ctx.grupoId)
+            |> Maybe.withDefault Effect.none
+        ]
+
+
 
 -- UPDATE
 
@@ -588,7 +601,7 @@ updateInterno ctx store msg model =
             , Effect.batch
                 [ Store.refreshGrupo ctx.grupoId
                 , Store.refreshResumen ctx.grupoId
-                , Store.refreshPagos ctx.grupoId ctx.participanteId
+                , refrescarPagos ctx
                 , Toasts.pushToast Toasts.ToastSuccess "Gasto borrado"
                 , syncUrl ctx.path Nothing
                 ]
@@ -644,7 +657,7 @@ updateInterno ctx store msg model =
               }
             , Effect.batch
                 [ Store.refreshResumen ctx.grupoId
-                , Store.refreshPagos ctx.grupoId ctx.participanteId
+                , refrescarPagos ctx
                 , Store.setPago pago.pagoId pago
                 , Toasts.pushToast Toasts.ToastSuccess <|
                     if esGastoNuevo model then

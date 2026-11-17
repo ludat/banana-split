@@ -144,7 +144,6 @@ init grupoId repartijaId store =
     , Effect.batch
         [ Store.ensureGrupo grupoId store
         , Store.refreshRepartija repartijaId
-        , Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
         ]
     )

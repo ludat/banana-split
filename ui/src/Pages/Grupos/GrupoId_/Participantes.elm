@@ -101,7 +101,6 @@ init store grupoId =
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
-        , Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
         ]
     )

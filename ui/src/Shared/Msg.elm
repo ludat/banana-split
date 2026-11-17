@@ -10,6 +10,7 @@ own file, so they can be imported by `Effect.elm`
 
 import Generated.Api exposing (ClaimParticipanteResult, Participante, ULID, User)
 import Http
+import Models.PreferenciasDeGrupo exposing (CambioDePreferencia)
 import Models.Store.Types exposing (StoreMsg)
 import Route.Path as Route
 import Time exposing (Posix)
@@ -22,9 +23,10 @@ type Msg
     | ToastMsg ToastMsg
     | StoreMsg StoreMsg
     | NavigateTo Route.Path
-    | SetCurrentParticipante { grupoId : ULID, participanteId : Maybe ULID }
-    | CurrentParticipanteLoaded { grupoId : ULID, participanteId : Maybe ULID }
+    | SetCurrentParticipante { grupoId : ULID, participanteId : ULID }
+    | CambiarPreferenciaDeGrupo ULID CambioDePreferencia
     | CurrentUserLoaded (Result Http.Error User)
+    | GrupoCargado ULID
     | ClaimParticipante { grupoId : ULID, participanteId : ULID }
     | UnclaimParticipante { grupoId : ULID, participanteId : ULID }
     | GotClaimResult { grupoId : ULID } (Result Http.Error ClaimParticipanteResult)

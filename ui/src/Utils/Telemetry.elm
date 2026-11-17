@@ -1,4 +1,4 @@
-module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, changelogFeedback, click, codigoDeLoginRechazado, crearGrupo, feedbackGeneral, gastoEdicionAbandonada, repartijaAccion, repartijaAyudaAbierta, repartijaDetalleDeItemAbierto, repartijaFiltro, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, seccionVista, severityToString, trackDecodeErrors)
+module Utils.Telemetry exposing (Feedback, Severity, TelemetryEvent, changelogFeedback, click, codigoDeLoginRechazado, crearGrupo, feedbackGeneral, gastoEdicionAbandonada, preferenciasIlegibles, repartijaAccion, repartijaAyudaAbierta, repartijaDetalleDeItemAbierto, repartijaFiltro, repartijaParticipantesExpandidos, repartijaRediseno, repartijaRedisenoComentario, seccionVista, severityToString, trackDecodeErrors)
 
 import Html
 import Html.Attributes
@@ -6,6 +6,7 @@ import Http
 import Json.Encode as Json exposing (Value)
 import Models.PagoForm exposing (Section(..))
 import RemoteData exposing (RemoteData(..), WebData)
+import Set
 
 
 type alias TelemetryEvent =
@@ -79,6 +80,27 @@ trackDecodeErrors operation response =
 
         _ ->
             Nothing
+
+
+{-| Lo guardado en el navegador que no se pudo leer al arrancar (ver
+`Models.PreferenciasDeGrupo.Leidas`). Sólo los nombres de los campos, nunca
+los valores ni los grupos.
+-}
+preferenciasIlegibles : List String -> Maybe TelemetryEvent
+preferenciasIlegibles ilegibles =
+    case ilegibles of
+        [] ->
+            Nothing
+
+        _ :: _ ->
+            Just
+                { name = "app.preferencias.decode_error"
+                , severity = Error
+                , attributes =
+                    [ ( "app.preferencias.campos", Json.set Json.string (Set.fromList ilegibles) )
+                    , ( "app.preferencias.error_count", Json.int (List.length ilegibles) )
+                    ]
+                }
 
 
 codigoDeLoginRechazado : Http.Error -> Maybe TelemetryEvent

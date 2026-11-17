@@ -3,6 +3,7 @@ module Pages.Grupos.GrupoId_.Gastos exposing (Model, Msg, page)
 import Components.Bootstrap as Bs
 import Components.Movimientos as Movimientos
 import Components.PagoDetalleModal as PagoDetalleModal
+import Dict
 import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, ULID)
 import Html exposing (Html, a, div, text)
@@ -23,7 +24,7 @@ import View exposing (View)
 page : Shared.Model -> Route { grupoId : String } -> Page Model Msg
 page shared route =
     Page.new
-        { init = \() -> init route shared.store
+        { init = \() -> init route shared
         , update = update
         , subscriptions = subscriptions
         , view = view shared.timezone (Shared.currentParticipante shared route.params.grupoId) shared.store
@@ -47,19 +48,20 @@ update msg model =
             ( model, Effect.replaceRoute ruta )
 
 
-init : Route { grupoId : String } -> Store -> ( Model, Effect Msg )
-init route store =
+init : Route { grupoId : String } -> Shared.Model -> ( Model, Effect Msg )
+init route shared =
     let
         grupoId =
             route.params.grupoId
     in
     ( { grupoId = grupoId }
     , Effect.batch
-        [ Store.ensureGrupo grupoId store
-        , Store.ensureTransferencias grupoId store
-        , -- Los gastos los pide Shared cuando resuelve el participante, que
-          -- es lo que este mensaje dispara.
-          Effect.getCurrentUser grupoId
+        [ Store.ensureGrupo grupoId shared.store
+        , Store.ensureTransferencias grupoId shared.store
+        , Store.ensurePagos grupoId shared.store
+        , Shared.currentParticipante shared grupoId
+            |> Maybe.map (\participanteId -> Store.ensurePagadoYConsumido grupoId participanteId shared.store)
+            |> Maybe.withDefault Effect.none
         ]
     )
 
@@ -130,6 +132,10 @@ viewMovimientos zone participanteId store model grupo =
                                     , desde = Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }
                                     , telemetria = "gastos"
                                     , participanteId = participanteId
+                                    , pagadoYConsumido =
+                                        participanteId
+                                            |> Maybe.map (\participante -> Store.getPagadoYConsumido model.grupoId participante store |> RemoteData.withDefault Dict.empty)
+                                            |> Maybe.withDefault Dict.empty
                                     , grupo = grupo
                                     }
                                 )

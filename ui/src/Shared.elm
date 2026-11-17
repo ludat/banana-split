@@ -6,22 +6,27 @@ module Shared exposing
     , currentParticipante
     , decoder
     , init
+    , participantePropio
+    , preferenciasDeGrupo
     , subscriptions
     , update
     )
 
 import Date
+import Dict exposing (Dict)
 import Effect exposing (Effect, incoming)
 import Generated.Api as Api exposing (ClaimParticipanteResult(..), ULID)
 import Json.Decode
 import Json.Encode
 import Models.Grupo
+import Models.PreferenciasDeGrupo as PreferenciasDeGrupo exposing (PreferenciasDeGrupo)
 import Models.Store as Store
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
 import Time
+import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toast
 import Utils.Toasts.Types exposing (ToastLevel(..))
 
@@ -36,6 +41,7 @@ type alias Flags =
     , timeZone : String
     , lastReadChangelog : Maybe Int
     , repartijaIntroDismissed : Bool
+    , preferenciasDeGrupos : PreferenciasDeGrupo.Leidas
     , origin : String
     , initialData : Maybe InitialData
     }
@@ -51,12 +57,17 @@ type alias InitialData =
 
 decoder : Json.Decode.Decoder Flags
 decoder =
-    Json.Decode.map7 Flags
+    Json.Decode.map8 Flags
         (Json.Decode.field "now" Json.Decode.int)
         (Json.Decode.field "offset" Json.Decode.int)
         (Json.Decode.field "timeZone" Json.Decode.string)
         (Json.Decode.field "lastReadChangelog" (Json.Decode.nullable Json.Decode.int))
         (Json.Decode.field "repartijaIntroDismissed" Json.Decode.bool)
+        (Json.Decode.oneOf
+            [ Json.Decode.field "preferenciasDeGrupos" PreferenciasDeGrupo.decoder
+            , Json.Decode.succeed { preferencias = Dict.empty, ilegibles = [ "preferencias" ] }
+            ]
+        )
         (Json.Decode.field "origin" Json.Decode.string)
         (Json.Decode.field "initialData"
             (Json.Decode.nullable
@@ -86,6 +97,7 @@ init possiblyFlags _ =
                     , timeZone = "UTC"
                     , lastReadChangelog = Nothing
                     , repartijaIntroDismissed = False
+                    , preferenciasDeGrupos = { preferencias = Dict.empty, ilegibles = [] }
                     , origin = ""
                     , initialData = Nothing
                     }
@@ -114,7 +126,8 @@ init possiblyFlags _ =
     in
     ( { toasties = Toast.initialState
       , store = Store.empty
-      , participanteId = Nothing
+      , participanteElegido = Dict.empty
+      , preferenciasDeGrupos = flags.preferenciasDeGrupos.preferencias
       , currentUser = currentUser
       , now = now
       , today = Date.fromPosix timezone now
@@ -127,7 +140,10 @@ init possiblyFlags _ =
       , repartijaIntroDismissed = flags.repartijaIntroDismissed
       , origin = flags.origin
       }
-    , refrescarSesion
+    , Effect.batch
+        [ refrescarSesion
+        , Effect.telemetryEvent (Telemetry.preferenciasIlegibles flags.preferenciasDeGrupos.ilegibles)
+        ]
     )
 
 
@@ -174,67 +190,62 @@ update _ msg model =
             ( { model | store = store }, Effect.batch [ cmd ] )
 
         SetCurrentParticipante { grupoId, participanteId } ->
-            let
-                ( nuevoModel, guardarPreferencia ) =
-                    case participanteId of
-                        Just pid ->
-                            let
-                                -- The participante the logged-in account owns in this grupo, if
-                                -- any. Picking it is the same as the default derivation, so we
-                                -- clear the stored pick instead of persisting a redundant one.
-                                ownedId =
-                                    case ( model.currentUser, Store.getGrupo grupoId model.store ) of
-                                        ( Success u, Success grupo ) ->
-                                            Models.Grupo.ownedParticipante u.id grupo |> Maybe.map .id
-
-                                        _ ->
-                                            Nothing
-                            in
-                            if Just pid == ownedId then
-                                ( { model | participanteId = Nothing }
-                                , Effect.clearCurrentUser grupoId
-                                )
-
-                            else
-                                ( { model | participanteId = Just pid }
-                                , Effect.saveCurrentUser grupoId pid
-                                )
-
-                        Nothing ->
-                            ( { model | participanteId = Nothing }
-                            , Effect.clearCurrentUser grupoId
-                            )
-            in
-            ( nuevoModel
-            , Effect.batch
-                [ guardarPreferencia
-                , -- Los gastos que están en el store traen el resumen recortado
-                  -- al participante anterior, así que hay que volver a pedirlos
-                  -- con el nuevo. Tirarlos y esperar a que alguien los pida de
-                  -- nuevo no alcanza: 'ensurePagos' sólo corre al montar la
-                  -- página, y cambiar de participante no navega a ningún lado.
-                  Store.refreshPagos grupoId (currentParticipante nuevoModel grupoId)
-                ]
+            -- Sólo por esta sesión: lo que se guarda es lo de los ajustes.
+            ( { model | participanteElegido = model.participanteElegido |> Dict.insert grupoId participanteId }
+            , Store.ensurePagadoYConsumido grupoId participanteId model.store
             )
 
-        CurrentParticipanteLoaded { grupoId, participanteId } ->
-            let
-                nuevoModel =
-                    { model | participanteId = participanteId }
-            in
-            ( nuevoModel
-            , -- Los gastos se piden acá y no en el 'init' de la página: su
-              -- resumen viene recortado a este participante, y al montar
-              -- todavía no se sabe quién es (sale de localStorage y llega por
-              -- este mensaje). Pedirlos antes sería pedirlos dos veces, la
-              -- primera sin recortar.
-              Store.ensurePagos grupoId (currentParticipante nuevoModel grupoId) nuevoModel.store
-            )
+        CambiarPreferenciaDeGrupo grupoId cambio ->
+            case cambio of
+                PreferenciasDeGrupo.ParticipanteId (Just participanteId) ->
+                    serParticipante grupoId participanteId model
+
+                PreferenciasDeGrupo.ParticipanteId Nothing ->
+                    ( { model
+                        | preferenciasDeGrupos = aplicarPreferencia grupoId cambio model
+                        , participanteElegido = model.participanteElegido |> Dict.remove grupoId
+                      }
+                    , Effect.savePreferenciaDeGrupo grupoId cambio
+                    )
 
         CurrentUserLoaded currentUser ->
+            -- Al arrancar el usuario ya viene en el HTML; esto es por loguearse
+            -- sin recargar (`Pages.Login`), con grupos que ya estaban en el
+            -- store y no pudieron saber a quién reclamó.
             ( { model | currentUser = RemoteData.fromResult currentUser }
-            , Effect.none
+            , model.store.grupos
+                |> Dict.keys
+                |> List.map (Effect.sendSharedMsg << GrupoCargado)
+                |> Effect.batch
             )
+
+        GrupoCargado grupoId ->
+            -- El reclamado pasa a ser el de este navegador, así la próxima vez
+            -- se sabe quién sos antes de que llegue el grupo. Lo elegido en la
+            -- sesión ("Ver como") se respeta.
+            case reclamadoEn grupoId model of
+                Just reclamado ->
+                    if (preferenciasDeGrupo model grupoId).participanteId == Just reclamado then
+                        ( model, Effect.none )
+
+                    else
+                        let
+                            cambio =
+                                PreferenciasDeGrupo.ParticipanteId (Just reclamado)
+                        in
+                        ( { model | preferenciasDeGrupos = aplicarPreferencia grupoId cambio model }
+                        , Effect.batch
+                            [ Effect.savePreferenciaDeGrupo grupoId cambio
+                            , if Dict.member grupoId model.participanteElegido then
+                                Effect.none
+
+                              else
+                                Store.ensurePagadoYConsumido grupoId reclamado model.store
+                            ]
+                        )
+
+                Nothing ->
+                    ( model, Effect.none )
 
         ClaimParticipante { grupoId, participanteId } ->
             ( model
@@ -255,12 +266,14 @@ update _ msg model =
         GotClaimResult { grupoId } result ->
             case result of
                 Ok (ClaimAccepted p) ->
-                    ( { model
-                        | participanteId = Just p.id
-                      }
+                    let
+                        ( conParticipante, efecto ) =
+                            serParticipante grupoId p.id model
+                    in
+                    ( conParticipante
                     , Effect.batch
-                        [ Store.refreshGrupo grupoId
-                        , Effect.saveCurrentUser grupoId p.id
+                        [ efecto
+                        , Store.refreshGrupo grupoId
                         , Effect.sendToast { level = ToastSuccess, content = "Ahora sos " ++ p.nombre }
                         ]
                     )
@@ -296,8 +309,17 @@ update _ msg model =
             )
 
         LoggedOut ->
-            ( { model | currentUser = NotAsked }
-            , Effect.none
+            -- Lo elegido en "Ver como" era de la sesión con cuenta. Donde había
+            -- algo elegido se vuelve a lo guardado, y eso es lo que hay que pedir.
+            ( { model | currentUser = NotAsked, participanteElegido = Dict.empty }
+            , model.participanteElegido
+                |> Dict.keys
+                |> List.filterMap
+                    (\grupoId ->
+                        participantePropio model grupoId
+                            |> Maybe.map (\participanteId -> Store.ensurePagadoYConsumido grupoId participanteId model.store)
+                    )
+                |> Effect.batch
             )
 
         MarkChangelogRead ->
@@ -316,19 +338,81 @@ update _ msg model =
             )
 
 
-{-| The participante the current session should act as in a grupo: the stored
-manual pick when present, otherwise the participante the logged-in account owns
-in that grupo (resolving the grupo from the store). Only the manual pick is ever
-persisted; the owned fallback is derived at read-time.
+{-| Pasa a ser quién sos en el grupo en este navegador. Lo elegido en la sesión
+se descarta para que se vea en seguida.
+-}
+serParticipante : ULID -> ULID -> Model -> ( Model, Effect Msg )
+serParticipante grupoId participanteId model =
+    let
+        cambio =
+            PreferenciasDeGrupo.ParticipanteId (Just participanteId)
+    in
+    ( { model
+        | preferenciasDeGrupos = aplicarPreferencia grupoId cambio model
+        , participanteElegido = model.participanteElegido |> Dict.remove grupoId
+      }
+    , Effect.batch
+        [ Effect.savePreferenciaDeGrupo grupoId cambio
+        , Store.ensurePagadoYConsumido grupoId participanteId model.store
+        ]
+    )
+
+
+reclamadoEn : ULID -> Model -> Maybe ULID
+reclamadoEn grupoId model =
+    case model.currentUser of
+        Success user ->
+            Store.getGrupo grupoId model.store
+                |> RemoteData.toMaybe
+                |> Maybe.andThen (Models.Grupo.ownedParticipante user.id)
+                |> Maybe.map .id
+
+        NotAsked ->
+            Nothing
+
+        Loading ->
+            Nothing
+
+        Failure _ ->
+            Nothing
+
+
+aplicarPreferencia : ULID -> PreferenciasDeGrupo.CambioDePreferencia -> Model -> Dict ULID PreferenciasDeGrupo
+aplicarPreferencia grupoId cambio model =
+    model.preferenciasDeGrupos
+        |> Dict.insert grupoId (PreferenciasDeGrupo.aplicar cambio (preferenciasDeGrupo model grupoId))
+
+
+preferenciasDeGrupo : Model -> ULID -> PreferenciasDeGrupo
+preferenciasDeGrupo model grupoId =
+    model.preferenciasDeGrupos
+        |> Dict.get grupoId
+        |> Maybe.withDefault PreferenciasDeGrupo.vacias
+
+
+{-| El participante como el que se está usando el grupo: el elegido en esta
+sesión, y si no `participantePropio`. Cada mensaje que lo cambia pide lo que
+pagó y consumió el nuevo: las páginas lo piden al montarse, y cambiar de
+participante no navega a ningún lado.
 -}
 currentParticipante : Model -> ULID -> Maybe ULID
 currentParticipante model grupoId =
-    case Store.getGrupo grupoId model.store of
-        Success grupo ->
-            Models.Grupo.currentParticipante model.participanteId model.currentUser grupo
+    case Dict.get grupoId model.participanteElegido of
+        Just enLaSesion ->
+            Just enLaSesion
 
-        _ ->
-            model.participanteId
+        Nothing ->
+            participantePropio model grupoId
+
+
+{-| Quién sos en el grupo, sin contar lo que se eligió en esta sesión: lo
+guardado en el navegador. Con cuenta, en cuanto llega el grupo pasa a ser el que
+reclamaste (lo guarda `GrupoCargado`); si no reclamaste a nadie, es lo que
+hayas elegido.
+-}
+participantePropio : Model -> ULID -> Maybe ULID
+participantePropio model grupoId =
+    (preferenciasDeGrupo model grupoId).participanteId
 
 
 genericClaimError : String
@@ -349,23 +433,8 @@ subscriptions _ _ =
 
 
 decodeIncomingPortMessage : { tag : String, data : Json.Encode.Value } -> Maybe Msg
-decodeIncomingPortMessage { tag, data } =
+decodeIncomingPortMessage { tag } =
     case tag of
-        "CURRENT_USER_LOADED" ->
-            data
-                |> Json.Decode.decodeValue
-                    (Json.Decode.map2
-                        (\grupoId participanteId ->
-                            CurrentParticipanteLoaded
-                                { grupoId = grupoId
-                                , participanteId = participanteId
-                                }
-                        )
-                        (Json.Decode.field "grupoId" Json.Decode.string)
-                        (Json.Decode.field "participanteId" (Json.Decode.nullable Json.Decode.string))
-                    )
-                |> Result.toMaybe
-
         "SHARE_LINK_COPIED" ->
             Just <| AddToast { level = ToastSuccess, content = "Link copiado al portapapeles" }
 

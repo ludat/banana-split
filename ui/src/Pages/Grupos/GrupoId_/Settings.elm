@@ -15,9 +15,10 @@ import Html.Events exposing (on, onClick, onInput, onSubmit)
 import Http
 import Json.Decode
 import Layouts
-import Models.Grupo exposing (estaCongelado, ownedParticipante)
+import Models.Grupo exposing (estaCongelado, findParticipante, ownedParticipante)
 import Models.Moneda as Moneda
 import Models.Monto as Monto
+import Models.PreferenciasDeGrupo exposing (CambioDePreferencia(..), PreferenciasDeGrupo)
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
 import Page exposing (Page)
@@ -40,7 +41,7 @@ page shared route =
         { init = \() -> init shared.store route.params.grupoId
         , update = update shared.store
         , subscriptions = subscriptions
-        , view = view shared.origin shared.currentUser shared.store
+        , view = view shared.origin shared.currentUser (Shared.preferenciasDeGrupo shared route.params.grupoId) shared.store
         }
         |> Page.withLayout (\_ -> Layouts.Default_Grupo {})
 
@@ -84,6 +85,7 @@ type Msg
     | TasasGuardadas (Result Http.Error (List TasaDeCambio))
     | MonedaGuardada (Result Http.Error Grupo)
     | VaciarTasa Int
+    | ElegirParticipantePreferido (Maybe ULID)
 
 
 init : Store -> ULID -> ( Model, Effect Msg )
@@ -95,7 +97,6 @@ init store grupoId =
       }
     , Effect.batch
         [ Store.ensureGrupo grupoId store
-        , Effect.getCurrentUser grupoId
         , Effect.setUnsavedChangesWarning False
         ]
     )
@@ -120,6 +121,14 @@ seedAjustesForm grupo =
 update : Store -> Msg -> Model -> ( Model, Effect Msg )
 update store msg model =
     case msg of
+        ElegirParticipantePreferido participanteId ->
+            ( model
+            , Effect.batch
+                [ Effect.cambiarPreferenciaDeGrupo model.grupoId (ParticipanteId participanteId)
+                , Toasts.pushToast Toasts.ToastSuccess "Preferencia guardada"
+                ]
+            )
+
         EditarAjustes ->
             ( { model
                 | ajustesForm =
@@ -302,8 +311,8 @@ subscriptions _ =
     Sub.none
 
 
-view : String -> WebData User -> Store -> Model -> View Msg
-view origin currentUser store model =
+view : String -> WebData User -> PreferenciasDeGrupo -> Store -> Model -> View Msg
+view origin currentUser preferencias store model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
             { title = "Loading..."
@@ -330,7 +339,8 @@ view origin currentUser store model =
                 [ div [ class "container py-4" ]
                     [ div [ class "row justify-content-center" ]
                         [ div [ class "col-lg-8" ]
-                            [ viewAjustesSection grupo model.ajustesForm
+                            [ viewPreferenciasSection currentUser preferencias grupo
+                            , viewAjustesSection grupo model.ajustesForm
                             , viewTasasSection grupo model
                             , viewEmailSection origin currentUser grupo
                             ]
@@ -591,6 +601,89 @@ filaAFormGroup fila =
         , Form.setString "unMonto" fila.unMonto
         , Form.setString "otroMonto" fila.otroMonto
         ]
+
+
+viewPreferenciasSection : WebData User -> PreferenciasDeGrupo -> Grupo -> Html Msg
+viewPreferenciasSection currentUser preferencias grupo =
+    div [ id "settings-preferencias", class "card mb-4" ]
+        [ div [ class "card-header" ] [ text "Tus preferencias" ]
+        , div [ class "card-body" ]
+            (case currentUser of
+                Success user ->
+                    viewParticipanteDeLaCuenta user grupo
+
+                NotAsked ->
+                    viewParticipantePreferido preferencias grupo
+
+                Loading ->
+                    viewParticipantePreferido preferencias grupo
+
+                Failure _ ->
+                    viewParticipantePreferido preferencias grupo
+            )
+        ]
+
+
+{-| Con cuenta, quién sos lo dice el reclamo, no el navegador.
+-}
+viewParticipanteDeLaCuenta : User -> Grupo -> List (Html Msg)
+viewParticipanteDeLaCuenta user grupo =
+    [ label [ class "form-label mb-1" ] [ text "Participante" ]
+    , case ownedParticipante user.id grupo of
+        Just propio ->
+            div []
+                [ text "Sos "
+                , Html.strong [] [ text propio.nombre ]
+                , text ", el participante que reclamaste con tu cuenta."
+                ]
+
+        Nothing ->
+            div [ class "text-muted" ]
+                [ text "Todavía no reclamaste ningún participante en este grupo. Hacelo desde "
+                , a [ Path.href (Path.Grupos_GrupoId__Participantes { grupoId = grupo.id }) ] [ text "Participantes" ]
+                , text "."
+                ]
+    ]
+
+
+viewParticipantePreferido : PreferenciasDeGrupo -> Grupo -> List (Html Msg)
+viewParticipantePreferido preferencias grupo =
+    let
+        -- Si lo configurado ya no está en el grupo, el select muestra "nadie".
+        elegido =
+            preferencias.participanteId
+                |> Maybe.andThen (findParticipante grupo)
+                |> Maybe.map .id
+    in
+    [ div [ class "mb-3 text-muted" ]
+        [ text "Se guardan sólo en este navegador. Cambiar de participante desde el encabezado no se guarda: vale hasta que recargues la página." ]
+    , label [ for "preferencia-participante", class "form-label mb-1" ]
+        [ text "Participante" ]
+    , select
+        [ id "preferencia-participante"
+        , class "form-select"
+        , on "change"
+            (Json.Decode.at [ "target", "value" ] Json.Decode.string
+                |> Json.Decode.map
+                    (\v ->
+                        ElegirParticipantePreferido <|
+                            if v == "" then
+                                Nothing
+
+                            else
+                                Just v
+                    )
+            )
+        ]
+        (option [ value "", selected (elegido == Nothing) ] [ text "Preguntar al entrar" ]
+            :: (grupo.participantes
+                    |> List.map
+                        (\p ->
+                            option [ value p.id, selected (elegido == Just p.id) ] [ text p.nombre ]
+                        )
+               )
+        )
+    ]
 
 
 viewTasasSection : Grupo -> Model -> Html Msg
