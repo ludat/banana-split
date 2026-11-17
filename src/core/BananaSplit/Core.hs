@@ -22,11 +22,14 @@ module BananaSplit.Core (
   Distribucion (..),
   Pago (..),
   ShallowPago (..),
+  ResumenGastoForFrontend (..),
+  PagadoYConsumido (..),
   TipoDistribucion (..),
   calcularNetosPago,
   calcularNetosTotales,
   gastoEsValido,
   resumenGastoEsValido,
+  resumenGastoForFrontendEsValido,
   getResumenGasto,
   netosDeResumenGasto,
   netosDeTransferencias,
@@ -160,7 +163,25 @@ data ShallowPago = ShallowPago
   , monto :: Monto
   , moneda :: Moneda
   , fecha :: Day
-  , resumen :: ResumenGasto
+  , resumen :: ResumenGastoForFrontend
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Lo del resumen de un gasto que es igual para todos los participantes. Lo
+-- que puso y consumió cada uno viene aparte, en 'PagadoYConsumido'.
+data ResumenGastoForFrontend = ResumenGastoForFrontend
+  { errores :: [ErrorResumen]
+  , participantesEnRepartija :: Maybe [ParticipanteId]
+  , noConsumieronEnRepartija :: [ParticipanteId]
+  }
+  deriving (Show, Eq, Generic)
+
+-- | Cuánto puso y cuánto consumió un participante en un gasto, en la moneda del
+-- gasto.
+data PagadoYConsumido = PagadoYConsumido
+  { pagoId :: ULID
+  , pagado :: Monto
+  , consumido :: Monto
   }
   deriving (Show, Eq, Generic)
 
@@ -245,6 +266,10 @@ resumenGastoEsValido :: ResumenGasto -> Bool
 resumenGastoEsValido resumen =
   null resumen.errores
 
+resumenGastoForFrontendEsValido :: ResumenGastoForFrontend -> Bool
+resumenGastoForFrontendEsValido resumen =
+  null resumen.errores
+
 instance IsElmDefinition UTCTime where
   compileElmDef _ =
     ETypePrimAlias (EPrimAlias{epa_name = ETypeName{et_name = "UTCTime", et_args = []}, epa_type = ETyCon (ETCon{tc_name = "String"})})
@@ -255,6 +280,8 @@ instance IsElmDefinition Day where
 
 Elm.deriveBoth Elm.defaultOptions ''Pago
 Elm.deriveBoth Elm.defaultOptions ''ResumenGasto
+Elm.deriveBoth Elm.defaultOptions ''ResumenGastoForFrontend
+Elm.deriveBoth Elm.defaultOptions ''PagadoYConsumido
 Elm.deriveBoth Elm.defaultOptions ''ShallowPago
 Elm.deriveBoth Elm.defaultOptions ''Grupo
 

@@ -1,8 +1,7 @@
-module Models.Grupo exposing (GrupoLike, claimErrorMessage, currentParticipante, datosDeCobro, estaCongelado, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante, participanteErrorFromHttp, participanteErrorMessage)
+module Models.Grupo exposing (GrupoLike, claimErrorMessage, datosDeCobro, estaCongelado, findParticipante, grupoIdFromPath, isOwnedBy, lookupNombreParticipante, lookupParticipante, ownedParticipante, participanteErrorFromHttp, participanteErrorMessage)
 
-import Generated.Api exposing (Participante, ParticipanteClaimError(..), ParticipanteError(..), ParticipanteId, ParticipanteUsage(..), ULID, User)
+import Generated.Api exposing (Participante, ParticipanteClaimError(..), ParticipanteError(..), ParticipanteId, ParticipanteUsage(..), ULID)
 import Http
-import RemoteData exposing (RemoteData(..), WebData)
 import Route.Path as Path
 import Time
 
@@ -84,10 +83,15 @@ grupoIdFromPath path =
 
 lookupParticipante : GrupoLike g -> ParticipanteId -> Participante
 lookupParticipante grupo participanteId =
+    findParticipante grupo participanteId
+        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido", user = Nothing, datosDeCobro = Nothing }
+
+
+findParticipante : GrupoLike g -> ParticipanteId -> Maybe Participante
+findParticipante grupo participanteId =
     grupo.participantes
         |> List.filter (\p -> p.id == participanteId)
         |> List.head
-        |> Maybe.withDefault { id = participanteId, nombre = "Desconocido", user = Nothing, datosDeCobro = Nothing }
 
 
 {-| Cómo quiere recibir la plata: lo que se cargó en el participante y, si no
@@ -124,26 +128,6 @@ ownedParticipante accountUserId grupo =
     grupo.participantes
         |> List.filter (isOwnedBy accountUserId)
         |> List.head
-
-
-{-| The participante the current session should act as in a grupo: an explicit
-manual pick when present, otherwise the participante the logged-in account owns
-in that grupo (if any). The derived value is never persisted — only the manual
-pick is.
--}
-currentParticipante : Maybe ULID -> WebData User -> GrupoLike r -> Maybe ULID
-currentParticipante manualPick currentUser grupo =
-    case manualPick of
-        Just pid ->
-            Just pid
-
-        Nothing ->
-            case currentUser of
-                Success u ->
-                    ownedParticipante u.id grupo |> Maybe.map .id
-
-                _ ->
-                    Nothing
 
 
 {-| A user-facing message for each way a claim can be refused.

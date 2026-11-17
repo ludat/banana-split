@@ -3,6 +3,7 @@ module Pages.Grupos.GrupoId_.Gastos exposing (Model, Msg, page)
 import Components.Bootstrap as Bs
 import Components.Movimientos as Movimientos
 import Components.PagoDetalleModal as PagoDetalleModal
+import Dict
 import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, ULID)
 import Html exposing (Html, a, div, text)
@@ -57,7 +58,10 @@ init route shared =
     , Effect.batch
         [ Store.ensureGrupo grupoId shared.store
         , Store.ensureTransferencias grupoId shared.store
-        , Store.ensurePagos grupoId (Shared.currentParticipante shared grupoId) shared.store
+        , Store.ensurePagos grupoId shared.store
+        , Shared.currentParticipante shared grupoId
+            |> Maybe.map (\participanteId -> Store.ensurePagadoYConsumido grupoId participanteId shared.store)
+            |> Maybe.withDefault Effect.none
         ]
     )
 
@@ -128,6 +132,10 @@ viewMovimientos zone participanteId store model grupo =
                                     , desde = Path.Grupos_GrupoId__Gastos { grupoId = grupo.id }
                                     , telemetria = "gastos"
                                     , participanteId = participanteId
+                                    , pagadoYConsumido =
+                                        participanteId
+                                            |> Maybe.map (\participante -> Store.getPagadoYConsumido model.grupoId participante store |> RemoteData.withDefault Dict.empty)
+                                            |> Maybe.withDefault Dict.empty
                                     , grupo = grupo
                                     }
                                 )

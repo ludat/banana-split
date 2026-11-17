@@ -191,28 +191,61 @@ update _ msg model =
 
         SetCurrentParticipante { grupoId, participanteId } ->
             -- Sólo por esta sesión: lo que se guarda es lo de los ajustes.
-            cambiarParticipante grupoId
-                model
-                { model | participanteElegido = model.participanteElegido |> Dict.insert grupoId participanteId }
-                Effect.none
+            ( { model | participanteElegido = model.participanteElegido |> Dict.insert grupoId participanteId }
+            , Store.ensurePagadoYConsumido grupoId participanteId model.store
+            )
 
         CambiarPreferenciaDeGrupo grupoId cambio ->
             case cambio of
-                PreferenciasDeGrupo.ParticipanteId _ ->
-                    -- Lo elegido en la sesión se descarta para que el
-                    -- participante nuevo se vea en seguida.
-                    cambiarParticipante grupoId
-                        model
-                        { model
-                            | preferenciasDeGrupos = aplicarPreferencia grupoId cambio model
-                            , participanteElegido = model.participanteElegido |> Dict.remove grupoId
-                        }
-                        (Effect.savePreferenciaDeGrupo grupoId cambio)
+                PreferenciasDeGrupo.ParticipanteId (Just participanteId) ->
+                    serParticipante grupoId participanteId model
+
+                PreferenciasDeGrupo.ParticipanteId Nothing ->
+                    ( { model
+                        | preferenciasDeGrupos = aplicarPreferencia grupoId cambio model
+                        , participanteElegido = model.participanteElegido |> Dict.remove grupoId
+                      }
+                    , Effect.savePreferenciaDeGrupo grupoId cambio
+                    )
 
         CurrentUserLoaded currentUser ->
+            -- Al arrancar el usuario ya viene en el HTML; esto es por loguearse
+            -- sin recargar (`Pages.Login`), con grupos que ya estaban en el
+            -- store y no pudieron saber a quién reclamó.
             ( { model | currentUser = RemoteData.fromResult currentUser }
-            , Effect.none
+            , model.store.grupos
+                |> Dict.keys
+                |> List.map (Effect.sendSharedMsg << GrupoCargado)
+                |> Effect.batch
             )
+
+        GrupoCargado grupoId ->
+            -- El reclamado pasa a ser el de este navegador, así la próxima vez
+            -- se sabe quién sos antes de que llegue el grupo. Lo elegido en la
+            -- sesión ("Ver como") se respeta.
+            case reclamadoEn grupoId model of
+                Just reclamado ->
+                    if (preferenciasDeGrupo model grupoId).participanteId == Just reclamado then
+                        ( model, Effect.none )
+
+                    else
+                        let
+                            cambio =
+                                PreferenciasDeGrupo.ParticipanteId (Just reclamado)
+                        in
+                        ( { model | preferenciasDeGrupos = aplicarPreferencia grupoId cambio model }
+                        , Effect.batch
+                            [ Effect.savePreferenciaDeGrupo grupoId cambio
+                            , if Dict.member grupoId model.participanteElegido then
+                                Effect.none
+
+                              else
+                                Store.ensurePagadoYConsumido grupoId reclamado model.store
+                            ]
+                        )
+
+                Nothing ->
+                    ( model, Effect.none )
 
         ClaimParticipante { grupoId, participanteId } ->
             ( model
@@ -233,14 +266,17 @@ update _ msg model =
         GotClaimResult { grupoId } result ->
             case result of
                 Ok (ClaimAccepted p) ->
-                    cambiarParticipante grupoId
-                        model
-                        { model | participanteElegido = model.participanteElegido |> Dict.insert grupoId (Just p.id) }
-                        (Effect.batch
-                            [ Store.refreshGrupo grupoId
-                            , Effect.sendToast { level = ToastSuccess, content = "Ahora sos " ++ p.nombre }
-                            ]
-                        )
+                    let
+                        ( conParticipante, efecto ) =
+                            serParticipante grupoId p.id model
+                    in
+                    ( conParticipante
+                    , Effect.batch
+                        [ efecto
+                        , Store.refreshGrupo grupoId
+                        , Effect.sendToast { level = ToastSuccess, content = "Ahora sos " ++ p.nombre }
+                        ]
+                    )
 
                 Ok (ClaimRejected reason) ->
                     ( model
@@ -273,8 +309,17 @@ update _ msg model =
             )
 
         LoggedOut ->
-            ( { model | currentUser = NotAsked }
-            , Effect.none
+            -- Lo elegido en "Ver como" era de la sesión con cuenta. Donde había
+            -- algo elegido se vuelve a lo guardado, y eso es lo que hay que pedir.
+            ( { model | currentUser = NotAsked, participanteElegido = Dict.empty }
+            , model.participanteElegido
+                |> Dict.keys
+                |> List.filterMap
+                    (\grupoId ->
+                        participantePropio model grupoId
+                            |> Maybe.map (\participanteId -> Store.ensurePagadoYConsumido grupoId participanteId model.store)
+                    )
+                |> Effect.batch
             )
 
         MarkChangelogRead ->
@@ -293,23 +338,43 @@ update _ msg model =
             )
 
 
-{-| Los gastos que están en el store traen el resumen recortado al participante
-anterior, así que si cambió hay que volver a pedirlos. Tirarlos y esperar a que
-alguien los pida no alcanza: 'ensurePagos' sólo corre al montar la página, y
-cambiar de participante no navega a ningún lado.
+{-| Pasa a ser quién sos en el grupo en este navegador. Lo elegido en la sesión
+se descarta para que se vea en seguida.
 -}
-cambiarParticipante : ULID -> Model -> Model -> Effect Msg -> ( Model, Effect Msg )
-cambiarParticipante grupoId anterior nuevo efecto =
-    ( nuevo
+serParticipante : ULID -> ULID -> Model -> ( Model, Effect Msg )
+serParticipante grupoId participanteId model =
+    let
+        cambio =
+            PreferenciasDeGrupo.ParticipanteId (Just participanteId)
+    in
+    ( { model
+        | preferenciasDeGrupos = aplicarPreferencia grupoId cambio model
+        , participanteElegido = model.participanteElegido |> Dict.remove grupoId
+      }
     , Effect.batch
-        [ efecto
-        , if currentParticipante anterior grupoId /= currentParticipante nuevo grupoId then
-            Store.refreshPagos grupoId (currentParticipante nuevo grupoId)
-
-          else
-            Effect.none
+        [ Effect.savePreferenciaDeGrupo grupoId cambio
+        , Store.ensurePagadoYConsumido grupoId participanteId model.store
         ]
     )
+
+
+reclamadoEn : ULID -> Model -> Maybe ULID
+reclamadoEn grupoId model =
+    case model.currentUser of
+        Success user ->
+            Store.getGrupo grupoId model.store
+                |> RemoteData.toMaybe
+                |> Maybe.andThen (Models.Grupo.ownedParticipante user.id)
+                |> Maybe.map .id
+
+        NotAsked ->
+            Nothing
+
+        Loading ->
+            Nothing
+
+        Failure _ ->
+            Nothing
 
 
 aplicarPreferencia : ULID -> PreferenciasDeGrupo.CambioDePreferencia -> Model -> Dict ULID PreferenciasDeGrupo
@@ -326,48 +391,28 @@ preferenciasDeGrupo model grupoId =
 
 
 {-| El participante como el que se está usando el grupo: el elegido en esta
-sesión, si no el de los ajustes, y si no el que reclamó la cuenta (resolviendo
-el grupo desde el store). Elegir "nadie" en la sesión saltea los ajustes pero no
-la cuenta.
+sesión, y si no `participantePropio`. Cada mensaje que lo cambia pide lo que
+pagó y consumió el nuevo: las páginas lo piden al montarse, y cambiar de
+participante no navega a ningún lado.
 -}
 currentParticipante : Model -> ULID -> Maybe ULID
 currentParticipante model grupoId =
     case Dict.get grupoId model.participanteElegido of
         Just enLaSesion ->
-            resolverParticipante model grupoId enLaSesion
+            Just enLaSesion
 
         Nothing ->
             participantePropio model grupoId
 
 
-{-| Quién sos en el grupo, sin contar lo que se eligió en esta sesión. Con
-cuenta es el que reclamó, y lo guardado en el navegador no cuenta; sin cuenta,
-el de los ajustes.
+{-| Quién sos en el grupo, sin contar lo que se eligió en esta sesión: lo
+guardado en el navegador. Con cuenta, en cuanto llega el grupo pasa a ser el que
+reclamaste (lo guarda `GrupoCargado`); si no reclamaste a nadie, es lo que
+hayas elegido.
 -}
 participantePropio : Model -> ULID -> Maybe ULID
 participantePropio model grupoId =
-    case model.currentUser of
-        Success _ ->
-            resolverParticipante model grupoId Nothing
-
-        NotAsked ->
-            (preferenciasDeGrupo model grupoId).participanteId
-
-        Loading ->
-            (preferenciasDeGrupo model grupoId).participanteId
-
-        Failure _ ->
-            (preferenciasDeGrupo model grupoId).participanteId
-
-
-resolverParticipante : Model -> ULID -> Maybe ULID -> Maybe ULID
-resolverParticipante model grupoId elegido =
-    case Store.getGrupo grupoId model.store of
-        Success grupo ->
-            Models.Grupo.currentParticipante elegido model.currentUser grupo
-
-        _ ->
-            elegido
+    (preferenciasDeGrupo model grupoId).participanteId
 
 
 genericClaimError : String

@@ -59,6 +59,7 @@ module BananaSplit.Persistence (
   ConteoDeGastos (..),
   contarGastos,
   fetchShallowPagos,
+  fetchPagadoYConsumido,
   fetchTasasDeCambio,
   fetchTransferencias,
   netosDeGrupo,
@@ -701,69 +702,61 @@ fetchDistribucion moneda distribucionId = do
           }
     _ -> pure Nothing
 
--- | Los gastos de un grupo con su resumen. Con un participante, el resumen de
--- cada gasto viene recortado a esa persona: las filas de los demás no se leen
--- ni se serializan.
-fetchShallowPagos :: ULID -> Maybe M.ParticipanteId -> Pg [M.ShallowPago]
-fetchShallowPagos grupoId participanteId = do
+-- | Los gastos de un grupo con lo del resumen que es igual para todos. Lo de
+-- cada participante lo trae 'fetchPagadoYConsumido'.
+--
+-- Leer nunca calcula: el resumen de un gasto queda escrito por la misma
+-- transacción que lo modifica ('guardarResumenDeGasto'), así que acá siempre
+-- tiene que estar. Si falta es que algo lo dejó a medias, y eso se arregla
+-- corriendo el backfill, no disimulándolo en cada lectura.
+fetchShallowPagos :: ULID -> Pg [M.ShallowPago]
+fetchShallowPagos grupoId = do
   dbPagos <- runSelectReturningList $ select $ do
     pago <-
       all_ db.pagos
         & orderBy_ (desc_ . (.pagoId))
     guard_ (pago.pagoGrupo ==. GrupoId (val_ grupoId))
     pure pago
+  pure $ fmap toShallowPago dbPagos
 
-  -- Todas las filas del cache del grupo de una, no una query por gasto. Sin
-  -- joinear 'pagos': la fila sabe de qué grupo es.
-  filas <- runSelectReturningList $ select $ do
-    fila <- all_ db.pagado_y_consumido_en_gasto
-    guard_ (fila.grupo ==. GrupoId (val_ grupoId))
-    forM_ participanteId $ \unParticipante ->
-      guard_ (fila.participante ==. ParticipanteId (val_ (M.participanteId2ULID unParticipante)))
-    pure fila
-
-  let netosPorPago =
-        filas
-          & fmap (\fila -> (case fila.gasto of PagoId p -> p, [fila]))
-          & Map.fromListWith (<>)
-
-  -- Leer nunca calcula: el resumen de un gasto queda escrito por la misma
-  -- transacción que lo modifica ('guardarResumenDeGasto'), así que acá siempre
-  -- tiene que estar. Si falta es que algo lo dejó a medias, y eso se arregla
-  -- corriendo el backfill, no disimulándolo en cada lectura.
-  pure $ dbPagos & fmap (\pago -> toShallowPago pago (Map.findWithDefault [] pago.pagoId netosPorPago))
-
-toShallowPago :: Pago -> [PagadoYConsumidoEnGasto] -> M.ShallowPago
-toShallowPago pago filas =
+toShallowPago :: Pago -> M.ShallowPago
+toShallowPago pago =
   M.ShallowPago
     { M.pagoId = pago.pagoId
-    , M.resumen = resumenDesde filas pago.resumen
+    , M.resumen =
+        M.ResumenGastoForFrontend
+          { M.errores = pago.resumen.errores
+          , M.participantesEnRepartija = pago.resumen.participantesEnRepartija
+          , M.noConsumieronEnRepartija = pago.resumen.noConsumieronEnRepartija
+          }
     , M.nombre = pago.pagoNombre
     , M.monto = desdeUnidadesMinimas pago.pagoMoneda pago.pagoMontoEnUnidadesMinimas
     , M.moneda = pago.pagoMoneda
     , M.fecha = pago.fecha
     }
 
--- | Rearma el resumen de un gasto juntando sus dos mitades guardadas: los
--- números por participante salen de 'pagado_y_consumido_en_gasto' y el resto del jsonb.
-resumenDesde :: [PagadoYConsumidoEnGasto] -> ResumenGuardado -> M.ResumenGasto
-resumenDesde netos guardado =
-  M.ResumenGasto
-    { -- Los netos salen de las filas, que un cambio de formato del blob no toca:
-      -- siguen siendo correctos aunque el resto venga en default.
-      M.pagado = lado (.pagado_en_unidades_minimas) netos
-    , M.consumido = lado (.consumido_en_unidades_minimas) netos
-    , M.errores = guardado.errores
-    , M.participantesEnRepartija = guardado.participantesEnRepartija
-    , M.noConsumieronEnRepartija = guardado.noConsumieronEnRepartija
-    }
-  where
-    lado columna =
-      foldMap
+-- | Cuánto puso y consumió un participante en cada gasto del grupo, de una
+-- query sobre el cache y sin joinear 'pagos': la fila sabe de qué grupo es. Un
+-- gasto donde no aparece, o uno inválido (que no deja filas), no viene.
+--
+-- Los números salen de las filas, que un cambio de formato del jsonb del
+-- resumen no toca: siguen siendo correctos aunque el resto venga en default.
+fetchPagadoYConsumido :: ULID -> M.ParticipanteId -> Pg [M.PagadoYConsumido]
+fetchPagadoYConsumido grupoId participanteId = do
+  filas <- runSelectReturningList $ select $ do
+    fila <- all_ db.pagado_y_consumido_en_gasto
+    guard_ (fila.grupo ==. GrupoId (val_ grupoId))
+    guard_ (fila.participante ==. ParticipanteId (val_ (M.participanteId2ULID participanteId)))
+    pure fila
+  pure $
+    filas
+      & fmap
         ( \fila ->
-            M.mkDeuda
-              (M.ParticipanteId $ case fila.participante of ParticipanteId p -> p)
-              (desdeUnidadesMinimas fila.moneda (columna fila))
+            M.PagadoYConsumido
+              { M.pagoId = case fila.gasto of PagoId p -> p
+              , M.pagado = desdeUnidadesMinimas fila.moneda fila.pagado_en_unidades_minimas
+              , M.consumido = desdeUnidadesMinimas fila.moneda fila.consumido_en_unidades_minimas
+              }
         )
 
 -- | Los netos de un grupo sumados en la base, sin traer ningún gasto.

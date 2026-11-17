@@ -18,7 +18,7 @@ import Http
 import Json.Decode as Decode
 import Layout exposing (Layout)
 import Layouts.Default
-import Models.Grupo exposing (GrupoLike, claimErrorMessage, estaCongelado, grupoIdFromPath, ownedParticipante, participanteErrorFromHttp)
+import Models.Grupo exposing (GrupoLike, claimErrorMessage, estaCongelado, findParticipante, grupoIdFromPath, ownedParticipante, participanteErrorFromHttp)
 import Models.PreferenciasDeGrupo exposing (CambioDePreferencia(..))
 import Models.Repartija as Repartija
 import Models.Store as Store
@@ -44,6 +44,10 @@ type alias Props =
 
 layout : Props -> Shared.Model -> Route () -> Layout Layouts.Default.Props Model Msg contentMsg
 layout _ shared route =
+    let
+        grupoId =
+            grupoIdFromPath route.path
+    in
     Layout.new
         { init = \() -> init (TransferenciaModal.context shared route) route
         , update =
@@ -57,8 +61,8 @@ layout _ shared route =
             view (TransferenciaModal.context shared route)
                 shared.store
                 route.path
-                (grupoIdFromPath route.path |> Maybe.andThen (Shared.currentParticipante shared))
-                (grupoIdFromPath route.path |> Maybe.andThen (Shared.participantePropio shared))
+                (grupoId |> Maybe.andThen (Shared.currentParticipante shared))
+                (grupoId |> Maybe.andThen (Shared.participantePropio shared))
                 shared.origin
                 shared.currentUser
         , subscriptions = subscriptions
@@ -145,8 +149,8 @@ type Msg
     | CerrarAgregarme
     | AgregarmeForm Form.Msg
     | GotAgregarme (Result ErrorAlAgregarme Participante)
-    | VerComoParticipante ULID (Maybe ULID)
-    | Presentarse ULID (Maybe ULID)
+    | VerComoParticipante ULID ULID
+    | IdentificarseComo ULID ULID
     | NoOp
 
 
@@ -240,7 +244,7 @@ update ctx store currentUser msg model =
                     ( { model | agregarme = Nothing }
                     , Effect.batch
                         [ Store.refreshGrupo agregarme.grupoId
-                        , presentarse currentUser agregarme.grupoId (Just p)
+                        , identificarseComo currentUser agregarme.grupoId p
                         , Effect.sendToast { level = ToastSuccess, content = "Te agregamos al grupo como " ++ p.nombre }
                         ]
                     )
@@ -274,16 +278,13 @@ update ctx store currentUser msg model =
                 Shared.Msg.SetCurrentParticipante { grupoId = grupoId, participanteId = participanteId }
             )
 
-        Presentarse grupoId participanteId ->
-            ( model
-            , presentarse currentUser
-                grupoId
-                (Maybe.map2 (\pid grupo -> grupo.participantes |> List.filter (\p -> p.id == pid) |> List.head)
-                    participanteId
-                    (Store.getGrupo grupoId store |> RemoteData.toMaybe)
-                    |> Maybe.andThen identity
-                )
-            )
+        IdentificarseComo grupoId participanteId ->
+            case Store.getGrupo grupoId store |> RemoteData.toMaybe |> Maybe.andThen (\grupo -> findParticipante grupo participanteId) of
+                Just p ->
+                    ( model, identificarseComo currentUser grupoId p )
+
+                Nothing ->
+                    ( model, Effect.none )
 
         ShareUrl data ->
             ( model
@@ -306,36 +307,27 @@ cuenta queda en los ajustes. Con cuenta lo que vale es el reclamo: si nadie lo
 reclamó se reclama, y si ya es de alguien (o ya es tuyo, recién agregado) sólo
 cambia la sesión, como `VerComoParticipante`.
 -}
-presentarse : WebData User -> ULID -> Maybe Participante -> Effect Msg
-presentarse currentUser grupoId participante =
-    let
-        participanteId =
-            participante |> Maybe.map .id
-    in
+identificarseComo : WebData User -> ULID -> Participante -> Effect Msg
+identificarseComo currentUser grupoId participante =
     case currentUser of
         Success _ ->
             Effect.sendSharedMsg <|
-                case participante of
-                    -- Sin dueño: reclamarlo es lo que hace que la próxima vez no
-                    -- haya que volver a elegir.
-                    Just p ->
-                        if p.user == Nothing then
-                            Shared.Msg.ClaimParticipante { grupoId = grupoId, participanteId = p.id }
+                -- Sin dueño: reclamarlo es lo que hace que la próxima vez no
+                -- haya que volver a elegir.
+                if participante.user == Nothing then
+                    Shared.Msg.ClaimParticipante { grupoId = grupoId, participanteId = participante.id }
 
-                        else
-                            Shared.Msg.SetCurrentParticipante { grupoId = grupoId, participanteId = participanteId }
-
-                    Nothing ->
-                        Shared.Msg.SetCurrentParticipante { grupoId = grupoId, participanteId = participanteId }
+                else
+                    Shared.Msg.SetCurrentParticipante { grupoId = grupoId, participanteId = participante.id }
 
         NotAsked ->
-            Effect.cambiarPreferenciaDeGrupo grupoId (ParticipanteId participanteId)
+            Effect.cambiarPreferenciaDeGrupo grupoId (ParticipanteId (Just participante.id))
 
         Loading ->
-            Effect.cambiarPreferenciaDeGrupo grupoId (ParticipanteId participanteId)
+            Effect.cambiarPreferenciaDeGrupo grupoId (ParticipanteId (Just participante.id))
 
         Failure _ ->
-            Effect.cambiarPreferenciaDeGrupo grupoId (ParticipanteId participanteId)
+            Effect.cambiarPreferenciaDeGrupo grupoId (ParticipanteId (Just participante.id))
 
 
 enviarAgregarme : WebData User -> Agregarme -> Model -> ( Model, Effect Msg )
@@ -778,17 +770,26 @@ viewBadgeCongelado store grupo =
         text ""
 
 
-{-| "No sos vos" cuando se está mirando como alguien que no es el propio (ver
-`Shared.participantePropio`). Con cuenta aparece aunque todavía no hayas
+{-| "No sos vos" cuando se está mirando como alguien que no es el propio. Con
+cuenta el propio es el que reclamaste y no lo guardado en el navegador
+(`Shared.participantePropio`), así que aparece aunque todavía no hayas
 reclamado a nadie, y si nadie reclamó a este, ofrece "reclamar".
 -}
 viewVerComoWarning : WebData User -> Maybe ULID -> Maybe ULID -> Grupo -> Html Msg
-viewVerComoWarning currentUser propio activeUser grupo =
-    case activeUser |> Maybe.andThen (\uid -> grupo.participantes |> List.filter (\p -> p.id == uid) |> List.head) of
+viewVerComoWarning currentUser guardado activeUser grupo =
+    case activeUser |> Maybe.andThen (findParticipante grupo) of
         Just p ->
             let
                 cuenta =
                     RemoteData.toMaybe currentUser
+
+                propio =
+                    case cuenta of
+                        Just u ->
+                            ownedParticipante u.id grupo |> Maybe.map .id
+
+                        Nothing ->
+                            guardado
             in
             if propio /= Just p.id && (propio /= Nothing || cuenta /= Nothing) then
                 let
@@ -1475,7 +1476,7 @@ viewGlobalUserSelector : Maybe ULID -> GrupoLike r -> Html Msg
 viewGlobalUserSelector activeUser grupo =
     viewSelectorDeParticipante
         { attrs = [ class "form-select form-select-sm" ]
-        , vacio = option [ value "", selected (activeUser == Nothing) ] [ text "" ]
+        , vacio = option [ value "", selected (activeUser == Nothing), Attr.hidden True, Attr.disabled True ] [ text "" ]
         , opcion = []
         , alElegir = VerComoParticipante grupo.id
         }
@@ -1500,14 +1501,17 @@ viewSelectorDeBienvenida activeUser grupo =
             option [ value "", selected (activeUser == Nothing), Attr.hidden True, Attr.disabled True ]
                 [ text "Participantes de este grupo" ]
         , opcion = [ class "bg-body text-body" ]
-        , alElegir = Presentarse grupo.id
+        , alElegir = IdentificarseComo grupo.id
         }
         activeUser
         grupo
 
 
+{-| La opción vacía es sólo un placeholder (va `disabled`): elegir "nadie"
+nunca es válido, así que si igual llega no manda nada.
+-}
 viewSelectorDeParticipante :
-    { attrs : List (Html.Attribute Msg), vacio : Html Msg, opcion : List (Html.Attribute Msg), alElegir : Maybe ULID -> Msg }
+    { attrs : List (Html.Attribute Msg), vacio : Html Msg, opcion : List (Html.Attribute Msg), alElegir : ULID -> Msg }
     -> Maybe ULID
     -> GrupoLike r
     -> Html Msg
@@ -1515,14 +1519,13 @@ viewSelectorDeParticipante config activeUser grupo =
     select
         (on "change"
             (Decode.at [ "target", "value" ] Decode.string
-                |> Decode.map
+                |> Decode.andThen
                     (\value ->
-                        config.alElegir <|
-                            if value == "" then
-                                Nothing
+                        if value == "" then
+                            Decode.fail "el placeholder no se elige"
 
-                            else
-                                Just value
+                        else
+                            Decode.succeed (config.alElegir value)
                     )
             )
             :: config.attrs

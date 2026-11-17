@@ -1,8 +1,8 @@
-module Models.Store exposing (empty, ensureGrupo, ensurePagos, ensureResumen, ensureTransferencias, getGrupo, getPago, getPagos, getRepartija, getResumen, getTransferencias, invalidatePagos, invalidateResumen, refreshGrupo, refreshPago, refreshPagos, refreshRepartija, refreshResumen, refreshTransferencias, removeTransferencia, setGrupo, setPago, setTransferencia, update, updateRepartijaForFrontend)
+module Models.Store exposing (empty, ensureGrupo, ensurePagadoYConsumido, ensurePagos, ensureResumen, ensureTransferencias, getGrupo, getPagadoYConsumido, getPago, getPagos, getRepartija, getResumen, getTransferencias, invalidatePagos, invalidateResumen, refreshGrupo, refreshPagadoYConsumido, refreshPago, refreshPagos, refreshRepartija, refreshResumen, refreshTransferencias, removeTransferencia, setGrupo, setPago, setTransferencia, update, updateRepartijaForFrontend)
 
-import Dict
+import Dict exposing (Dict)
 import Effect exposing (Effect)
-import Generated.Api as Api exposing (Grupo, Pago, RepartijaForFrontend, ResumenGrupo, ShallowPago, Transferencia, ULID)
+import Generated.Api as Api exposing (Grupo, PagadoYConsumido, Pago, RepartijaForFrontend, ResumenGrupo, ShallowPago, Transferencia, ULID)
 import Models.Store.Types exposing (Store, StoreMsg(..))
 import RemoteData exposing (RemoteData(..), WebData)
 import Shared.Msg exposing (Msg(..))
@@ -14,7 +14,21 @@ update msg store =
     case msg of
         GrupoFetched grupoId grupo ->
             ( store |> saveGrupo grupoId grupo
-            , Effect.telemetryEvent <| trackDecodeErrors "getGrupoById" grupo
+            , Effect.batch
+                [ Effect.telemetryEvent <| trackDecodeErrors "getGrupoById" grupo
+                , case grupo of
+                    Success _ ->
+                        Effect.sendSharedMsg (GrupoCargado grupoId)
+
+                    NotAsked ->
+                        Effect.none
+
+                    Loading ->
+                        Effect.none
+
+                    Failure _ ->
+                        Effect.none
+                ]
             )
 
         FetchGrupo grupoId ->
@@ -44,15 +58,44 @@ update msg store =
             , Effect.telemetryEvent <| trackDecodeErrors "getGrupoByIdPagos" pagos
             )
 
-        FetchPagos grupoId participanteId ->
-            ( store
-            , Effect.batch
-                [ Effect.sendCmd <| Api.getGrupoByIdPagos grupoId participanteId (RemoteData.fromResult >> PagosFetched grupoId >> StoreMsg)
-                ]
+        FetchPagos grupoId ->
+            -- Si se vuelven a pedir es que algún gasto cambió, y con él lo que
+            -- pagó y consumió cada uno.
+            ( { store | pagadoYConsumidoPorParticipante = store.pagadoYConsumidoPorParticipante |> sinLosDelGrupo grupoId }
+            , Effect.sendCmd <| Api.getGrupoByIdPagos grupoId (RemoteData.fromResult >> PagosFetched grupoId >> StoreMsg)
             )
 
         InvalidatePagos grupoId ->
-            ( { store | pagosPorGrupo = store.pagosPorGrupo |> Dict.remove grupoId }, Effect.none )
+            ( { store
+                | pagosPorGrupo = store.pagosPorGrupo |> Dict.remove grupoId
+                , pagadoYConsumidoPorParticipante = store.pagadoYConsumidoPorParticipante |> sinLosDelGrupo grupoId
+              }
+            , Effect.none
+            )
+
+        PagadoYConsumidoFetched grupoId participanteId pagadoYConsumido ->
+            ( { store
+                | pagadoYConsumidoPorParticipante =
+                    store.pagadoYConsumidoPorParticipante
+                        |> Dict.insert ( grupoId, participanteId )
+                            (pagadoYConsumido |> RemoteData.map (List.map (\delGasto -> ( delGasto.pagoId, delGasto )) >> Dict.fromList))
+              }
+            , Effect.telemetryEvent <| trackDecodeErrors "getGrupoByIdParticipantesByParticipanteIdPagadoyconsumido" pagadoYConsumido
+            )
+
+        FetchPagadoYConsumido grupoId participanteId ->
+            -- Marcarlo hace que un segundo 'ensure' antes de la respuesta no lo
+            -- vuelva a pedir.
+            ( { store
+                | pagadoYConsumidoPorParticipante =
+                    store.pagadoYConsumidoPorParticipante
+                        |> Dict.update ( grupoId, participanteId ) (Maybe.withDefault Loading >> Just)
+              }
+            , Effect.sendCmd <|
+                Api.getGrupoByIdParticipantesByParticipanteIdPagadoyconsumido grupoId
+                    participanteId
+                    (RemoteData.fromResult >> PagadoYConsumidoFetched grupoId participanteId >> StoreMsg)
+            )
 
         TransferenciasFetched grupoId transferencias ->
             ( { store | transferenciasPorGrupo = store.transferenciasPorGrupo |> Dict.insert grupoId transferencias }
@@ -197,9 +240,14 @@ updateRepartijaForFrontend repartijaId repartijaPage =
     Effect.sendStoreMsg <| RepartijaFetched repartijaId (Success repartijaPage)
 
 
-refreshPagos : ULID -> Maybe ULID -> Effect msg
-refreshPagos grupoId participanteId =
-    Effect.sendStoreMsg <| FetchPagos grupoId participanteId
+refreshPagos : ULID -> Effect msg
+refreshPagos grupoId =
+    Effect.sendStoreMsg <| FetchPagos grupoId
+
+
+refreshPagadoYConsumido : ULID -> ULID -> Effect msg
+refreshPagadoYConsumido grupoId participanteId =
+    Effect.sendStoreMsg <| FetchPagadoYConsumido grupoId participanteId
 
 
 refreshPago : ULID -> ULID -> Effect msg
@@ -228,11 +276,27 @@ ensureGrupo grupoId store =
             Effect.none
 
 
-ensurePagos : ULID -> Maybe ULID -> Store -> Effect msg
-ensurePagos grupoId participanteId store =
+ensurePagos : ULID -> Store -> Effect msg
+ensurePagos grupoId store =
     case getPagos grupoId store of
         NotAsked ->
-            Effect.sendStoreMsg <| FetchPagos grupoId participanteId
+            refreshPagos grupoId
+
+        Loading ->
+            Effect.none
+
+        Failure _ ->
+            Effect.none
+
+        Success _ ->
+            Effect.none
+
+
+ensurePagadoYConsumido : ULID -> ULID -> Store -> Effect msg
+ensurePagadoYConsumido grupoId participanteId store =
+    case getPagadoYConsumido grupoId participanteId store of
+        NotAsked ->
+            refreshPagadoYConsumido grupoId participanteId
 
         Loading ->
             Effect.none
@@ -346,6 +410,21 @@ getPagos grupoId store =
         |> Maybe.withDefault NotAsked
 
 
+{-| Por gasto. Un gasto que no está es uno donde el participante no puso ni
+consumió nada.
+-}
+getPagadoYConsumido : ULID -> ULID -> Store -> WebData (Dict ULID PagadoYConsumido)
+getPagadoYConsumido grupoId participanteId store =
+    store.pagadoYConsumidoPorParticipante
+        |> Dict.get ( grupoId, participanteId )
+        |> Maybe.withDefault NotAsked
+
+
+sinLosDelGrupo : ULID -> Dict ( ULID, ULID ) a -> Dict ( ULID, ULID ) a
+sinLosDelGrupo grupoId =
+    Dict.filter (\( deGrupo, _ ) _ -> deGrupo /= grupoId)
+
+
 getPago : ULID -> Store -> WebData Pago
 getPago pagoId store =
     store.pagos
@@ -366,6 +445,7 @@ empty =
     , repartijas = Dict.empty
     , resumenes = Dict.empty
     , pagosPorGrupo = Dict.empty
+    , pagadoYConsumidoPorParticipante = Dict.empty
     , transferenciasPorGrupo = Dict.empty
     , pagos = Dict.empty
     }

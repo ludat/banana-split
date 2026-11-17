@@ -9,12 +9,14 @@ module Site.Handler.Pagos (
   handlePagoResumenPost,
   handlePagoUpdate,
   handlePagosGet,
+  handlePagadoYConsumidoGet,
 ) where
 
 import BananaSplit
 import BananaSplit.Persistence (
   deletePago,
   fetchPago,
+  fetchPagadoYConsumido,
   fetchShallowPagos,
   savePago,
   updatePago,
@@ -27,9 +29,13 @@ import Site.Types
 
 -- | El listado de gastos es la lectura más pesada de la app y no decide nada
 -- que se vaya a escribir después, así que no paga el costo de SERIALIZABLE.
-handlePagosGet :: ULID -> Maybe ULID -> AppHandler [ShallowPago]
-handlePagosGet grupoId participanteId = do
-  runBeamFastRead $ fetchShallowPagos grupoId (fmap ParticipanteId participanteId)
+handlePagosGet :: ULID -> AppHandler [ShallowPago]
+handlePagosGet grupoId = do
+  runBeamFastRead $ fetchShallowPagos grupoId
+
+handlePagadoYConsumidoGet :: ULID -> ULID -> AppHandler [PagadoYConsumido]
+handlePagadoYConsumidoGet grupoId participanteId = do
+  runBeamFastRead $ fetchPagadoYConsumido grupoId (ParticipanteId participanteId)
 
 handlePagoGet :: ULID -> ULID -> AppHandler Pago
 handlePagoGet grupoId pagoId = do

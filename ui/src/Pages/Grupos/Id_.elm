@@ -5,6 +5,7 @@ import Components.Bootstrap as Bs
 import Components.Movimientos as Movimientos
 import Components.PagoDetalleModal as PagoDetalleModal
 import Components.ResumenGasto as ResumenGasto
+import Dict
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Grupo, Moneda, Netos, ULID)
 import Html exposing (Html, a, button, div, i, li, p, span, table, tbody, td, text, th, thead, tr, ul)
@@ -65,7 +66,10 @@ init route shared =
         [ Store.ensureResumen grupoId shared.store
         , Store.ensureTransferencias grupoId shared.store
         , Store.ensureGrupo grupoId shared.store
-        , Store.ensurePagos grupoId (Shared.currentParticipante shared grupoId) shared.store
+        , Store.ensurePagos grupoId shared.store
+        , Shared.currentParticipante shared grupoId
+            |> Maybe.map (\participanteId -> Store.ensurePagadoYConsumido grupoId participanteId shared.store)
+            |> Maybe.withDefault Effect.none
         , Effect.setUnsavedChangesWarning False
         ]
     )
@@ -944,6 +948,10 @@ viewUltimosMovimientosCard zone participanteId store model grupo =
                                 , desde = Path.Grupos_Id_ { id = grupo.id }
                                 , telemetria = "resumen"
                                 , participanteId = participanteId
+                                , pagadoYConsumido =
+                                    participanteId
+                                        |> Maybe.map (\participante -> Store.getPagadoYConsumido model.grupoId participante store |> RemoteData.withDefault Dict.empty)
+                                        |> Maybe.withDefault Dict.empty
                                 , grupo = grupo
                                 }
                             )

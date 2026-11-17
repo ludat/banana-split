@@ -15,7 +15,7 @@ import Html.Events exposing (on, onClick, onInput, onSubmit)
 import Http
 import Json.Decode
 import Layouts
-import Models.Grupo exposing (estaCongelado, ownedParticipante)
+import Models.Grupo exposing (estaCongelado, findParticipante, ownedParticipante)
 import Models.Moneda as Moneda
 import Models.Monto as Monto
 import Models.PreferenciasDeGrupo exposing (CambioDePreferencia(..), PreferenciasDeGrupo)
@@ -652,7 +652,7 @@ viewParticipantePreferido preferencias grupo =
         -- Si lo configurado ya no está en el grupo, el select muestra "nadie".
         elegido =
             preferencias.participanteId
-                |> Maybe.andThen (\pid -> grupo.participantes |> List.filter (\p -> p.id == pid) |> List.head)
+                |> Maybe.andThen (findParticipante grupo)
                 |> Maybe.map .id
     in
     [ div [ class "mb-3 text-muted" ]

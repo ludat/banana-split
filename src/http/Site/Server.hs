@@ -48,6 +48,7 @@ serverT =
         , _routePagoPost = handlePagoPost
         , _routePagoGet = handlePagoGet
         , _routePagosGet = handlePagosGet
+        , _routePagadoYConsumidoGet = handlePagadoYConsumidoGet
         , _routePagoResumenPost = handlePagoResumenPost
         , -- , _routePagosGet = handlePagosGet
           -- , _routeGrupoPagoAdd = handlePagoCreate

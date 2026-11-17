@@ -21,7 +21,7 @@ import Utils.Toasts.Types exposing (Toasts)
 type alias Model =
     { toasties : Toasts
     , store : Store
-    , participanteElegido : Dict ULID (Maybe ULID)
+    , participanteElegido : Dict ULID ULID
     , preferenciasDeGrupos : Dict ULID PreferenciasDeGrupo
     , currentUser : WebData User
     , now : Posix
