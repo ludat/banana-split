@@ -290,12 +290,12 @@ viewLeftColumn store zone userId model grupo =
                             [ class "mb-3" ]
                             [ text <|
                                 if resumen.cantidadPagosInvalidos == 1 then
-                                    "Tenés 1 gasto inválido, ese no se cuenta para las deudas."
+                                    "Tenés 1 gasto inválido: se cuenta lo que tiene cargado, así que las deudas pueden no cerrar hasta que lo arregles."
 
                                 else
                                     "Tenés "
                                         ++ String.fromInt resumen.cantidadPagosInvalidos
-                                        ++ " gastos inválidos, esos no se cuentan para las deudas."
+                                        ++ " gastos inválidos: se cuenta lo que tienen cargado, así que las deudas pueden no cerrar hasta que los arregles."
                             ]
 
                       else

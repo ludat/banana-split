@@ -520,24 +520,24 @@ escribirPagadoYConsumido grupoId pago resumen = do
   let pagado = M.comoPorParticipante resumen.pagado
       consumido = M.comoPorParticipante resumen.consumido
       montoDe participante = fromMaybe 0 . PorParticipante.buscar participante
-      filas
-        | not (M.resumenGastoEsValido resumen) = []
-        | otherwise =
-            PorParticipante.combinarCon const pagado consumido
-              & PorParticipante.participantes
-              & fmap
-                ( \participante ->
-                    PagadoYConsumidoEnGasto
-                      { gasto = PagoId pago.pagoId
-                      , participante = participanteId2Persistent participante
-                      , grupo = GrupoId grupoId
-                      , moneda = pago.moneda
-                      , pagado_en_unidades_minimas =
-                          aUnidadesMinimas pago.moneda $ montoDe participante pagado
-                      , consumido_en_unidades_minimas =
-                          aUnidadesMinimas pago.moneda $ montoDe participante consumido
-                      }
-                )
+      -- Un gasto inválido también deja sus filas, con lo que se sabe hasta
+      -- ahora: el balance del grupo lo cuenta aunque no cierre.
+      filas =
+        PorParticipante.combinarCon const pagado consumido
+          & PorParticipante.participantes
+          & fmap
+            ( \participante ->
+                PagadoYConsumidoEnGasto
+                  { gasto = PagoId pago.pagoId
+                  , participante = participanteId2Persistent participante
+                  , grupo = GrupoId grupoId
+                  , moneda = pago.moneda
+                  , pagado_en_unidades_minimas =
+                      aUnidadesMinimas pago.moneda $ montoDe participante pagado
+                  , consumido_en_unidades_minimas =
+                      aUnidadesMinimas pago.moneda $ montoDe participante consumido
+                  }
+            )
 
   runDelete
     $ delete
@@ -737,7 +737,8 @@ toShallowPago pago =
 
 -- | Cuánto puso y consumió un participante en cada gasto del grupo, de una
 -- query sobre el cache y sin joinear 'pagos': la fila sabe de qué grupo es. Un
--- gasto donde no aparece, o uno inválido (que no deja filas), no viene.
+-- gasto donde no aparece no viene. Uno inválido viene con lo que se sabe hasta
+-- ahora.
 --
 -- Los números salen de las filas, que un cambio de formato del jsonb del
 -- resumen no toca: siguen siendo correctos aunque el resto venga en default.
@@ -748,21 +749,21 @@ fetchPagadoYConsumido grupoId participanteId = do
     guard_ (fila.grupo ==. GrupoId (val_ grupoId))
     guard_ (fila.participante ==. ParticipanteId (val_ (M.participanteId2ULID participanteId)))
     pure fila
-  pure $
-    filas
-      & fmap
-        ( \fila ->
-            M.PagadoYConsumido
-              { M.pagoId = case fila.gasto of PagoId p -> p
-              , M.pagado = desdeUnidadesMinimas fila.moneda fila.pagado_en_unidades_minimas
-              , M.consumido = desdeUnidadesMinimas fila.moneda fila.consumido_en_unidades_minimas
-              }
-        )
+  pure
+    $ filas
+    & fmap
+      ( \fila ->
+          M.PagadoYConsumido
+            { M.pagoId = case fila.gasto of PagoId p -> p
+            , M.pagado = desdeUnidadesMinimas fila.moneda fila.pagado_en_unidades_minimas
+            , M.consumido = desdeUnidadesMinimas fila.moneda fila.consumido_en_unidades_minimas
+            }
+      )
 
 -- | Los netos de un grupo sumados en la base, sin traer ningún gasto.
 --
--- No filtra por el resumen guardado porque un gasto inválido no tiene filas: el
--- filtro vive en la escritura.
+-- Incluye los gastos inválidos con lo que tienen hasta ahora, así que mientras
+-- haya alguno los netos pueden no sumar cero.
 netosDeGrupo :: ULID -> Pg (M.PorMoneda (M.Netos M.Monto))
 netosDeGrupo grupoId = foldMap snd <$> filasDeNetos (UnGrupo grupoId)
 

@@ -186,11 +186,11 @@ data PagadoYConsumido = PagadoYConsumido
   deriving (Show, Eq, Generic)
 
 -- | Los netos que dejan todos los gastos de un grupo, por moneda. Los
--- inválidos no cuentan: no se sabe quién puso ni quién consumió.
+-- inválidos cuentan con lo que se sabe hasta ahora, así que con alguno los
+-- netos pueden no sumar cero.
 calcularNetosTotales :: [Pago] -> PorMoneda (Netos Monto)
 calcularNetosTotales pagos =
   pagos
-    & filter gastoEsValido
     & fmap calcularNetosPago
     & mconcat
 

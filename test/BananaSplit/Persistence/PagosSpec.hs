@@ -212,14 +212,16 @@ spec =
       pago <- runDb $ saveInvalidRepartijaPago grupo
       let repartija = repartijaDe pago
 
-      -- Sin claims el gasto es inválido, así que no deja filas.
-      runDb (contarFilasDe pago.pagoId) `shouldReturn` 0
+      -- Sin claims el gasto es inválido, pero lo pagado ya está.
+      runDb (fetchPagadoYConsumido grupo.id (participanteDe grupo))
+        `shouldReturn` [PagadoYConsumido{pagoId = pago.pagoId, pagado = 100, consumido = 0}]
 
       _ <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
 
       -- Sin ninguna lectura por el medio, el cache ya refleja el claim.
       runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Just sinCalcularCrudo
-      runDb (contarFilasDe pago.pagoId) `shouldReturn` 1
+      runDb (fetchPagadoYConsumido grupo.id (participanteDe grupo))
+        `shouldReturn` [PagadoYConsumido{pagoId = pago.pagoId, pagado = 100, consumido = 100}]
 
     it "borrar un claim tambien deja el cache al dia" $ \(RunDb runDb) -> do
       grupo <- runDb $ createGrupo "Test Grupo" "alguien"
@@ -227,24 +229,26 @@ spec =
       let repartija = repartijaDe pago
 
       repartijaConClaim <- runDb $ saveRepartijaClaim repartija.id (RepartijaClaim nullUlid (participanteDe grupo) (primerItem repartija).id Nothing)
-      runDb (contarFilasDe pago.pagoId) `shouldReturn` 1
+      runDb (fetchPagadoYConsumido grupo.id (participanteDe grupo))
+        `shouldReturn` [PagadoYConsumido{pagoId = pago.pagoId, pagado = 100, consumido = 100}]
 
       _ <- runDb $ deleteRepartijaClaim (primerClaim repartijaConClaim).id
       -- Vuelve a ser inválido, y el cache lo dice ya mismo.
       runDb (resumenCrudo pago.pagoId) `shouldNotReturn` Just sinCalcularCrudo
-      runDb (contarFilasDe pago.pagoId) `shouldReturn` 0
+      runDb (fetchPagadoYConsumido grupo.id (participanteDe grupo))
+        `shouldReturn` [PagadoYConsumido{pagoId = pago.pagoId, pagado = 100, consumido = 0}]
 
     it "netosDeGrupo suma lo mismo que recalcular todos los gastos" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
 
       _ <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
       _ <- runDb $ savePago grupo.id $ gastoEntre USD 50 otro uno
-      -- Un gasto inválido no tiene que aportar nada.
+      -- Un gasto inválido aporta lo que se sabe: lo pagado, sin nadie que lo deba.
       _ <- runDb $ savePago grupo.id $ (gastoEntre ARS 70 uno otro){deudores = distribucionVacia}
 
       desdeElCache <- runDb $ netosDeGrupo grupo.id
       desdeElCache
-        `shouldBe` netos [(uno, 100), (otro, -100)]
+        `shouldBe` netos [(uno, 170), (otro, -100)]
           `enMoneda` ARS
           <> netos [(otro, 50), (uno, -50)]
           `enMoneda` USD
@@ -264,13 +268,14 @@ spec =
       runDb (savePago grupo.id $ gastoEntre ARS demasiadoPreciso uno otro)
         `shouldThrow` (\(FatalError mensaje) -> "más precisión" `Text.isInfixOf` mensaje)
 
-    it "un gasto invalido no deja filas en el cache" $ \(RunDb runDb) -> do
+    it "un gasto invalido deja en el cache solo lo que se sabe" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
       pago <- runDb $ savePago grupo.id $ gastoEntre ARS 100 uno otro
       runDb (contarFilasDe pago.pagoId) `shouldReturn` 2
 
       _ <- runDb $ updatePago grupo.id pago.pagoId pago{deudores = distribucionVacia}
-      runDb (contarFilasDe pago.pagoId) `shouldReturn` 0
+      runDb (contarFilasDe pago.pagoId) `shouldReturn` 1
+      runDb (netosDeGrupo grupo.id) `shouldReturn` (netos [(uno, 100)] `enMoneda` ARS)
 
     it "borrar un gasto se lleva sus filas del cache" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
@@ -393,8 +398,8 @@ spec =
 
     it "un gasto invalido no se recalcula en cada lectura" $ \(RunDb runDb) -> do
       (grupo, uno, otro) <- runDb grupoConDosParticipantes
-      -- Un gasto inválido no deja filas, así que "sin filas" por sí solo no
-      -- puede significar "frío": lo que lo distingue es el resumen guardado.
+      -- Un gasto inválido puede no dejar filas, así que "sin filas" por sí solo
+      -- no puede significar "frío": lo que lo distingue es el resumen guardado.
       _ <- runDb $ savePago grupo.id $ (gastoEntre ARS 100 uno otro){deudores = distribucionVacia}
 
       gastos <- runDb $ fetchShallowPagos grupo.id

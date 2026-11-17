@@ -195,8 +195,9 @@ type UnidadesMinimas = Int64
 -- Es derivado de las distribuciones del pago: existe para poder sumar netos con
 -- un @SUM@ en vez de reconstruir cada gasto entero.
 --
--- Un gasto inválido no tiene filas. Uno válido siempre tiene al menos una, así
--- que "válido y sin filas" significa que el cache todavía no se calculó.
+-- Un gasto inválido también tiene filas, con lo que se sabe hasta ahora (pueden
+-- ser ninguna). Uno válido siempre tiene al menos una, así que "válido y sin
+-- filas" significa que el cache todavía no se calculó.
 data PagadoYConsumidoEnGastoT f = PagadoYConsumidoEnGasto
   { gasto :: PrimaryKey PagoT f
   , participante :: PrimaryKey ParticipanteT f

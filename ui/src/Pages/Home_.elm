@@ -380,8 +380,8 @@ viewAlDia =
     div [ class "text-success" ] [ i [ class "bi bi-check2-circle me-1" ] [], text "Estás al día" ]
 
 
-{-| Los inválidos no entran en el neto, así que el número de arriba puede
-estar mintiendo: vale la pena avisarlo desde acá.
+{-| Los inválidos entran en el neto a medias, así que el número de arriba puede
+no ser el final: vale la pena avisarlo desde acá.
 -}
 viewInvalidos : Int -> List (Html Msg)
 viewInvalidos cantidad =

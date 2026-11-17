@@ -479,12 +479,12 @@ viewAvisosParaActivar monedasSinTasa gastosInvalidos =
                 [ class "mb-3" ]
                 [ text <|
                     if gastosInvalidos == 1 then
-                        "Para empezar a saldar deudas hay que arreglar 1 gasto inválido: no se cuenta para las deudas."
+                        "Para empezar a saldar deudas hay que arreglar 1 gasto inválido."
 
                     else
                         "Para empezar a saldar deudas hay que arreglar "
                             ++ String.fromInt gastosInvalidos
-                            ++ " gastos inválidos: no se cuentan para las deudas."
+                            ++ " gastos inválidos."
                 ]
         ]
 

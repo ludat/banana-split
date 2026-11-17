@@ -15,8 +15,8 @@ module Site.Handler.Pagos (
 import BananaSplit
 import BananaSplit.Persistence (
   deletePago,
-  fetchPago,
   fetchPagadoYConsumido,
+  fetchPago,
   fetchShallowPagos,
   savePago,
   updatePago,
