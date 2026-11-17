@@ -26,6 +26,7 @@ type Msg
     | SetCurrentParticipante { grupoId : ULID, participanteId : ULID }
     | CambiarPreferenciaDeGrupo ULID CambioDePreferencia
     | CurrentUserLoaded (Result Http.Error User)
+    | RefrescarSesion
     | GrupoCargado ULID
     | ClaimParticipante { grupoId : ULID, participanteId : ULID }
     | UnclaimParticipante { grupoId : ULID, participanteId : ULID }

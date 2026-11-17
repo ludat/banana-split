@@ -21,10 +21,12 @@ import Json.Encode
 import Models.Grupo
 import Models.PreferenciasDeGrupo as PreferenciasDeGrupo exposing (PreferenciasDeGrupo)
 import Models.Store as Store
+import Process
 import RemoteData exposing (RemoteData(..))
 import Route exposing (Route)
 import Shared.Model
 import Shared.Msg exposing (Msg(..))
+import Task
 import Time
 import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toast
@@ -109,14 +111,15 @@ init possiblyFlags _ =
             Time.customZone flags.offset []
 
         -- El usuario inyectado sale del token, así que se muestra ya pero igual
-        -- se refresca: eso renueva la cookie y trae el usuario de la base. Sin
-        -- token no hay nada que refrescar.
+        -- se refresca: eso renueva la cookie y trae el usuario de la base. Se
+        -- demora para no ocupar una de las conexiones del navegador mientras
+        -- carga la página. Sin token no hay nada que refrescar.
         ( currentUser, refrescarSesion ) =
             case flags.initialData of
                 Just { user } ->
                     case user of
                         Just u ->
-                            ( Success u, Effect.sendCmd (Api.postAuthRefresh CurrentUserLoaded) )
+                            ( Success u, Effect.sendCmd (Task.perform (\() -> RefrescarSesion) (Process.sleep 10000)) )
 
                         Nothing ->
                             ( NotAsked, Effect.none )
@@ -207,6 +210,9 @@ update _ msg model =
                       }
                     , Effect.savePreferenciaDeGrupo grupoId cambio
                     )
+
+        RefrescarSesion ->
+            ( model, Effect.sendCmd (Api.postAuthRefresh CurrentUserLoaded) )
 
         CurrentUserLoaded currentUser ->
             -- Al arrancar el usuario ya viene en el HTML; esto es por loguearse
