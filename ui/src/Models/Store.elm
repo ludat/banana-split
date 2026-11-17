@@ -103,9 +103,21 @@ update msg store =
             )
 
         FetchTransferencias grupoId ->
-            ( store
-            , Effect.sendCmd <| Api.getGrupoByIdTransferencias grupoId (RemoteData.fromResult >> TransferenciasFetched grupoId >> StoreMsg)
-            )
+            fetchTransferencias grupoId store
+
+        EnsureTransferencias grupoId ->
+            case getTransferencias grupoId store of
+                NotAsked ->
+                    fetchTransferencias grupoId store
+
+                Loading ->
+                    ( store, Effect.none )
+
+                Failure _ ->
+                    ( store, Effect.none )
+
+                Success _ ->
+                    ( store, Effect.none )
 
         TransferenciaActualizada grupoId transferencia ->
             ( store
@@ -156,6 +168,17 @@ update msg store =
                 [ Effect.sendCmd <| Api.getRepartijasByRepartijaId repartijaId (RemoteData.fromResult >> RepartijaFetched repartijaId >> StoreMsg)
                 ]
             )
+
+
+fetchTransferencias : ULID -> Store -> ( Store, Effect Shared.Msg.Msg )
+fetchTransferencias grupoId store =
+    ( { store
+        | transferenciasPorGrupo =
+            store.transferenciasPorGrupo
+                |> Dict.update grupoId (Maybe.withDefault Loading >> Just)
+      }
+    , Effect.sendCmd <| Api.getGrupoByIdTransferencias grupoId (RemoteData.fromResult >> TransferenciasFetched grupoId >> StoreMsg)
+    )
 
 
 saveResumen : ULID -> WebData ResumenGrupo -> Store -> Store
@@ -341,20 +364,9 @@ ensureResumen grupoId store =
             Effect.none
 
 
-ensureTransferencias : ULID -> Store -> Effect msg
-ensureTransferencias grupoId store =
-    case getTransferencias grupoId store of
-        NotAsked ->
-            Effect.sendStoreMsg <| FetchTransferencias grupoId
-
-        Loading ->
-            Effect.none
-
-        Failure _ ->
-            Effect.none
-
-        Success _ ->
-            Effect.none
+ensureTransferencias : ULID -> Effect msg
+ensureTransferencias grupoId =
+    Effect.sendStoreMsg <| EnsureTransferencias grupoId
 
 
 refreshTransferencias : ULID -> Effect msg

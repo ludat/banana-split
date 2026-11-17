@@ -129,7 +129,7 @@ abrir ctx vista =
       }
     , case vista of
         Detalle _ ->
-            Store.ensureTransferencias ctx.grupoId ctx.store
+            Store.ensureTransferencias ctx.grupoId
 
         _ ->
             Effect.none

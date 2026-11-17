@@ -64,7 +64,7 @@ init route shared =
       }
     , Effect.batch
         [ Store.ensureResumen grupoId shared.store
-        , Store.ensureTransferencias grupoId shared.store
+        , Store.ensureTransferencias grupoId
         , Store.ensureGrupo grupoId shared.store
         , Store.ensurePagos grupoId shared.store
         , Shared.currentParticipante shared grupoId

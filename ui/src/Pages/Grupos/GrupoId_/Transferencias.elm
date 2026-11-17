@@ -56,7 +56,7 @@ init grupoId store =
       }
     , Effect.batch
         [ Store.ensureResumen grupoId store
-        , Store.ensureTransferencias grupoId store
+        , Store.ensureTransferencias grupoId
         , Store.ensureGrupo grupoId store
         ]
     )

@@ -29,6 +29,7 @@ type StoreMsg
     | FetchPagadoYConsumido ULID ULID
     | TransferenciasFetched ULID (WebData (List Transferencia))
     | FetchTransferencias ULID
+    | EnsureTransferencias ULID
     | TransferenciaActualizada ULID Transferencia
     | TransferenciaBorrada ULID ULID
     | PagoFetched ULID (WebData Pago)

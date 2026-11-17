@@ -127,7 +127,7 @@ init transferenciaCtx route =
     , Effect.batch
         [ Effect.map PagoModalMsg modalEffect
         , Effect.map TransferenciaModalMsg transferenciaEffect
-        , Store.ensureTransferencias transferenciaCtx.grupoId transferenciaCtx.store
+        , Store.ensureTransferencias transferenciaCtx.grupoId
         ]
     )
 

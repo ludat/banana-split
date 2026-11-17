@@ -57,7 +57,7 @@ init route shared =
     ( { grupoId = grupoId }
     , Effect.batch
         [ Store.ensureGrupo grupoId shared.store
-        , Store.ensureTransferencias grupoId shared.store
+        , Store.ensureTransferencias grupoId
         , Store.ensurePagos grupoId shared.store
         , Shared.currentParticipante shared grupoId
             |> Maybe.map (\participanteId -> Store.ensurePagadoYConsumido grupoId participanteId shared.store)
