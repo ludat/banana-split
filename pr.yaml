@@ -24,8 +24,8 @@ hooks:
         - sh
         - -c
         - |
-            timeout 10 banana-split migrations init
-            banana-split migrations migrate ./migrations
+            timeout 10 repartix migrations init
+            repartix migrations migrate ./migrations
   post-deploy:
     - name: migrations
       service: backend
@@ -33,6 +33,6 @@ hooks:
         - sh
         - -c
         - |
-            if ! [[ "$(timeout 10 banana-split migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/')" = "Complete" ]]; then
-              banana-split migrations complete
+            if ! [[ "$(timeout 10 repartix migrations status | grep status | sed 's/^ *"status": "\(.*\)"/\1/')" = "Complete" ]]; then
+              repartix migrations complete
             fi
