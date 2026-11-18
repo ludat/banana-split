@@ -19,7 +19,7 @@ import Network.Mail.SMTP (Address (..))
 import Network.Mail.SMTP qualified as SMTP
 import Protolude
 
-import BananaSplit.Email (Email, unEmail)
+import Repartix.Email (Email, unEmail)
 
 data Mailer = Mailer
   { sendLoginCode :: Email -> Text -> IO ()
@@ -85,7 +85,7 @@ consoleMailer =
     { sendLoginCode = \email code -> do
         putText $
           unlines
-            [ "┌─ Banana Split login code ──────────────────────────"
+            [ "┌─ Repartix login code ──────────────────────────────"
             , "│ email: " <> unEmail email
             , "│ code:  " <> code
             , "└────────────────────────────────────────────────────"
@@ -93,7 +93,7 @@ consoleMailer =
     , sendNotice = \email subject body -> do
         putText $
           unlines
-            [ "┌─ Banana Split notice ──────────────────────────────"
+            [ "┌─ Repartix notice ──────────────────────────────────"
             , "│ to:      " <> unEmail email
             , "│ subject: " <> subject
             , "├─ body ─────────────────────────────────────────────"
@@ -115,7 +115,7 @@ smtpMailer settings =
             [Address Nothing (unEmail email)]
             []
             []
-            "Tu código de acceso a Banana Split"
+            "Tu código de acceso a Repartix"
             [Mime.htmlPart $ toS $ loginEmailHtml code]
     , sendNotice = \email subject body ->
         deliver settings $
@@ -149,7 +149,7 @@ deliver settings =
 loginEmailHtml :: Text -> Text
 loginEmailHtml code =
   Text.unlines
-    [ "<p>Usá este código para iniciar sesión en Banana Split:</p>"
+    [ "<p>Usá este código para iniciar sesión en Repartix:</p>"
     , "<p><strong style=\"font-size:1.5em;letter-spacing:0.2em\">" <> code <> "</strong></p>"
     , "<p>Vence en 5 minutos.</p>"
     ]

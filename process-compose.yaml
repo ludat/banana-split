@@ -3,7 +3,7 @@ version: "0.5"
 processes:
   backend: &backend
     command: |
-      ghcid --command='cabal repl --enable-multi-repl exe:banana-split lib:banana-split' --reload=./config --run=Main.main --warnings
+      ghcid --command='cabal repl --enable-multi-repl exe:banana-split lib:repartix' --reload=./config --run=Main.main --warnings
     environment:
     - BANANASPLIT_LOG_CONSOLE=true
     - OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
@@ -21,7 +21,7 @@ processes:
   tests:
     disabled: true
     command: |
-      ghcid --command='cabal repl --enable-multi-repl test:spec lib:banana-split' --reload=./config --run=Main.main --warnings
+      ghcid --command='cabal repl --enable-multi-repl test:spec lib:repartix' --reload=./config --run=Main.main --warnings
     is_tty: true
   frontend:
     command: pnpm start

@@ -17,7 +17,7 @@ import Control.Monad.Error.Class
 import Data.Aeson
 import Servant
 
-import BananaSplit.Persistence (GrupoNoEditable (..), runBeamFastRead, runBeamWrite)
+import Repartix.Persistence (GrupoNoEditable (..), runBeamFastRead, runBeamWrite)
 import Preludat
 import Site.Types
 
@@ -52,7 +52,7 @@ throwJsonError serverError errorMessage =
       , errHeaders = errHeaders serverError ++ [("Content-Type", "application/json")]
       }
 
--- | Para el 'Left' de 'BananaSplit.Persistence.withGrupoDescongelado':
+-- | Para el 'Left' de 'Repartix.Persistence.withGrupoDescongelado':
 --
 -- > runBeamWrite (withGrupoDescongelado grupoId accion) `orElse` throwGrupoNoEditable
 throwGrupoNoEditable :: GrupoNoEditable -> AppHandler a

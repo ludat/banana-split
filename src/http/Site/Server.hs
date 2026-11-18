@@ -13,7 +13,7 @@ import Protolude hiding (Handler)
 import Servant
 import Servant.Server.Generic
 
-import BananaSplit.Telemetry (logAttr, logError, runLogging)
+import Repartix.Telemetry (logAttr, logError, runLogging)
 import Site.Api
 import Site.Auth (AuthContext, authHandler, sessionAuthHandler)
 import Site.Handler.Auth

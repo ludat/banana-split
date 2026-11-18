@@ -230,7 +230,7 @@ subscriptions _ =
 
 view : Modo -> Shared.Model -> Model -> View Msg
 view modo shared model =
-    { title = "Banana split"
+    { title = "Repartix"
     , body =
         case ( modo, shared.currentUser ) of
             ( SiempreLanding, _ ) ->

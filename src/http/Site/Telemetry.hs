@@ -2,7 +2,7 @@
 -- span por request y el 'Mailer' instrumentado.
 --
 -- El setup del SDK y los helpers que valen en cualquier parte (incluidos los
--- comandos de consola) están en "BananaSplit.Telemetry". Los handlers usan los
+-- comandos de consola) están en "Repartix.Telemetry". Los handlers usan los
 -- de "Site.Handler.Utils", que son los mismos adaptados a 'AppHandler'.
 module Site.Telemetry (
   traceApiMiddleware,
@@ -36,8 +36,8 @@ import OpenTelemetry.Trace.Core (SpanArguments (..), SpanKind (..), SpanStatus (
 import OpenTelemetry.Trace.Core qualified as Otel
 import Protolude
 
-import BananaSplit.Email (Email, unEmail)
-import BananaSplit.Telemetry (Telemetry (..))
+import Repartix.Email (Email, unEmail)
+import Repartix.Telemetry (Telemetry (..))
 import Site.Mailer (Mailer (..))
 
 -- | Un span de servidor más una medición de @http.server.request.duration@ por

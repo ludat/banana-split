@@ -10,7 +10,7 @@ import Data.Time (Day, fromGregorian)
 import Protolude
 import Test.Hspec
 
-import BananaSplit (
+import Repartix (
   Distribucion (..),
   DistribucionPartes (..),
   Grupo (..),
@@ -29,7 +29,7 @@ import BananaSplit (
   scientificToMonto,
   unEmail,
  )
-import BananaSplit.Receipts (
+import Repartix.Receipts (
   ParsedDistribucion (..),
   ParsedEmailPago (..),
   ParsedReceiptItem (..),

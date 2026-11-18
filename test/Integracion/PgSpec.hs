@@ -22,7 +22,7 @@ import OpenTelemetry.Util (appendOnlyBoundedCollectionValues)
 import Protolude
 import Test.Hspec
 
-import BananaSplit.Persistence (
+import Repartix.Persistence (
   Pg,
   conConexionDelPool,
   conTransaccionDeLecturaRapida,
@@ -30,10 +30,10 @@ import BananaSplit.Persistence (
   fetchGrupo,
   makePool,
  )
-import BananaSplit.PgRoll qualified as PgRoll
-import BananaSplit.Telemetry (Telemetry (..), telemetryFromGlobals)
-import BananaSplit.Telemetry qualified as Telemetry
-import BananaSplit.ULID (nullUlid)
+import Repartix.PgRoll qualified as PgRoll
+import Repartix.Telemetry (Telemetry (..), telemetryFromGlobals)
+import Repartix.Telemetry qualified as Telemetry
+import Repartix.ULID (nullUlid)
 import Site.Config qualified as Config
 import TestRunner (runTest)
 

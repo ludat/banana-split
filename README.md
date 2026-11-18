@@ -1,4 +1,4 @@
-# 🍌 banana-split
+# Repartix
 
 ## Para levantar todo ya setupeado
 

@@ -199,7 +199,7 @@ view location toasts lastReadChangelog now currentUser { toContentMsg, model, co
     in
     { title =
         if content.title == "" then
-            "Banana split"
+            "Repartix"
 
         else
             content.title
@@ -230,7 +230,7 @@ viewNavbar location unread currentUser =
             , onClick ToggleNavBar
             ]
             [ span [ class "navbar-toggler-icon" ] [] ]
-        , Bs.navbarBrand [ Attr.href "#" ] [ text "Banana Split" ]
+        , Bs.navbarBrand [ Attr.href "#" ] [ text "Repartix" ]
         , div [ class "ms-auto d-flex align-items-center gap-2" ]
             [ if unread > 0 then
                 button
@@ -350,7 +350,7 @@ viewOffcanvas location model unread currentUser =
             , Attr.attribute "tabindex" "-1"
             ]
             [ div [ class "offcanvas-header" ]
-                [ h5 [ class "offcanvas-title" ] [ text "Banana Split" ]
+                [ h5 [ class "offcanvas-title" ] [ text "Repartix" ]
                 , button
                     [ type_ "button"
                     , class "btn-close"
@@ -423,7 +423,7 @@ viewFeedbackModal model =
                 ]
                 []
             , Html.p [ class "text-muted small mt-2 mb-0" ]
-                [ text "Esto se manda a quienes desarrollan Banana Split. No lleva tus datos ni tu sesión, así que no podemos responderte — si querés respuesta, dejanos cómo contactarte." ]
+                [ text "Esto se manda a quienes desarrollan Repartix. No lleva tus datos ni tu sesión, así que no podemos responderte — si querés respuesta, dejanos cómo contactarte." ]
             ]
         , footer =
             [ Bs.btn Bs.Transparent [ Telemetry.click "feedback.cancel", onClick CloseFeedback ] [ text "Cancelar" ]

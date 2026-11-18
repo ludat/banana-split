@@ -5,10 +5,10 @@ module Main (
 import Protolude
 
 import AppRunner (runApp)
-import BananaSplit.Elm qualified as Elm
-import BananaSplit.Persistence qualified as Persistence
-import BananaSplit.PgRoll qualified as PgRoll
-import BananaSplit.Telemetry (withTelemetry)
+import Repartix.Elm qualified as Elm
+import Repartix.Persistence qualified as Persistence
+import Repartix.PgRoll qualified as PgRoll
+import Repartix.Telemetry (withTelemetry)
 import RunServer qualified
 import Site.Config (createConfig)
 

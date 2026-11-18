@@ -14,7 +14,7 @@ repartija.
 Acá no se interpreta nada: cuánto le toca a cada participante de cada item, de
 la propina y de lo que nadie reclamó, cómo se está repartiendo cada item y si
 deja la repartija lista para repartir vienen resueltos del backend, en el
-`detalle` de la repartija (`BananaSplit.Deudas.detalleRepartija`). Este módulo
+`detalle` de la repartija (`Repartix.Deudas.detalleRepartija`). Este módulo
 solo lo busca, porque tener las reglas escritas dos veces es tenerlas mal en
 una.
 

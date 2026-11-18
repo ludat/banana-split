@@ -13,7 +13,7 @@ import Data.Time (addUTCTime, diffUTCTime, getCurrentTime)
 import Protolude
 import Test.Hspec
 
-import BananaSplit (User (..), nullUlid)
+import Repartix (User (..), nullUlid)
 import Site.Auth (
   Session (..),
   generateLoginCode,

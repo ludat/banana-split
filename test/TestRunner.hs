@@ -13,7 +13,7 @@ import OpenTelemetry.Trace.Core qualified as Otel
 import OpenTelemetry.Trace.Monad qualified as OtelMonad
 import Protolude
 
-import BananaSplit.Telemetry (MonadTelemetry (..), MonadTracer (..), Telemetry (..), ViaTelemetry (..))
+import Repartix.Telemetry (MonadTelemetry (..), MonadTracer (..), Telemetry (..), ViaTelemetry (..))
 
 newtype TestRunner a = TestRunner (ReaderT Telemetry IO a)
   deriving newtype

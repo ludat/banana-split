@@ -16,8 +16,8 @@ import Data.Text qualified as Text
 import Data.Time (getCurrentTime)
 import Servant
 
-import BananaSplit
-import BananaSplit.Persistence (
+import Repartix
+import Repartix.Persistence (
   LoginEvent (..),
   clearAttempts,
   countRecentAttempts,
@@ -27,7 +27,7 @@ import BananaSplit.Persistence (
   recordAttempt,
   updateUser,
  )
-import BananaSplit.Telemetry (logAttr, logDebug, logInfo, logWarn)
+import Repartix.Telemetry (logAttr, logDebug, logInfo, logWarn)
 import Preludat
 import Site.Api (
   LoginChallenge (..),

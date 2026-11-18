@@ -1,0 +1,138 @@
+module RepartixSpec (
+  spec,
+) where
+
+import Data.Time (fromGregorian)
+import Protolude
+import Test.Hspec
+
+import Repartix
+import Repartix.TestUtils
+
+pagoValido :: Pago
+pagoValido =
+  Pago
+    { pagoId = nullUlid
+    , nombre = "Pago"
+    , monto = 200
+    , moneda = ARS
+    , fecha = fromGregorian 2025 1 1
+    , deudores =
+        distribucionMontosEspecificos
+          [ (participante 1, 200)
+          ]
+    , pagadores =
+        distribucionMontosEspecificos
+          [ (participante 2, 200)
+          ]
+    }
+
+spec :: Spec
+spec = describe "Pago" $ do
+  describe "#gastoEsValido" $ do
+    it "un pago completo es valido" $
+      pagoValido `shouldSatisfy` gastoEsValido
+    it "un pago con monto de deudores negativo es invalido" $
+      pagoValido
+        { deudores =
+            distribucionMontosEspecificos
+              [ (participante 1, -100)
+              ]
+        }
+        `shouldNotSatisfy` gastoEsValido
+    it "un pago con monto de deudores 0 es invalido" $
+      pagoValido
+        { deudores =
+            distribucionMontosEspecificos
+              [ (participante 1, 0)
+              ]
+        }
+        `shouldNotSatisfy` gastoEsValido
+    it "un pago con monto de pagadores negativo es invalido" $
+      pagoValido
+        { pagadores =
+            distribucionMontosEspecificos
+              [ (participante 1, -100)
+              ]
+        }
+        `shouldNotSatisfy` gastoEsValido
+    it "un pago con monto de pagadores 0 es invalido" $
+      pagoValido
+        { pagadores =
+            distribucionMontosEspecificos
+              [ (participante 1, 0)
+              ]
+        }
+        `shouldNotSatisfy` gastoEsValido
+
+    it "un pago con monto de pagadores que difiere del monto de deudores es invalido" $
+      pagoValido
+        { pagadores =
+            distribucionMontosEspecificos
+              [ (participante 1, 100)
+              ]
+        , deudores =
+            distribucionMontosEspecificos
+              [ (participante 2, 101)
+              ]
+        }
+        `shouldNotSatisfy` gastoEsValido
+
+    it "un pago sin deudores es invalido" $
+      pagoValido
+        { deudores = distribucionMontosEspecificos []
+        }
+        `shouldNotSatisfy` gastoEsValido
+
+    it "un pago sin pagadores es invalido" $
+      pagoValido
+        { pagadores = distribucionMontosEspecificos []
+        }
+        `shouldNotSatisfy` gastoEsValido
+
+    it "un pago con monto de pagadores que difiere del monto del pago es invalido" $
+      pagoValido
+        { monto = 200
+        , pagadores =
+            distribucionMontosEspecificos
+              [ (participante 1, 100)
+              ]
+        }
+        `shouldNotSatisfy` gastoEsValido
+    it "un pago con monto de deudores que difiere del monto del pago es invalido" $
+      pagoValido
+        { monto = 200
+        , deudores =
+            distribucionMontosEspecificos
+              [ (participante 1, 100)
+              ]
+        }
+        `shouldNotSatisfy` gastoEsValido
+
+  describe "#getResumenGasto" $ do
+    it "separa lo que puso cada uno de lo que consumio cada uno" $ do
+      let resumen = getResumenGasto pagoValido
+      resumen.pagado `shouldBe` netos [(participante 2, 200)]
+      resumen.consumido `shouldBe` netos [(participante 1, 200)]
+      resumen.errores `shouldBe` []
+
+    -- Este es el invariante que justifica guardar los dos lados por separado:
+    -- restarlos tiene que dar exactamente los netos que se calculaban antes.
+    it "el neto de cada participante es lo que puso menos lo que consumio" $
+      (netosDeResumenGasto (getResumenGasto pagoValido) `enMoneda` ARS)
+        `shouldBe` calcularNetosPago pagoValido
+
+    it "vale tambien cuando alguien paga y consume lo mismo" $ do
+      let gastoPropio =
+            pagoValido
+              { pagadores = distribucionMontosEspecificos [(participante 1, 200)]
+              , deudores = distribucionMontosEspecificos [(participante 1, 200)]
+              }
+      (netosDeResumenGasto (getResumenGasto gastoPropio) `enMoneda` ARS)
+        `shouldBe` calcularNetosPago gastoPropio
+      getResumenGasto gastoPropio `shouldSatisfy` resumenGastoEsValido
+
+    it "un pago invalido dice por que lo es" $ do
+      let resumen = getResumenGasto pagoValido{deudores = distribucionMontosEspecificos []}
+      resumen `shouldNotSatisfy` resumenGastoEsValido
+      fmap (.objeto) resumen.errores `shouldBe` [["deudores"]]

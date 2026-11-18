@@ -43,9 +43,9 @@ import Katip (KatipContext)
 import Network.HTTP.Client (Manager, httpLbs, parseRequest, responseBody)
 import Servant
 
-import BananaSplit
-import BananaSplit.Persistence (fetchGrupo, fetchGruposForUser, fetchUserByEmail, savePago)
-import BananaSplit.Receipts (
+import Repartix
+import Repartix.Persistence (fetchGrupo, fetchGruposForUser, fetchUserByEmail, savePago)
+import Repartix.Receipts (
   EmailPagoContext (..),
   EmailPagoParticipante (..),
   ParsedDistribucion (..),
@@ -55,7 +55,7 @@ import BananaSplit.Receipts (
   ReceiptsReaderConfig (..),
   analyzePagoFromEmail,
  )
-import BananaSplit.Telemetry (inSpan, logAttr, logInfo, logWarn)
+import Repartix.Telemetry (inSpan, logAttr, logInfo, logWarn)
 import Preludat
 import Site.Handler.Utils (runBeamFastRead, runBeamWrite)
 import Site.Mailer (Mailer (..))

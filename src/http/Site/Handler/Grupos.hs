@@ -20,8 +20,8 @@ module Site.Handler.Grupos (
 import Data.Text qualified as Text
 import Servant
 
-import BananaSplit
-import BananaSplit.Persistence (
+import Repartix
+import Repartix.Persistence (
   CongelamientoRechazado (..),
   ConteoDeGastos (..),
   GrupoNoEditable (..),

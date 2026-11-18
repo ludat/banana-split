@@ -52,13 +52,13 @@
                   ./package.yaml
                   ./src
                   ./cabal.project
-                  ./banana-split.cabal
+                  ./repartix.cabal
                   ./test
                 ];
               };
 
             settings = {
-              banana-split.check = false;
+              repartix.check = false;
             };
 
             # Packages to add on top of `basePackages`, e.g. from Hackage
@@ -144,7 +144,7 @@
             ];
           };
           packages = {
-            default = pkgs.haskell.lib.justStaticExecutables self'.packages.banana-split;
+            default = pkgs.haskell.lib.justStaticExecutables self'.packages.repartix;
 
             elm-ui = pkgs.stdenv.mkDerivation {
               name = "banana-split-elm";
