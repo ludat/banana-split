@@ -7,6 +7,12 @@ services:
       source:
         type: upstream
         stage: stg
+    env:
+      REPARTIX_DATABASE_URL:
+        fromDependency: db.uri
+      BANANASPLIT_DATABASE_URL:
+        fromDependency: db.uri
+
     port: 8000
     secrets:
       - config

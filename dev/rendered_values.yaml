@@ -6,6 +6,12 @@ services:
       source:
         type: lexical
         pattern: '^\d{8}-\d{6}$'
+    env:
+      REPARTIX_DATABASE_URL:
+        fromDependency: db.uri
+      BANANASPLIT_DATABASE_URL:
+        fromDependency: db.uri
+
     port: 8000
     secrets:
       - config
