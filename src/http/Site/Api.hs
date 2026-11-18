@@ -14,7 +14,7 @@ import GHC.Generics
 import Protolude
 import Servant
 
-import BananaSplit
+import Repartix
 import Site.Auth (Session)
 
 type HXTrigger = Header "HX-Trigger" Text

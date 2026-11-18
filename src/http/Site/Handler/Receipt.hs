@@ -4,10 +4,10 @@ module Site.Handler.Receipt (
 
 import Protolude
 
-import BananaSplit.Monto
-import BananaSplit.Receipts (ParsedReceipt (..), ParsedReceiptItem (..), analyzeReceiptImage)
-import BananaSplit.Repartija
-import BananaSplit.ULID
+import Repartix.Monto
+import Repartix.Receipts (ParsedReceipt (..), ParsedReceiptItem (..), analyzeReceiptImage)
+import Repartix.Repartija
+import Repartix.ULID
 import Site.Api (ReceiptImageRequest (..), ReceiptImageResponse (..))
 import Site.Types
 

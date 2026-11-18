@@ -22,11 +22,20 @@ applyTheme(darkModeQuery.matches);
 darkModeQuery.addEventListener("change", (e) => applyTheme(e.matches));
 
 // Cada preferencia de cada grupo es una clave aparte, con el valor como string:
-// "split:grupo:{grupoId}:preferencia:{campo}". Escribir una no toca las demás,
+// "repartix:grupo:{grupoId}:preferencia:{campo}". Escribir una no toca las demás,
 // así que las que esta versión no conoce no se pierden, y qué significa cada
 // valor lo decide Elm.
-const PREFERENCIA_KEY = /^split:grupo:([^:]+):preferencia:(.+)$/;
-const preferenciaKey = (grupoId, campo) => `split:grupo:${grupoId}:preferencia:${campo}`;
+const PREFERENCIA_KEY = /^repartix:grupo:([^:]+):preferencia:(.+)$/;
+const preferenciaKey = (grupoId, campo) => `repartix:grupo:${grupoId}:preferencia:${campo}`;
+
+const LAST_READ_CHANGELOG_KEY = "repartix:lastReadChangelog";
+const REPARTIJA_INTRO_DISMISSED_KEY = "repartix:repartijaIntroDismissed";
+
+// Las claves de cuando la app se llamaba Banana Split.
+const CLAVES_RENOMBRADAS = [
+  [/^split:(grupo:[^:]+:preferencia:.+)$/, (resto) => `repartix:${resto}`],
+  [/^banana-split:(lastReadChangelog|repartijaIntroDismissed)$/, (resto) => `repartix:${resto}`],
+];
 
 // La clave de antes, que se escribía con cualquier cambio de participante.
 // Se migra una vez a su preferencia y se borra.
@@ -60,6 +69,19 @@ const migrarCurrentUser = () => {
     "app.preferencias.migrated_count": migradas,
     "app.preferencias.discarded_count": viejas.length - migradas,
   });
+};
+
+// Si la nueva ya existe gana la nueva; la vieja se borra igual.
+const migrarClavesRenombradas = () => {
+  for (const [regex, claveNueva] of CLAVES_RENOMBRADAS) {
+    for (const [vieja, resto] of clavesQueMatchean(regex)) {
+      const nueva = claveNueva(resto);
+      if (localStorage.getItem(nueva) === null) {
+        localStorage.setItem(nueva, localStorage.getItem(vieja));
+      }
+      localStorage.removeItem(vieja);
+    }
+  }
 };
 
 // { grupoId: { campo: valor } }
@@ -108,7 +130,7 @@ customElements.define(
       if (!grupoId || !nombre) return;
       const origin = window.location.origin;
       const manifest = {
-        name: `Banana Split - ${nombre}`,
+        name: `Repartix - ${nombre}`,
         short_name: nombre,
         start_url: `${origin}/grupos/${grupoId}`,
         scope: `${origin}/grupos/${grupoId}`,
@@ -134,14 +156,15 @@ customElements.define(
 
 export const flags = ({ env }) => {
   const now = new Date();
-  const lastReadRaw = localStorage.getItem("banana-split:lastReadChangelog");
+  migrarClavesRenombradas();
   migrarCurrentUser();
+  const lastReadRaw = localStorage.getItem(LAST_READ_CHANGELOG_KEY);
   return {
     now: now.getTime(),
     offset: - now.getTimezoneOffset(),
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     lastReadChangelog: lastReadRaw ? parseInt(lastReadRaw, 10) : null,
-    repartijaIntroDismissed: localStorage.getItem("banana-split:repartijaIntroDismissed") !== null,
+    repartijaIntroDismissed: localStorage.getItem(REPARTIJA_INTRO_DISMISSED_KEY) !== null,
     preferenciasDeGrupos: leerPreferencias(),
     origin: window.location.origin,
     initialData: readInitialData(),
@@ -244,12 +267,12 @@ export const onReady = ({ app, env }) => {
 
         case "SAVE_LAST_READ_CHANGELOG":
           // data: null
-          localStorage.setItem("banana-split:lastReadChangelog", new Date().getTime().toString());
+          localStorage.setItem(LAST_READ_CHANGELOG_KEY, new Date().getTime().toString());
           break;
 
         case "SAVE_REPARTIJA_INTRO_DISMISSED":
           // data: null
-          localStorage.setItem("banana-split:repartijaIntroDismissed", "true");
+          localStorage.setItem(REPARTIJA_INTRO_DISMISSED_KEY, "true");
           break;
 
         case "SHARE":

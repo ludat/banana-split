@@ -23,9 +23,9 @@ import OpenTelemetry.Trace.Core qualified as Otel
 import OpenTelemetry.Trace.Monad qualified as OtelMonad
 import Protolude
 
-import BananaSplit.Persistence qualified as Persistence
-import BananaSplit.Telemetry (MonadTelemetry (..), MonadTracer (..), Telemetry (..))
-import BananaSplit.Telemetry qualified as Telemetry
+import Repartix.Persistence qualified as Persistence
+import Repartix.Telemetry (MonadTelemetry (..), MonadTracer (..), Telemetry (..))
+import Repartix.Telemetry qualified as Telemetry
 
 data Entorno = Entorno
   { telemetry :: Telemetry

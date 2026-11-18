@@ -15,10 +15,10 @@ import Katip qualified
 import OpenTelemetry.Trace.Core qualified as Otel
 import Servant
 
-import BananaSplit.Persistence qualified as Persistence
-import BananaSplit.Receipts
-import BananaSplit.Telemetry (Telemetry (..))
-import BananaSplit.Telemetry qualified as Telemetry
+import Repartix.Persistence qualified as Persistence
+import Repartix.Receipts
+import Repartix.Telemetry (Telemetry (..))
+import Repartix.Telemetry qualified as Telemetry
 import Preludat
 import Site.Frontend (FrontendShell)
 import Site.Mailer (Mailer)

@@ -14,17 +14,17 @@ module Site.Handler.Repartijas (
 
 import Servant (err404)
 
-import BananaSplit (
+import Repartix (
   AccionDeRepartija,
   ParticipanteId (..),
   RepartijaClaim (..),
   RepartijaForFrontend (..),
   detalleRepartija,
  )
-import BananaSplit.AccionDeRepartija qualified as AccionDeRepartija
-import BananaSplit.Persistence
-import BananaSplit.ULID (ULID)
-import BananaSplit.ULID qualified as ULID
+import Repartix.AccionDeRepartija qualified as AccionDeRepartija
+import Repartix.Persistence
+import Repartix.ULID (ULID)
+import Repartix.ULID qualified as ULID
 import Preludat
 import Site.Api (
   PedidoDePreviewDeAccion (..),

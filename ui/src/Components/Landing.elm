@@ -204,7 +204,7 @@ viewCodigoAbierto =
     section [ class "container py-5" ]
         [ h2 [ class "display-6 mb-3" ] [ text "Código abierto" ]
         , p [ class "text-body-secondary", Attr.style "max-width" "40rem" ]
-            [ text "Banana Split es una aplicación de código abierto que comenzó en 2024. Todo el código está publicado, y cualquiera puede leerlo, proponer cambios o correr su propia instancia." ]
+            [ text "Repartix es una aplicación de código abierto que comenzó en 2024. Todo el código está publicado, y cualquiera puede leerlo, proponer cambios o correr su propia instancia." ]
         , div [ class "d-flex flex-wrap gap-2 mb-4" ]
             [ a
                 [ class "btn btn-primary btn-sm"
@@ -238,7 +238,7 @@ viewFooter =
         [ div [ class "container" ]
             [ div [ class "row g-4" ]
                 [ div [ class "col-12 col-md-6" ]
-                    [ div [ class "h4 mb-1" ] [ text "Banana Split" ]
+                    [ div [ class "h4 mb-1" ] [ text "Repartix" ]
                     , small [ class "text-body-secondary d-block mb-2" ] [ text "Aplicación de gastos compartidos" ]
                     , a [ class "text-reset fs-5", Attr.href repositorio, Attr.target "_blank", Attr.rel "noopener", Attr.attribute "aria-label" "GitHub", Telemetry.click "landing.footer_github" ]
                         [ i [ class "bi bi-github" ] [] ]

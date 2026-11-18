@@ -1,0 +1,261 @@
+cabal-version: 3.0
+name: repartix
+version: 0.1.0.0
+license: BSD-3-Clause
+build-type: Simple
+
+common base-settings
+  default-language: GHC2021
+  default-extensions:
+    DuplicateRecordFields
+    LambdaCase
+    LexicalNegation
+    NoImplicitPrelude
+    OverloadedRecordDot
+    OverloadedStrings
+
+  ghc-options:
+    -Wall
+    -Wcompat
+    -Widentities
+    -Wincomplete-record-updates
+    -Wincomplete-uni-patterns
+    -Wmissing-export-lists
+    -Wmissing-home-modules
+    -Wpartial-fields
+    -Wredundant-constraints
+
+  build-depends:
+    Decimal,
+    MIP,
+    aeson,
+    base,
+    base64-bytestring,
+    beam-core,
+    beam-postgres,
+    bytestring,
+    conferer,
+    conferer-warp,
+    containers,
+    directory,
+    elm-bridge,
+    file-embed,
+    filepath,
+    hs-opentelemetry-api,
+    hs-opentelemetry-instrumentation-ghc-metrics,
+    hs-opentelemetry-sdk,
+    http-api-data,
+    http-client,
+    http-client-tls,
+    http-media,
+    http-types,
+    jose,
+    katip,
+    mime-mail,
+    mtl,
+    postgresql-simple,
+    pretty-simple,
+    process,
+    protolude,
+    random,
+    req,
+    resource-pool,
+    safe-money,
+    safe-money-aeson,
+    scientific,
+    servant,
+    servant-elm,
+    servant-foreign,
+    servant-server,
+    template-haskell,
+    unliftio-core,
+    smtp-mail,
+    string-conversions,
+    string-interpolate,
+    temporary,
+    text,
+    time,
+    ulid,
+    unix,
+    unordered-containers,
+    wai,
+    wai-app-static,
+    wai-extra,
+    warp,
+
+common threaded-rts
+  ghc-options:
+    -threaded
+    -rtsopts
+    "-with-rtsopts=-N -T"
+
+library
+  import: base-settings
+  hs-source-dirs: src/core/
+  exposed-modules:
+    Repartix
+    Repartix.AccionDeRepartija
+    Repartix.Core
+    Repartix.Deudas
+    Repartix.Email
+    Repartix.Monto
+    Repartix.Moneda
+    Repartix.Netos
+    Repartix.Participante
+    Repartix.Ponderaciones
+    Repartix.PorParticipante
+    Repartix.Repartija
+    Repartix.TasaDeCambio
+    Repartix.TestUtils
+    Repartix.ULID
+    Repartix.User
+    Preludat
+
+  build-depends:
+    repartix:telemetry,
+
+library telemetry
+  import: base-settings
+  hs-source-dirs: src/telemetry/
+  exposed-modules:
+    Repartix.Telemetry
+    Repartix.Telemetry.Scribe
+
+library database
+  import: base-settings
+  hs-source-dirs: src/database/
+  exposed-modules:
+    Repartix.Persistence
+    Repartix.Persistence.Migration_2026_05_26_FixDates
+    Repartix.Persistence.Pg
+    Repartix.Persistence.ResumenGuardado
+    Repartix.Persistence.Schema
+    Repartix.Persistence.UbicacionDeRepartija
+    Repartix.PgRoll
+
+  build-depends:
+    repartix,
+    repartix:telemetry,
+
+library receipts
+  import: base-settings
+  hs-source-dirs: src/receipts/
+  other-modules:
+    Repartix.Receipts.OpenRouter
+    Repartix.Receipts.Tesseract
+    Repartix.Receipts.Types
+
+  exposed-modules:
+    Repartix.Receipts
+
+  build-depends:
+    repartix,
+    repartix:telemetry,
+
+library elm
+  import: base-settings
+  hs-source-dirs: src/elm/
+  exposed-modules:
+    Repartix.Elm
+
+  build-depends:
+    repartix,
+    repartix:http,
+
+library http
+  import: base-settings
+  hs-source-dirs: src/http/
+  exposed-modules:
+    RunServer
+    Site.Api
+    Site.Auth
+    Site.Config
+    Site.Frontend
+    Site.Handler.Auth
+    Site.Handler.Frontend
+    Site.Handler.Grupos
+    Site.Handler.InboundEmail
+    Site.Handler.Pagos
+    Site.Handler.Receipt
+    Site.Handler.Repartijas
+    Site.Handler.Transferencias
+    Site.Handler.Utils
+    Site.Mailer
+    Site.Server
+    Site.Telemetry
+    Site.Types
+
+  build-depends:
+    repartix,
+    repartix:database,
+    repartix:receipts,
+    repartix:telemetry,
+    case-insensitive,
+    cookie,
+    crypton,
+    jose,
+    lens,
+    memory,
+    random,
+    xmlhtml,
+
+executable repartix
+  import: base-settings, threaded-rts
+  hs-source-dirs: src/executable/
+  main-is: Main.hs
+  other-modules:
+    AppRunner
+
+  build-depends:
+    repartix:database,
+    repartix:elm,
+    repartix:http,
+    repartix:telemetry,
+
+test-suite spec
+  import: base-settings, threaded-rts
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Spec.hs
+  other-modules:
+    Repartix.AccionDeRepartijaSpec
+    Repartix.CambiosDeClaimsSpec
+    Repartix.Deudas.TelemetriaSpec
+    Repartix.DeudasSpec
+    Repartix.EstabilidadSpec
+    Repartix.MonedaSpec
+    Repartix.TelemetrySpec
+    Repartix.Telemetry.QueryTracingSpec
+    Repartix.Telemetry.ScribeSpec
+    Repartix.Persistence.GrupoSpec
+    Repartix.Persistence.LoginAttemptsSpec
+    Repartix.Persistence.PagosSpec
+    Integracion.PgSpec
+    Repartix.Persistence.SpecHook
+    Repartix.Persistence.TasasDeCambioSpec
+    Repartix.Persistence.TransferenciasSpec
+    Repartix.RepartijaSpec
+    Repartix.ResumenGuardadoSpec
+    Repartix.TasaDeCambioSpec
+    RepartixSpec
+    Integracion.ConcurrenciaSpec
+    Site.AuthSpec
+    Site.FrontendSpec
+    Site.Handler.InboundEmailSpec
+    Site.TelemetrySpec
+    TestRunner
+
+  build-depends:
+    QuickCheck,
+    repartix,
+    repartix:database,
+    repartix:http,
+    repartix:receipts,
+    repartix:telemetry,
+    hs-opentelemetry-exporter-in-memory,
+    hspec,
+    lens,
+    vector,
+    xmlhtml,
+
+  build-tool-depends: hspec-discover:hspec-discover

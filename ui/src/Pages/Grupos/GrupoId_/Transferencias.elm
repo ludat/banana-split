@@ -414,7 +414,7 @@ viewInvitacionACongelar resumen model =
     in
     div [ Attr.id "transferencias-invitacion-a-saldar" ]
         [ p []
-            [ text "Banana Split calcula todos los envíos de dinero que deben realizarse entre los participantes del grupo para quedar saldados. Para esto el grupo tiene que "
+            [ text "Repartix calcula todos los envíos de dinero que deben realizarse entre los participantes del grupo para quedar saldados. Para esto el grupo tiene que "
             , strong [] [ text "empezar a saldar deudas" ]
             , text "."
             ]

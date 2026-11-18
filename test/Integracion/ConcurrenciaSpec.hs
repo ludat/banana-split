@@ -1,5 +1,5 @@
 -- | Tests que necesitan dos conexiones commiteando de verdad, así que no pueden
--- vivir bajo @test/BananaSplit/Persistence/@: el 'SpecHook' de esa carpeta
+-- vivir bajo @test/Repartix/Persistence/@: el 'SpecHook' de esa carpeta
 -- envuelve cada test en una transacción que se rollbackea, y una transacción no
 -- ve lo que otra no commiteó.
 --
@@ -18,12 +18,12 @@ import Database.Beam.Postgres (Connection)
 import Database.PostgreSQL.Simple qualified as Simple
 import Test.Hspec
 
-import BananaSplit qualified as M
-import BananaSplit.Persistence
-import BananaSplit.Persistence.Schema
-import BananaSplit.PgRoll qualified as PgRoll
-import BananaSplit.Telemetry (Telemetry, telemetryFromGlobals)
-import BananaSplit.ULID (ULID, nullUlid)
+import Repartix qualified as M
+import Repartix.Persistence
+import Repartix.Persistence.Schema
+import Repartix.PgRoll qualified as PgRoll
+import Repartix.Telemetry (Telemetry, telemetryFromGlobals)
+import Repartix.ULID (ULID, nullUlid)
 import Preludat
 import Site.Config qualified as Config
 import TestRunner (runTest)

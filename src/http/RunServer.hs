@@ -16,9 +16,9 @@ import Protolude
 import System.IO
 import System.Posix (Handler (..), installHandler, sigTERM)
 
-import BananaSplit.Persistence qualified as Persistence
-import BananaSplit.Receipts (ReceiptsReaderConfig (..))
-import BananaSplit.Telemetry (Telemetry, logAttr, logError, logInfo, logWarn, registerRuntimeMetrics, runLogging, withTelemetry)
+import Repartix.Persistence qualified as Persistence
+import Repartix.Receipts (ReceiptsReaderConfig (..))
+import Repartix.Telemetry (Telemetry, logAttr, logError, logInfo, logWarn, registerRuntimeMetrics, runLogging, withTelemetry)
 import Site.Auth (mkSessionKey)
 import Site.Config (createConfig)
 import Site.Frontend (loadFrontendShell)
@@ -41,7 +41,7 @@ runBackend = do
   hSetBuffering stderr NoBuffering
 
   -- La config va antes de la telemetría porque Katip se configura desde ahí
-  -- (ver 'BananaSplit.Telemetry.fetchLogConfig').
+  -- (ver 'Repartix.Telemetry.fetchLogConfig').
   config <- createConfig "dev"
 
   withTelemetry config (runBackendCon config)

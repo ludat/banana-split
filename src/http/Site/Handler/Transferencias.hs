@@ -9,8 +9,8 @@ module Site.Handler.Transferencias (
 
 import Servant
 
-import BananaSplit
-import BananaSplit.Persistence (
+import Repartix
+import Repartix.Persistence (
   borrarTransferencia,
   crearTransferenciaSaldada,
   desmarcarTransferenciaSaldada,

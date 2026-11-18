@@ -1050,28 +1050,28 @@ headerInfo currentPath store currentUser grupo =
 
         Path.Home_ ->
             { breadcrumb = Nothing
-            , title = "Banana split"
+            , title = "Repartix"
             , showTabs = False
             , share = grupoShare
             }
 
         Path.Login ->
             { breadcrumb = Nothing
-            , title = "Banana split"
+            , title = "Repartix"
             , showTabs = False
             , share = grupoShare
             }
 
         Path.Cuenta ->
             { breadcrumb = Nothing
-            , title = "Banana split"
+            , title = "Repartix"
             , showTabs = False
             , share = grupoShare
             }
 
         Path.Landing ->
             { breadcrumb = Nothing
-            , title = "Banana split"
+            , title = "Repartix"
             , showTabs = False
             , share = grupoShare
             }

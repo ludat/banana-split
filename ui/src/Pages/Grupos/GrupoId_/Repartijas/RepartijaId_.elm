@@ -68,7 +68,7 @@ type alias Model =
 
 
 {-| Las reglas de qué se puede y qué no viven en el backend
-(`BananaSplit.AccionDeRepartija`): acá sólo se muestra lo que contesta.
+(`Repartix.AccionDeRepartija`): acá sólo se muestra lo que contesta.
 -}
 type alias AccionEnCurso =
     { tipo : TipoDeAccion
@@ -1818,7 +1818,7 @@ explicacionDeConsumo estado item =
 hacer: verde si está repartido, amarillo si hay algo raro pero se puede repartir
 así, rojo si alguien tiene que hacer algo para que la repartija sea válida. Qué
 pasa con el item y de qué color va lo decide el backend
-(`BananaSplit.Deudas.detalleRepartija`); acá solo se elige cómo contarlo. El
+(`Repartix.Deudas.detalleRepartija`); acá solo se elige cómo contarlo. El
 texto dice qué es lo raro o lo que falta, y el `title` lo explica. Que lo hayas
 reclamado o no ya lo dice el cuerpo de la card, así que acá no se repite.
 -}

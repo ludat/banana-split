@@ -5,7 +5,7 @@ import Generated.Api exposing (Moneda(..))
 
 {-| Cuántos decimales tiene un monto de esta moneda.
 
-Generado desde `BananaSplit.Moneda.escalaDe`. No editar a mano.
+Generado desde `Repartix.Moneda.escalaDe`. No editar a mano.
 
 -}
 escalaDe : Moneda -> Int

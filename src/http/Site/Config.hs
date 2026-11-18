@@ -16,6 +16,6 @@ createConfig env =
     [ ("env", toDyn env)
     ]
     [ Cli.fromConfig
-    , Env.fromConfig "bananasplit"
+    , Env.fromConfig "repartix"
     , PropertiesFile.fromConfig "config.file"
     ]

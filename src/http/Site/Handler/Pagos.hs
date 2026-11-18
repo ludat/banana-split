@@ -12,8 +12,8 @@ module Site.Handler.Pagos (
   handlePagadoYConsumidoGet,
 ) where
 
-import BananaSplit
-import BananaSplit.Persistence (
+import Repartix
+import Repartix.Persistence (
   deletePago,
   fetchPagadoYConsumido,
   fetchPago,

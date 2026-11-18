@@ -71,7 +71,7 @@ view :
 view toasts { toContentMsg, content } =
     { title =
         if content.title == "" then
-            "Banana split"
+            "Repartix"
 
         else
             content.title

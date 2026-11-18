@@ -1,5 +1,5 @@
 spec-version: 0.36.0
-name: banana-split
+name: repartix
 version: 0.1.0.0
 
 dependencies:
@@ -67,11 +67,11 @@ library:
   source-dirs: src
 
 executables:
-  banana-split:
+  repartix:
     source-dirs: app
     main: Main.hs
     dependencies:
-      - banana-split
+      - repartix
     ghc-options:
       - -threaded
       - -rtsopts
@@ -82,7 +82,7 @@ tests:
     source-dirs: test
     main: Spec.hs
     dependencies:
-      - banana-split
+      - repartix
       - hspec
       - QuickCheck
     ghc-options:

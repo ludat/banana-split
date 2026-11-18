@@ -9,13 +9,13 @@ import Protolude
 import Test.Hspec
 import Text.XmlHtml qualified as Html
 
-import BananaSplit (User (..), nullUlid)
+import Repartix (User (..), nullUlid)
 import Site.Frontend (InitialData (..), parseFrontendShell, renderFrontendShell)
 
 -- | The shape of what elm-land builds.
 template :: ByteString
 template =
-  "<!DOCTYPE html>\n<html lang=\"en\"><head><title>Banana split</title>\
+  "<!DOCTYPE html>\n<html lang=\"en\"><head><title>Repartix</title>\
   \<meta charset=\"UTF-8\">\
   \<script src=\"/api/initial-data.js\" defer></script>\
   \<script type=\"module\" crossorigin src=\"/assets/index.js\"></script>\

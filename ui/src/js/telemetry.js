@@ -65,7 +65,7 @@ const OTLP_ENDPOINT =
     : `${globalThis.location.protocol}//${globalThis.location.hostname}:4318`);
 
 const SERVICE_NAME = "ui";
-const SERVICE_NAMESPACE = "banana-split";
+const SERVICE_NAMESPACE = "repartix";
 
 const PRODUCTION_HOST = "split.ludat.io";
 const NAMED_ENVIRONMENTS = ["dev", "stg"];

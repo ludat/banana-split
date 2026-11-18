@@ -71,7 +71,7 @@ import Web.Cookie (
   setCookieValue,
  )
 
-import BananaSplit
+import Repartix
 import Preludat
 import Site.Types (App (..))
 
