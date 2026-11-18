@@ -6,17 +6,17 @@ services:
     depends_on:
       - database
     environment:
-      - BANANASPLIT_DATABASE_URL=postgres://postgres:postgres@database/bananasplit_dev
-      - BANANASPLIT_LOG_CONSOLE=true
+      - REPARTIX_DATABASE_URL=postgres://postgres:postgres@database/repartix_dev
+      - REPARTIX_LOG_CONSOLE=true
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://observability:4318
       - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
       - OTEL_SERVICE_NAME=backend
-      - OTEL_RESOURCE_ATTRIBUTES=service.namespace=banana-split,service.version=latest,deployment.environment.name=local
+      - OTEL_RESOURCE_ATTRIBUTES=service.namespace=repartix,service.version=latest,deployment.environment.name=local
       - OTEL_METRIC_EXPORT_INTERVAL=500
       - OTEL_BSP_SCHEDULE_DELAY=500
       - OTEL_BLRP_SCHEDULE_DELAY_MILLIS=500
     volumes:
-      - ./config/dev.properties:/opt/banana-split/config/dev.properties
+      - ./config/dev.properties:/opt/repartix/config/dev.properties
   observability:
     image: "grafana/otel-lgtm:0.34.0"
     environment:
@@ -33,7 +33,7 @@ services:
     image: "postgres:18-alpine"
     restart: always
     environment:
-      - POSTGRES_DB=bananasplit_dev
+      - POSTGRES_DB=repartix_dev
       - POSTGRES_USER=postgres
       - POSTGRES_PASSWORD=postgres
     ports:

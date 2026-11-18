@@ -199,7 +199,7 @@ library http
     random,
     xmlhtml,
 
-executable banana-split
+executable repartix
   import: base-settings, threaded-rts
   hs-source-dirs: src/executable/
   main-is: Main.hs

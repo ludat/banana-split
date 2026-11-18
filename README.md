@@ -62,8 +62,8 @@ pgroll --version
 Para correr las migraciones corremos el comando:
 
 ```
-cabal run banana-split -- migrations init
-cabal run banana-split -- migrations migrate ./migrations
+cabal run repartix -- migrations init
+cabal run repartix -- migrations migrate ./migrations
 ```
 
 ### Correr la base de datos

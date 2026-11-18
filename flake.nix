@@ -147,7 +147,7 @@
             default = pkgs.haskell.lib.justStaticExecutables self'.packages.repartix;
 
             elm-ui = pkgs.stdenv.mkDerivation {
-              name = "banana-split-elm";
+              name = "repartix-elm";
               __noChroot = true;
               src =
                 with pkgs.lib.fileset;
@@ -192,21 +192,21 @@
                 pnpm run build
               '';
               installPhase = ''
-                mkdir -p $out/opt/banana-split
-                mv -v dist/ $out/opt/banana-split/public
+                mkdir -p $out/opt/repartix
+                mv -v dist/ $out/opt/repartix/public
               '';
             };
 
             migrations = pkgs.stdenv.mkDerivation {
-              name = "banana-split-migrations";
+              name = "repartix-migrations";
               src = ./migrations;
               buildInputs = with pkgs; [ pgroll ];
               postBuild = ''
-                mkdir -p $out/opt/banana-split/migrations
+                mkdir -p $out/opt/repartix/migrations
                 mkdir -p $out/bin/
 
                 cp -v ${pkgs.pgroll}/bin/pgroll $out/bin/
-                cp -vr . $out/opt/banana-split/migrations
+                cp -vr . $out/opt/repartix/migrations
               '';
             };
 
@@ -228,7 +228,7 @@
                   # tesseract
                   (writeShellScriptBin "entrypoint" ''
                     set -euo pipefail
-                    find /opt/banana-split -exec touch -d "@${toString inputs.self.lastModified}" {} +;
+                    find /opt/repartix -exec touch -d "@${toString inputs.self.lastModified}" {} +;
                     exec "$@";
                   '')
 
@@ -236,11 +236,11 @@
               };
               config = {
                 Cmd = [
-                  "banana-split"
+                  "repartix"
                   "server"
                 ];
                 Entrypoint = [ "entrypoint" ];
-                WorkingDir = "/opt/banana-split";
+                WorkingDir = "/opt/repartix";
               };
             };
           };

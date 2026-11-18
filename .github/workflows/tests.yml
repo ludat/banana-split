@@ -10,7 +10,7 @@ jobs:
       postgres:
         image: postgres:18-alpine
         env:
-          POSTGRES_DB: bananasplit_test
+          POSTGRES_DB: repartix_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         ports:

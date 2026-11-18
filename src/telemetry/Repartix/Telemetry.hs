@@ -119,7 +119,7 @@ withTelemetry config act = do
   where
     start = do
       -- Solo default: si ya viene del ambiente, manda el ambiente.
-      setDefaultEnv "OTEL_SERVICE_NAME" "banana-split"
+      setDefaultEnv "OTEL_SERVICE_NAME" "repartix"
       -- Los scribes de Katip escriben desde una cola propia: hay que cerrarlos
       -- (que vacía la cola) antes de bajar los providers, o lo último que se
       -- logueó no llega al logger de OTel a tiempo para el flush final.
@@ -157,14 +157,14 @@ telemetryFromGlobals config = do
 --
 -- Esto es configuración de la app, no del SDK de OpenTelemetry, así que va por
 -- el mismo camino que el resto —@config/dev.properties@, variables
--- @BANANASPLIT_*@, argumentos de línea de comandos— en lugar de leer el ambiente
+-- @REPARTIX_*@, argumentos de línea de comandos— en lugar de leer el ambiente
 -- a mano. Lo del SDK (endpoints, intervalos, exporters) sigue en variables
 -- @OTEL_*@ porque son las que documenta la especificación y las que entiende
 -- cualquier SDK de OTel.
 --
 -- Las claves, todas opcionales:
 --
--- * @log.namespace@ — el namespace raíz de Katip. Default @banana-split@.
+-- * @log.namespace@ — el namespace raíz de Katip. Default @repartix@.
 -- * @log.environment@ — la etiqueta de ambiente de Katip. Default @local@.
 -- * @log.severity@ — desde qué severidad se escribe en la terminal. Default
 --   @info@.
@@ -196,7 +196,7 @@ fetchLogConfig config = do
           pure
   pure
     LogConfig
-      { namespace = Namespace [fromMaybe "banana-split" namespace]
+      { namespace = Namespace [fromMaybe "repartix" namespace]
       , environment = Environment $ fromMaybe "local" environment
       , severity = severity
       , console = console
@@ -248,7 +248,7 @@ mkTelemetry config signals = do
 instrumentationLibrary :: InstrumentationLibrary
 instrumentationLibrary =
   InstrumentationLibrary
-    { libraryName = "banana-split"
+    { libraryName = "repartix"
     , libraryVersion = ""
     , librarySchemaUrl = ""
     , libraryAttributes = emptyAttributes

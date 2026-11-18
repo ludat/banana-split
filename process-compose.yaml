@@ -3,13 +3,13 @@ version: "0.5"
 processes:
   backend: &backend
     command: |
-      ghcid --command='cabal repl --enable-multi-repl exe:banana-split lib:repartix' --reload=./config --run=Main.main --warnings
+      ghcid --command='cabal repl --enable-multi-repl exe:repartix lib:repartix' --reload=./config --run=Main.main --warnings
     environment:
-    - BANANASPLIT_LOG_CONSOLE=true
+    - REPARTIX_LOG_CONSOLE=true
     - OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
     - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
     - OTEL_SERVICE_NAME=backend
-    - OTEL_RESOURCE_ATTRIBUTES=service.namespace=banana-split,service.version=latest,deployment.environment.name=local
+    - OTEL_RESOURCE_ATTRIBUTES=service.namespace=repartix,service.version=latest,deployment.environment.name=local
     - OTEL_METRIC_EXPORT_INTERVAL=500
     - OTEL_BSP_SCHEDULE_DELAY=500
     - OTEL_BLRP_SCHEDULE_DELAY_MILLIS=500
@@ -42,9 +42,9 @@ processes:
         port: 1234
   migrations:
     command: |
-      cabal run banana-split -- migrations init
-      cabal run banana-split -- migrations rollback || true
-      cabal run banana-split -- migrations migrate ./migrations
+      cabal run repartix -- migrations init
+      cabal run repartix -- migrations rollback || true
+      cabal run repartix -- migrations migrate ./migrations
     availability:
       restart: on_failure
     depends_on:
