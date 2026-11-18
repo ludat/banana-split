@@ -8,9 +8,9 @@ services:
         pattern: '^\d{8}-\d{6}$'
     env:
       REPARTIX_DATABASE_URL:
-        fromDependency: db.uri
+        fromDependency: pg.uri
       BANANASPLIT_DATABASE_URL:
-        fromDependency: db.uri
+        fromDependency: pg.uri
 
     port: 8000
     secrets:

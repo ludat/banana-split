@@ -9,9 +9,9 @@ services:
         stage: stg
     env:
       REPARTIX_DATABASE_URL:
-        fromDependency: db.uri
+        fromDependency: pg.uri
       BANANASPLIT_DATABASE_URL:
-        fromDependency: db.uri
+        fromDependency: pg.uri
 
     port: 8000
     secrets:
