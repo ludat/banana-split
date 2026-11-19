@@ -100,6 +100,7 @@ import Database.PostgreSQL.Simple (Only (..), SqlError, execute, query)
 import Katip (KatipContext)
 import OpenTelemetry.Trace.Core qualified as Otel
 
+import Preludat
 import Repartix qualified as M
 import Repartix.Persistence.Migration_2026_05_26_FixDates qualified as FixDates
 import Repartix.Persistence.Pg
@@ -112,7 +113,6 @@ import Repartix.PorParticipante qualified as PorParticipante
 import Repartix.Telemetry qualified as Telemetry
 import Repartix.ULID (ULID, nullUlid)
 import Repartix.ULID qualified as ULID
-import Preludat
 
 openConnection :: Conferer.Config -> IO Connection
 openConnection config = do

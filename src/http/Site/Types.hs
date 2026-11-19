@@ -15,11 +15,11 @@ import Katip qualified
 import OpenTelemetry.Trace.Core qualified as Otel
 import Servant
 
+import Preludat
 import Repartix.Persistence qualified as Persistence
 import Repartix.Receipts
 import Repartix.Telemetry (Telemetry (..))
 import Repartix.Telemetry qualified as Telemetry
-import Preludat
 import Site.Frontend (FrontendShell)
 import Site.Mailer (Mailer)
 

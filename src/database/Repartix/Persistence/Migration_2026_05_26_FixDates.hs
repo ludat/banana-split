@@ -6,8 +6,8 @@ import Data.ULID (ULID, ulidToInteger)
 import Database.Beam as Beam
 import Database.Beam.Postgres
 
-import Repartix.Persistence.Schema
 import Preludat
+import Repartix.Persistence.Schema
 
 ulidToDay :: ULID -> Day
 ulidToDay ulid =

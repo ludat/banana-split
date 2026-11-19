@@ -18,13 +18,13 @@ import Database.Beam.Postgres (Connection)
 import Database.PostgreSQL.Simple qualified as Simple
 import Test.Hspec
 
+import Preludat
 import Repartix qualified as M
 import Repartix.Persistence
 import Repartix.Persistence.Schema
 import Repartix.PgRoll qualified as PgRoll
 import Repartix.Telemetry (Telemetry, telemetryFromGlobals)
 import Repartix.ULID (ULID, nullUlid)
-import Preludat
 import Site.Config qualified as Config
 import TestRunner (runTest)
 

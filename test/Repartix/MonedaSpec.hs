@@ -1,4 +1,6 @@
-module Repartix.MonedaSpec (spec) where
+module Repartix.MonedaSpec (
+  spec,
+) where
 
 import Data.Map.Strict qualified as Map
 import Protolude

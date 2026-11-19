@@ -16,6 +16,7 @@ import Data.Text qualified as Text
 import Data.Time (getCurrentTime)
 import Servant
 
+import Preludat
 import Repartix
 import Repartix.Persistence (
   LoginEvent (..),
@@ -28,7 +29,6 @@ import Repartix.Persistence (
   updateUser,
  )
 import Repartix.Telemetry (logAttr, logDebug, logInfo, logWarn)
-import Preludat
 import Site.Api (
   LoginChallenge (..),
   RegisterParams (..),

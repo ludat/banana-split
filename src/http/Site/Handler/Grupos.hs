@@ -20,6 +20,7 @@ module Site.Handler.Grupos (
 import Data.Text qualified as Text
 import Servant
 
+import Preludat
 import Repartix
 import Repartix.Persistence (
   CongelamientoRechazado (..),
@@ -44,7 +45,6 @@ import Repartix.Persistence (
   updateGrupo,
   withGrupoDescongelado,
  )
-import Preludat
 import Site.Api
 import Site.Handler.Utils
 import Site.Types

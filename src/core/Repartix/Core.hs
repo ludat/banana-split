@@ -50,6 +50,7 @@ import Elm.TyRep (
   IsElmDefinition (..),
  )
 
+import Preludat
 import Repartix.Deudas
 import Repartix.Moneda (Moneda, PorMoneda (..), enMoneda, filterConMoneda, filterPorMoneda)
 import Repartix.Monto (Monto)
@@ -59,7 +60,6 @@ import Repartix.PorParticipante qualified as PorParticipante
 import Repartix.Repartija (RepartijaClaim (..))
 import Repartix.TasaDeCambio (ConsolidadoNetos (..), TablaDeTasas, TasaDeCambio, consolidarNetos)
 import Repartix.ULID
-import Preludat
 
 data Grupo = Grupo
   { id :: ULID

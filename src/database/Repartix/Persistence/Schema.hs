@@ -17,10 +17,10 @@ import Database.Beam.Backend
 import Database.Beam.Postgres
 import Database.Beam.Postgres.Syntax
 
+import Preludat
 import Repartix qualified as M
 import Repartix.Persistence.ResumenGuardado (ResumenGuardado)
 import Repartix.ULID (ULID)
-import Preludat
 
 data RepartixDb f = RepartixDb
   { grupos :: f (TableEntity GrupoT)

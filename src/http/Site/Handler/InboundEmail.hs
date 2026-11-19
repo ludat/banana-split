@@ -43,6 +43,7 @@ import Katip (KatipContext)
 import Network.HTTP.Client (Manager, httpLbs, parseRequest, responseBody)
 import Servant
 
+import Preludat
 import Repartix
 import Repartix.Persistence (fetchGrupo, fetchGruposForUser, fetchUserByEmail, savePago)
 import Repartix.Receipts (
@@ -56,7 +57,6 @@ import Repartix.Receipts (
   analyzePagoFromEmail,
  )
 import Repartix.Telemetry (inSpan, logAttr, logInfo, logWarn)
-import Preludat
 import Site.Handler.Utils (runBeamFastRead, runBeamWrite)
 import Site.Mailer (Mailer (..))
 import Site.Types

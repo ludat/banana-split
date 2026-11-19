@@ -49,6 +49,7 @@ import Numeric.Optimization.MIP.Solver.CBC qualified as CBC
 import OpenTelemetry.Trace.Core qualified as Otel
 import System.IO.Unsafe (unsafePerformIO)
 
+import Preludat
 import Repartix.Moneda (Moneda, PorMoneda, enMoneda)
 import Repartix.Monto
 import Repartix.Monto qualified as Monto
@@ -60,7 +61,6 @@ import Repartix.PorParticipante qualified as PorParticipante
 import Repartix.Repartija
 import Repartix.Telemetry (MonadTelemetry (..), logAttr, logWarn, runSinTelemetria)
 import Repartix.ULID
-import Preludat
 
 data Distribucion = Distribucion
   { id :: ULID

@@ -15,10 +15,10 @@ module Repartix.AccionDeRepartija (
 import Data.Text qualified as Text
 import Elm.Derive qualified as Elm
 
+import Preludat
 import Repartix.Monto (Monto, getLugaresDespuesDeLaComa, mantisaEn, mkMonto, times)
 import Repartix.Repartija (Repartija (..), RepartijaClaim (..), RepartijaItem (..))
 import Repartix.ULID (ULID, nullUlid)
-import Preludat
 
 data AccionDeRepartija
   = AgregarUnidades ULID Int

@@ -17,8 +17,8 @@ import Control.Monad.Error.Class
 import Data.Aeson
 import Servant
 
-import Repartix.Persistence (GrupoNoEditable (..), runBeamFastRead, runBeamWrite)
 import Preludat
+import Repartix.Persistence (GrupoNoEditable (..), runBeamFastRead, runBeamWrite)
 import Site.Types
 
 redirect :: ByteString -> AppHandler a

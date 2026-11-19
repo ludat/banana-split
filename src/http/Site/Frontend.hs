@@ -18,8 +18,8 @@ import Data.ByteString.Builder (toLazyByteString)
 import Data.ByteString.Lazy qualified as BSL
 import Text.XmlHtml qualified as Html
 
-import Repartix
 import Preludat
+import Repartix
 
 -- | The frontend's @index.html@ (what elm-land builds), parsed once at startup.
 -- Only built through 'parseFrontendShell', which guarantees it has a @<head>@

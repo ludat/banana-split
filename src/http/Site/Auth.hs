@@ -71,8 +71,8 @@ import Web.Cookie (
   setCookieValue,
  )
 
-import Repartix
 import Preludat
+import Repartix
 import Site.Types (App (..))
 
 -- | The servant Context entries needed to serve @AuthProtect@ routes.

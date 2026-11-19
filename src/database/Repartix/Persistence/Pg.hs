@@ -47,9 +47,9 @@ import Katip qualified
 import OpenTelemetry.Trace.Core (Span)
 import OpenTelemetry.Trace.Core qualified as Otel
 
+import Preludat
 import Repartix.Telemetry (Telemetry (..))
 import Repartix.Telemetry qualified as Telemetry
-import Preludat
 
 -- | Lo que 'Pg' lleva en el reader.
 data EntornoPg = EntornoPg

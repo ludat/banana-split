@@ -13,11 +13,7 @@ import Database.PostgreSQL.Simple (SqlError (..))
 import Database.PostgreSQL.Simple qualified as PG
 import OpenTelemetry.Attributes qualified as Attributes
 import OpenTelemetry.Exporter.InMemory.Span (inMemoryListExporter)
-import OpenTelemetry.Trace.Core (
-  Event (..),
-  ImmutableSpan (..),
-  SpanHot (..),
- )
+import OpenTelemetry.Trace.Core (Event (..), ImmutableSpan (..), SpanHot (..))
 import OpenTelemetry.Trace.Core qualified as Otel
 import OpenTelemetry.Util (appendOnlyBoundedCollectionValues)
 import Protolude

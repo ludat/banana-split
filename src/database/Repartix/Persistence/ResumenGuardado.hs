@@ -28,8 +28,8 @@ import Database.Beam.Postgres (PgJSONB (..), Postgres, (->$))
 import Database.Beam.Postgres.Syntax (PgValueSyntax)
 import Database.Beam.Query.Internal (QGenExpr)
 
-import Repartix qualified as M
 import Preludat
+import Repartix qualified as M
 
 data ResumenGuardado = ResumenGuardado
   { errores :: [M.ErrorResumen]

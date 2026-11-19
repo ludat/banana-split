@@ -24,6 +24,7 @@ import Data.Decimal qualified as Decimal
 import Data.Map.Strict qualified as Map
 import Elm.Derive qualified as Elm
 
+import Preludat
 import Repartix.Deudas (
   Netos,
   comoPorParticipante,
@@ -35,7 +36,6 @@ import Repartix.Moneda (Moneda, PorMoneda (..))
 import Repartix.Monto (Monto (..), inMonto)
 import Repartix.Ponderaciones qualified as Ponderaciones
 import Repartix.ULID (ULID)
-import Preludat
 
 -- | Una tasa como llega del formulario o como está guardada en la base: dos
 -- monedas y cuánto de cada una, sin ninguna garantía. Es el único formato que
