@@ -9,7 +9,7 @@ processes:
     - OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
     - OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
     - OTEL_SERVICE_NAME=backend
-    - OTEL_RESOURCE_ATTRIBUTES=service.namespace=repartix,service.version=latest,deployment.environment.name=local
+    - OTEL_RESOURCE_ATTRIBUTES=service.namespace=banana-split,service.version=latest,deployment.environment.name=local
     - OTEL_METRIC_EXPORT_INTERVAL=500
     - OTEL_BSP_SCHEDULE_DELAY=500
     - OTEL_BLRP_SCHEDULE_DELAY_MILLIS=500
