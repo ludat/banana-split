@@ -1168,7 +1168,7 @@ errorToggle key expanded errores =
             text ""
 
         Incompleto ->
-            botonDeErrores key expanded { icono = "bi-hourglass-split", color = "text-body-secondary" }
+            botonDeErrores key expanded { icono = "bi-hourglass-split", color = "text-warning" }
 
         Roto ->
             botonDeErrores key expanded { icono = "bi-exclamation-triangle-fill", color = "text-warning" }

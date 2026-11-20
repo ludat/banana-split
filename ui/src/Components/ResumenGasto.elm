@@ -44,7 +44,7 @@ viewIconoInvalido pago =
 
         Incompleto ->
             i
-                [ class "bi bi-hourglass-split text-body-secondary flex-shrink-0"
+                [ class "bi bi-hourglass-split text-warning flex-shrink-0"
                 , title (motivos pago)
                 ]
                 []

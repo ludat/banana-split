@@ -1049,7 +1049,10 @@ viewRepartijasActivasCard participanteId store model grupo =
                         ]
             in
             Bs.card [ Attr.id "resumen-repartijas-activas", class "mb-3" ]
-                [ Bs.cardHeader [] [ text titulo ]
+                [ Bs.cardHeader [ class "d-flex align-items-center gap-2" ]
+                    [ i [ class "bi bi-hourglass-split text-warning" ] []
+                    , text titulo
+                    ]
                 , Bs.cardBody [ class "d-flex flex-column gap-2" ]
                     (List.map (fila True) meFalta ++ List.map (fila False) resto)
                 ]
