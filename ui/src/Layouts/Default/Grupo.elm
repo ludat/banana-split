@@ -944,39 +944,40 @@ headerInfo currentPath store currentUser grupo =
             }
 
         Path.Grupos_GrupoId__Repartijas_RepartijaId_ params ->
-            let
-                maybeRepartija =
-                    Store.getRepartija params.repartijaId store
-                        |> RemoteData.toMaybe
+            if RemoteData.isFailure (Store.getRepartija params.repartijaId store) then
+                headerInfo (Path.Grupos_Id_ { id = grupo.id }) store currentUser grupo
 
-                pagoNombre =
+            else
+                let
+                    maybeRepartija =
+                        Store.getRepartija params.repartijaId store
+                            |> RemoteData.toMaybe
+
+                    pagoNombre =
+                        maybeRepartija
+                            |> Maybe.map .pagoNombre
+                            |> Maybe.withDefault "Cargando"
+                in
+                { breadcrumb =
                     maybeRepartija
-                        |> Maybe.map .pagoNombre
-                        |> Maybe.withDefault "Cargando"
-            in
-            { -- La repartija es lo único que no cuelga del grupo: cuelga del
-              -- gasto que la generó, y ahí es adonde tenés que poder volver.
-              -- Mientras el gasto no cargó todavía no hay a dónde apuntar.
-              breadcrumb =
-                maybeRepartija
-                    |> Maybe.map
-                        (\r ->
-                            Volver
-                                [ { label = "Gastos:"
-                                  , ruta = sinQuery (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
-                                  }
-                                , { label = pagoNombre
-                                  , ruta =
-                                        PagoDetalleModal.rutaGasto
-                                            (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
-                                            r.pagoId
-                                  }
-                                ]
-                        )
-            , title = "Repartija"
-            , showTabs = False
-            , share = { title = "Deudores de " ++ pagoNombre, path = Path.Grupos_GrupoId__Repartijas_RepartijaId_ params }
-            }
+                        |> Maybe.map
+                            (\r ->
+                                Volver
+                                    [ { label = "Gastos:"
+                                      , ruta = sinQuery (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+                                      }
+                                    , { label = pagoNombre
+                                      , ruta =
+                                            PagoDetalleModal.rutaGasto
+                                                (Path.Grupos_GrupoId__Gastos { grupoId = grupo.id })
+                                                r.pagoId
+                                      }
+                                    ]
+                            )
+                , title = "Repartija"
+                , showTabs = False
+                , share = { title = "Deudores de " ++ pagoNombre, path = Path.Grupos_GrupoId__Repartijas_RepartijaId_ params }
+                }
 
         -- Rutas viejas: redirigen apenas se montan, así que nunca llegan a
         -- pintar chrome. Están acá solo para que el case sea exhaustivo.

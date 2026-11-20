@@ -1,6 +1,7 @@
 module Pages.Grupos.GrupoId_.Settings exposing (EstadoDeLaMoneda, Model, Msg, page)
 
 import Components.Bootstrap as Bs
+import Components.ErrorDePagina as ErrorDePagina
 import Effect exposing (Effect)
 import Form exposing (Form, Msg(..))
 import Form.Error as FormError
@@ -315,8 +316,10 @@ view : String -> WebData User -> PreferenciasDeGrupo -> Store -> Model -> View M
 view origin currentUser preferencias store model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
-            { title = "Loading..."
-            , body = []
+            { title = "Cargando"
+            , body =
+                [ div [ class "container py-4 text-muted" ] [ text "Cargando..." ]
+                ]
             }
 
         Loading ->
@@ -326,10 +329,25 @@ view origin currentUser preferencias store model =
                 ]
             }
 
-        Failure e ->
-            { title = "Fallo"
+        Failure (Http.BadStatus 404) ->
+            { title = "Grupo inexistente"
             , body =
-                [ div [ class "container py-4" ] [ viewHttpError e ]
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.NoExiste
+                    , titulo = "Este grupo no existe"
+                    , detalle = [ text "Revisá que el link esté bien." ]
+                    }
+                ]
+            }
+
+        Failure e ->
+            { title = "Error"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.Fallo
+                    , titulo = "No pudimos cargar la configuración del grupo"
+                    , detalle = [ text "Recargá la página para reintentar.", viewHttpError e ]
+                    }
                 ]
             }
 

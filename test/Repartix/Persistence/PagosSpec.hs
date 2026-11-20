@@ -166,7 +166,7 @@ spec =
       resultado <- runDb $ enLaRepartija repartija.id $ \u -> aplicarAccionDeRepartija u (UnirItems queda.id seVa.id "Unido")
       void resultado `shouldBe` Right ()
 
-      guardado <- runDb $ fetchRepartija repartija.id
+      Just guardado <- runDb $ fetchRepartija repartija.id
       fmap (.id) guardado.repartija.items `shouldBe` [queda.id]
       fmap (\c -> (c.itemId, c.cantidad)) guardado.repartija.claims `shouldBe` [(queda.id, Just 2)]
 
@@ -199,7 +199,7 @@ spec =
       _ <- runDb $ marcarNoConsumio repartija.id otro
 
       _ <- runDb $ savePago grupo.id pago
-      guardada <- runDb $ fetchRepartija repartija.id
+      Just guardada <- runDb $ fetchRepartija repartija.id
       guardada.repartija.noConsumieron `shouldBe` [otro]
       gastos <- runDb $ fetchShallowPagos grupo.id
       fmap (.resumen.noConsumieronEnRepartija) gastos `shouldBe` [[otro]]

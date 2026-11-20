@@ -1,6 +1,7 @@
 module Pages.Grupos.GrupoId_.Transferencias exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
+import Components.ErrorDePagina as ErrorDePagina
 import Effect exposing (Effect)
 import Generated.Api as Api exposing (Grupo, Moneda, Transferencia, ULID)
 import Html exposing (Html, div, em, h6, i, li, p, span, strong, text, ul)
@@ -17,6 +18,7 @@ import RemoteData exposing (RemoteData(..), WebData)
 import Route exposing (Route)
 import Shared
 import Time exposing (Zone)
+import Utils.Http exposing (viewHttpError)
 import Utils.Posix as Posix exposing (Posix)
 import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toasts
@@ -195,13 +197,32 @@ view : Store -> Zone -> Posix -> Model -> View Msg
 view store zone ahora model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
-            { title = "Loading...", body = [] }
+            { title = "Cargando", body = [ div [ class "container-fluid py-4 text-muted" ] [ text "Cargando..." ] ] }
 
         Loading ->
             { title = "Cargando", body = [ div [ class "container-fluid py-4 text-muted" ] [ text "Cargando..." ] ] }
 
-        Failure _ ->
-            { title = "Fallo", body = [] }
+        Failure (Http.BadStatus 404) ->
+            { title = "Grupo inexistente"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.NoExiste
+                    , titulo = "Este grupo no existe"
+                    , detalle = [ text "Revisá que el link esté bien." ]
+                    }
+                ]
+            }
+
+        Failure e ->
+            { title = "Error"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.Fallo
+                    , titulo = "No pudimos cargar las transferencias del grupo"
+                    , detalle = [ text "Recargá la página para reintentar.", viewHttpError e ]
+                    }
+                ]
+            }
 
         Success grupo ->
             { title = grupo.nombre
@@ -234,8 +255,8 @@ viewContent store zone ahora model grupo =
         Loading ->
             div [ class "text-muted" ] [ text "Cargando..." ]
 
-        Failure _ ->
-            Bs.alert Bs.AlertDanger [] [ text "Error cargando los datos del grupo." ]
+        Failure e ->
+            Bs.alert Bs.AlertDanger [] [ text "No pudimos cargar las transferencias.", viewHttpError e ]
 
         -- Las transferencias que ya se hicieron (registradas a mano, o de
         -- congelamientos anteriores) no se listan acá: están en la lista de

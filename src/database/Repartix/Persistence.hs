@@ -671,7 +671,7 @@ fetchDistribucion moneda distribucionId = do
         r <- all_ db.repartijas
         guard_ (r.distribucion ==. DistribucionId (val_ dbDistribucion.id))
         pure r.id
-      repartija <- fetchRepartija repartijaId
+      repartija <- fetchRepartijaExistente repartijaId
       pure $ Just $ M.TipoDistribucionRepartija repartija.repartija
     "DistribucionPartes" -> do
       dbDistribucionPartes :: Maybe DistribucionPartes <- runSelectReturningOne $ select $ do
@@ -1306,41 +1306,46 @@ saveRepartijaItems moneda repartijaId repartijaItemsWithoutId = do
       onConflictUpdateAll
   pure repartijaItems
 
-fetchRepartija :: ULID -> Pg M.RepartijaForFrontend
+fetchRepartija :: ULID -> Pg (Maybe M.RepartijaForFrontend)
 fetchRepartija unRepartijaId = do
-  (repartija, pagoNombre, pagoId, moneda) :: (DistribucionRepartija, Text, ULID, M.Moneda) <- fmap (fromMaybe (panic "Repartija not found")) $ runSelectReturningOne $ select $ do
+  fila :: Maybe (DistribucionRepartija, Text, ULID, M.Moneda) <- runSelectReturningOne $ select $ do
     repartija <- all_ db.repartijas
     guard_ (repartija.id ==. val_ unRepartijaId)
     pago <- pagoDeRepartija repartija
     pure (repartija, pago.pagoNombre, pago.pagoId, pago.pagoMoneda)
-  items :: [RepartijaItem] <- runSelectReturningList $ select $ do
-    item <- all_ db.repartija_items
-    guard_ $ item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartija.id)
-    pure item
-  claims <- claimsDeItems (fmap (RepartijaItemId . (.repartijaitemId)) items)
-  noConsumieron <- noConsumieronDe repartija.id
+  for fila $ \(repartija, pagoNombre, pagoId, moneda) -> do
+    items :: [RepartijaItem] <- runSelectReturningList $ select $ do
+      item <- all_ db.repartija_items
+      guard_ $ item.repartijaitemRepartija ==. val_ (DistribucionRepartijaId repartija.id)
+      pure item
+    claims <- claimsDeItems (fmap (RepartijaItemId . (.repartijaitemId)) items)
+    noConsumieron <- noConsumieronDe repartija.id
 
-  pure
-    $ M.repartijaForFrontend pagoId pagoNombre moneda
-    $ M.Repartija
-      { id = repartija.id
-      , nombre = pagoNombre
-      , extra = desdeUnidadesMinimas moneda repartija.extra_en_unidades_minimas
-      , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
-      , claims = claims
-      , noConsumieron = noConsumieron
-      , items =
-          items
-            & fmap
-              ( \dbItem ->
-                  M.RepartijaItem
-                    { M.id = dbItem.repartijaitemId
-                    , M.nombre = dbItem.repartijaitemNombre
-                    , M.monto = desdeUnidadesMinimas moneda dbItem.repartijaitemMontoEnUnidadesMinimas
-                    , M.cantidad = fromIntegral dbItem.repartijaitemCantidad
-                    }
-              )
-      }
+    pure
+      $ M.repartijaForFrontend pagoId pagoNombre moneda
+      $ M.Repartija
+        { id = repartija.id
+        , nombre = pagoNombre
+        , extra = desdeUnidadesMinimas moneda repartija.extra_en_unidades_minimas
+        , distribucionDeSobras = distribucionDeSobrasFromText repartija.distribucion_de_sobras
+        , claims = claims
+        , noConsumieron = noConsumieron
+        , items =
+            items
+              & fmap
+                ( \dbItem ->
+                    M.RepartijaItem
+                      { M.id = dbItem.repartijaitemId
+                      , M.nombre = dbItem.repartijaitemNombre
+                      , M.monto = desdeUnidadesMinimas moneda dbItem.repartijaitemMontoEnUnidadesMinimas
+                      , M.cantidad = fromIntegral dbItem.repartijaitemCantidad
+                      }
+                )
+        }
+
+fetchRepartijaExistente :: ULID -> Pg M.RepartijaForFrontend
+fetchRepartijaExistente repartijaId =
+  fetchRepartija repartijaId `orElseMay` panic "Repartija not found"
 
 claimDesdeFila :: RepartijaClaim -> M.RepartijaClaim
 claimDesdeFila r =
@@ -1439,11 +1444,11 @@ recalcularRepartija :: ULID -> ULID -> Pg M.RepartijaForFrontend
 recalcularRepartija grupoId repartijaId = do
   maybePagoId <- fetchPagoIdFromRepartija repartijaId
   case maybePagoId of
-    Nothing -> fetchRepartija repartijaId
+    Nothing -> fetchRepartijaExistente repartijaId
     Just pagoId -> do
       pago <- recalcularResumenGasto grupoId pagoId
       case repartijaDePago repartijaId pago of
-        Nothing -> fetchRepartija repartijaId
+        Nothing -> fetchRepartijaExistente repartijaId
         Just repartija ->
           pure $ M.repartijaForFrontend pago.pagoId pago.nombre pago.moneda repartija
 

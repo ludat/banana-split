@@ -38,6 +38,7 @@ import Site.Types
 handleRepartijaGet :: ULID -> AppHandler RepartijaForFrontend
 handleRepartijaGet repartijaId = do
   runBeamFastRead (fetchRepartija repartijaId)
+    `orElseMay` throwJsonError err404 "Repartija no encontrada"
 
 handleRepartijaClaimPut :: ULID -> RepartijaClaim -> AppHandler RepartijaForFrontend
 handleRepartijaClaimPut repartijaId repartijaClaim =

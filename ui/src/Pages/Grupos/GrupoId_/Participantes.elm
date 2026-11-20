@@ -2,6 +2,7 @@ module Pages.Grupos.GrupoId_.Participantes exposing (Accion, Confirmacion, Edici
 
 import Browser.Dom
 import Components.Bootstrap as Bs
+import Components.ErrorDePagina as ErrorDePagina
 import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Init as Form
@@ -22,6 +23,7 @@ import Shared
 import Shared.Msg
 import Task
 import Utils.Form exposing (CustomFormError, anyString, isDataModifyingEvent, textInput)
+import Utils.Http exposing (viewHttpError)
 import Utils.Telemetry as Telemetry
 import Utils.Toasts exposing (pushToast)
 import Utils.Toasts.Types exposing (ToastLevel(..))
@@ -351,8 +353,10 @@ view : Store -> WebData User -> Model -> View Msg
 view store currentUser model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
-            { title = "Impossible"
-            , body = []
+            { title = "Cargando"
+            , body =
+                [ div [ class "container py-4 text-muted" ] [ text "Cargando..." ]
+                ]
             }
 
         Loading ->
@@ -362,9 +366,26 @@ view store currentUser model =
                 ]
             }
 
-        Failure _ ->
-            { title = "Fallo"
-            , body = []
+        Failure (Http.BadStatus 404) ->
+            { title = "Grupo inexistente"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.NoExiste
+                    , titulo = "Este grupo no existe"
+                    , detalle = [ text "Revisá que el link esté bien." ]
+                    }
+                ]
+            }
+
+        Failure e ->
+            { title = "Error"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.Fallo
+                    , titulo = "No pudimos cargar los participantes del grupo"
+                    , detalle = [ text "Recargá la página para reintentar.", viewHttpError e ]
+                    }
+                ]
             }
 
         Success grupo ->

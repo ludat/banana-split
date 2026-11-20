@@ -1,6 +1,7 @@
 module Pages.Grupos.GrupoId_.Repartijas.RepartijaId_ exposing (AccionEnCurso, Ayuda, Feedback, Filtros, Model, Msg, OrigenAyuda, TipoDeAccion, page)
 
 import Components.Bootstrap as Bs
+import Components.ErrorDePagina as ErrorDePagina
 import Effect exposing (Effect)
 import Form exposing (Form)
 import Form.Init as Form
@@ -10,6 +11,7 @@ import Generated.Moneda exposing (escalaDe)
 import Html exposing (Html, button, div, h4, h5, h6, i, input, p, span, strong, text)
 import Html.Attributes as Attr exposing (class, classList, disabled, type_, value)
 import Html.Events exposing (onCheck, onClick, onInput, onSubmit)
+import Http
 import Layouts
 import List.Extra exposing (find)
 import Models.Grupo exposing (GrupoLike, lookupNombreParticipante)
@@ -925,40 +927,54 @@ view userId { introDismissed } store model =
                 ]
             }
 
-        ( Failure e1, Failure e2 ) ->
-            { title = ""
+        -- Sin el grupo no hay repartija que mostrar, así que su error va primero.
+        ( _, Failure (Http.BadStatus 404) ) ->
+            { title = "Grupo inexistente"
             , body =
-                [ div [ class "container-fluid py-3" ]
-                    [ text "falle"
-                    , viewHttpError e1
-                    , viewHttpError e2
-                    ]
-                ]
-            }
-
-        ( Failure e, _ ) ->
-            { title = ""
-            , body =
-                [ div [ class "container-fluid py-3" ]
-                    [ text "falle"
-                    , viewHttpError e
-                    ]
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.NoExiste
+                    , titulo = "Este grupo no existe"
+                    , detalle = [ text "Revisá que el link esté bien." ]
+                    }
                 ]
             }
 
         ( _, Failure e ) ->
-            { title = ""
+            { title = "Error"
             , body =
-                [ div [ class "container-fluid py-3" ]
-                    [ text "falle"
-                    , viewHttpError e
-                    ]
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.Fallo
+                    , titulo = "No pudimos cargar el grupo de esta repartija"
+                    , detalle = [ text "Recargá la página para reintentar.", viewHttpError e ]
+                    }
+                ]
+            }
+
+        ( Failure (Http.BadStatus 404), _ ) ->
+            { title = "Repartija inexistente"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.NoExiste
+                    , titulo = "Esta repartija no existe"
+                    , detalle = [ text "Puede que hayan borrado el gasto." ]
+                    }
+                ]
+            }
+
+        ( Failure e, _ ) ->
+            { title = "Error"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.Fallo
+                    , titulo = "No pudimos cargar la repartija"
+                    , detalle = [ text "Recargá la página para reintentar.", viewHttpError e ]
+                    }
                 ]
             }
 
         _ ->
-            { title = ""
-            , body = [ div [ class "container-fluid py-3" ] [ text "cargando" ] ]
+            { title = "Cargando"
+            , body = [ div [ class "container-fluid py-4 text-muted" ] [ text "Cargando..." ] ]
             }
 
 
@@ -2267,7 +2283,7 @@ viewAccionModal grupo moneda repartija maybeAccion =
                     , viewPreviewDeAccion grupo repartija tipo accion
                     , case accion.confirmacion of
                         Failure e ->
-                            div [ class "mt-3" ] [ viewHttpError e ]
+                            div [ class "alert alert-danger mt-3 mb-0" ] [ text "No pudimos aplicar el cambio.", viewHttpError e ]
 
                         Success (AccionDeRepartijaRechazada motivo) ->
                             div [ class "alert alert-danger mt-3 mb-0" ] [ text (explicacionDeRechazo tipo motivo) ]
@@ -2423,7 +2439,7 @@ viewPreviewDeAccion grupo repartija tipo accion =
                 ]
 
         Failure e ->
-            viewHttpError e
+            div [ class "alert alert-danger mb-0" ] [ text "No pudimos calcular cómo queda.", viewHttpError e ]
 
         Success (PreviewDeAccionRechazada motivo) ->
             div [ class "alert alert-warning mb-0" ] [ text (explicacionDeRechazo tipo motivo) ]

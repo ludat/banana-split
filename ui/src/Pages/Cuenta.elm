@@ -21,6 +21,7 @@ import Route.Path as Path
 import Shared
 import Shared.Msg
 import Utils.Form exposing (CustomFormError, errorForField, hasErrorField)
+import Utils.Http exposing (viewHttpError)
 import Utils.Telemetry as Telemetry
 import Utils.Toasts.Types exposing (ToastLevel(..))
 import View exposing (View)
@@ -158,18 +159,33 @@ viewBody currentUser model =
         Loading ->
             p [ class "text-secondary mb-0" ] [ text "Cargando…" ]
 
-        _ ->
-            p [ class "mb-0" ]
-                [ text "Necesitás iniciar sesión para ver tu cuenta. "
-                , Html.a
-                    [ Route.href
-                        { path = Path.Login
-                        , query = Dict.singleton "redirect" (Path.toString Path.Cuenta)
-                        , hash = Nothing
-                        }
-                    ]
-                    [ text "Iniciar sesión" ]
+        NotAsked ->
+            viewIniciarSesion
+
+        Failure (Http.BadStatus 401) ->
+            viewIniciarSesion
+
+        Failure e ->
+            Bs.alert Bs.AlertDanger
+                [ class "mb-0" ]
+                [ text "No pudimos cargar tu cuenta. Recargá la página para reintentar."
+                , viewHttpError e
                 ]
+
+
+viewIniciarSesion : Html Msg
+viewIniciarSesion =
+    p [ class "mb-0" ]
+        [ text "Necesitás iniciar sesión para ver tu cuenta. "
+        , Html.a
+            [ Route.href
+                { path = Path.Login
+                , query = Dict.singleton "redirect" (Path.toString Path.Cuenta)
+                , hash = Nothing
+                }
+            ]
+            [ text "Iniciar sesión" ]
+        ]
 
 
 viewForm : User -> Model -> Html Msg

@@ -2,6 +2,7 @@ module Pages.Grupos.Id_ exposing (Model, Msg, Tab, page)
 
 import Components.BarrasDeNetos exposing (viewNetosBarras)
 import Components.Bootstrap as Bs
+import Components.ErrorDePagina as ErrorDePagina
 import Components.Movimientos as Movimientos
 import Components.PagoDetalleModal as PagoDetalleModal
 import Components.ResumenGasto as ResumenGasto
@@ -27,6 +28,7 @@ import Shared
 import Svg
 import Svg.Attributes as SvgAttr
 import Time exposing (Zone)
+import Utils.Http exposing (viewHttpError)
 import Utils.Posix as Posix exposing (Posix)
 import Utils.Telemetry as Telemetry
 import Utils.Toasts as Toasts
@@ -152,15 +154,36 @@ view : Store -> Zone -> Posix -> Maybe String -> Model -> View Msg
 view store zone ahora userId model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
-            { title = "Loading...", body = [] }
+            { title = "Cargando"
+            , body = [ div [ class "container-fluid py-4 text-muted" ] [ text "Cargando..." ] ]
+            }
 
         Loading ->
             { title = "Cargando"
             , body = [ div [ class "container-fluid py-4 text-muted" ] [ text "Cargando..." ] ]
             }
 
-        Failure _ ->
-            { title = "Fallo", body = [] }
+        Failure (Http.BadStatus 404) ->
+            { title = "Grupo inexistente"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.NoExiste
+                    , titulo = "Este grupo no existe"
+                    , detalle = [ text "Revisá que el link esté bien." ]
+                    }
+                ]
+            }
+
+        Failure e ->
+            { title = "Error"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.Fallo
+                    , titulo = "No pudimos cargar el grupo"
+                    , detalle = [ text "Recargá la página para reintentar.", viewHttpError e ]
+                    }
+                ]
+            }
 
         Success grupo ->
             { title = grupo.nombre
@@ -202,7 +225,13 @@ viewRightColumn store zone ahora userId model grupo =
             Success transferencias ->
                 viewUltimasTransferenciasCard zone ahora grupo (delCongelamientoActual grupo transferencias)
 
-            _ ->
+            Failure e ->
+                Bs.alert Bs.AlertDanger [] [ text "No pudimos cargar las transferencias.", viewHttpError e ]
+
+            NotAsked ->
+                text ""
+
+            Loading ->
                 text ""
 
     else
@@ -958,7 +987,13 @@ viewUltimosMovimientosCard zone participanteId store model grupo =
                     )
                 ]
 
-        _ ->
+        Failure e ->
+            Bs.alert Bs.AlertDanger [] [ text "No pudimos cargar los últimos movimientos.", viewHttpError e ]
+
+        NotAsked ->
+            text ""
+
+        Loading ->
             text ""
 
 
@@ -1025,6 +1060,7 @@ viewRepartijasActivasCard participanteId store model grupo =
         Loading ->
             text ""
 
+        -- Los mismos gastos alimentan "Últimos movimientos", que ya avisa.
         Failure _ ->
             text ""
 

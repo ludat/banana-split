@@ -1,6 +1,7 @@
 module Pages.Grupos.GrupoId_.Gastos exposing (Model, Msg, page)
 
 import Components.Bootstrap as Bs
+import Components.ErrorDePagina as ErrorDePagina
 import Components.Movimientos as Movimientos
 import Components.PagoDetalleModal as PagoDetalleModal
 import Dict
@@ -8,6 +9,7 @@ import Effect exposing (Effect)
 import Generated.Api exposing (Grupo, ULID)
 import Html exposing (Html, a, div, text)
 import Html.Attributes exposing (class, id)
+import Http
 import Layouts
 import Models.Store as Store
 import Models.Store.Types exposing (Store)
@@ -17,6 +19,7 @@ import Route exposing (Route)
 import Route.Path as Path
 import Shared
 import Time exposing (Zone)
+import Utils.Http exposing (viewHttpError)
 import Utils.Telemetry as Telemetry
 import View exposing (View)
 
@@ -75,15 +78,36 @@ view : Zone -> Maybe ULID -> Store -> Model -> View Msg
 view zone participanteId store model =
     case store |> Store.getGrupo model.grupoId of
         NotAsked ->
-            { title = "Loading...", body = [] }
+            { title = "Cargando"
+            , body = [ div [ class "container-fluid py-4 text-muted" ] [ text "Cargando..." ] ]
+            }
 
         Loading ->
             { title = "Cargando"
             , body = [ div [ class "container-fluid py-4 text-muted" ] [ text "Cargando..." ] ]
             }
 
-        Failure _ ->
-            { title = "Fallo", body = [] }
+        Failure (Http.BadStatus 404) ->
+            { title = "Grupo inexistente"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.NoExiste
+                    , titulo = "Este grupo no existe"
+                    , detalle = [ text "Revisá que el link esté bien." ]
+                    }
+                ]
+            }
+
+        Failure e ->
+            { title = "Error"
+            , body =
+                [ ErrorDePagina.view
+                    { tipo = ErrorDePagina.Fallo
+                    , titulo = "No pudimos cargar los gastos del grupo"
+                    , detalle = [ text "Recargá la página para reintentar.", viewHttpError e ]
+                    }
+                ]
+            }
 
         Success grupo ->
             { title = grupo.nombre
@@ -107,8 +131,8 @@ viewMovimientos zone participanteId store model grupo =
         Loading ->
             div [ class "text-muted" ] [ text "Cargando..." ]
 
-        Failure _ ->
-            Bs.alert Bs.AlertDanger [] [ text "Error cargando los gastos." ]
+        Failure e ->
+            Bs.alert Bs.AlertDanger [] [ text "No pudimos cargar los gastos.", viewHttpError e ]
 
         Success movimientos ->
             if List.isEmpty movimientos then
