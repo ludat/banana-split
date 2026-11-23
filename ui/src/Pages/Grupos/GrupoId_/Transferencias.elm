@@ -112,7 +112,7 @@ update msg model =
             ( { model | congelarGrupoRequest = Failure error, mostrarModalDeConfirmacion = False }
             , Effect.batch
                 [ Store.refreshResumen model.grupoId
-                , Toasts.pushToast Toasts.ToastDanger "No se pudo empezar a saldar las deudas. Revisá que no queden gastos inválidos y que estén cargadas las tasas de cambio de todas las monedas con deuda."
+                , Toasts.pushToast Toasts.ToastDanger "No se pudo empezar a saldar las deudas. Revisá que no queden gastos pendientes y que estén cargadas las tasas de cambio de todas las monedas con deuda."
                 ]
             )
 
@@ -500,12 +500,12 @@ viewAvisosParaActivar monedasSinTasa gastosInvalidos =
                 [ class "mb-3" ]
                 [ text <|
                     if gastosInvalidos == 1 then
-                        "Para empezar a saldar deudas hay que arreglar 1 gasto inválido."
+                        "Para empezar a saldar deudas hay que completar 1 gasto pendiente."
 
                     else
-                        "Para empezar a saldar deudas hay que arreglar "
+                        "Para empezar a saldar deudas hay que completar "
                             ++ String.fromInt gastosInvalidos
-                            ++ " gastos inválidos."
+                            ++ " gastos pendientes."
                 ]
         ]
 
