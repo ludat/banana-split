@@ -60,7 +60,6 @@ type BtnVariant
       -- El violeta de un grupo congelado y su versión invertida, para el botón
       -- blanco que va adentro del banner violeta. Los dos salen de `styles.css`.
     | Congelado
-    | CongeladoInverso
 
 
 btn : BtnVariant -> List (Attribute msg) -> List (Html msg) -> Html msg
@@ -92,15 +91,6 @@ btn variant attrs children =
                         , fondo = violeta.base
                         , hover = violeta.oscuro
                         , apretado = violeta.masOscuro
-                        }
-                    ]
-
-                CongeladoInverso ->
-                    [ variablesDeBoton
-                        { texto = violeta.base
-                        , fondo = violeta.contraste
-                        , hover = violeta.claro
-                        , apretado = violeta.masClaro
                         }
                     ]
     in

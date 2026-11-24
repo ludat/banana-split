@@ -42,7 +42,7 @@ type alias Model =
     , confirmando : Maybe ULID
     , mostrarModalDeConfirmacion : Bool
     , congelarGrupoRequest : WebData Grupo
-    , bannerAbierto : Bool
+    , mostrarModalDeDescongelar : Bool
     , descongelarGrupoRequest : WebData Grupo
     }
 
@@ -53,7 +53,7 @@ init grupoId store =
       , confirmando = Nothing
       , mostrarModalDeConfirmacion = False
       , congelarGrupoRequest = NotAsked
-      , bannerAbierto = False
+      , mostrarModalDeDescongelar = False
       , descongelarGrupoRequest = NotAsked
       }
     , Effect.batch
@@ -74,7 +74,8 @@ type Msg
     | CancelarModalDeCongelarGrupo
     | CongelarGrupo
     | CongelarGrupoResponse (Result Http.Error Grupo)
-    | AlternarBanner
+    | MostrarModalDeDescongelarGrupo
+    | CancelarModalDeDescongelarGrupo
     | DescongelarGrupo
     | DescongelarGrupoResponse (Result Http.Error Grupo)
 
@@ -116,8 +117,13 @@ update msg model =
                 ]
             )
 
-        AlternarBanner ->
-            ( { model | bannerAbierto = not model.bannerAbierto }
+        MostrarModalDeDescongelarGrupo ->
+            ( { model | mostrarModalDeDescongelar = True }
+            , Effect.none
+            )
+
+        CancelarModalDeDescongelarGrupo ->
+            ( { model | mostrarModalDeDescongelar = False }
             , Effect.none
             )
 
@@ -129,7 +135,7 @@ update msg model =
         DescongelarGrupoResponse (Ok grupo) ->
             -- Desactivar tira las pendientes y el grupo vuelve a aceptar
             -- gastos: cambia la pantalla entera, así que se relee todo.
-            ( { model | descongelarGrupoRequest = Success grupo, bannerAbierto = False }
+            ( { model | descongelarGrupoRequest = Success grupo, mostrarModalDeDescongelar = False }
             , Effect.batch
                 [ Store.refreshGrupo model.grupoId
                 , Store.refreshResumen model.grupoId
@@ -139,7 +145,7 @@ update msg model =
             )
 
         DescongelarGrupoResponse (Err error) ->
-            ( { model | descongelarGrupoRequest = Failure error }
+            ( { model | descongelarGrupoRequest = Failure error, mostrarModalDeDescongelar = False }
             , Toasts.pushToast Toasts.ToastDanger "No se pudo dejar de saldar deudas"
             )
 
@@ -282,7 +288,7 @@ viewContent store zone ahora model grupo =
                         |> List.reverse
             in
             div []
-                [ viewBannerCongelado model
+                [ viewSaldandoDeudas
                 , if List.isEmpty calculadas then
                     Bs.alert Bs.AlertInfo
                         [ class "mt-3" ]
@@ -292,13 +298,10 @@ viewContent store zone ahora model grupo =
                     viewCalculadas zone ahora grupo calculadas
                 , buscarConfirmacion model.confirmando calculadas
                     |> viewConfirmacionModal grupo
+                , viewDesactivacionModal model
                 ]
 
 
-{-| Los tres cambios que trae congelar para todo el grupo. El mismo texto se dice
-antes de activarlo —en el modal, para decidir— y después —en el banner, para
-recordar qué pasó—, así que vive en un solo lugar.
--}
 viewCambiosAlCongelar : List (Html msg)
 viewCambiosAlCongelar =
     [ li []
@@ -321,75 +324,23 @@ viewCambiosAlCongelar =
     ]
 
 
-{-| El banner violeta de arriba de todo con el grupo saldando deudas. Arranca
-cerrado —todos los días lo que importa es la lista de abajo— y al abrirlo
-explica qué pasó y ofrece descongelar.
--}
-viewBannerCongelado : Model -> Html Msg
-viewBannerCongelado model =
-    div [ Attr.id "transferencias-banner-congelado", Bs.fondoCongelado, class "text-white rounded mb-3" ]
-        [ Html.button
-            [ Attr.type_ "button"
-            , class "btn w-100 d-flex align-items-center gap-2 text-white fw-semibold px-3 py-3 border-0 shadow-none"
-            , Attr.attribute "aria-expanded"
-                (if model.bannerAbierto then
-                    "true"
-
-                 else
-                    "false"
-                )
-            , Telemetry.click "transferencias.toggle_frozen_banner"
-            , onClick AlternarBanner
+viewSaldandoDeudas : Html Msg
+viewSaldandoDeudas =
+    div [ Attr.id "transferencias-saldando-deudas", class "mb-3" ]
+        [ p []
+            [ text "El grupo está "
+            , strong [] [ text "saldando deudas" ]
+            , text ": se calcularon las transferencias para que todos queden saldados y mientras tanto no se pueden cargar ni editar gastos."
             ]
-            [ i [ class iconoCongelado ] []
-            , span [ class "flex-grow-1 text-start" ] [ text "Saldando deudas" ]
-            , i
-                [ class
-                    (if model.bannerAbierto then
-                        "bi bi-chevron-up"
-
-                     else
-                        "bi bi-chevron-down"
-                    )
-                ]
-                []
+        , Bs.btn Bs.Congelado
+            [ Attr.id "dejar-de-saldar-deudas"
+            , class "w-100 py-3 fs-5 d-flex align-items-center justify-content-center gap-2"
+            , Telemetry.click "transferencias.unfreeze_open"
+            , onClick MostrarModalDeDescongelarGrupo
             ]
-        , if model.bannerAbierto then
-            let
-                desactivando =
-                    RemoteData.isLoading model.descongelarGrupoRequest
-            in
-            div [ class "px-3 pb-3" ]
-                [ p []
-                    [ text "Este grupo se encuentra saldando deudas, que ayuda a los participantes a saldar sus gastos. Al empezar se calcularon todas las transferencias de dinero que se deben realizar entre los participantes para quedar saldados." ]
-                , p [ class "fw-bold mb-2" ] [ text "Cambios experimentados por todos los participantes:" ]
-                , ul [ class "mb-3" ] viewCambiosAlCongelar
-                , Bs.btn Bs.CongeladoInverso
-                    [ Attr.id "dejar-de-saldar-deudas"
-                    , class "w-100 py-2 d-flex align-items-center justify-content-center gap-2"
-                    , Telemetry.click "transferencias.unfreeze"
-                    , onClick DescongelarGrupo
-                    , Attr.disabled desactivando
-                    ]
-                    (if desactivando then
-                        [ Bs.spinner
-                            [ Attr.style "width" "1.25rem"
-                            , Attr.style "height" "1.25rem"
-                            , Attr.style "border-width" "0.2em"
-                            , Attr.style "flex" "0 0 auto"
-                            ]
-                        , text "Desactivando..."
-                        ]
-
-                     else
-                        [ i [ class "bi bi-x-circle" ] []
-                        , text "Dejar de saldar deudas"
-                        ]
-                    )
-                ]
-
-          else
-            text ""
+            [ i [ class "bi bi-x-circle" ] []
+            , text "Dejar de saldar deudas"
+            ]
         ]
 
 
@@ -439,11 +390,6 @@ viewInvitacionACongelar resumen model =
             , strong [] [ text "empezar a saldar deudas" ]
             , text "."
             ]
-        , h6 [ class "fw-bold mb-1" ] [ text "Saldando deudas" ]
-        , p [ class "mb-1" ]
-            [ text "Este es un cambio de estado del grupo que modificará la visualización de todos los participantes y prohibirá la carga y edición de gastos*, esto es necesario para el cálculo de las transferencias." ]
-        , p [ class "text-muted small" ]
-            [ text "*Esta acción se puede deshacer pero hay que tener en cuenta su implicancia en las transferencias realizadas." ]
         , viewAvisosParaActivar monedasSinTasa gastosInvalidos
         , Bs.btn Bs.Congelado
             [ class "w-100 py-3 fs-5 d-flex align-items-center justify-content-center gap-2"
@@ -673,7 +619,7 @@ viewActivacionModal model =
             , p [ class "text-muted small mb-0" ]
                 [ text "Este cambio de estado se podrá revertir desde esta misma sección con "
                 , em [] [ text "Dejar de saldar deudas" ]
-                , text ", pero tiene implicancias."
+                , text ". Las transferencias pendientes se descartan y las ya realizadas se mantienen y siguen contando en las deudas."
                 ]
             ]
         , footer =
@@ -692,6 +638,74 @@ viewActivacionModal model =
                         , class "text-white"
                         ]
                     , text "Calculando..."
+                    ]
+
+                 else
+                    [ text "Confirmar" ]
+                )
+            ]
+        }
+
+
+viewDesactivacionModal : Model -> Html Msg
+viewDesactivacionModal model =
+    let
+        desactivando =
+            RemoteData.isLoading model.descongelarGrupoRequest
+    in
+    Bs.modal
+        { id = "transferencias-modal-descongelar"
+        , isOpen = model.mostrarModalDeDescongelar
+        , onClose = CancelarModalDeDescongelarGrupo
+        , title = "Dejar de saldar deudas"
+        , centered = True
+        , body =
+            [ div [ Bs.textoCongelado, class "text-center mb-4" ]
+                [ i [ class "bi bi-x-circle", Attr.style "font-size" "4rem" ] [] ]
+            , p []
+                [ text "El grupo vuelve a su "
+                , strong [] [ text "estado normal" ]
+                , text " y se descarta el plan de transferencias que se calculó al empezar a saldar deudas."
+                ]
+            , p [ class "fw-bold mb-2" ] [ text "Cambios para todos los participantes:" ]
+            , ul [ class "mb-3" ]
+                [ li []
+                    [ text "Vuelven a poder "
+                    , em [] [ text "cargar" ]
+                    , text " y "
+                    , em [] [ text "editar" ]
+                    , text " gastos en este grupo."
+                    ]
+                , li []
+                    [ text "Las transferencias "
+                    , strong [] [ text "pendientes" ]
+                    , text " se descartan."
+                    ]
+                , li []
+                    [ text "Las transferencias ya "
+                    , strong [] [ text "realizadas" ]
+                    , text " se mantienen y siguen contando en las deudas."
+                    ]
+                ]
+            , p [ class "text-muted small mb-0" ]
+                [ text "Para volver a calcular las transferencias hay que empezar a saldar deudas de nuevo." ]
+            ]
+        , footer =
+            [ Bs.btn Bs.Congelado
+                [ class "w-100 py-2 d-flex align-items-center justify-content-center gap-2"
+                , Telemetry.click "transferencias.unfreeze_confirm"
+                , onClick DescongelarGrupo
+                , Attr.disabled desactivando
+                ]
+                (if desactivando then
+                    [ Bs.spinner
+                        [ Attr.style "width" "1.25rem"
+                        , Attr.style "height" "1.25rem"
+                        , Attr.style "border-width" "0.2em"
+                        , Attr.style "flex" "0 0 auto"
+                        , class "text-white"
+                        ]
+                    , text "Desactivando..."
                     ]
 
                  else
