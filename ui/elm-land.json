@@ -19,7 +19,8 @@
         { "name": "viewport", "content": "width=device-width, initial-scale=1.0" }
       ],
       "link": [
-        { "rel": "icon", "type": "image/png", "href": "/favicon.png" }
+        { "rel": "icon", "type": "image/png", "sizes": "90x90", "href": "/favicon.png?v=2" },
+        { "rel": "apple-touch-icon", "href": "/apple-touch-icon.png?v=2" }
       ],
       "script": [
         { "src": "/api/initial-data.js", "defer": true }
