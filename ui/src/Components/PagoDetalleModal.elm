@@ -2187,7 +2187,7 @@ viewBasicSection model =
     Html.form [ id "gasto-paso-basico", onSubmit SubmitCurrentSection, class "flex-grow-1 d-flex flex-column" ]
         [ Html.map PagoForm <|
             Bs.textFormItem nombreField
-                { label = "Título"
+                { label = "Nombre"
                 , placeholder = Just "Restaurant El Oso Pardo"
                 , required = True
                 }
