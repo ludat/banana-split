@@ -7,7 +7,7 @@ import Date exposing (Date)
 import Dict
 import Effect exposing (Effect, Location)
 import Generated.Api exposing (User)
-import Html exposing (Html, a, button, div, h5, hr, i, li, span, text, textarea, ul)
+import Html exposing (Html, a, button, div, h5, hr, i, img, li, span, text, textarea, ul)
 import Html.Attributes as Attr exposing (class, classList, type_)
 import Html.Events exposing (onClick, onInput)
 import Layout exposing (Layout)
@@ -230,7 +230,8 @@ viewNavbar location unread currentUser =
             , onClick ToggleNavBar
             ]
             [ span [ class "navbar-toggler-icon" ] [] ]
-        , Bs.navbarBrand [ Attr.href "#" ] [ text "Repartix" ]
+        , Bs.navbarBrand [ Attr.href "#", class "py-0" ]
+            [ img [ Attr.src "/logo.svg", Attr.alt "Repartix", Attr.height 28 ] [] ]
         , div [ class "ms-auto d-flex align-items-center gap-2" ]
             [ if unread > 0 then
                 button
@@ -350,7 +351,8 @@ viewOffcanvas location model unread currentUser =
             , Attr.attribute "tabindex" "-1"
             ]
             [ div [ class "offcanvas-header" ]
-                [ h5 [ class "offcanvas-title" ] [ text "Repartix" ]
+                [ h5 [ class "offcanvas-title" ]
+                    [ img [ Attr.src "/logo.svg", Attr.alt "Repartix", Attr.height 28, class "d-block" ] [] ]
                 , button
                     [ type_ "button"
                     , class "btn-close"
